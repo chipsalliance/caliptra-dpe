@@ -10,5 +10,7 @@ crate-type = ["staticlib"] # Creates static lib
 default = ["dpe_profile_p256_sha256"]
 dpe_profile_p256_sha256 = []
 dpe_profile_p384_sha384 = []
+# Adds Zephyr OS specific details.
+zephyr_os = []
 
 [dependencies]

@@ -29,8 +29,19 @@ pub fn execute_command(
     Ok(0)
 }
 
+#[cfg(feature = "zephyr_os")]
+#[panic_handler]
+fn panic(_info: &core::panic::PanicInfo) -> ! {
+    extern "C" {
+        pub fn k_msleep(ms: i32) -> i32;
+    }
+    loop {
+        unsafe { k_msleep(i32::MAX) };
+    }
+}
+
+#[cfg(not(feature = "zephyr_os"))]
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}
 }
-

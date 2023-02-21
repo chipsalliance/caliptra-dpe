@@ -19,7 +19,7 @@ ExternalProject_Add(
     PREFIX ${DPE_BINARY_DIR}
     DOWNLOAD_COMMAND ""
     CONFIGURE_COMMAND ""
-    BUILD_COMMAND ${CMAKE_COMMAND} -E env CARGO_TARGET_DIR=${DPE_BINARY_DIR} cargo build --lib --release --target=thumbv7em-none-eabi
+    BUILD_COMMAND ${CMAKE_COMMAND} -E env CARGO_TARGET_DIR=${DPE_BINARY_DIR} cargo build --lib --release --target=thumbv7em-none-eabi --features=zephyr_os
     BUILD_ALWAYS TRUE
     SOURCE_DIR "${DPE_MODULE_DIR}/dpe"
     BINARY_DIR "${DPE_MODULE_DIR}/dpe"
