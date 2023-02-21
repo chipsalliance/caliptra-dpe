@@ -3,6 +3,9 @@ name = "dpe"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+crate-type = ["staticlib"] # Creates static lib
+
 [features]
 default = ["dpe_profile_p256_sha256"]
 dpe_profile_p256_sha256 = []

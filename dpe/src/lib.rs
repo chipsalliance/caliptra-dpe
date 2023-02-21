@@ -28,3 +28,9 @@ pub fn execute_command(
 ) -> Result<usize, DpeError> {
     Ok(0)
 }
+
+#[panic_handler]
+fn panic(_info: &core::panic::PanicInfo) -> ! {
+    loop {}
+}
+

@@ -1,0 +1,22 @@
+
+# CoreSight Access Library configuration options
+
+# Copyright (c) 2023 Google LLC.
+# SPDX-License-Identifier: Apache-2.0
+
+#
+# CoreSight Access Library options
+#
+
+menuconfig DPE_MODULE
+	bool "Enable DICE Protection Environment (DPE)"
+	default n
+	help
+	  Enable DICE Protection Environment (DPE) configuration
+
+if DPE_MODULE
+
+module = DPE_MODULE
+module-str = dpe
+
+endif # DPE_MODULE
