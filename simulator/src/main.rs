@@ -1,4 +1,5 @@
-use dpe::commands::{CommandHdr, DpeInstance};
+use dpe::commands::CommandHdr;
+use dpe::dpe_instance::DpeInstance;
 use std::fs;
 use std::io::Read;
 use std::mem;
