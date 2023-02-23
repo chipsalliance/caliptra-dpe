@@ -125,19 +125,13 @@ mod tests {
         // Commands that can be deserialized.
         assert_eq!(
             Ok(Command::GetProfile),
-            Command::deserialize(&Vec::<u8>::from(CommandHdr {
-                cmd_id: Command::GET_PROFILE,
-                ..DEFAULT_COMMAND
-            }))
+            Command::deserialize(&Vec::<u8>::from(CommandHdr::new(Command::GetProfile)))
         );
-
-        let mut command: Vec<u8> = Vec::<u8>::from(CommandHdr {
-            cmd_id: Command::INITIALIZE_CONTEXT,
-            ..DEFAULT_COMMAND
-        });
 
         // Using random flags to check endianness and consistency.
         const GOOD_CONTEXT: InitCtxCmd = InitCtxCmd { flags: 0x1234_5678 };
+        let mut command: Vec<u8> = Vec::<u8>::from(CommandHdr::new(Command::InitCtx(GOOD_CONTEXT)));
+
         command.extend(Vec::<u8>::from(GOOD_CONTEXT));
         assert_eq!(
             Ok(Command::InitCtx(GOOD_CONTEXT)),
@@ -216,7 +210,10 @@ mod tests {
         let invalid_command: Result<CommandHdr, DpeErrorCode> = Err(DpeErrorCode::InvalidCommand);
 
         // Test if too small.
-        assert_eq!(invalid_command, CommandHdr::try_from([0u8].as_slice()));
+        assert_eq!(
+            invalid_command,
+            CommandHdr::try_from([0u8; size_of::<CommandHdr>() - 1].as_slice())
+        );
 
         // Test wrong magic.
         assert_eq!(
@@ -263,7 +260,10 @@ mod tests {
         let invalid_argument: Result<InitCtxCmd, DpeErrorCode> = Err(DpeErrorCode::InvalidArgument);
 
         // Test if too small.
-        assert_eq!(invalid_argument, InitCtxCmd::try_from([0u8].as_slice()));
+        assert_eq!(
+            invalid_argument,
+            InitCtxCmd::try_from([0u8; size_of::<InitCtxCmd>() - 1].as_slice())
+        );
 
         // Test correct command. Using random flags to check endianness and consistency.
         const GOOD_CONTEXT: InitCtxCmd = InitCtxCmd { flags: 0x1234_5678 };
@@ -288,6 +288,20 @@ mod tests {
             let mut raw = vec![];
             raw.extend_from_slice(&value.flags.to_le_bytes());
             raw
+        }
+    }
+
+    impl CommandHdr {
+        pub fn new(command: Command) -> CommandHdr {
+            let cmd_id = match command {
+                Command::GetProfile => Command::GET_PROFILE,
+                Command::InitCtx(_) => Command::INITIALIZE_CONTEXT,
+            };
+            CommandHdr {
+                magic: Self::DPE_COMMAND_MAGIC,
+                cmd_id,
+                profile: crate::profile::DPE_PROFILE_CONSTANT,
+            }
         }
     }
 }

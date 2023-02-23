@@ -6,7 +6,7 @@ Abstract:
 --*/
 #![cfg_attr(not(test), no_std)]
 
-use response::DpeErrorCode;
+use response::{DpeErrorCode, ResponseHdr};
 pub mod commands;
 pub mod dpe_instance;
 mod response;
@@ -43,5 +43,15 @@ pub fn execute_command(
     cmd: &[u8],
     response: &mut [u8],
 ) -> Result<usize, DpeErrorCode> {
-    Ok(0)
+    match dpe.execute_serialized_command(cmd) {
+        Ok(response_data) => {
+            // Add the response header.
+            let header_len = ResponseHdr::new(DpeErrorCode::NoError).serialize(response)?;
+
+            // Add the response data.
+            let data_len = response_data.serialize(&mut response[header_len..])?;
+            Ok(header_len + data_len)
+        }
+        Err(error_code) => Ok(ResponseHdr::new(error_code).serialize(response)?),
+    }
 }
