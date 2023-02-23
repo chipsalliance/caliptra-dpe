@@ -5,9 +5,9 @@ Abstract:
     Defines an instance of DPE and all of its contexts.
 --*/
 use crate::{
-    commands::InitCtxCmd,
+    commands::{Command, InitCtxCmd},
     profile,
-    response::{DpeErrorCode, GetProfileResp, InitCtxResp},
+    response::{DpeErrorCode, GetProfileResp, InitCtxResp, Response},
     MAX_HANDLES,
 };
 
@@ -35,6 +35,19 @@ impl DpeInstance {
 
     pub fn initialize_context(&mut self, _cmd: &InitCtxCmd) -> Result<InitCtxResp, DpeErrorCode> {
         Ok(InitCtxResp { handle: [0; 20] })
+    }
+
+    /// Deserializes the command and executes it.
+    ///
+    /// # Arguments
+    ///
+    /// * `cmd` - serialized command
+    pub fn execute_serialized_command(&mut self, cmd: &[u8]) -> Result<Response, DpeErrorCode> {
+        let command = Command::deserialize(cmd)?;
+        match command {
+            Command::GetProfile => Ok(Response::GetProfile(self.get_profile()?)),
+            Command::InitCtx(context) => Ok(Response::InitCtx(self.initialize_context(&context)?)),
+        }
     }
 }
 
@@ -106,4 +119,31 @@ impl Context {
 
 fn set_flag(field: &mut u32, mask: u32, value: bool) {
     *field = if value { *field | mask } else { *field & !mask };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::commands::CommandHdr;
+
+    #[test]
+    fn test_execute_serialized_command() {
+        let mut dpe = DpeInstance::new();
+
+        assert_eq!(
+            Response::GetProfile(GetProfileResp::new(0)),
+            dpe.execute_serialized_command(&Vec::<u8>::from(CommandHdr::new(Command::GetProfile)))
+                .unwrap()
+        );
+
+        // Using random flags to check endianness and consistency.
+        const GOOD_CONTEXT: InitCtxCmd = InitCtxCmd { flags: 0x1234_5678 };
+        let mut command: Vec<u8> = Vec::<u8>::from(CommandHdr::new(Command::InitCtx(GOOD_CONTEXT)));
+
+        command.extend(Vec::<u8>::from(GOOD_CONTEXT));
+        assert_eq!(
+            Response::InitCtx(InitCtxResp { handle: [0; 20] }),
+            dpe.execute_serialized_command(&command).unwrap()
+        );
+    }
 }
