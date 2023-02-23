@@ -13,6 +13,8 @@ mod response;
 mod x509;
 
 const MAX_HANDLES: usize = 24;
+const HANDLE_SIZE: usize = 20;
+const CURRENT_PROFILE_VERSION: u32 = 0;
 #[allow(dead_code)]
 const DPE_PROFILE_P256_SHA256: u32 = 1;
 #[allow(dead_code)]

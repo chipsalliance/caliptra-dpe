@@ -30,7 +30,7 @@ impl DpeInstance {
     }
 
     pub fn get_profile(&mut self) -> Result<GetProfileResp, DpeErrorCode> {
-        Ok(GetProfileResp { flags: 0 })
+        Ok(GetProfileResp::new(0))
     }
 
     pub fn initialize_context(&mut self, _cmd: &InitCtxCmd) -> Result<InitCtxResp, DpeErrorCode> {
