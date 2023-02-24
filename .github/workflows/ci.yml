@@ -13,8 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          components: clippy,rustfmt
+      # The runner image has rustup with stable (with clippy and rustfmt). So we
+      # just need to update to use the most recent stable.
+      - run: rustup update
       - run: ./ci.sh
