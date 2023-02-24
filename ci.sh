@@ -19,6 +19,6 @@ export RUSTFLAGS='-A dead_code -A unused_variables'
   cargo build
   cargo build --release
   cargo test
-  # cargo fmt -- --check
-  # cargo clippy -- --deny=warnings
+  cargo fmt -- --check
+  cargo clippy -- --deny=warnings
 )
