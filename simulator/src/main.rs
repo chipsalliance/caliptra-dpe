@@ -1,4 +1,3 @@
-use ctrlc;
 use dpe::commands::{CommandHdr, DpeInstance};
 use std::fs;
 use std::io::Read;
@@ -11,13 +10,13 @@ const SOCKET_PATH: &str = "/tmp/dpe-sim.socket";
 
 fn handle_request(_dpe: &mut DpeInstance, stream: &mut UnixStream) {
     let mut hdr_buf = [0u8; mem::size_of::<CommandHdr>()];
-    let mut _size = match stream.read_exact(&mut hdr_buf) {
-        Ok(size) => size,
+    match stream.read_exact(&mut hdr_buf) {
+        Ok(()) => (),
         Err(_) => {
             println!("Failed to read command header");
             return;
         }
-    };
+    }
 
     let (_, hdr, _) = unsafe { hdr_buf.align_to::<CommandHdr>() };
 
@@ -28,7 +27,7 @@ fn cleanup() {
     match fs::remove_file(SOCKET_PATH) {
         Ok(_) => {
             println!();
-        },
+        }
         Err(_) => {
             println!("Warning: Unable to unlink {}", SOCKET_PATH);
         }

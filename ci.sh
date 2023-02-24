@@ -14,6 +14,6 @@ set -ex
   cargo build
   cargo build --release
   cargo test
-  # cargo fmt -- --check
-  # cargo clippy -- --deny=warnings
+  cargo fmt -- --check
+  cargo clippy -- --deny=warnings
 )
