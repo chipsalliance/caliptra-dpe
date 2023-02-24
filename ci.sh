@@ -8,12 +8,12 @@ export RUSTFLAGS='-A dead_code -A unused_variables'
 
 ( cd dpe
   cargo build
-  # cargo build --no-default-features --features=dpe_profile_p384_sha384
+  cargo build --no-default-features --features=dpe_profile_p384_sha384
   cargo build --release
   cargo test
-  # cargo test --no-default-features --features=dpe_profile_p384_sha384
+  cargo test --no-default-features --features=dpe_profile_p384_sha384
   cargo fmt -- --check
-  # cargo clippy -- --deny=warnings
+  cargo clippy -- --deny=warnings
 )
 ( cd simulator
   cargo build
