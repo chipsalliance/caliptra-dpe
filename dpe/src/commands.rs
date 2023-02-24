@@ -42,6 +42,15 @@ pub struct InitCtxResp {
     pub hdr: ResponseHdr,
 }
 
+#[repr(transparent)]
+pub struct TciMeasurement([u8; profile::TCI_SIZE]);
+
+impl Default for TciMeasurement {
+    fn default() -> Self {
+        Self([0; profile::TCI_SIZE])
+    }
+}
+
 #[repr(C, align(4))]
 #[derive(Default)]
 struct TciNodeData {
@@ -51,8 +60,8 @@ struct TciNodeData {
     // 31: INTERNAL
     // 30-0: Reserved. Must be zero
     flags: u32,
-    tci_cumulative: [u8; profile::TCI_SIZE],
-    tci_current: [u8; profile::TCI_SIZE],
+    tci_cumulative: TciMeasurement,
+    tci_current: TciMeasurement,
 }
 
 impl TciNodeData {
@@ -70,8 +79,8 @@ impl TciNodeData {
         TciNodeData {
             tci_type: 0,
             flags: 0,
-            tci_cumulative: [0; profile::TCI_SIZE],
-            tci_current: [0; profile::TCI_SIZE],
+            tci_cumulative: TciMeasurement([0; profile::TCI_SIZE]),
+            tci_current: TciMeasurement([0; profile::TCI_SIZE]),
         }
     }
 }
@@ -104,7 +113,7 @@ pub struct DpeInstance {
 }
 
 impl DpeInstance {
-    pub fn new() -> DpeInstance {
+    pub const fn new() -> DpeInstance {
         const CONTEXT_INITIALIZER: Context = Context::new();
         DpeInstance {
             contexts: [CONTEXT_INITIALIZER; MAX_HANDLES],
