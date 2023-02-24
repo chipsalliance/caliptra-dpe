@@ -30,7 +30,7 @@ fn cleanup() {
             println!();
         }
         Err(_) => {
-            println!("Warning: Unable to unlink {}", SOCKET_PATH);
+            println!("Warning: Unable to unlink {SOCKET_PATH}");
         }
     }
 }
@@ -52,7 +52,7 @@ fn main() -> std::io::Result<()> {
 
     let mut dpe = DpeInstance::new();
 
-    println!("DPE listening to socket {}", SOCKET_PATH);
+    println!("DPE listening to socket {SOCKET_PATH}");
 
     for stream in listener.incoming() {
         match stream {
@@ -60,7 +60,7 @@ fn main() -> std::io::Result<()> {
                 handle_request(&mut dpe, &mut stream);
             }
             Err(err) => {
-                println!("Failed to open socket: {}", err);
+                println!("Failed to open socket: {err}");
                 cleanup();
                 break;
             }
