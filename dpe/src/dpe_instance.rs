@@ -13,24 +13,50 @@ use crate::{
 
 pub struct DpeInstance {
     contexts: [Context; MAX_HANDLES],
-}
-
-impl Default for DpeInstance {
-    fn default() -> Self {
-        Self::new()
-    }
+    supports_simulation: bool,
+    supports_extend_tci: bool,
+    supports_auto_init: bool,
+    supports_tagging: bool,
+    supports_rotate_context: bool,
 }
 
 impl DpeInstance {
-    pub fn new() -> DpeInstance {
+    pub fn new(
+        supports_simulation: bool,
+        supports_extend_tci: bool,
+        supports_auto_init: bool,
+        supports_tagging: bool,
+        supports_rotate_context: bool,
+    ) -> DpeInstance {
         const CONTEXT_INITIALIZER: Context = Context::new();
         DpeInstance {
             contexts: [CONTEXT_INITIALIZER; MAX_HANDLES],
+            supports_simulation,
+            supports_extend_tci,
+            supports_auto_init,
+            supports_tagging,
+            supports_rotate_context,
         }
     }
 
-    pub fn get_profile(&mut self) -> Result<GetProfileResp, DpeErrorCode> {
-        Ok(GetProfileResp::new(0))
+    pub fn get_profile(&self) -> Result<GetProfileResp, DpeErrorCode> {
+        const SIMULATION_MASK: u32 = 1 << 31;
+        const EXTEND_TCI_MASK: u32 = 1 << 30;
+        const AUTO_INIT_MASK: u32 = 1 << 29;
+        const TAGGING_MASK: u32 = 1 << 28;
+        const ROTATE_CONTEXT_MASK: u32 = 1 << 27;
+
+        let mut flags = 0;
+        set_flag(&mut flags, SIMULATION_MASK, self.supports_simulation);
+        set_flag(&mut flags, EXTEND_TCI_MASK, self.supports_extend_tci);
+        set_flag(&mut flags, AUTO_INIT_MASK, self.supports_auto_init);
+        set_flag(&mut flags, TAGGING_MASK, self.supports_tagging);
+        set_flag(
+            &mut flags,
+            ROTATE_CONTEXT_MASK,
+            self.supports_rotate_context,
+        );
+        Ok(GetProfileResp::new(flags))
     }
 
     pub fn initialize_context(&mut self, _cmd: &InitCtxCmd) -> Result<InitCtxResp, DpeErrorCode> {
@@ -124,7 +150,8 @@ fn set_flag(field: &mut u32, mask: u32, value: bool) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::commands::CommandHdr;
+    use crate::CURRENT_PROFILE_VERSION;
+
 
     #[test]
     fn test_execute_serialized_command() {
@@ -144,6 +171,57 @@ mod tests {
         assert_eq!(
             Response::InitCtx(InitCtxResp { handle: [0; 20] }),
             dpe.execute_serialized_command(&command).unwrap()
+        );
+    }
+
+    #[test]
+    fn test_get_profile() {
+        let dpe = DpeInstance::new(false, false, false, false, false);
+        let profile = dpe.get_profile().unwrap();
+        assert_eq!(profile.version, CURRENT_PROFILE_VERSION);
+        assert_eq!(profile.flags, 0);
+
+        // Supports simulation flag.
+        let profile = DpeInstance::new(true, false, false, false, false)
+            .get_profile()
+            .unwrap();
+        assert_eq!(profile.flags, 1 << 31);
+        // Supports extended TCI flag.
+        let profile = DpeInstance::new(false, true, false, false, false)
+            .get_profile()
+            .unwrap();
+        assert_eq!(profile.flags, 1 << 30);
+        // Supports auto-init.
+        let profile = DpeInstance::new(false, false, true, false, false)
+            .get_profile()
+            .unwrap();
+        assert_eq!(profile.flags, 1 << 29);
+        // Supports tagging.
+        let profile = DpeInstance::new(false, false, false, true, false)
+            .get_profile()
+            .unwrap();
+        assert_eq!(profile.flags, 1 << 28);
+        // Supports rotate context.
+        let profile = DpeInstance::new(false, false, false, false, true)
+            .get_profile()
+            .unwrap();
+        assert_eq!(profile.flags, 1 << 27);
+        // Supports a couple combos.
+        let profile = DpeInstance::new(true, false, true, false, true)
+            .get_profile()
+            .unwrap();
+        assert_eq!(profile.flags, (1 << 31) | (1 << 29) | (1 << 27));
+        let profile = DpeInstance::new(false, true, false, true, false)
+            .get_profile()
+            .unwrap();
+        assert_eq!(profile.flags, (1 << 30) | (1 << 28));
+        // Supports everything.
+        let profile = DpeInstance::new(true, true, true, true, true)
+            .get_profile()
+            .unwrap();
+        assert_eq!(
+            profile.flags,
+            (1 << 31) | (1 << 30) | (1 << 29) | (1 << 28) | (1 << 27)
         );
     }
 }
