@@ -156,12 +156,11 @@ fn set_flag(field: &mut u32, mask: u32, value: bool) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::CURRENT_PROFILE_VERSION;
-
+    use crate::{commands::CommandHdr, CURRENT_PROFILE_VERSION};
 
     #[test]
     fn test_execute_serialized_command() {
-        let mut dpe = DpeInstance::new();
+        let mut dpe = DpeInstance::new(Support::default());
 
         assert_eq!(
             Response::GetProfile(GetProfileResp::new(0)),
