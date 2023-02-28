@@ -13,50 +13,20 @@ use crate::{
 
 pub struct DpeInstance {
     contexts: [Context; MAX_HANDLES],
-    supports_simulation: bool,
-    supports_extend_tci: bool,
-    supports_auto_init: bool,
-    supports_tagging: bool,
-    supports_rotate_context: bool,
+    support: Support,
 }
 
 impl DpeInstance {
-    pub fn new(
-        supports_simulation: bool,
-        supports_extend_tci: bool,
-        supports_auto_init: bool,
-        supports_tagging: bool,
-        supports_rotate_context: bool,
-    ) -> DpeInstance {
+    pub fn new(support: Support) -> DpeInstance {
         const CONTEXT_INITIALIZER: Context = Context::new();
         DpeInstance {
             contexts: [CONTEXT_INITIALIZER; MAX_HANDLES],
-            supports_simulation,
-            supports_extend_tci,
-            supports_auto_init,
-            supports_tagging,
-            supports_rotate_context,
+            support,
         }
     }
 
     pub fn get_profile(&self) -> Result<GetProfileResp, DpeErrorCode> {
-        const SIMULATION_MASK: u32 = 1 << 31;
-        const EXTEND_TCI_MASK: u32 = 1 << 30;
-        const AUTO_INIT_MASK: u32 = 1 << 29;
-        const TAGGING_MASK: u32 = 1 << 28;
-        const ROTATE_CONTEXT_MASK: u32 = 1 << 27;
-
-        let mut flags = 0;
-        set_flag(&mut flags, SIMULATION_MASK, self.supports_simulation);
-        set_flag(&mut flags, EXTEND_TCI_MASK, self.supports_extend_tci);
-        set_flag(&mut flags, AUTO_INIT_MASK, self.supports_auto_init);
-        set_flag(&mut flags, TAGGING_MASK, self.supports_tagging);
-        set_flag(
-            &mut flags,
-            ROTATE_CONTEXT_MASK,
-            self.supports_rotate_context,
-        );
-        Ok(GetProfileResp::new(flags))
+        Ok(GetProfileResp::new(self.support.get_flags()))
     }
 
     pub fn initialize_context(&mut self, _cmd: &InitCtxCmd) -> Result<InitCtxResp, DpeErrorCode> {
@@ -83,6 +53,42 @@ pub struct TciMeasurement([u8; profile::TCI_SIZE]);
 impl Default for TciMeasurement {
     fn default() -> Self {
         Self([0; profile::TCI_SIZE])
+    }
+}
+
+#[derive(Default)]
+pub struct Support {
+    simulation: bool,
+    extend_tci: bool,
+    auto_init: bool,
+    tagging: bool,
+    rotate_context: bool,
+}
+
+impl Support {
+    /// Returns all the flags bit-wise OR'ed together in the same configuration as the `GetProfile`
+    /// command.
+    pub fn get_flags(&self) -> u32 {
+        self.get_simulation_flag()
+            | self.get_extend_tci_flag()
+            | self.get_auto_init_flag()
+            | self.get_tagging_flag()
+            | self.get_rotate_context_flag()
+    }
+    fn get_simulation_flag(&self) -> u32 {
+        u32::from(self.simulation) << 31
+    }
+    fn get_extend_tci_flag(&self) -> u32 {
+        u32::from(self.extend_tci) << 30
+    }
+    fn get_auto_init_flag(&self) -> u32 {
+        u32::from(self.auto_init) << 29
+    }
+    fn get_tagging_flag(&self) -> u32 {
+        u32::from(self.tagging) << 28
+    }
+    fn get_rotate_context_flag(&self) -> u32 {
+        u32::from(self.rotate_context) << 27
     }
 }
 
@@ -176,51 +182,79 @@ mod tests {
 
     #[test]
     fn test_get_profile() {
-        let dpe = DpeInstance::new(false, false, false, false, false);
+        let dpe = DpeInstance::new(Support {
+            simulation: true,
+            ..Support::default()
+        });
         let profile = dpe.get_profile().unwrap();
         assert_eq!(profile.version, CURRENT_PROFILE_VERSION);
-        assert_eq!(profile.flags, 0);
-
-        // Supports simulation flag.
-        let profile = DpeInstance::new(true, false, false, false, false)
-            .get_profile()
-            .unwrap();
         assert_eq!(profile.flags, 1 << 31);
+    }
+
+    #[test]
+    fn test_get_support_flags() {
+        // Supports simulation flag.
+        let flags = Support {
+            simulation: true,
+            ..Support::default()
+        }
+        .get_flags();
+        assert_eq!(flags, 1 << 31);
         // Supports extended TCI flag.
-        let profile = DpeInstance::new(false, true, false, false, false)
-            .get_profile()
-            .unwrap();
-        assert_eq!(profile.flags, 1 << 30);
+        let flags = Support {
+            extend_tci: true,
+            ..Support::default()
+        }
+        .get_flags();
+        assert_eq!(flags, 1 << 30);
         // Supports auto-init.
-        let profile = DpeInstance::new(false, false, true, false, false)
-            .get_profile()
-            .unwrap();
-        assert_eq!(profile.flags, 1 << 29);
+        let flags = Support {
+            auto_init: true,
+            ..Support::default()
+        }
+        .get_flags();
+        assert_eq!(flags, 1 << 29);
         // Supports tagging.
-        let profile = DpeInstance::new(false, false, false, true, false)
-            .get_profile()
-            .unwrap();
-        assert_eq!(profile.flags, 1 << 28);
+        let flags = Support {
+            tagging: true,
+            ..Support::default()
+        }
+        .get_flags();
+        assert_eq!(flags, 1 << 28);
         // Supports rotate context.
-        let profile = DpeInstance::new(false, false, false, false, true)
-            .get_profile()
-            .unwrap();
-        assert_eq!(profile.flags, 1 << 27);
+        let flags = Support {
+            rotate_context: true,
+            ..Support::default()
+        }
+        .get_flags();
+        assert_eq!(flags, 1 << 27);
         // Supports a couple combos.
-        let profile = DpeInstance::new(true, false, true, false, true)
-            .get_profile()
-            .unwrap();
-        assert_eq!(profile.flags, (1 << 31) | (1 << 29) | (1 << 27));
-        let profile = DpeInstance::new(false, true, false, true, false)
-            .get_profile()
-            .unwrap();
-        assert_eq!(profile.flags, (1 << 30) | (1 << 28));
+        let flags = Support {
+            simulation: true,
+            auto_init: true,
+            rotate_context: true,
+            ..Support::default()
+        }
+        .get_flags();
+        assert_eq!(flags, (1 << 31) | (1 << 29) | (1 << 27));
+        let flags = Support {
+            extend_tci: true,
+            tagging: true,
+            ..Support::default()
+        }
+        .get_flags();
+        assert_eq!(flags, (1 << 30) | (1 << 28));
         // Supports everything.
-        let profile = DpeInstance::new(true, true, true, true, true)
-            .get_profile()
-            .unwrap();
+        let flags = Support {
+            simulation: true,
+            extend_tci: true,
+            auto_init: true,
+            tagging: true,
+            rotate_context: true,
+        }
+        .get_flags();
         assert_eq!(
-            profile.flags,
+            flags,
             (1 << 31) | (1 << 30) | (1 << 29) | (1 << 28) | (1 << 27)
         );
     }

@@ -1,5 +1,5 @@
 use dpe::commands::CommandHdr;
-use dpe::dpe_instance::DpeInstance;
+use dpe::dpe_instance::{DpeInstance, Support};
 use std::fs;
 use std::io::Read;
 use std::mem;
@@ -50,7 +50,7 @@ fn main() -> std::io::Result<()> {
     })
     .unwrap();
 
-    let mut dpe = DpeInstance::new();
+    let mut dpe = DpeInstance::new(Support::default());
 
     println!("DPE listening to socket {SOCKET_PATH}");
 
