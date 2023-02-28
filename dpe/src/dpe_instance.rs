@@ -138,7 +138,7 @@ mod tests {
 
         // Using random flags to check endianness and consistency.
         const GOOD_CONTEXT: InitCtxCmd = InitCtxCmd { flags: 0x1234_5678 };
-        let mut command: Vec<u8> = Vec::<u8>::from(CommandHdr::new(Command::InitCtx(GOOD_CONTEXT)));
+        let mut command = Vec::<u8>::from(CommandHdr::new(Command::InitCtx(GOOD_CONTEXT)));
 
         command.extend(Vec::<u8>::from(GOOD_CONTEXT));
         assert_eq!(
