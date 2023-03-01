@@ -8,7 +8,7 @@ use crate::{
     commands::{Command, InitCtxCmd},
     profile,
     response::{DpeErrorCode, GetProfileResp, InitCtxResp, Response},
-    MAX_HANDLES,
+    MAX_HANDLES, crypto::{Crypto, Rng, Hash, self},
 };
 
 pub struct DpeInstance {
@@ -29,8 +29,10 @@ impl DpeInstance {
         Ok(GetProfileResp::new(self.support.get_flags()))
     }
 
-    pub fn initialize_context(&mut self, _cmd: &InitCtxCmd) -> Result<InitCtxResp, DpeErrorCode> {
-        Ok(InitCtxResp { handle: [0; 20] })
+    pub fn initialize_context(&mut self, crypto: &mut impl Crypto, _cmd: &InitCtxCmd) -> Result<InitCtxResp, DpeErrorCode> {
+        let mut handle = [0u8; 20];
+        crypto.rng().rand_bytes(&mut handle[4..])?;
+        Ok(InitCtxResp { handle })
     }
 
     /// Deserializes the command and executes it.
@@ -38,11 +40,11 @@ impl DpeInstance {
     /// # Arguments
     ///
     /// * `cmd` - serialized command
-    pub fn execute_serialized_command(&mut self, cmd: &[u8]) -> Result<Response, DpeErrorCode> {
+    pub fn execute_serialized_command(&mut self, crypto: &mut impl Crypto, cmd: &[u8]) -> Result<Response, DpeErrorCode> {
         let command = Command::deserialize(cmd)?;
         match command {
             Command::GetProfile => Ok(Response::GetProfile(self.get_profile()?)),
-            Command::InitCtx(context) => Ok(Response::InitCtx(self.initialize_context(&context)?)),
+            Command::InitCtx(context) => Ok(Response::InitCtx(self.initialize_context(crypto, &context)?)),
         }
     }
 }
@@ -158,13 +160,53 @@ mod tests {
     use super::*;
     use crate::{commands::CommandHdr, CURRENT_PROFILE_VERSION};
 
+    struct TestCrypto {
+        rng: TestRng,
+        hash: TestHash,
+    }
+
+    impl Crypto for TestCrypto {
+        type Rng = TestRng;
+        type Hash = TestHash;
+
+        fn rng(&mut self) -> &mut Self::Rng {
+            &mut self.rng
+        }
+        fn hash(&mut self) -> &mut Self::Hash {
+            &mut self.hash
+        }
+    }
+
+    struct TestRng;
+
+    impl Rng for TestRng {
+        fn rand_bytes(&self, dst: &mut [u8]) -> Result<(), DpeErrorCode> {
+            openssl::rand::rand_bytes(dst).map_err(|_| DpeErrorCode::InternalError)
+        }
+    }
+
+    struct TestHash;
+
+    impl Hash for TestHash {
+        fn hash(&self, bytes: &[u8], digest: &mut [u8; profile::DIGEST_SIZE]) -> Result<(), DpeErrorCode> {
+            use openssl::hash::{hash, MessageDigest};
+            #[cfg(feature = "dpe_profile_p256_sha256")]
+            let alg = MessageDigest::sha256();
+            #[cfg(feature = "dpe_profile_p384_sha384")]
+            let alg = openssl::hash::MessageDigest::sha384();
+            digest.copy_from_slice(&hash(alg, bytes).map_err(|_| DpeErrorCode::InternalError)?);
+            Ok(())
+        }
+    }
+
     #[test]
     fn test_execute_serialized_command() {
+        let mut crypto = TestCrypto { rng: TestRng, hash: TestHash };
         let mut dpe = DpeInstance::new(Support::default());
 
         assert_eq!(
             Response::GetProfile(GetProfileResp::new(0)),
-            dpe.execute_serialized_command(&Vec::<u8>::from(CommandHdr::new(Command::GetProfile)))
+            dpe.execute_serialized_command(&mut crypto, &Vec::<u8>::from(CommandHdr::new(Command::GetProfile)))
                 .unwrap()
         );
 
@@ -175,16 +217,18 @@ mod tests {
         command.extend(Vec::<u8>::from(GOOD_CONTEXT));
         assert_eq!(
             Response::InitCtx(InitCtxResp { handle: [0; 20] }),
-            dpe.execute_serialized_command(&command).unwrap()
+            dpe.execute_serialized_command(&mut crypto, &command).unwrap()
         );
     }
 
     #[test]
     fn test_get_profile() {
-        let dpe = DpeInstance::new(Support {
-            simulation: true,
-            ..Support::default()
-        });
+        let dpe = DpeInstance::new(
+            Support {
+                simulation: true,
+                ..Support::default()
+            },
+        );
         let profile = dpe.get_profile().unwrap();
         assert_eq!(profile.version, CURRENT_PROFILE_VERSION);
         assert_eq!(profile.flags, 1 << 31);

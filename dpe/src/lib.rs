@@ -6,9 +6,11 @@ Abstract:
 --*/
 #![cfg_attr(not(test), no_std)]
 
+use crypto::Crypto;
 use response::{DpeErrorCode, ResponseHdr};
 pub mod commands;
 pub mod dpe_instance;
+pub mod crypto;
 mod response;
 mod x509;
 
@@ -26,6 +28,7 @@ mod profile {
     pub const TCI_SIZE: usize = 32;
     pub const CDI_SIZE: usize = 32;
     pub const ECC_INT_SIZE: usize = 32;
+    pub const DIGEST_SIZE: usize = 32;
 }
 
 #[cfg(feature = "dpe_profile_p384_sha384")]
@@ -34,16 +37,18 @@ mod profile {
     pub const TCI_SIZE: usize = 48;
     pub const CDI_SIZE: usize = 48;
     pub const ECC_INT_SIZE: usize = 48;
+    pub const DIGEST_SIZE: usize = 48;
 }
 
 /// Execute a DPE command.
 /// Returns the number of bytes written to `response`.
 pub fn execute_command(
     dpe: &mut dpe_instance::DpeInstance,
+    crypto: &mut impl Crypto,
     cmd: &[u8],
     response: &mut [u8],
 ) -> Result<usize, DpeErrorCode> {
-    match dpe.execute_serialized_command(cmd) {
+    match dpe.execute_serialized_command(crypto, cmd) {
         Ok(response_data) => {
             // Add the response header.
             let header_len = ResponseHdr::new(DpeErrorCode::NoError).serialize(response)?;
