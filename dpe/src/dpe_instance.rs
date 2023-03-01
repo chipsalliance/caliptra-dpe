@@ -6,22 +6,25 @@ Abstract:
 --*/
 use crate::{
     commands::{Command, InitCtxCmd},
+    crypto::Crypto,
     profile,
     response::{DpeErrorCode, GetProfileResp, InitCtxResp, Response},
-    MAX_HANDLES,
+    HANDLE_SIZE, MAX_HANDLES,
 };
 
-pub struct DpeInstance {
+pub struct DpeInstance<'a> {
     contexts: [Context; MAX_HANDLES],
     support: Support,
+    crypto: &'a dyn Crypto,
 }
 
-impl DpeInstance {
-    pub fn new(support: Support) -> DpeInstance {
+impl DpeInstance<'_> {
+    pub fn new(support: Support, crypto: &dyn Crypto) -> DpeInstance {
         const CONTEXT_INITIALIZER: Context = Context::new();
         DpeInstance {
             contexts: [CONTEXT_INITIALIZER; MAX_HANDLES],
             support,
+            crypto,
         }
     }
 
@@ -30,7 +33,10 @@ impl DpeInstance {
     }
 
     pub fn initialize_context(&mut self, _cmd: &InitCtxCmd) -> Result<InitCtxResp, DpeErrorCode> {
-        Ok(InitCtxResp { handle: [0; 20] })
+        let mut handle = [0u8; HANDLE_SIZE];
+        // The first 4 bytes will be populated when this command is finished.
+        self.crypto.rand_bytes(&mut handle[4..])?;
+        Ok(InitCtxResp { handle })
     }
 
     /// Deserializes the command and executes it.
@@ -156,11 +162,13 @@ fn set_flag(field: &mut u32, mask: u32, value: bool) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{commands::CommandHdr, CURRENT_PROFILE_VERSION};
+    use crate::{
+        commands::CommandHdr, crypto::tests::DeterministicCrypto, CURRENT_PROFILE_VERSION,
+    };
 
     #[test]
     fn test_execute_serialized_command() {
-        let mut dpe = DpeInstance::new(Support::default());
+        let mut dpe = DpeInstance::new(Support::default(), &DeterministicCrypto);
 
         assert_eq!(
             Response::GetProfile(GetProfileResp::new(0)),
@@ -174,17 +182,23 @@ mod tests {
 
         command.extend(Vec::<u8>::from(GOOD_CONTEXT));
         assert_eq!(
-            Response::InitCtx(InitCtxResp { handle: [0; 20] }),
+            Response::InitCtx(InitCtxResp {
+                // The first 4 bytes will be populated when this command is finished.
+                handle: [0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+            }),
             dpe.execute_serialized_command(&command).unwrap()
         );
     }
 
     #[test]
     fn test_get_profile() {
-        let dpe = DpeInstance::new(Support {
-            simulation: true,
-            ..Support::default()
-        });
+        let dpe = DpeInstance::new(
+            Support {
+                simulation: true,
+                ..Support::default()
+            },
+            &DeterministicCrypto,
+        );
         let profile = dpe.get_profile().unwrap();
         assert_eq!(profile.version, CURRENT_PROFILE_VERSION);
         assert_eq!(profile.flags, 1 << 31);
