@@ -17,26 +17,31 @@ mod x509;
 const MAX_HANDLES: usize = 24;
 const HANDLE_SIZE: usize = 20;
 const CURRENT_PROFILE_VERSION: u32 = 0;
-#[allow(dead_code)]
-pub const DPE_PROFILE_P256_SHA256: u32 = 1;
-#[allow(dead_code)]
-pub const DPE_PROFILE_P384_SHA384: u32 = 2;
+
+pub enum DpeProfile {
+    P256Sha256 = 1,
+    P384Sha384 = 2,
+}
+
+impl DpeProfile {
+    pub const fn get_tci_size(&self) -> usize {
+        match self {
+            DpeProfile::P256Sha256 => 32,
+            DpeProfile::P384Sha384 => 48,
+        }
+    }
+    pub const fn get_cdi_size(&self) -> usize {
+        self.get_tci_size()
+    }
+    pub const fn get_ecc_int_size(&self) -> usize {
+        self.get_tci_size()
+    }
+}
 
 #[cfg(feature = "dpe_profile_p256_sha256")]
-mod profile {
-    pub const DPE_PROFILE_CONSTANT: u32 = super::DPE_PROFILE_P256_SHA256;
-    pub const TCI_SIZE: usize = 32;
-    pub const CDI_SIZE: usize = 32;
-    pub const ECC_INT_SIZE: usize = 32;
-}
-
+pub const DPE_PROFILE: DpeProfile = DpeProfile::P256Sha256;
 #[cfg(feature = "dpe_profile_p384_sha384")]
-mod profile {
-    pub const DPE_PROFILE_CONSTANT: u32 = super::DPE_PROFILE_P384_SHA384;
-    pub const TCI_SIZE: usize = 48;
-    pub const CDI_SIZE: usize = 48;
-    pub const ECC_INT_SIZE: usize = 48;
-}
+pub const DPE_PROFILE: DpeProfile = DpeProfile::P384Sha384;
 
 /// Execute a DPE command.
 /// Returns the number of bytes written to `response`.

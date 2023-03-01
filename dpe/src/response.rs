@@ -4,7 +4,7 @@ Licensed under the Apache-2.0 license.
 Abstract:
     DPE reponses and serialization.
 --*/
-use crate::{profile, CURRENT_PROFILE_VERSION, HANDLE_SIZE};
+use crate::{CURRENT_PROFILE_VERSION, DPE_PROFILE, HANDLE_SIZE};
 use core::mem::size_of;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -45,7 +45,7 @@ impl ResponseHdr {
         ResponseHdr {
             magic: Self::DPE_RESPONSE_MAGIC,
             status: error_code as u32,
-            profile: profile::DPE_PROFILE_CONSTANT,
+            profile: DPE_PROFILE as u32,
         }
     }
 
@@ -117,7 +117,6 @@ pub enum DpeErrorCode {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::profile::DPE_PROFILE_CONSTANT;
     use std::vec;
 
     const TEST_FLAGS: u32 = 0x7E57_B175;
@@ -222,7 +221,7 @@ mod tests {
         let mut answer = vec![];
         answer.extend_from_slice(&ResponseHdr::DPE_RESPONSE_MAGIC.to_le_bytes());
         answer.extend_from_slice(&(error_code as u32).to_le_bytes());
-        answer.extend_from_slice(&(DPE_PROFILE_CONSTANT as u32).to_le_bytes());
+        answer.extend_from_slice(&(DPE_PROFILE as u32).to_le_bytes());
 
         let mut response_buffer = [0; size_of::<ResponseHdr>()];
         assert_eq!(

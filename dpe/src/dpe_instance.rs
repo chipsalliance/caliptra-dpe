@@ -7,9 +7,8 @@ Abstract:
 use crate::{
     commands::{Command, InitCtxCmd},
     crypto::Crypto,
-    profile,
     response::{DpeErrorCode, GetProfileResp, InitCtxResp, Response},
-    HANDLE_SIZE, MAX_HANDLES,
+    DPE_PROFILE, HANDLE_SIZE, MAX_HANDLES,
 };
 
 pub struct DpeInstance {
@@ -60,11 +59,11 @@ impl DpeInstance {
 }
 
 #[repr(transparent)]
-pub struct TciMeasurement([u8; profile::TCI_SIZE]);
+pub struct TciMeasurement([u8; DPE_PROFILE.get_tci_size()]);
 
 impl Default for TciMeasurement {
     fn default() -> Self {
-        Self([0; profile::TCI_SIZE])
+        Self([0; DPE_PROFILE.get_tci_size()])
     }
 }
 
@@ -132,8 +131,8 @@ impl TciNodeData {
         TciNodeData {
             tci_type: 0,
             flags: 0,
-            tci_cumulative: TciMeasurement([0; profile::TCI_SIZE]),
-            tci_current: TciMeasurement([0; profile::TCI_SIZE]),
+            tci_cumulative: TciMeasurement([0; DPE_PROFILE.get_tci_size()]),
+            tci_current: TciMeasurement([0; DPE_PROFILE.get_tci_size()]),
         }
     }
 }

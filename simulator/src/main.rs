@@ -2,7 +2,7 @@ use dpe::commands::CommandHdr;
 use dpe::crypto::Crypto;
 use dpe::dpe_instance::{DpeInstance, Support};
 use dpe::response::DpeErrorCode;
-use dpe::DPE_PROFILE_P256_SHA256;
+use dpe::DpeProfile;
 use std::fs;
 use std::io::Read;
 use std::mem;
@@ -80,12 +80,11 @@ impl Crypto for OpensslCrypto {
         openssl::rand::rand_bytes(dst).map_err(|_| DpeErrorCode::InternalError)
     }
 
-    fn _hash(profile: u32, bytes: &[u8], digest: &mut [u8]) -> Result<(), DpeErrorCode> {
+    fn _hash(profile: DpeProfile, bytes: &[u8], digest: &mut [u8]) -> Result<(), DpeErrorCode> {
         use openssl::hash::{hash, MessageDigest};
-        let alg = if profile == DPE_PROFILE_P256_SHA256 {
-            MessageDigest::sha256()
-        } else {
-            MessageDigest::sha384()
+        let alg = match profile {
+            DpeProfile::P256Sha256 => MessageDigest::sha256(),
+            DpeProfile::P384Sha384 => MessageDigest::sha384(),
         };
         digest.copy_from_slice(&hash(alg, bytes).map_err(|_| DpeErrorCode::InternalError)?);
         Ok(())
