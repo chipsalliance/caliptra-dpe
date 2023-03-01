@@ -8,17 +8,18 @@ Abstract:
 
 use response::{DpeErrorCode, ResponseHdr};
 pub mod commands;
+pub mod crypto;
 pub mod dpe_instance;
-mod response;
+pub mod response;
 mod x509;
 
 const MAX_HANDLES: usize = 24;
 const HANDLE_SIZE: usize = 20;
 const CURRENT_PROFILE_VERSION: u32 = 0;
 #[allow(dead_code)]
-const DPE_PROFILE_P256_SHA256: u32 = 1;
+pub const DPE_PROFILE_P256_SHA256: u32 = 1;
 #[allow(dead_code)]
-const DPE_PROFILE_P384_SHA384: u32 = 2;
+pub const DPE_PROFILE_P384_SHA384: u32 = 2;
 
 #[cfg(feature = "dpe_profile_p256_sha256")]
 mod profile {

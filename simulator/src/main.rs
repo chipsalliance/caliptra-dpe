@@ -1,5 +1,8 @@
 use dpe::commands::CommandHdr;
+use dpe::crypto::Crypto;
 use dpe::dpe_instance::{DpeInstance, Support};
+use dpe::response::DpeErrorCode;
+use dpe::DPE_PROFILE_P256_SHA256;
 use std::fs;
 use std::io::Read;
 use std::mem;
@@ -50,7 +53,7 @@ fn main() -> std::io::Result<()> {
     })
     .unwrap();
 
-    let mut dpe = DpeInstance::new(Support::default());
+    let mut dpe = DpeInstance::new(Support::default(), &OpensslCrypto);
 
     println!("DPE listening to socket {SOCKET_PATH}");
 
@@ -68,4 +71,23 @@ fn main() -> std::io::Result<()> {
     }
 
     Ok(())
+}
+
+struct OpensslCrypto;
+
+impl Crypto for OpensslCrypto {
+    fn rand_bytes(&self, dst: &mut [u8]) -> Result<(), DpeErrorCode> {
+        openssl::rand::rand_bytes(dst).map_err(|_| DpeErrorCode::InternalError)
+    }
+
+    fn _hash(&self, profile: u32, bytes: &[u8], digest: &mut [u8]) -> Result<(), DpeErrorCode> {
+        use openssl::hash::{hash, MessageDigest};
+        let alg = if profile == DPE_PROFILE_P256_SHA256 {
+            MessageDigest::sha256()
+        } else {
+            MessageDigest::sha384()
+        };
+        digest.copy_from_slice(&hash(alg, bytes).map_err(|_| DpeErrorCode::InternalError)?);
+        Ok(())
+    }
 }
