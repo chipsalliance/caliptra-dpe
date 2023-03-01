@@ -3,17 +3,16 @@
 //! DPE requires encoding variable-length certificates. This module provides
 //! this functionality for a no_std environment.
 
-use crate::profile;
-use crate::response::DpeErrorCode;
+use crate::{response::DpeErrorCode, DPE_PROFILE};
 
 pub struct EcdsaSignature {
-    r: [u8; profile::ECC_INT_SIZE],
-    s: [u8; profile::ECC_INT_SIZE],
+    r: [u8; DPE_PROFILE.get_ecc_int_size()],
+    s: [u8; DPE_PROFILE.get_ecc_int_size()],
 }
 
 pub struct EcdsaPub {
-    x: [u8; profile::ECC_INT_SIZE],
-    y: [u8; profile::ECC_INT_SIZE],
+    x: [u8; DPE_PROFILE.get_ecc_int_size()],
+    y: [u8; DPE_PROFILE.get_ecc_int_size()],
 }
 
 /// Calculate the number of bytes the ASN.1 size field will be

@@ -4,7 +4,7 @@ Abstract:
     Generic trait definition of Cryptographic functions.
 --*/
 
-use crate::response::DpeErrorCode;
+use crate::{response::DpeErrorCode, DpeProfile};
 
 pub trait Crypto {
     /// Fills the buffer with random values.
@@ -22,7 +22,7 @@ pub trait Crypto {
     ///   use.
     /// * `bytes` - Value to be hashed.
     /// * `digest` - Where the computed digest should be written.
-    fn _hash(profile: u32, bytes: &[u8], digest: &mut [u8]) -> Result<(), DpeErrorCode>;
+    fn _hash(profile: DpeProfile, bytes: &[u8], digest: &mut [u8]) -> Result<(), DpeErrorCode>;
 }
 
 #[cfg(test)]
@@ -41,7 +41,11 @@ pub mod tests {
             Ok(())
         }
 
-        fn _hash(_profile: u32, _bytes: &[u8], _digest: &mut [u8]) -> Result<(), DpeErrorCode> {
+        fn _hash(
+            _profile: DpeProfile,
+            _bytes: &[u8],
+            _digest: &mut [u8],
+        ) -> Result<(), DpeErrorCode> {
             todo!()
         }
     }

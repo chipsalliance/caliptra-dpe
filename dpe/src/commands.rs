@@ -4,7 +4,7 @@ Licensed under the Apache-2.0 license.
 Abstract:
     DPE Commands and deserialization.
 --*/
-use crate::response::DpeErrorCode;
+use crate::{response::DpeErrorCode, DPE_PROFILE};
 use core::mem::size_of;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -79,9 +79,7 @@ impl TryFrom<&[u8]> for CommandHdr {
             cmd_id: u32::from_le_bytes(raw[4..8].try_into().unwrap()),
             profile: u32::from_le_bytes(raw[8..12].try_into().unwrap()),
         };
-        if header.magic != Self::DPE_COMMAND_MAGIC
-            || header.profile != crate::profile::DPE_PROFILE_CONSTANT
-        {
+        if header.magic != Self::DPE_COMMAND_MAGIC || header.profile != DPE_PROFILE as u32 {
             return Err(DpeErrorCode::InvalidCommand);
         }
         Ok(header)
@@ -110,14 +108,14 @@ impl TryFrom<&[u8]> for InitCtxCmd {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::profile::DPE_PROFILE_CONSTANT;
+    use crate::DpeProfile;
     use std::vec;
     use std::vec::Vec;
 
     const DEFAULT_COMMAND: CommandHdr = CommandHdr {
         magic: CommandHdr::DPE_COMMAND_MAGIC,
         cmd_id: Command::GET_PROFILE,
-        profile: DPE_PROFILE_CONSTANT,
+        profile: DPE_PROFILE as u32,
     };
 
     #[test]
@@ -229,9 +227,9 @@ mod tests {
 
         // Test wrong profile.
         #[cfg(feature = "dpe_profile_p256_sha256")]
-        let wrong_profile = crate::DPE_PROFILE_P384_SHA384;
+        let wrong_profile = DpeProfile::P384Sha384 as u32;
         #[cfg(feature = "dpe_profile_p384_sha384")]
-        let wrong_profile = crate::DPE_PROFILE_P256_SHA256;
+        let wrong_profile = DpeProfile::P256Sha256 as u32;
 
         assert_eq!(
             invalid_command,
@@ -300,7 +298,7 @@ mod tests {
             CommandHdr {
                 magic: Self::DPE_COMMAND_MAGIC,
                 cmd_id,
-                profile: crate::profile::DPE_PROFILE_CONSTANT,
+                profile: DPE_PROFILE as u32,
             }
         }
     }
