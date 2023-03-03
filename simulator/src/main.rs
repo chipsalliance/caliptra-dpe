@@ -76,11 +76,11 @@ fn main() -> std::io::Result<()> {
 struct OpensslCrypto;
 
 impl Crypto for OpensslCrypto {
-    fn rand_bytes(&self, dst: &mut [u8]) -> Result<(), DpeErrorCode> {
+    fn rand_bytes(dst: &mut [u8]) -> Result<(), DpeErrorCode> {
         openssl::rand::rand_bytes(dst).map_err(|_| DpeErrorCode::InternalError)
     }
 
-    fn _hash(&self, profile: u32, bytes: &[u8], digest: &mut [u8]) -> Result<(), DpeErrorCode> {
+    fn _hash(profile: u32, bytes: &[u8], digest: &mut [u8]) -> Result<(), DpeErrorCode> {
         use openssl::hash::{hash, MessageDigest};
         let alg = if profile == DPE_PROFILE_P256_SHA256 {
             MessageDigest::sha256()
