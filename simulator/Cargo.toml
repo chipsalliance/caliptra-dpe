@@ -8,4 +8,5 @@ edition = "2021"
 [dependencies]
 ctrlc = { version = "3.0", features = ["termination"] }
 openssl = "0.10"
+clap = { version = "4.1.8", features = ["derive"] }
 dpe = { path = "../dpe" }
