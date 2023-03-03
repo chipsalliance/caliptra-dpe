@@ -35,7 +35,7 @@ impl DpeInstance<'_> {
     pub fn initialize_context(&mut self, _cmd: &InitCtxCmd) -> Result<InitCtxResp, DpeErrorCode> {
         let mut handle = [0u8; HANDLE_SIZE];
         // The first 4 bytes will be populated when this command is finished.
-        self.crypto.rand_bytes(&mut handle[4..])?;
+        self.crypto::rand_bytes(&mut handle[4..])?;
         Ok(InitCtxResp { handle })
     }
 

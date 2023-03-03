@@ -12,7 +12,7 @@ pub trait Crypto {
     /// # Arguments
     ///
     /// * `dst` - The buffer to be filled.
-    fn rand_bytes(&self, dst: &mut [u8]) -> Result<(), DpeErrorCode>;
+    fn rand_bytes(dst: &mut [u8]) -> Result<(), DpeErrorCode>;
 
     /// Cryptographically hashes the given buffer.
     ///
@@ -22,7 +22,7 @@ pub trait Crypto {
     ///   use.
     /// * `bytes` - Value to be hashed.
     /// * `digest` - Where the computed digest should be written.
-    fn _hash(&self, profile: u32, bytes: &[u8], digest: &mut [u8]) -> Result<(), DpeErrorCode>;
+    fn _hash(profile: u32, bytes: &[u8], digest: &mut [u8]) -> Result<(), DpeErrorCode>;
 }
 
 #[cfg(test)]
@@ -34,19 +34,14 @@ pub mod tests {
 
     impl Crypto for DeterministicCrypto {
         /// Uses incrementing values for each byte.
-        fn rand_bytes(&self, dst: &mut [u8]) -> Result<(), DpeErrorCode> {
+        fn rand_bytes(dst: &mut [u8]) -> Result<(), DpeErrorCode> {
             for (i, char) in dst.iter_mut().enumerate() {
                 *char = (i + 1) as u8;
             }
             Ok(())
         }
 
-        fn _hash(
-            &self,
-            _profile: u32,
-            _bytes: &[u8],
-            _digest: &mut [u8],
-        ) -> Result<(), DpeErrorCode> {
+        fn _hash(_profile: u32, _bytes: &[u8], _digest: &mut [u8]) -> Result<(), DpeErrorCode> {
             todo!()
         }
     }
