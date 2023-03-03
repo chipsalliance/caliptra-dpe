@@ -8,7 +8,7 @@ use crate::{
     commands::{Command, InitCtxCmd},
     crypto::Crypto,
     response::{DpeErrorCode, GetProfileResp, InitCtxResp, Response},
-    DPE_PROFILE, HANDLE_SIZE, MAX_HANDLES,
+    set_flag, DPE_PROFILE, HANDLE_SIZE, MAX_HANDLES,
 };
 
 pub struct DpeInstance {
@@ -17,12 +17,20 @@ pub struct DpeInstance {
 }
 
 impl DpeInstance {
-    pub fn new(support: Support) -> DpeInstance {
+    const DEFAULT_CONTEXT_HANDLE: [u8; HANDLE_SIZE] = [0; HANDLE_SIZE];
+
+    pub fn new<C: Crypto>(support: Support) -> DpeInstance {
         const CONTEXT_INITIALIZER: Context = Context::new();
-        DpeInstance {
+        let mut dpe = DpeInstance {
             contexts: [CONTEXT_INITIALIZER; MAX_HANDLES],
             support,
+        };
+
+        if dpe.support.auto_init {
+            dpe.initialize_context::<C>(&InitCtxCmd::new_use_default())
+                .unwrap();
         }
+        dpe
     }
 
     pub fn get_profile(&self) -> Result<GetProfileResp, DpeErrorCode> {
@@ -31,11 +39,34 @@ impl DpeInstance {
 
     pub fn initialize_context<C: Crypto>(
         &mut self,
-        _cmd: &InitCtxCmd,
+        cmd: &InitCtxCmd,
     ) -> Result<InitCtxResp, DpeErrorCode> {
-        let mut handle = [0u8; HANDLE_SIZE];
-        // The first 4 bytes will be populated when this command is finished.
-        C::rand_bytes(&mut handle[4..])?;
+        if (cmd.flag_is_default() && self.get_default_context().is_some())
+            || (cmd.flag_is_simulation() && !self.support.simulation)
+        {
+            return Err(DpeErrorCode::ArgumentNotSupported);
+        }
+
+        // A flag must be set, but it can't be both flags. The base DPE CDI is locked for
+        // non-simulation contexts once it is used once to prevent later software from accessing the
+        // CDI.
+        if !(cmd.flag_is_default() ^ cmd.flag_is_simulation()) {
+            return Err(DpeErrorCode::InvalidArgument);
+        }
+
+        let context = self
+            .get_next_inactive_context_mut()
+            .ok_or(DpeErrorCode::MaxTcis)?;
+        let handle = if cmd.flag_is_default() {
+            Self::DEFAULT_CONTEXT_HANDLE
+        } else {
+            // Simulation.
+            let mut handle = [0; HANDLE_SIZE];
+            C::rand_bytes(&mut handle)?;
+            handle
+        };
+
+        context.activate(&handle, cmd.flag_is_simulation());
         Ok(InitCtxResp { handle })
     }
 
@@ -55,6 +86,19 @@ impl DpeInstance {
                 Ok(Response::InitCtx(self.initialize_context::<C>(&context)?))
             }
         }
+    }
+
+    fn get_next_inactive_context_mut(&mut self) -> Option<&mut Context> {
+        self.contexts
+            .iter_mut()
+            .find(|context| context.state == ContextState::Inactive)
+    }
+
+    fn get_default_context(&mut self) -> Option<&mut Context> {
+        self.contexts.iter_mut().find(|context| {
+            matches!(context.state, ContextState::Active | ContextState::_Locked)
+                && context.handle == Self::DEFAULT_CONTEXT_HANDLE
+        })
     }
 }
 
@@ -137,31 +181,50 @@ impl TciNodeData {
     }
 }
 
+#[derive(Debug, PartialEq, Eq)]
+enum ContextState {
+    /// Inactive or uninitialized.
+    Inactive,
+    /// Context is initialized and ready to be used.
+    Active,
+    /// Only used for the default context. If the default context gets destroyed it cannot be
+    /// re-initialized.
+    _Locked,
+}
+
 #[repr(C, align(4))]
 struct Context {
+    handle: [u8; HANDLE_SIZE],
     tci: TciNodeData,
     // Bitmap of the node indices that are children of this node
     children: u32,
     // Index in DPE instance of the parent context. 0xFF if this node is the root
     parent_idx: u8,
     simulation: bool,
-    is_active: bool,
+    state: ContextState,
 }
 
 impl Context {
+    pub const ROOT_INDEX: u8 = 0xff;
+
     const fn new() -> Context {
         Context {
+            handle: [0; HANDLE_SIZE],
             tci: TciNodeData::new(),
             children: 0,
-            parent_idx: 0xFF,
+            parent_idx: Self::ROOT_INDEX,
             simulation: false,
-            is_active: false,
+            state: ContextState::Inactive,
         }
     }
-}
-
-fn set_flag(field: &mut u32, mask: u32, value: bool) {
-    *field = if value { *field | mask } else { *field & !mask };
+    pub fn activate(&mut self, handle: &[u8; HANDLE_SIZE], is_simulation: bool) {
+        self.handle.copy_from_slice(handle);
+        self.tci = TciNodeData::new();
+        self.children = 0;
+        self.parent_idx = Self::ROOT_INDEX;
+        self.simulation = is_simulation;
+        self.state = ContextState::Active;
+    }
 }
 
 #[cfg(test)]
@@ -171,27 +234,38 @@ mod tests {
         commands::CommandHdr, crypto::tests::DeterministicCrypto, CURRENT_PROFILE_VERSION,
     };
 
+    const SUPPORT: Support = Support {
+        simulation: true,
+        extend_tci: false,
+        auto_init: true,
+        tagging: false,
+        rotate_context: false,
+    };
+    const SIMULATION_HANDLE: [u8; HANDLE_SIZE] =
+        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+
     #[test]
     fn test_execute_serialized_command() {
-        let mut dpe = DpeInstance::new(Support::default());
+        let mut dpe = DpeInstance::new::<DeterministicCrypto>(SUPPORT);
 
         assert_eq!(
-            Response::GetProfile(GetProfileResp::new(0)),
+            Response::GetProfile(GetProfileResp::new(SUPPORT.get_flags())),
             dpe.execute_serialized_command::<DeterministicCrypto>(&Vec::<u8>::from(
                 CommandHdr::new(Command::GetProfile)
             ))
             .unwrap()
         );
 
-        // Using random flags to check endianness and consistency.
-        const GOOD_CONTEXT: InitCtxCmd = InitCtxCmd { flags: 0x1234_5678 };
-        let mut command = Vec::<u8>::from(CommandHdr::new(Command::InitCtx(GOOD_CONTEXT)));
+        // The default context was initialized while creating the instance. Now lets create a
+        // simulation context.
+        let mut command = Vec::<u8>::from(CommandHdr::new(Command::InitCtx(
+            InitCtxCmd::new_simulation(),
+        )));
 
-        command.extend(Vec::<u8>::from(GOOD_CONTEXT));
+        command.extend(Vec::<u8>::from(InitCtxCmd::new_simulation()));
         assert_eq!(
             Response::InitCtx(InitCtxResp {
-                // The first 4 bytes will be populated when this command is finished.
-                handle: [0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+                handle: SIMULATION_HANDLE
             }),
             dpe.execute_serialized_command::<DeterministicCrypto>(&command)
                 .unwrap()
@@ -200,13 +274,88 @@ mod tests {
 
     #[test]
     fn test_get_profile() {
-        let dpe = DpeInstance::new(Support {
+        let dpe = DpeInstance::new::<DeterministicCrypto>(SUPPORT);
+        let profile = dpe.get_profile().unwrap();
+        assert_eq!(profile.version, CURRENT_PROFILE_VERSION);
+        assert_eq!(profile.flags, SUPPORT.get_flags());
+    }
+
+    #[test]
+    fn test_initialize_context() {
+        let mut dpe = DpeInstance::new::<DeterministicCrypto>(Support::default());
+
+        // Make sure default context is 0x0.
+        assert_eq!(
+            DpeInstance::DEFAULT_CONTEXT_HANDLE,
+            dpe.initialize_context::<DeterministicCrypto>(&InitCtxCmd::new_use_default())
+                .unwrap()
+                .handle
+        );
+
+        // Try to double initialize the default context.
+        assert_eq!(
+            DpeErrorCode::ArgumentNotSupported,
+            dpe.initialize_context::<DeterministicCrypto>(&InitCtxCmd::new_use_default())
+                .err()
+                .unwrap()
+        );
+
+        // Try to initialize locked default context.
+        dpe.get_default_context().unwrap().state = ContextState::_Locked;
+        assert_eq!(
+            DpeErrorCode::ArgumentNotSupported,
+            dpe.initialize_context::<DeterministicCrypto>(&InitCtxCmd::new_use_default())
+                .err()
+                .unwrap()
+        );
+
+        // Try not setting any flags.
+        assert_eq!(
+            DpeErrorCode::InvalidArgument,
+            dpe.initialize_context::<DeterministicCrypto>(&InitCtxCmd { flags: 0 })
+                .err()
+                .unwrap()
+        );
+
+        // Try simulation when not supported.
+        assert_eq!(
+            DpeErrorCode::ArgumentNotSupported,
+            dpe.initialize_context::<DeterministicCrypto>(&InitCtxCmd::new_simulation())
+                .err()
+                .unwrap()
+        );
+
+        // Change to support simulation.
+        let mut dpe = DpeInstance::new::<DeterministicCrypto>(Support {
             simulation: true,
             ..Support::default()
         });
-        let profile = dpe.get_profile().unwrap();
-        assert_eq!(profile.version, CURRENT_PROFILE_VERSION);
-        assert_eq!(profile.flags, 1 << 31);
+
+        // Try setting both flags.
+        assert_eq!(
+            DpeErrorCode::InvalidArgument,
+            dpe.initialize_context::<DeterministicCrypto>(&InitCtxCmd { flags: 3 << 30 })
+                .err()
+                .unwrap()
+        );
+
+        // Initialize all of the contexts except the default.
+        for _ in 0..MAX_HANDLES {
+            assert_eq!(
+                SIMULATION_HANDLE,
+                dpe.initialize_context::<DeterministicCrypto>(&InitCtxCmd::new_simulation())
+                    .unwrap()
+                    .handle
+            );
+        }
+
+        // Try to initilize one more.
+        assert_eq!(
+            DpeErrorCode::MaxTcis,
+            dpe.initialize_context::<DeterministicCrypto>(&InitCtxCmd::new_simulation())
+                .err()
+                .unwrap()
+        );
     }
 
     #[test]

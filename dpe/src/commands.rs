@@ -92,6 +92,32 @@ pub struct InitCtxCmd {
     pub flags: u32,
 }
 
+impl InitCtxCmd {
+    const SIMULATION_FLAG_MASK: u32 = 1 << 31;
+    const DEFAULT_FLAG_MASK: u32 = 1 << 30;
+
+    pub const fn new_use_default() -> InitCtxCmd {
+        InitCtxCmd {
+            flags: Self::DEFAULT_FLAG_MASK,
+        }
+    }
+
+    pub const fn flag_is_simulation(&self) -> bool {
+        self.flags & Self::SIMULATION_FLAG_MASK != 0
+    }
+
+    pub const fn flag_is_default(&self) -> bool {
+        self.flags & Self::DEFAULT_FLAG_MASK != 0
+    }
+
+    #[cfg(test)]
+    pub const fn new_simulation() -> InitCtxCmd {
+        InitCtxCmd {
+            flags: Self::SIMULATION_FLAG_MASK,
+        }
+    }
+}
+
 impl TryFrom<&[u8]> for InitCtxCmd {
     type Error = DpeErrorCode;
 

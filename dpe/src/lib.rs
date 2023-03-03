@@ -15,7 +15,7 @@ pub mod response;
 mod x509;
 
 const MAX_HANDLES: usize = 24;
-const HANDLE_SIZE: usize = 20;
+const HANDLE_SIZE: usize = 16;
 const CURRENT_PROFILE_VERSION: u32 = 0;
 
 pub enum DpeProfile {
@@ -61,4 +61,8 @@ pub fn execute_command<C: Crypto>(
         }
         Err(error_code) => Ok(ResponseHdr::new(error_code).serialize(response)?),
     }
+}
+
+fn set_flag(field: &mut u32, mask: u32, value: bool) {
+    *field = if value { *field | mask } else { *field & !mask };
 }
