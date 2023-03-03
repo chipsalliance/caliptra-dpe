@@ -12,19 +12,17 @@ use crate::{
     HANDLE_SIZE, MAX_HANDLES,
 };
 
-pub struct DpeInstance<'a> {
+pub struct DpeInstance {
     contexts: [Context; MAX_HANDLES],
     support: Support,
-    crypto: &'a dyn Crypto,
 }
 
-impl DpeInstance<'_> {
-    pub fn new(support: Support, crypto: &dyn Crypto) -> DpeInstance {
+impl DpeInstance {
+    pub fn new(support: Support) -> DpeInstance {
         const CONTEXT_INITIALIZER: Context = Context::new();
         DpeInstance {
             contexts: [CONTEXT_INITIALIZER; MAX_HANDLES],
             support,
-            crypto,
         }
     }
 
@@ -32,10 +30,13 @@ impl DpeInstance<'_> {
         Ok(GetProfileResp::new(self.support.get_flags()))
     }
 
-    pub fn initialize_context(&mut self, _cmd: &InitCtxCmd) -> Result<InitCtxResp, DpeErrorCode> {
+    pub fn initialize_context<C: Crypto>(
+        &mut self,
+        _cmd: &InitCtxCmd,
+    ) -> Result<InitCtxResp, DpeErrorCode> {
         let mut handle = [0u8; HANDLE_SIZE];
         // The first 4 bytes will be populated when this command is finished.
-        self.crypto::rand_bytes(&mut handle[4..])?;
+        C::rand_bytes(&mut handle[4..])?;
         Ok(InitCtxResp { handle })
     }
 
@@ -44,11 +45,16 @@ impl DpeInstance<'_> {
     /// # Arguments
     ///
     /// * `cmd` - serialized command
-    pub fn execute_serialized_command(&mut self, cmd: &[u8]) -> Result<Response, DpeErrorCode> {
+    pub fn execute_serialized_command<C: Crypto>(
+        &mut self,
+        cmd: &[u8],
+    ) -> Result<Response, DpeErrorCode> {
         let command = Command::deserialize(cmd)?;
         match command {
             Command::GetProfile => Ok(Response::GetProfile(self.get_profile()?)),
-            Command::InitCtx(context) => Ok(Response::InitCtx(self.initialize_context(&context)?)),
+            Command::InitCtx(context) => {
+                Ok(Response::InitCtx(self.initialize_context::<C>(&context)?))
+            }
         }
     }
 }
@@ -168,12 +174,14 @@ mod tests {
 
     #[test]
     fn test_execute_serialized_command() {
-        let mut dpe = DpeInstance::new(Support::default(), &DeterministicCrypto);
+        let mut dpe = DpeInstance::new(Support::default());
 
         assert_eq!(
             Response::GetProfile(GetProfileResp::new(0)),
-            dpe.execute_serialized_command(&Vec::<u8>::from(CommandHdr::new(Command::GetProfile)))
-                .unwrap()
+            dpe.execute_serialized_command::<DeterministicCrypto>(&Vec::<u8>::from(
+                CommandHdr::new(Command::GetProfile)
+            ))
+            .unwrap()
         );
 
         // Using random flags to check endianness and consistency.
@@ -186,19 +194,17 @@ mod tests {
                 // The first 4 bytes will be populated when this command is finished.
                 handle: [0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
             }),
-            dpe.execute_serialized_command(&command).unwrap()
+            dpe.execute_serialized_command::<DeterministicCrypto>(&command)
+                .unwrap()
         );
     }
 
     #[test]
     fn test_get_profile() {
-        let dpe = DpeInstance::new(
-            Support {
-                simulation: true,
-                ..Support::default()
-            },
-            &DeterministicCrypto,
-        );
+        let dpe = DpeInstance::new(Support {
+            simulation: true,
+            ..Support::default()
+        });
         let profile = dpe.get_profile().unwrap();
         assert_eq!(profile.version, CURRENT_PROFILE_VERSION);
         assert_eq!(profile.flags, 1 << 31);

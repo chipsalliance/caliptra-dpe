@@ -6,6 +6,7 @@ Abstract:
 --*/
 #![cfg_attr(not(test), no_std)]
 
+use crypto::Crypto;
 use response::{DpeErrorCode, ResponseHdr};
 pub mod commands;
 pub mod crypto;
@@ -39,12 +40,12 @@ mod profile {
 
 /// Execute a DPE command.
 /// Returns the number of bytes written to `response`.
-pub fn execute_command(
+pub fn execute_command<C: Crypto>(
     dpe: &mut dpe_instance::DpeInstance,
     cmd: &[u8],
     response: &mut [u8],
 ) -> Result<usize, DpeErrorCode> {
-    match dpe.execute_serialized_command(cmd) {
+    match dpe.execute_serialized_command::<C>(cmd) {
         Ok(response_data) => {
             // Add the response header.
             let header_len = ResponseHdr::new(DpeErrorCode::NoError).serialize(response)?;
