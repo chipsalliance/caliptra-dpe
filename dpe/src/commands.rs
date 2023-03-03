@@ -79,7 +79,12 @@ impl TryFrom<&[u8]> for CommandHdr {
             cmd_id: u32::from_le_bytes(raw[4..8].try_into().unwrap()),
             profile: u32::from_le_bytes(raw[8..12].try_into().unwrap()),
         };
-        if header.magic != Self::DPE_COMMAND_MAGIC || header.profile != DPE_PROFILE as u32 {
+        if header.magic != Self::DPE_COMMAND_MAGIC {
+            return Err(DpeErrorCode::InvalidCommand);
+        }
+        // The client doesn't know what profile is implemented when calling the `GetProfile`
+        // command. But, all other commands should be directed towards the correct profile.
+        if header.cmd_id != Command::GET_PROFILE && header.profile != DPE_PROFILE as u32 {
             return Err(DpeErrorCode::InvalidCommand);
         }
         Ok(header)
@@ -257,16 +262,28 @@ mod tests {
         #[cfg(feature = "dpe_profile_p384_sha384")]
         let wrong_profile = DpeProfile::P256Sha256 as u32;
 
+        // All commands should check the profile except GetProfile.
         assert_eq!(
             invalid_command,
             CommandHdr::try_from(
                 Vec::<u8>::from(CommandHdr {
                     profile: wrong_profile,
+                    cmd_id: Command::INITIALIZE_CONTEXT,
                     ..DEFAULT_COMMAND
                 })
                 .as_slice()
             )
         );
+
+        // Make sure GetProfile doesn't care.
+        assert!(CommandHdr::try_from(
+            Vec::<u8>::from(CommandHdr {
+                profile: wrong_profile,
+                ..DEFAULT_COMMAND
+            })
+            .as_slice()
+        )
+        .is_ok());
 
         // Test correct command. Using random command ID to check endianness and consistency.
         const GOOD_HEADER: CommandHdr = CommandHdr {

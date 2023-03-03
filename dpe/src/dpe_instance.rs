@@ -113,11 +113,11 @@ impl Default for TciMeasurement {
 
 #[derive(Default)]
 pub struct Support {
-    simulation: bool,
-    extend_tci: bool,
-    auto_init: bool,
-    tagging: bool,
-    rotate_context: bool,
+    pub simulation: bool,
+    pub extend_tci: bool,
+    pub auto_init: bool,
+    pub tagging: bool,
+    pub rotate_context: bool,
 }
 
 impl Support {
