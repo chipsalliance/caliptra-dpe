@@ -53,7 +53,7 @@ fn main() -> std::io::Result<()> {
     })
     .unwrap();
 
-    let mut dpe = DpeInstance::new(Support::default());
+    let mut dpe = DpeInstance::new::<OpensslCrypto>(Support::default());
 
     println!("DPE listening to socket {SOCKET_PATH}");
 

@@ -111,7 +111,11 @@ pub enum DpeErrorCode {
     InvalidCommand = 2,
     InvalidArgument = 3,
     ArgumentNotSupported = 4,
-    SessionExhausted = 5,
+    InvalidHandle = 0x1000,
+    InvalidDomain = 0x1001,
+    BadTag = 0x1002,
+    HandleDefined = 0x1003,
+    MaxTcis = 0x1004,
 }
 
 #[cfg(test)]
@@ -124,9 +128,7 @@ mod tests {
         version: CURRENT_PROFILE_VERSION,
         flags: TEST_FLAGS,
     };
-    const TEST_HANDLE: [u8; HANDLE_SIZE] = [
-        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
-    ];
+    const TEST_HANDLE: [u8; HANDLE_SIZE] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
     const DEFAULT_INIT_CTX_RESPONSE: InitCtxResp = InitCtxResp {
         handle: TEST_HANDLE,
     };
@@ -165,7 +167,11 @@ mod tests {
         test_error_code_serialize(DpeErrorCode::InvalidCommand);
         test_error_code_serialize(DpeErrorCode::InvalidArgument);
         test_error_code_serialize(DpeErrorCode::ArgumentNotSupported);
-        test_error_code_serialize(DpeErrorCode::SessionExhausted);
+        test_error_code_serialize(DpeErrorCode::InvalidHandle);
+        test_error_code_serialize(DpeErrorCode::InvalidDomain);
+        test_error_code_serialize(DpeErrorCode::BadTag);
+        test_error_code_serialize(DpeErrorCode::HandleDefined);
+        test_error_code_serialize(DpeErrorCode::MaxTcis);
     }
 
     #[test]
