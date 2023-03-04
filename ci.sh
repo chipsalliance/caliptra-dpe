@@ -22,3 +22,7 @@ export RUSTFLAGS='-A dead_code -A unused_variables'
   cargo fmt -- --check
   cargo clippy -- --deny=warnings
 )
+( cd verification
+  test -z "$(gofmt -l .)"
+  go test
+)
