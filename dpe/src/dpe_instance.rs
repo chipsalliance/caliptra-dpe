@@ -5,7 +5,7 @@ Abstract:
     Defines an instance of DPE and all of its contexts.
 --*/
 use crate::{
-    commands::{Command, InitCtxCmd},
+    commands::{Command, DestroyCtxCmd, InitCtxCmd},
     crypto::Crypto,
     response::{DpeErrorCode, GetProfileResp, InitCtxResp, Response},
     set_flag, DPE_PROFILE, HANDLE_SIZE, MAX_HANDLES,
@@ -57,17 +57,35 @@ impl DpeInstance {
         let context = self
             .get_next_inactive_context_mut()
             .ok_or(DpeErrorCode::MaxTcis)?;
-        let handle = if cmd.flag_is_default() {
-            Self::DEFAULT_CONTEXT_HANDLE
+        let (context_type, handle) = if cmd.flag_is_default() {
+            (ContextType::Default, Self::DEFAULT_CONTEXT_HANDLE)
         } else {
             // Simulation.
             let mut handle = [0; HANDLE_SIZE];
             C::rand_bytes(&mut handle)?;
-            handle
+            (ContextType::Simulation, handle)
         };
 
-        context.activate(&handle, cmd.flag_is_simulation());
+        context.activate(context_type, &handle);
         Ok(InitCtxResp { handle })
+    }
+
+    /// Destroy a context and optionally all of its descendants.
+    pub fn destroy_context(&mut self, cmd: &DestroyCtxCmd) -> Result<Response, DpeErrorCode> {
+        let (idx, context) = self
+            .get_active_context_index(&cmd.handle)
+            .ok_or(DpeErrorCode::InvalidHandle)?;
+
+        let to_destroy = if cmd.flag_is_destroy_descendants() {
+            (1 << idx) | self.get_descendants(context)?
+        } else {
+            1 << idx
+        };
+
+        for idx in flags_iter(to_destroy, MAX_HANDLES) {
+            self.contexts[idx].destroy();
+        }
+        Ok(Response::DestroyCtx)
     }
 
     /// Deserializes the command and executes it.
@@ -85,7 +103,15 @@ impl DpeInstance {
             Command::InitCtx(context) => {
                 Ok(Response::InitCtx(self.initialize_context::<C>(&context)?))
             }
+            Command::DestroyCtx(context) => self.destroy_context(&context),
         }
+    }
+
+    fn get_active_context_index(&self, handle: &[u8; HANDLE_SIZE]) -> Option<(usize, &Context)> {
+        self.contexts
+            .iter()
+            .enumerate()
+            .find(|(_, context)| context.state == ContextState::Active && &context.handle == handle)
     }
 
     fn get_next_inactive_context_mut(&mut self) -> Option<&mut Context> {
@@ -96,9 +122,23 @@ impl DpeInstance {
 
     fn get_default_context(&mut self) -> Option<&mut Context> {
         self.contexts.iter_mut().find(|context| {
-            matches!(context.state, ContextState::Active | ContextState::_Locked)
+            matches!(context.state, ContextState::Active | ContextState::Locked)
                 && context.handle == Self::DEFAULT_CONTEXT_HANDLE
         })
+    }
+
+    /// Recursive function that will return all of a context's descendants. Returns a u32 that is
+    /// a bitmap of the node indices.
+    fn get_descendants(&self, context: &Context) -> Result<u32, DpeErrorCode> {
+        if matches!(context.state, ContextState::Inactive | ContextState::Locked) {
+            return Err(DpeErrorCode::InvalidHandle);
+        }
+
+        let mut descendants = context.children;
+        for idx in flags_iter(context.children, MAX_HANDLES) {
+            descendants |= self.get_descendants(&self.contexts[idx])?;
+        }
+        Ok(descendants)
     }
 }
 
@@ -189,7 +229,18 @@ enum ContextState {
     Active,
     /// Only used for the default context. If the default context gets destroyed it cannot be
     /// re-initialized.
-    _Locked,
+    Locked,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum ContextType {
+    /// Typical context, has a randomized handle.
+    _Normal,
+    /// The default context. There can only be one default at any given time. Same as a `Normal`
+    /// context but with a known handle of `0x0`.
+    Default,
+    /// Has limitations on what operations can be done.
+    Simulation,
 }
 
 #[repr(C, align(4))]
@@ -200,7 +251,7 @@ struct Context {
     children: u32,
     // Index in DPE instance of the parent context. 0xFF if this node is the root
     parent_idx: u8,
-    simulation: bool,
+    context_type: ContextType,
     state: ContextState,
 }
 
@@ -213,22 +264,72 @@ impl Context {
             tci: TciNodeData::new(),
             children: 0,
             parent_idx: Self::ROOT_INDEX,
-            simulation: false,
+            context_type: ContextType::Default,
             state: ContextState::Inactive,
         }
     }
-    pub fn activate(&mut self, handle: &[u8; HANDLE_SIZE], is_simulation: bool) {
+
+    /// Resets all values to a freshly initialized state.
+    ///
+    /// # Arguments
+    ///
+    /// * `context_type` - Context type this will become.
+    /// * `handle` - Value that will be used to refer to the context. Random value for simulation
+    ///   contexts and 0x0 for the default context.
+    pub fn activate(&mut self, context_type: ContextType, handle: &[u8; HANDLE_SIZE]) {
         self.handle.copy_from_slice(handle);
         self.tci = TciNodeData::new();
         self.children = 0;
         self.parent_idx = Self::ROOT_INDEX;
-        self.simulation = is_simulation;
+        self.context_type = context_type;
         self.state = ContextState::Active;
+    }
+
+    /// Destroy this context so it can no longer be used until it is re-initialized. The default
+    /// context cannot be re-initialized.
+    pub fn destroy(&mut self) {
+        self.tci = TciNodeData::new();
+        self.state = match self.context_type {
+            // Once a default context is destroyed, it cannot be used until the next reset cycle.
+            ContextType::Default => ContextState::Locked,
+            ContextType::_Normal | ContextType::Simulation => ContextState::Inactive,
+        };
+    }
+}
+
+/// Iterate over all of the bits set to 1 in a u32. Each iteration returns the bit index 0 being the
+/// least significant.
+///
+/// # Arguments
+///
+/// * `flags` - bits to be iterated over
+/// * `max` - number of bits to be considered
+fn flags_iter(flags: u32, max: usize) -> FlagsIter {
+    assert!((1..=u32::BITS).contains(&(max as u32)));
+    FlagsIter {
+        flags: flags & (u32::MAX >> (u32::BITS - max as u32)),
+    }
+}
+
+struct FlagsIter {
+    flags: u32,
+}
+
+impl Iterator for FlagsIter {
+    type Item = usize;
+
+    fn next(&mut self) -> Option<usize> {
+        if self.flags == 0 {
+            return None;
+        }
+        let idx = self.flags.trailing_zeros() as usize;
+        self.flags &= !(1 << idx);
+        Some(idx)
     }
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use super::*;
     use crate::{
         commands::CommandHdr, crypto::tests::DeterministicCrypto, CURRENT_PROFILE_VERSION,
@@ -241,7 +342,7 @@ mod tests {
         tagging: false,
         rotate_context: false,
     };
-    const SIMULATION_HANDLE: [u8; HANDLE_SIZE] =
+    pub const SIMULATION_HANDLE: [u8; HANDLE_SIZE] =
         [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
 
     #[test]
@@ -301,7 +402,7 @@ mod tests {
         );
 
         // Try to initialize locked default context.
-        dpe.get_default_context().unwrap().state = ContextState::_Locked;
+        dpe.get_default_context().unwrap().state = ContextState::Locked;
         assert_eq!(
             DpeErrorCode::ArgumentNotSupported,
             dpe.initialize_context::<DeterministicCrypto>(&InitCtxCmd::new_use_default())
@@ -424,5 +525,86 @@ mod tests {
             flags,
             (1 << 31) | (1 << 30) | (1 << 29) | (1 << 28) | (1 << 27)
         );
+    }
+
+    #[test]
+    fn test_get_active_context_index() {
+        let mut dpe = DpeInstance::new::<DeterministicCrypto>(Support::default());
+        let expected_index = 7;
+        dpe.contexts[expected_index]
+            .handle
+            .copy_from_slice(&SIMULATION_HANDLE);
+
+        // Has not been activated.
+        assert!(dpe.get_active_context_index(&SIMULATION_HANDLE).is_none());
+
+        // Check if it is locked.
+        dpe.contexts[expected_index].state = ContextState::Locked;
+        assert!(dpe.get_active_context_index(&SIMULATION_HANDLE).is_none());
+
+        // Should find it now.
+        dpe.contexts[expected_index].state = ContextState::Active;
+        let (result_idx, result_context) =
+            dpe.get_active_context_index(&SIMULATION_HANDLE).unwrap();
+        assert_eq!(expected_index, result_idx);
+        assert_eq!(dpe.contexts[expected_index].handle, result_context.handle);
+    }
+
+    #[test]
+    fn test_get_descendants() {
+        let mut dpe = DpeInstance::new::<DeterministicCrypto>(Support::default());
+        let root = 7;
+        let child_1 = 3;
+        let child_1_1 = 0;
+        let child_1_2 = MAX_HANDLES - 1;
+        let child_1_2_1 = 1;
+        let child_1_3 = MAX_HANDLES - 2;
+
+        // Root isn't active.
+        assert_eq!(
+            dpe.get_descendants(&dpe.contexts[root]),
+            Err(DpeErrorCode::InvalidHandle)
+        );
+
+        // Root is locked.
+        dpe.contexts[root].state = ContextState::Locked;
+        assert_eq!(
+            dpe.get_descendants(&dpe.contexts[root]),
+            Err(DpeErrorCode::InvalidHandle)
+        );
+
+        // No children.
+        dpe.contexts[root].state = ContextState::Active;
+        assert_eq!(dpe.get_descendants(&dpe.contexts[root]).unwrap(), 0);
+
+        // Child not active.
+        dpe.contexts[root].children = 1 << child_1;
+        assert_eq!(
+            dpe.get_descendants(&dpe.contexts[root]),
+            Err(DpeErrorCode::InvalidHandle)
+        );
+
+        // One child.
+        dpe.contexts[child_1].state = ContextState::Active;
+        let mut children = dpe.contexts[root].children;
+        assert_eq!(children, dpe.get_descendants(&dpe.contexts[root]).unwrap());
+
+        // Add grandchildren.
+        dpe.contexts[child_1_1].state = ContextState::Active;
+        dpe.contexts[child_1_2].state = ContextState::Active;
+        dpe.contexts[child_1_3].state = ContextState::Active;
+        dpe.contexts[child_1].children = (1 << child_1_1) | (1 << child_1_2) | (1 << child_1_3);
+        children |= dpe.contexts[child_1].children;
+        assert_eq!(children, dpe.get_descendants(&dpe.contexts[root]).unwrap());
+
+        // Add great-grandchildren.
+        dpe.contexts[child_1_2_1].state = ContextState::Active;
+        dpe.contexts[child_1_2].children = 1 << child_1_2_1;
+        children |= dpe.contexts[child_1_2].children;
+        assert_eq!(
+            dpe.contexts[child_1_2].children,
+            dpe.get_descendants(&dpe.contexts[child_1_2]).unwrap()
+        );
+        assert_eq!(children, dpe.get_descendants(&dpe.contexts[root]).unwrap());
     }
 }

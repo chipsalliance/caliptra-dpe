@@ -11,6 +11,7 @@ use core::mem::size_of;
 pub enum Response {
     GetProfile(GetProfileResp),
     InitCtx(InitCtxResp),
+    DestroyCtx,
 }
 
 impl Response {
@@ -24,6 +25,7 @@ impl Response {
         match self {
             Response::GetProfile(response) => response.serialize(dst),
             Response::InitCtx(response) => response.serialize(dst),
+            Response::DestroyCtx => Ok(0),
         }
     }
 }

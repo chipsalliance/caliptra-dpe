@@ -589,7 +589,7 @@ impl X509CertWriter<'_> {
 #[cfg(test)]
 mod tests {
     use crate::x509::{EcdsaPub, EcdsaSignature, Name, X509CertWriter};
-    use crate::{DpeProfile, DPE_PROFILE};
+    use crate::DPE_PROFILE;
     use asn1;
     use x509_parser::certificate::X509CertificateParser;
     use x509_parser::nom::Parser;
