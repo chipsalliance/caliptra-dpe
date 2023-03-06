@@ -4,13 +4,14 @@ Licensed under the Apache-2.0 license.
 Abstract:
     DPE Commands and deserialization.
 --*/
-use crate::{response::DpeErrorCode, DPE_PROFILE};
+use crate::{response::DpeErrorCode, DPE_PROFILE, HANDLE_SIZE};
 use core::mem::size_of;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Command {
     GetProfile,
     InitCtx(InitCtxCmd),
+    DestroyCtx(DestroyCtxCmd),
 }
 
 impl Command {
@@ -42,7 +43,7 @@ impl Command {
             Command::CERTIFY_KEY => Err(DpeErrorCode::InvalidCommand),
             Command::SIGN => Err(DpeErrorCode::InvalidCommand),
             Command::ROTATE_CONTEXT_HANDLE => Err(DpeErrorCode::InvalidCommand),
-            Command::DESTROY_CONTEXT => Err(DpeErrorCode::InvalidCommand),
+            Command::DESTROY_CONTEXT => Ok(Command::DestroyCtx(DestroyCtxCmd::try_from(bytes)?)),
             Command::GET_CERTIFICATE_CHAIN => Err(DpeErrorCode::InvalidCommand),
             Command::EXTEND_TCI => Err(DpeErrorCode::InvalidCommand),
             Command::TAG_TCI => Err(DpeErrorCode::InvalidCommand),
@@ -136,9 +137,44 @@ impl TryFrom<&[u8]> for InitCtxCmd {
     }
 }
 
+#[repr(C)]
+#[derive(Debug, PartialEq, Eq)]
+pub struct DestroyCtxCmd {
+    pub handle: [u8; HANDLE_SIZE],
+    pub flags: u32,
+}
+
+impl DestroyCtxCmd {
+    const DESTROY_CHILDREN_FLAG_MASK: u32 = 1 << 31;
+
+    pub const fn flag_is_destroy_descendants(&self) -> bool {
+        self.flags & Self::DESTROY_CHILDREN_FLAG_MASK != 0
+    }
+}
+
+impl TryFrom<&[u8]> for DestroyCtxCmd {
+    type Error = DpeErrorCode;
+
+    fn try_from(raw: &[u8]) -> Result<Self, Self::Error> {
+        if raw.len() < size_of::<DestroyCtxCmd>() {
+            return Err(DpeErrorCode::InvalidArgument);
+        }
+
+        let mut handle = [0; HANDLE_SIZE];
+        handle.copy_from_slice(&raw[0..HANDLE_SIZE]);
+
+        let raw = &raw[HANDLE_SIZE..];
+        Ok(DestroyCtxCmd {
+            handle,
+            flags: u32::from_le_bytes(raw[0..4].try_into().unwrap()),
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dpe_instance::tests::SIMULATION_HANDLE;
     use crate::DpeProfile;
     use std::vec;
     use std::vec::Vec;
@@ -147,6 +183,11 @@ mod tests {
         magic: CommandHdr::DPE_COMMAND_MAGIC,
         cmd_id: Command::GET_PROFILE,
         profile: DPE_PROFILE as u32,
+    };
+    const TEST_INIT_CTX_CMD: InitCtxCmd = InitCtxCmd { flags: 0x1234_5678 };
+    const TEST_DESTROY_CTX_CMD: DestroyCtxCmd = DestroyCtxCmd {
+        handle: SIMULATION_HANDLE,
+        flags: 0x1234_5678,
     };
 
     #[test]
@@ -157,15 +198,27 @@ mod tests {
             Command::deserialize(&Vec::<u8>::from(CommandHdr::new(Command::GetProfile)))
         );
 
-        // Using random flags to check endianness and consistency.
-        const GOOD_CONTEXT: InitCtxCmd = InitCtxCmd { flags: 0x1234_5678 };
-        let mut command: Vec<u8> = Vec::<u8>::from(CommandHdr::new(Command::InitCtx(GOOD_CONTEXT)));
+        // InitCtx
+        {
+            let mut command: Vec<u8> =
+                Vec::<u8>::from(CommandHdr::new(Command::InitCtx(TEST_INIT_CTX_CMD)));
+            command.extend(Vec::<u8>::from(TEST_INIT_CTX_CMD));
+            assert_eq!(
+                Ok(Command::InitCtx(TEST_INIT_CTX_CMD)),
+                Command::deserialize(&command)
+            );
+        }
 
-        command.extend(Vec::<u8>::from(GOOD_CONTEXT));
-        assert_eq!(
-            Ok(Command::InitCtx(GOOD_CONTEXT)),
-            Command::deserialize(&command)
-        );
+        // DestroyCtx
+        {
+            let mut command: Vec<u8> =
+                Vec::<u8>::from(CommandHdr::new(Command::DestroyCtx(TEST_DESTROY_CTX_CMD)));
+            command.extend(Vec::<u8>::from(TEST_DESTROY_CTX_CMD));
+            assert_eq!(
+                Ok(Command::DestroyCtx(TEST_DESTROY_CTX_CMD)),
+                Command::deserialize(&command)
+            );
+        }
 
         // Commands that are not implemented.
         let invalid_command = Err(DpeErrorCode::InvalidCommand);
@@ -194,13 +247,6 @@ mod tests {
             invalid_command,
             Command::deserialize(&Vec::<u8>::from(CommandHdr {
                 cmd_id: Command::ROTATE_CONTEXT_HANDLE,
-                ..DEFAULT_COMMAND
-            }))
-        );
-        assert_eq!(
-            invalid_command,
-            Command::deserialize(&Vec::<u8>::from(CommandHdr {
-                cmd_id: Command::DESTROY_CONTEXT,
                 ..DEFAULT_COMMAND
             }))
         );
@@ -306,11 +352,26 @@ mod tests {
             InitCtxCmd::try_from([0u8; size_of::<InitCtxCmd>() - 1].as_slice())
         );
 
-        // Test correct command. Using random flags to check endianness and consistency.
-        const GOOD_CONTEXT: InitCtxCmd = InitCtxCmd { flags: 0x1234_5678 };
         assert_eq!(
-            GOOD_CONTEXT,
-            InitCtxCmd::try_from(Vec::<u8>::from(GOOD_CONTEXT).as_slice()).unwrap()
+            TEST_INIT_CTX_CMD,
+            InitCtxCmd::try_from(Vec::<u8>::from(TEST_INIT_CTX_CMD).as_slice()).unwrap()
+        );
+    }
+
+    #[test]
+    fn test_slice_to_destroy_ctx() {
+        let invalid_argument: Result<DestroyCtxCmd, DpeErrorCode> =
+            Err(DpeErrorCode::InvalidArgument);
+
+        // Test if too small.
+        assert_eq!(
+            invalid_argument,
+            DestroyCtxCmd::try_from([0u8; size_of::<DestroyCtxCmd>() - 1].as_slice())
+        );
+
+        assert_eq!(
+            TEST_DESTROY_CTX_CMD,
+            DestroyCtxCmd::try_from(Vec::<u8>::from(TEST_DESTROY_CTX_CMD).as_slice()).unwrap()
         );
     }
 
@@ -332,11 +393,21 @@ mod tests {
         }
     }
 
+    impl From<DestroyCtxCmd> for Vec<u8> {
+        fn from(value: DestroyCtxCmd) -> Self {
+            let mut raw = vec![];
+            raw.extend(value.handle);
+            raw.extend_from_slice(&value.flags.to_le_bytes());
+            raw
+        }
+    }
+
     impl CommandHdr {
         pub fn new(command: Command) -> CommandHdr {
             let cmd_id = match command {
                 Command::GetProfile => Command::GET_PROFILE,
                 Command::InitCtx(_) => Command::INITIALIZE_CONTEXT,
+                Command::DestroyCtx(_) => Command::DESTROY_CONTEXT,
             };
             CommandHdr {
                 magic: Self::DPE_COMMAND_MAGIC,
