@@ -40,6 +40,7 @@ type InitCtxResp struct {
 }
 
 type GetProfileResp struct {
-	Version uint32
-	Flags   uint32
+	Version     uint32
+	MaxTciNodes uint32
+	Flags       uint32
 }
