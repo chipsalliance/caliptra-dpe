@@ -4,7 +4,7 @@ Licensed under the Apache-2.0 license.
 Abstract:
     DPE reponses and serialization.
 --*/
-use crate::{CURRENT_PROFILE_VERSION, DPE_PROFILE, HANDLE_SIZE};
+use crate::{CURRENT_PROFILE_VERSION, DPE_PROFILE, HANDLE_SIZE, MAX_HANDLES};
 use core::mem::size_of;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -67,6 +67,7 @@ impl ResponseHdr {
 #[derive(Debug, PartialEq, Eq)]
 pub struct GetProfileResp {
     pub version: u32,
+    pub max_tci_nodes: u32,
     pub flags: u32,
 }
 
@@ -74,6 +75,7 @@ impl GetProfileResp {
     pub fn new(flags: u32) -> GetProfileResp {
         GetProfileResp {
             version: CURRENT_PROFILE_VERSION,
+            max_tci_nodes: MAX_HANDLES as u32,
             flags,
         }
     }
@@ -84,7 +86,8 @@ impl GetProfileResp {
         }
 
         dst[0..4].copy_from_slice(&self.version.to_le_bytes());
-        dst[4..8].copy_from_slice(&self.flags.to_le_bytes());
+        dst[4..8].copy_from_slice(&self.max_tci_nodes.to_le_bytes());
+        dst[8..12].copy_from_slice(&self.flags.to_le_bytes());
         Ok(8)
     }
 }
@@ -128,6 +131,7 @@ mod tests {
     const TEST_FLAGS: u32 = 0x7E57_B175;
     const DEFAULT_GET_PROFILE_RESPONSE: GetProfileResp = GetProfileResp {
         version: CURRENT_PROFILE_VERSION,
+        max_tci_nodes: MAX_HANDLES as u32,
         flags: TEST_FLAGS,
     };
     const TEST_HANDLE: [u8; HANDLE_SIZE] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
@@ -188,6 +192,7 @@ mod tests {
         // Test good case.
         let mut answer = vec![];
         answer.extend_from_slice(&CURRENT_PROFILE_VERSION.to_le_bytes());
+        answer.extend_from_slice(&(MAX_HANDLES as u32).to_le_bytes());
         answer.extend_from_slice(&TEST_FLAGS.to_le_bytes());
 
         let mut response_buffer = [0; size_of::<GetProfileResp>()];
