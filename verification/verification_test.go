@@ -14,14 +14,14 @@ const (
 var sim_exe = flag.String("sim", "../simulator/target/debug/simulator", "path to simulator executable")
 
 func TestGetProfile(t *testing.T) {
-	simulator := DpeSimulator{}
-	defer simulator.Terminate()
-	err := simulator.Start(*sim_exe)
+	simulator := DpeSimulator{exe_path: *sim_exe}
+	defer simulator.PowerOff()
+	err := simulator.PowerOn()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	client := DpeClient{transport: &SimulatorTransport{}}
+	client := DpeClient{transport: &simulator}
 	err, respHdr, _ := client.GetProfile(AUTO_INIT_LOCALITY)
 	if err != nil {
 		t.Fatal(err)
@@ -32,14 +32,14 @@ func TestGetProfile(t *testing.T) {
 }
 
 func TestInitializeContext(t *testing.T) {
-	simulator := DpeSimulator{}
-	defer simulator.Terminate()
-	err := simulator.Start(*sim_exe)
+	simulator := DpeSimulator{exe_path: *sim_exe}
+	defer simulator.PowerOff()
+	err := simulator.PowerOn()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	client := DpeClient{transport: &SimulatorTransport{}}
+	client := DpeClient{transport: &simulator}
 	err, respHdr, _ := client.GetProfile(AUTO_INIT_LOCALITY)
 	if err != nil {
 		t.Fatal(err)

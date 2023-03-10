@@ -7,8 +7,31 @@ import (
 	"fmt"
 )
 
+type Support struct {
+	Simulation    bool
+	ExtendTci     bool
+	AutoInit      bool
+	Tagging       bool
+	RotateContext bool
+}
+
+// An interface to define how to test and send messages to a DPE instance.
 type Transport interface {
+	// If power control is unavailable for the given device, return false from
+	// HasPowerControl and return an error from PowerOn and PowerOff. For devices
+	// that don't support power control but do have reset capability, return true
+	// from HasPowerControl leave PowerOn empty and execute the reset in PowerOff.
+	HasPowerControl() bool
+	// If supported, turns on the device or starts the emulator/simulator.
+	PowerOn() error
+	// If supported, turns of the device, stops the emulator/simulator, or resets.
+	PowerOff() error
+	// Send a command to the DPE instance.
 	SendCmd(buf []byte) (error, []byte)
+	// The Transport implementations are not expected to be able to set the values
+	// it supports, but this function is used by tests to know how to test the DPE
+	// instance.
+	GetSupport() Support
 }
 
 type DpeClient struct {

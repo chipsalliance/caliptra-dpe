@@ -14,61 +14,70 @@ const (
 )
 
 type DpeSimulator struct {
-	cmd                     *exec.Cmd
-	supports_simulation     bool
-	supports_extend_tci     bool
-	supports_auto_init      bool
-	supports_tagging        bool
-	supports_rotate_context bool
+	exe_path string
+	cmd      *exec.Cmd
+	supports Support
+	Transport
+}
+
+// Simulator can be started and stopped.
+func (s *DpeSimulator) HasPowerControl() bool {
+	return true
 }
 
 // Start the simulator.
-func (s *DpeSimulator) Start(exe_path string) error {
+func (s *DpeSimulator) PowerOn() error {
 	args := []string{}
-	if s.supports_simulation {
-		args = append(args, "--supports_simulation")
+	if s.supports.Simulation {
+		args = append(args, "--supports-simulation")
 	}
-	if s.supports_extend_tci {
-		args = append(args, "--supports_extend_tci")
+	if s.supports.ExtendTci {
+		args = append(args, "--supports-extend_tci")
 	}
-	if s.supports_auto_init {
-		args = append(args, "--supports_auto_init")
+	if s.supports.AutoInit {
+		args = append(args, "--supports-auto_init")
 	}
-	if s.supports_tagging {
-		args = append(args, "--supports_tagging")
+	if s.supports.Tagging {
+		args = append(args, "--supports-tagging")
 	}
-	if s.supports_rotate_context {
-		args = append(args, "--supports_rotate_context")
+	if s.supports.RotateContext {
+		args = append(args, "--supports-rotate_context")
 	}
 
-	s.cmd = exec.Command(exe_path, args...)
+	s.cmd = exec.Command(s.exe_path, args...)
 	s.cmd.Stdout = os.Stdout
 	err := s.cmd.Start()
 	if err != nil {
 		return err
 	}
-	if !s.waitForSimulator() {
+	if !s.waitForPower( /*on=*/ true) {
 		return errors.New("The simulator never started")
 	}
 	return nil
 }
 
-// Kill the terminator in a way that it can cleanup before closing.
-func (s *DpeSimulator) Terminate() error {
+// Kill the simulator in a way that it can cleanup before closing.
+func (s *DpeSimulator) PowerOff() error {
 	if s.cmd != nil {
-		return s.cmd.Process.Signal(syscall.SIGTERM)
+		err := s.cmd.Process.Signal(syscall.SIGTERM)
+		if err != nil {
+			return err
+		}
+		if !s.waitForPower( /*on=*/ false) {
+			return errors.New("The simulator never stopped")
+		}
 	}
 	return nil
 }
 
 // Wait for the simulator to come alive. Timeout at 15 seconds.
-func (s *DpeSimulator) waitForSimulator() bool {
+func (s *DpeSimulator) waitForPower(on bool) bool {
 	timeout_seconds := 15
 	checks_per_sec := 4
 
 	for i := 0; i < checks_per_sec*timeout_seconds; i++ {
 		// Check if the socket file has been created.
-		if fileExists(socketPath) {
+		if fileExists(socketPath) == on {
 			return true
 		}
 		time.Sleep(time.Duration(1000/checks_per_sec) * time.Millisecond)
@@ -84,11 +93,7 @@ func fileExists(filename string) bool {
 	return !info.IsDir()
 }
 
-type SimulatorTransport struct {
-	Transport
-}
-
-func (s *SimulatorTransport) SendCmd(buf []byte) (error, []byte) {
+func (s *DpeSimulator) SendCmd(buf []byte) (error, []byte) {
 	// Connect to DPE instance.
 	conn, err := net.Dial("unix", socketPath)
 	if err != nil {
@@ -114,4 +119,8 @@ func (s *SimulatorTransport) SendCmd(buf []byte) (error, []byte) {
 	}
 
 	return nil, buf
+}
+
+func (s *DpeSimulator) GetSupport() Support {
+	return s.supports
 }
