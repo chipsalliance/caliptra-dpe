@@ -16,7 +16,7 @@ type DpeClient struct {
 	profile   uint32
 }
 
-func (c *DpeClient) Initialize(cmd *InitCtxCmd) (error, InitCtxResp) {
+func (c *DpeClient) Initialize(cmd *InitCtxCmd) (error, RespHdr, InitCtxResp) {
 	hdr := CommandHdr{
 		magic:   CmdMagic,
 		cmd:     InitCtxCode,
@@ -29,7 +29,7 @@ func (c *DpeClient) Initialize(cmd *InitCtxCmd) (error, InitCtxResp) {
 
 	err, resp := c.transport.SendCmd(buf.Bytes())
 	if err != nil {
-		return err, InitCtxResp{}
+		return err, RespHdr{}, InitCtxResp{}
 	}
 
 	respHdr := RespHdr{}
@@ -37,17 +37,17 @@ func (c *DpeClient) Initialize(cmd *InitCtxCmd) (error, InitCtxResp) {
 
 	r := bytes.NewReader(resp)
 	binary.Read(r, binary.LittleEndian, &respHdr)
-	check_hdr_err := c.checkRespHdr(respHdr)
-	if check_hdr_err != nil {
-		return check_hdr_err, InitCtxResp{}
+	err = c.checkRespHdr(respHdr)
+	if err != nil {
+		return err, RespHdr{}, InitCtxResp{}
 	}
 
 	binary.Read(r, binary.LittleEndian, &respStruct)
 
-	return nil, respStruct
+	return nil, respHdr, respStruct
 }
 
-func (c *DpeClient) GetProfile() (error, GetProfileResp) {
+func (c *DpeClient) GetProfile() (error, RespHdr, GetProfileResp) {
 	hdr := CommandHdr{
 		magic: CmdMagic,
 		cmd:   GetProfileCode,
@@ -58,7 +58,7 @@ func (c *DpeClient) GetProfile() (error, GetProfileResp) {
 
 	err, resp := c.transport.SendCmd(buf.Bytes())
 	if err != nil {
-		return err, GetProfileResp{}
+		return err, RespHdr{}, GetProfileResp{}
 	}
 
 	respHdr := RespHdr{}
@@ -66,14 +66,17 @@ func (c *DpeClient) GetProfile() (error, GetProfileResp) {
 
 	r := bytes.NewReader(resp)
 	binary.Read(r, binary.LittleEndian, &respHdr)
-	check_hdr_err := c.checkRespHdr(respHdr)
-	if check_hdr_err != nil {
-		return check_hdr_err, GetProfileResp{}
+	err = c.checkRespHdr(respHdr)
+	if err != nil {
+		return err, RespHdr{}, GetProfileResp{}
 	}
 
 	binary.Read(r, binary.LittleEndian, &respStruct)
+	if respHdr.Status == 0 {
+		c.profile = respHdr.Profile
+	}
 
-	return nil, respStruct
+	return nil, respHdr, respStruct
 }
 
 // Check that the response header has all expected values and did not have any
@@ -82,12 +85,6 @@ func (c *DpeClient) checkRespHdr(hdr RespHdr) error {
 	if hdr.Magic != RespMagic {
 		fmt.Println(hdr)
 		return errors.New("Invalid response magic value.")
-	}
-	if hdr.Status != 0 {
-		return errors.New("Received an error status.")
-	}
-	if hdr.Profile != c.profile {
-		return errors.New("Incorrect profile value.")
 	}
 	return nil
 }

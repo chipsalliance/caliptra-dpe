@@ -16,10 +16,13 @@ func TestGetProfile(t *testing.T) {
 		log.Fatal(err)
 	}
 
-	client := DpeClient{transport: &SimulatorTransport{}, profile: DPE_PROFILE_P256_SHA256}
-	err, _ = client.GetProfile()
+	client := DpeClient{transport: &SimulatorTransport{}}
+	err, respHdr, _ := client.GetProfile()
 	if err != nil {
 		t.Fatal(err)
+	}
+	if respHdr.Status != DPE_STATUS_SUCCESS {
+		t.Fatal("Unable to get profile.")
 	}
 }
 
@@ -30,9 +33,21 @@ func TestInitializeContext(t *testing.T) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	client := DpeClient{transport: &SimulatorTransport{}, profile: DPE_PROFILE_P256_SHA256}
-	err, _ = client.Initialize(NewInitCtxIsDefault())
+
+	client := DpeClient{transport: &SimulatorTransport{}}
+	err, respHdr, _ := client.GetProfile()
 	if err != nil {
 		t.Fatal(err)
+	}
+	if respHdr.Status != DPE_STATUS_SUCCESS {
+		t.Fatal("Unable to get profile.")
+	}
+
+	err, respHdr, _ = client.Initialize(NewInitCtxIsDefault())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if respHdr.Status != 0 {
+		t.Fatal("Failed to initialize default context.")
 	}
 }
