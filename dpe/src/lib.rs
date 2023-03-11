@@ -36,6 +36,9 @@ impl DpeProfile {
     pub const fn get_ecc_int_size(&self) -> usize {
         self.get_tci_size()
     }
+    pub const fn get_hash_size(&self) -> usize {
+        self.get_tci_size()
+    }
 }
 
 #[cfg(feature = "dpe_profile_p256_sha256")]
