@@ -143,7 +143,7 @@ impl DpeInstance {
 }
 
 #[repr(transparent)]
-pub struct TciMeasurement([u8; DPE_PROFILE.get_tci_size()]);
+pub struct TciMeasurement(pub [u8; DPE_PROFILE.get_tci_size()]);
 
 impl Default for TciMeasurement {
     fn default() -> Self {
@@ -189,21 +189,21 @@ impl Support {
 
 #[repr(C, align(4))]
 #[derive(Default)]
-struct TciNodeData {
-    tci_type: u32,
+pub(crate) struct TciNodeData {
+    pub tci_type: u32,
 
     // Bits
     // 31: INTERNAL
     // 30-0: Reserved. Must be zero
     flags: u32,
-    tci_cumulative: TciMeasurement,
-    tci_current: TciMeasurement,
+    pub tci_cumulative: TciMeasurement,
+    pub tci_current: TciMeasurement,
 }
 
 impl TciNodeData {
     const INTERNAL_FLAG_MASK: u32 = 1 << 31;
 
-    const fn flag_is_internal(self) -> bool {
+    pub const fn flag_is_internal(&self) -> bool {
         self.flags & Self::INTERNAL_FLAG_MASK != 0
     }
 
@@ -211,7 +211,7 @@ impl TciNodeData {
         set_flag(&mut self.flags, Self::INTERNAL_FLAG_MASK, value);
     }
 
-    const fn new() -> TciNodeData {
+    pub const fn new() -> TciNodeData {
         TciNodeData {
             tci_type: 0,
             flags: 0,
