@@ -4,7 +4,7 @@ Licensed under the Apache-2.0 license.
 Abstract:
     DPE reponses and serialization.
 --*/
-use crate::{CURRENT_PROFILE_VERSION, DPE_PROFILE, HANDLE_SIZE, MAX_HANDLES};
+use crate::{bitmap::Bitmap, CURRENT_PROFILE_VERSION, DPE_PROFILE, HANDLE_SIZE, MAX_HANDLES};
 use core::mem::size_of;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -68,7 +68,7 @@ impl ResponseHdr {
 pub struct GetProfileResp {
     pub version: u32,
     pub max_tci_nodes: u32,
-    pub flags: u32,
+    pub flags: Bitmap,
 }
 
 impl GetProfileResp {
@@ -76,7 +76,7 @@ impl GetProfileResp {
         GetProfileResp {
             version: CURRENT_PROFILE_VERSION,
             max_tci_nodes: MAX_HANDLES as u32,
-            flags,
+            flags: flags.into(),
         }
     }
 
@@ -87,7 +87,7 @@ impl GetProfileResp {
 
         dst[0..4].copy_from_slice(&self.version.to_le_bytes());
         dst[4..8].copy_from_slice(&self.max_tci_nodes.to_le_bytes());
-        dst[8..12].copy_from_slice(&self.flags.to_le_bytes());
+        dst[8..12].copy_from_slice(&self.flags.get_all().to_le_bytes());
         Ok(8)
     }
 }
@@ -132,7 +132,7 @@ mod tests {
     const DEFAULT_GET_PROFILE_RESPONSE: GetProfileResp = GetProfileResp {
         version: CURRENT_PROFILE_VERSION,
         max_tci_nodes: MAX_HANDLES as u32,
-        flags: TEST_FLAGS,
+        flags: Bitmap::new_mask(TEST_FLAGS),
     };
     const TEST_HANDLE: [u8; HANDLE_SIZE] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
     const DEFAULT_INIT_CTX_RESPONSE: InitCtxResp = InitCtxResp {

@@ -4,7 +4,7 @@ Licensed under the Apache-2.0 license.
 Abstract:
     DPE Commands and deserialization.
 --*/
-use crate::{response::DpeErrorCode, DPE_PROFILE, HANDLE_SIZE};
+use crate::{bitmap::Bitmap, response::DpeErrorCode, DPE_PROFILE, HANDLE_SIZE};
 use core::mem::size_of;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -95,31 +95,31 @@ impl TryFrom<&[u8]> for CommandHdr {
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq)]
 pub struct InitCtxCmd {
-    pub flags: u32,
+    pub flags: Bitmap,
 }
 
 impl InitCtxCmd {
-    const SIMULATION_FLAG_MASK: u32 = 1 << 31;
-    const DEFAULT_FLAG_MASK: u32 = 1 << 30;
+    const SIMULATION_FLAG: usize = 31;
+    const DEFAULT_FLAG: usize = 30;
 
     pub const fn new_use_default() -> InitCtxCmd {
         InitCtxCmd {
-            flags: Self::DEFAULT_FLAG_MASK,
+            flags: Bitmap::flag(Self::DEFAULT_FLAG),
         }
     }
 
     pub const fn flag_is_simulation(&self) -> bool {
-        self.flags & Self::SIMULATION_FLAG_MASK != 0
+        self.flags.get(Self::SIMULATION_FLAG)
     }
 
     pub const fn flag_is_default(&self) -> bool {
-        self.flags & Self::DEFAULT_FLAG_MASK != 0
+        self.flags.get(Self::DEFAULT_FLAG)
     }
 
     #[cfg(test)]
     pub const fn new_simulation() -> InitCtxCmd {
         InitCtxCmd {
-            flags: Self::SIMULATION_FLAG_MASK,
+            flags: Bitmap::flag(Self::SIMULATION_FLAG),
         }
     }
 }
@@ -132,7 +132,7 @@ impl TryFrom<&[u8]> for InitCtxCmd {
             return Err(DpeErrorCode::InvalidArgument);
         }
         Ok(InitCtxCmd {
-            flags: u32::from_le_bytes(raw[0..4].try_into().unwrap()),
+            flags: u32::from_le_bytes(raw[0..4].try_into().unwrap()).into(),
         })
     }
 }
@@ -141,14 +141,14 @@ impl TryFrom<&[u8]> for InitCtxCmd {
 #[derive(Debug, PartialEq, Eq)]
 pub struct DestroyCtxCmd {
     pub handle: [u8; HANDLE_SIZE],
-    pub flags: u32,
+    pub flags: Bitmap,
 }
 
 impl DestroyCtxCmd {
-    const DESTROY_CHILDREN_FLAG_MASK: u32 = 1 << 31;
+    const DESTROY_CHILDREN_FLAG: usize = 31;
 
     pub const fn flag_is_destroy_descendants(&self) -> bool {
-        self.flags & Self::DESTROY_CHILDREN_FLAG_MASK != 0
+        self.flags.get(Self::DESTROY_CHILDREN_FLAG)
     }
 }
 
@@ -166,7 +166,7 @@ impl TryFrom<&[u8]> for DestroyCtxCmd {
         let raw = &raw[HANDLE_SIZE..];
         Ok(DestroyCtxCmd {
             handle,
-            flags: u32::from_le_bytes(raw[0..4].try_into().unwrap()),
+            flags: u32::from_le_bytes(raw[0..4].try_into().unwrap()).into(),
         })
     }
 }
@@ -184,10 +184,12 @@ mod tests {
         cmd_id: Command::GET_PROFILE,
         profile: DPE_PROFILE as u32,
     };
-    const TEST_INIT_CTX_CMD: InitCtxCmd = InitCtxCmd { flags: 0x1234_5678 };
+    const TEST_INIT_CTX_CMD: InitCtxCmd = InitCtxCmd {
+        flags: Bitmap::new_mask(0x1234_5678),
+    };
     const TEST_DESTROY_CTX_CMD: DestroyCtxCmd = DestroyCtxCmd {
         handle: SIMULATION_HANDLE,
-        flags: 0x1234_5678,
+        flags: Bitmap::new_mask(0x1234_5678),
     };
 
     #[test]
@@ -388,7 +390,7 @@ mod tests {
     impl From<InitCtxCmd> for Vec<u8> {
         fn from(value: InitCtxCmd) -> Self {
             let mut raw = vec![];
-            raw.extend_from_slice(&value.flags.to_le_bytes());
+            raw.extend_from_slice(&value.flags.get_all().to_le_bytes());
             raw
         }
     }
@@ -397,7 +399,7 @@ mod tests {
         fn from(value: DestroyCtxCmd) -> Self {
             let mut raw = vec![];
             raw.extend(value.handle);
-            raw.extend_from_slice(&value.flags.to_le_bytes());
+            raw.extend_from_slice(&value.flags.get_all().to_le_bytes());
             raw
         }
     }

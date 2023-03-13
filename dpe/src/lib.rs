@@ -8,6 +8,7 @@ Abstract:
 
 use crypto::Crypto;
 use response::{DpeErrorCode, ResponseHdr};
+pub mod bitmap;
 pub mod commands;
 pub mod crypto;
 pub mod dpe_instance;
@@ -64,8 +65,4 @@ pub fn execute_command<C: Crypto>(
         }
         Err(error_code) => Ok(ResponseHdr::new(error_code).serialize(response)?),
     }
-}
-
-fn _set_flag(field: &mut u32, mask: u32, value: bool) {
-    *field = if value { *field | mask } else { *field & !mask };
 }

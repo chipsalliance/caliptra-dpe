@@ -5,7 +5,7 @@ Abstract:
     Defines an instance of DPE and all of its contexts.
 --*/
 use crate::{
-    _set_flag,
+    bitmap::Bitmap,
     commands::{Command, DestroyCtxCmd, InitCtxCmd},
     crypto::Crypto,
     response::{DpeErrorCode, GetProfileResp, InitCtxResp, Response},
@@ -19,6 +19,7 @@ pub struct DpeInstance {
 
 impl DpeInstance {
     const DEFAULT_CONTEXT_HANDLE: [u8; HANDLE_SIZE] = [0; HANDLE_SIZE];
+    const CHILDREN_FLAGS_MASK: u32 = !(u32::MAX >> (u32::BITS - MAX_HANDLES as u32));
 
     pub fn new<C: Crypto>(support: Support) -> DpeInstance {
         const CONTEXT_INITIALIZER: Context = Context::new();
@@ -77,13 +78,13 @@ impl DpeInstance {
             .get_active_context_index(&cmd.handle)
             .ok_or(DpeErrorCode::InvalidHandle)?;
 
-        let to_destroy = if cmd.flag_is_destroy_descendants() {
-            (1 << idx) | self.get_descendants(context)?
+        let to_destroy: Bitmap = if cmd.flag_is_destroy_descendants() {
+            ((1 << idx) | self.get_descendants(context)?).into()
         } else {
-            1 << idx
+            (1 << idx).into()
         };
 
-        for idx in flags_iter(to_destroy, MAX_HANDLES) {
+        for idx in to_destroy.iter(Self::CHILDREN_FLAGS_MASK) {
             self.contexts[idx].destroy();
         }
         Ok(Response::DestroyCtx)
@@ -135,8 +136,8 @@ impl DpeInstance {
             return Err(DpeErrorCode::InvalidHandle);
         }
 
-        let mut descendants = context.children;
-        for idx in flags_iter(context.children, MAX_HANDLES) {
+        let mut descendants = context.children.get_all();
+        for idx in context.children.iter(Self::CHILDREN_FLAGS_MASK) {
             descendants |= self.get_descendants(&self.contexts[idx])?;
         }
         Ok(descendants)
@@ -196,26 +197,26 @@ pub(crate) struct TciNodeData {
     // Bits
     // 31: INTERNAL
     // 30-0: Reserved. Must be zero
-    flags: u32,
+    flags: Bitmap,
     pub tci_cumulative: TciMeasurement,
     pub tci_current: TciMeasurement,
 }
 
 impl TciNodeData {
-    const INTERNAL_FLAG_MASK: u32 = 1 << 31;
+    const INTERNAL_FLAG: usize = 31;
 
     pub const fn flag_is_internal(&self) -> bool {
-        self.flags & Self::INTERNAL_FLAG_MASK != 0
+        self.flags.get(Self::INTERNAL_FLAG)
     }
 
     fn _set_flag_is_internal(&mut self, value: bool) {
-        _set_flag(&mut self.flags, Self::INTERNAL_FLAG_MASK, value);
+        self.flags.set(Self::INTERNAL_FLAG, value);
     }
 
     pub const fn new() -> TciNodeData {
         TciNodeData {
             tci_type: 0,
-            flags: 0,
+            flags: Bitmap::const_default(),
             tci_cumulative: TciMeasurement([0; DPE_PROFILE.get_tci_size()]),
             tci_current: TciMeasurement([0; DPE_PROFILE.get_tci_size()]),
         }
@@ -249,7 +250,7 @@ struct Context {
     handle: [u8; HANDLE_SIZE],
     tci: TciNodeData,
     // Bitmap of the node indices that are children of this node
-    children: u32,
+    children: Bitmap,
     // Index in DPE instance of the parent context. 0xFF if this node is the root
     parent_idx: u8,
     context_type: ContextType,
@@ -263,7 +264,7 @@ impl Context {
         Context {
             handle: [0; HANDLE_SIZE],
             tci: TciNodeData::new(),
-            children: 0,
+            children: Bitmap::const_default(),
             parent_idx: Self::ROOT_INDEX,
             context_type: ContextType::Default,
             state: ContextState::Inactive,
@@ -280,7 +281,7 @@ impl Context {
     pub fn activate(&mut self, context_type: ContextType, handle: &[u8; HANDLE_SIZE]) {
         self.handle.copy_from_slice(handle);
         self.tci = TciNodeData::new();
-        self.children = 0;
+        self.children = Bitmap::default();
         self.parent_idx = Self::ROOT_INDEX;
         self.context_type = context_type;
         self.state = ContextState::Active;
@@ -295,37 +296,6 @@ impl Context {
             ContextType::Default => ContextState::Locked,
             ContextType::_Normal | ContextType::Simulation => ContextState::Inactive,
         };
-    }
-}
-
-/// Iterate over all of the bits set to 1 in a u32. Each iteration returns the bit index 0 being the
-/// least significant.
-///
-/// # Arguments
-///
-/// * `flags` - bits to be iterated over
-/// * `max` - number of bits to be considered
-fn flags_iter(flags: u32, max: usize) -> FlagsIter {
-    assert!((1..=u32::BITS).contains(&(max as u32)));
-    FlagsIter {
-        flags: flags & (u32::MAX >> (u32::BITS - max as u32)),
-    }
-}
-
-struct FlagsIter {
-    flags: u32,
-}
-
-impl Iterator for FlagsIter {
-    type Item = usize;
-
-    fn next(&mut self) -> Option<usize> {
-        if self.flags == 0 {
-            return None;
-        }
-        let idx = self.flags.trailing_zeros() as usize;
-        self.flags &= !(1 << idx);
-        Some(idx)
     }
 }
 
@@ -379,7 +349,7 @@ pub mod tests {
         let dpe = DpeInstance::new::<DeterministicCrypto>(SUPPORT);
         let profile = dpe.get_profile().unwrap();
         assert_eq!(profile.version, CURRENT_PROFILE_VERSION);
-        assert_eq!(profile.flags, SUPPORT.get_flags());
+        assert_eq!(profile.flags.get_all(), SUPPORT.get_flags());
     }
 
     #[test]
@@ -414,9 +384,11 @@ pub mod tests {
         // Try not setting any flags.
         assert_eq!(
             DpeErrorCode::InvalidArgument,
-            dpe.initialize_context::<DeterministicCrypto>(&InitCtxCmd { flags: 0 })
-                .err()
-                .unwrap()
+            dpe.initialize_context::<DeterministicCrypto>(&InitCtxCmd {
+                flags: Bitmap::default()
+            })
+            .err()
+            .unwrap()
         );
 
         // Try simulation when not supported.
@@ -436,9 +408,11 @@ pub mod tests {
         // Try setting both flags.
         assert_eq!(
             DpeErrorCode::InvalidArgument,
-            dpe.initialize_context::<DeterministicCrypto>(&InitCtxCmd { flags: 3 << 30 })
-                .err()
-                .unwrap()
+            dpe.initialize_context::<DeterministicCrypto>(&InitCtxCmd {
+                flags: (3 << 30).into()
+            })
+            .err()
+            .unwrap()
         );
 
         // Initialize all of the contexts except the default.
@@ -579,7 +553,7 @@ pub mod tests {
         assert_eq!(dpe.get_descendants(&dpe.contexts[root]).unwrap(), 0);
 
         // Child not active.
-        dpe.contexts[root].children = 1 << child_1;
+        dpe.contexts[root].children = Bitmap::flag(child_1);
         assert_eq!(
             dpe.get_descendants(&dpe.contexts[root]),
             Err(DpeErrorCode::InvalidHandle)
@@ -587,23 +561,24 @@ pub mod tests {
 
         // One child.
         dpe.contexts[child_1].state = ContextState::Active;
-        let mut children = dpe.contexts[root].children;
+        let mut children = dpe.contexts[root].children.get_all();
         assert_eq!(children, dpe.get_descendants(&dpe.contexts[root]).unwrap());
 
         // Add grandchildren.
         dpe.contexts[child_1_1].state = ContextState::Active;
         dpe.contexts[child_1_2].state = ContextState::Active;
         dpe.contexts[child_1_3].state = ContextState::Active;
-        dpe.contexts[child_1].children = (1 << child_1_1) | (1 << child_1_2) | (1 << child_1_3);
-        children |= dpe.contexts[child_1].children;
+        dpe.contexts[child_1].children =
+            ((1 << child_1_1) | (1 << child_1_2) | (1 << child_1_3)).into();
+        children |= dpe.contexts[child_1].children.get_all();
         assert_eq!(children, dpe.get_descendants(&dpe.contexts[root]).unwrap());
 
         // Add great-grandchildren.
         dpe.contexts[child_1_2_1].state = ContextState::Active;
-        dpe.contexts[child_1_2].children = 1 << child_1_2_1;
-        children |= dpe.contexts[child_1_2].children;
+        dpe.contexts[child_1_2].children = Bitmap::flag(child_1_2_1);
+        children |= dpe.contexts[child_1_2].children.get_all();
         assert_eq!(
-            dpe.contexts[child_1_2].children,
+            dpe.contexts[child_1_2].children.get_all(),
             dpe.get_descendants(&dpe.contexts[child_1_2]).unwrap()
         );
         assert_eq!(children, dpe.get_descendants(&dpe.contexts[root]).unwrap());
