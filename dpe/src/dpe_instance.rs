@@ -5,10 +5,11 @@ Abstract:
     Defines an instance of DPE and all of its contexts.
 --*/
 use crate::{
+    _set_flag,
     commands::{Command, DestroyCtxCmd, InitCtxCmd},
     crypto::Crypto,
     response::{DpeErrorCode, GetProfileResp, InitCtxResp, Response},
-    set_flag, DPE_PROFILE, HANDLE_SIZE, MAX_HANDLES,
+    DPE_PROFILE, HANDLE_SIZE, MAX_HANDLES,
 };
 
 pub struct DpeInstance {
@@ -207,8 +208,8 @@ impl TciNodeData {
         self.flags & Self::INTERNAL_FLAG_MASK != 0
     }
 
-    fn set_flag_is_internal(&mut self, value: bool) {
-        set_flag(&mut self.flags, Self::INTERNAL_FLAG_MASK, value);
+    fn _set_flag_is_internal(&mut self, value: bool) {
+        _set_flag(&mut self.flags, Self::INTERNAL_FLAG_MASK, value);
     }
 
     pub const fn new() -> TciNodeData {

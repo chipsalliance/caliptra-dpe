@@ -66,6 +66,6 @@ pub fn execute_command<C: Crypto>(
     }
 }
 
-fn set_flag(field: &mut u32, mask: u32, value: bool) {
+fn _set_flag(field: &mut u32, mask: u32, value: bool) {
     *field = if value { *field | mask } else { *field & !mask };
 }
