@@ -6,9 +6,9 @@ Abstract:
 --*/
 use crate::{
     _set_flag,
-    commands::{Command, DestroyCtxCmd, InitCtxCmd},
+    commands::{Command, DestroyCtxCmd, InitCtxCmd, RotateCtxCmd},
     crypto::Crypto,
-    response::{DpeErrorCode, GetProfileResp, InitCtxResp, Response},
+    response::{DpeErrorCode, GetProfileResp, InitCtxResp, Response, RotateCtxResp},
     DPE_PROFILE, HANDLE_SIZE, MAX_HANDLES,
 };
 
@@ -76,6 +76,19 @@ impl<C: Crypto> DpeInstance<C> {
         Ok(InitCtxResp { handle })
     }
 
+    /// Rotate the handle for given context to another random value. This also allows changing the
+    /// locality of the context.
+    pub fn rotate_context(&mut self, cmd: &RotateCtxCmd) -> Result<Response, DpeErrorCode> {
+        let context = self
+            .get_active_context_mut(&cmd.handle)
+            .ok_or(DpeErrorCode::InvalidHandle)?;
+
+        C::rand_bytes(&mut context.handle)?;
+        Ok(Response::RotateCtx(RotateCtxResp {
+            handle: context.handle,
+        }))
+    }
+
     /// Destroy a context and optionally all of its descendants.
     pub fn destroy_context(&mut self, cmd: &DestroyCtxCmd) -> Result<Response, DpeErrorCode> {
         let (idx, context) = self
@@ -104,6 +117,7 @@ impl<C: Crypto> DpeInstance<C> {
         match command {
             Command::GetProfile => Ok(Response::GetProfile(self.get_profile()?)),
             Command::InitCtx(context) => Ok(Response::InitCtx(self.initialize_context(&context)?)),
+            Command::RotateCtx(cmd) => self.rotate_context(&cmd),
             Command::DestroyCtx(context) => self.destroy_context(&context),
         }
     }
@@ -113,6 +127,12 @@ impl<C: Crypto> DpeInstance<C> {
             .iter()
             .enumerate()
             .find(|(_, context)| context.state == ContextState::Active && &context.handle == handle)
+    }
+
+    fn get_active_context_mut(&mut self, handle: &[u8; HANDLE_SIZE]) -> Option<&mut Context> {
+        self.contexts
+            .iter_mut()
+            .find(|context| context.state == ContextState::Active && &context.handle == handle)
     }
 
     fn get_next_inactive_context_mut(&mut self) -> Option<&mut Context> {
@@ -343,6 +363,8 @@ pub mod tests {
         tagging: false,
         rotate_context: false,
     };
+    pub const TEST_HANDLE: [u8; HANDLE_SIZE] =
+        [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
     pub const SIMULATION_HANDLE: [u8; HANDLE_SIZE] =
         [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
 
@@ -454,6 +476,36 @@ pub mod tests {
             dpe.initialize_context(&InitCtxCmd::new_simulation())
                 .err()
                 .unwrap()
+        );
+    }
+
+    #[test]
+    fn test_rotate_context() {
+        let mut dpe = DpeInstance::<DeterministicCrypto>::new(Support {
+            auto_init: true,
+            ..Support::default()
+        });
+
+        // Invalid handle.
+        assert_eq!(
+            Err(DpeErrorCode::InvalidHandle),
+            dpe.rotate_context(&RotateCtxCmd {
+                handle: TEST_HANDLE,
+                flags: 0,
+                target_locality: 0
+            })
+        );
+
+        // Rotate default handle.
+        assert_eq!(
+            Ok(Response::RotateCtx(RotateCtxResp {
+                handle: SIMULATION_HANDLE
+            })),
+            dpe.rotate_context(&RotateCtxCmd {
+                handle: DpeInstance::<DeterministicCrypto>::DEFAULT_CONTEXT_HANDLE,
+                flags: 0,
+                target_locality: 0
+            })
         );
     }
 
