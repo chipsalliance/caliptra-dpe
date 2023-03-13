@@ -11,6 +11,7 @@ use core::mem::size_of;
 pub enum Command {
     GetProfile,
     InitCtx(InitCtxCmd),
+    RotateCtx(RotateCtxCmd),
     DestroyCtx(DestroyCtxCmd),
 }
 
@@ -42,7 +43,9 @@ impl Command {
             Command::DERIVE_CHILD => Err(DpeErrorCode::InvalidCommand),
             Command::CERTIFY_KEY => Err(DpeErrorCode::InvalidCommand),
             Command::SIGN => Err(DpeErrorCode::InvalidCommand),
-            Command::ROTATE_CONTEXT_HANDLE => Err(DpeErrorCode::InvalidCommand),
+            Command::ROTATE_CONTEXT_HANDLE => {
+                Ok(Command::RotateCtx(RotateCtxCmd::try_from(bytes)?))
+            }
             Command::DESTROY_CONTEXT => Ok(Command::DestroyCtx(DestroyCtxCmd::try_from(bytes)?)),
             Command::GET_CERTIFICATE_CHAIN => Err(DpeErrorCode::InvalidCommand),
             Command::EXTEND_TCI => Err(DpeErrorCode::InvalidCommand),
@@ -139,6 +142,42 @@ impl TryFrom<&[u8]> for InitCtxCmd {
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq)]
+pub struct RotateCtxCmd {
+    pub handle: [u8; HANDLE_SIZE],
+    pub flags: u32,
+    pub target_locality: u32,
+}
+
+impl RotateCtxCmd {
+    const CHANGE_LOCALITY_FLAG: u32 = 31;
+
+    pub const fn flag_is_change_locality(&self) -> bool {
+        self.flags & Self::CHANGE_LOCALITY_FLAG != 0
+    }
+}
+
+impl TryFrom<&[u8]> for RotateCtxCmd {
+    type Error = DpeErrorCode;
+
+    fn try_from(raw: &[u8]) -> Result<Self, Self::Error> {
+        if raw.len() < size_of::<RotateCtxCmd>() {
+            return Err(DpeErrorCode::InvalidArgument);
+        }
+
+        let mut handle = [0; HANDLE_SIZE];
+        handle.copy_from_slice(&raw[0..HANDLE_SIZE]);
+
+        let raw = &raw[HANDLE_SIZE..];
+        Ok(RotateCtxCmd {
+            handle,
+            flags: u32::from_le_bytes(raw[0..4].try_into().unwrap()),
+            target_locality: u32::from_le_bytes(raw[4..8].try_into().unwrap()),
+        })
+    }
+}
+
+#[repr(C)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct DestroyCtxCmd {
     pub handle: [u8; HANDLE_SIZE],
     pub flags: u32,
@@ -174,7 +213,7 @@ impl TryFrom<&[u8]> for DestroyCtxCmd {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dpe_instance::tests::SIMULATION_HANDLE;
+    use crate::dpe_instance::tests::{SIMULATION_HANDLE, TEST_HANDLE};
     use crate::DpeProfile;
     use std::vec;
     use std::vec::Vec;
@@ -185,6 +224,11 @@ mod tests {
         profile: DPE_PROFILE as u32,
     };
     const TEST_INIT_CTX_CMD: InitCtxCmd = InitCtxCmd { flags: 0x1234_5678 };
+    const TEST_ROTATE_CTX_CMD: RotateCtxCmd = RotateCtxCmd {
+        flags: 0x1234_5678,
+        handle: TEST_HANDLE,
+        target_locality: 0x9876_5432,
+    };
     const TEST_DESTROY_CTX_CMD: DestroyCtxCmd = DestroyCtxCmd {
         handle: SIMULATION_HANDLE,
         flags: 0x1234_5678,
@@ -205,6 +249,17 @@ mod tests {
             command.extend(Vec::<u8>::from(TEST_INIT_CTX_CMD));
             assert_eq!(
                 Ok(Command::InitCtx(TEST_INIT_CTX_CMD)),
+                Command::deserialize(&command)
+            );
+        }
+
+        // RotateCtx
+        {
+            let mut command: Vec<u8> =
+                Vec::<u8>::from(CommandHdr::new(Command::RotateCtx(TEST_ROTATE_CTX_CMD)));
+            command.extend(Vec::<u8>::from(TEST_ROTATE_CTX_CMD));
+            assert_eq!(
+                Ok(Command::RotateCtx(TEST_ROTATE_CTX_CMD)),
                 Command::deserialize(&command)
             );
         }
@@ -240,13 +295,6 @@ mod tests {
             invalid_command,
             Command::deserialize(&Vec::<u8>::from(CommandHdr {
                 cmd_id: Command::SIGN,
-                ..DEFAULT_COMMAND
-            }))
-        );
-        assert_eq!(
-            invalid_command,
-            Command::deserialize(&Vec::<u8>::from(CommandHdr {
-                cmd_id: Command::ROTATE_CONTEXT_HANDLE,
                 ..DEFAULT_COMMAND
             }))
         );
@@ -359,6 +407,23 @@ mod tests {
     }
 
     #[test]
+    fn test_slice_to_rotate_ctx() {
+        let invalid_argument: Result<RotateCtxCmd, DpeErrorCode> =
+            Err(DpeErrorCode::InvalidArgument);
+
+        // Test if too small.
+        assert_eq!(
+            invalid_argument,
+            RotateCtxCmd::try_from([0u8; size_of::<RotateCtxCmd>() - 1].as_slice())
+        );
+
+        assert_eq!(
+            TEST_ROTATE_CTX_CMD,
+            RotateCtxCmd::try_from(Vec::<u8>::from(TEST_ROTATE_CTX_CMD).as_slice()).unwrap()
+        );
+    }
+
+    #[test]
     fn test_slice_to_destroy_ctx() {
         let invalid_argument: Result<DestroyCtxCmd, DpeErrorCode> =
             Err(DpeErrorCode::InvalidArgument);
@@ -393,6 +458,16 @@ mod tests {
         }
     }
 
+    impl From<RotateCtxCmd> for Vec<u8> {
+        fn from(value: RotateCtxCmd) -> Self {
+            let mut raw = vec![];
+            raw.extend(value.handle);
+            raw.extend_from_slice(&value.flags.to_le_bytes());
+            raw.extend_from_slice(&value.target_locality.to_le_bytes());
+            raw
+        }
+    }
+
     impl From<DestroyCtxCmd> for Vec<u8> {
         fn from(value: DestroyCtxCmd) -> Self {
             let mut raw = vec![];
@@ -407,6 +482,7 @@ mod tests {
             let cmd_id = match command {
                 Command::GetProfile => Command::GET_PROFILE,
                 Command::InitCtx(_) => Command::INITIALIZE_CONTEXT,
+                Command::RotateCtx(_) => Command::ROTATE_CONTEXT_HANDLE,
                 Command::DestroyCtx(_) => Command::DESTROY_CONTEXT,
             };
             CommandHdr {

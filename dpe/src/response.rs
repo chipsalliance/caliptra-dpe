@@ -11,6 +11,7 @@ use core::mem::size_of;
 pub enum Response {
     GetProfile(GetProfileResp),
     InitCtx(InitCtxResp),
+    RotateCtx(RotateCtxResp),
     DestroyCtx,
 }
 
@@ -25,6 +26,7 @@ impl Response {
         match self {
             Response::GetProfile(response) => response.serialize(dst),
             Response::InitCtx(response) => response.serialize(dst),
+            Response::RotateCtx(response) => response.serialize(dst),
             Response::DestroyCtx => Ok(0),
         }
     }
@@ -109,6 +111,23 @@ impl InitCtxResp {
     }
 }
 
+#[repr(C)]
+#[derive(Debug, PartialEq, Eq)]
+pub struct RotateCtxResp {
+    pub handle: [u8; HANDLE_SIZE],
+}
+
+impl RotateCtxResp {
+    pub fn serialize(&self, dst: &mut [u8]) -> Result<usize, DpeErrorCode> {
+        if dst.len() < size_of::<Self>() {
+            return Err(DpeErrorCode::InternalError);
+        }
+
+        dst[..HANDLE_SIZE].copy_from_slice(&self.handle);
+        Ok(HANDLE_SIZE)
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum DpeErrorCode {
     NoError = 0,
@@ -126,6 +145,7 @@ pub enum DpeErrorCode {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dpe_instance::tests::TEST_HANDLE;
     use std::vec;
 
     const TEST_FLAGS: u32 = 0x7E57_B175;
@@ -134,7 +154,6 @@ mod tests {
         max_tci_nodes: MAX_HANDLES as u32,
         flags: TEST_FLAGS,
     };
-    const TEST_HANDLE: [u8; HANDLE_SIZE] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
     const DEFAULT_INIT_CTX_RESPONSE: InitCtxResp = InitCtxResp {
         handle: TEST_HANDLE,
     };
