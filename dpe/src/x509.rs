@@ -3,6 +3,11 @@
 //! DPE requires encoding variable-length certificates. This module provides
 //! this functionality for a no_std environment.
 
+// TODO: Remove once we don't generate those warnings. They currently polute the
+// script output and prevents easily identifying more important warnings and
+// errors.
+#![allow(dead_code)]
+
 use crate::{
     dpe_instance::{TciMeasurement, TciNodeData},
     response::DpeErrorCode,
