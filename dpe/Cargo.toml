@@ -14,3 +14,4 @@ dpe_profile_p384_sha384 = []
 asn1 = "0.13.0"
 openssl = "0.10"
 x509-parser = "0.14.0"
+ossl_crypto = {path = "../ossl_crypto"}

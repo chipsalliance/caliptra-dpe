@@ -1,3 +1,5 @@
+// Licensed under the Apache-2.0 license
+
 //! Lightweight X.509 encoding routines for DPE
 //!
 //! DPE requires encoding variable-length certificates. This module provides
@@ -9,20 +11,11 @@
 #![allow(dead_code)]
 
 use crate::{
+    crypto::{EcdsaPub, EcdsaSignature},
     dpe_instance::{TciMeasurement, TciNodeData},
     response::DpeErrorCode,
     DpeProfile, DPE_PROFILE,
 };
-
-pub struct EcdsaSignature {
-    r: [u8; DPE_PROFILE.get_ecc_int_size()],
-    s: [u8; DPE_PROFILE.get_ecc_int_size()],
-}
-
-pub struct EcdsaPub {
-    x: [u8; DPE_PROFILE.get_ecc_int_size()],
-    y: [u8; DPE_PROFILE.get_ecc_int_size()],
-}
 
 pub struct Name<'a> {
     cn: &'a str,
@@ -901,7 +894,7 @@ mod tests {
         let bytes_written = w.encode_rdn(&test_name).unwrap();
 
         let name = match X509Name::from_der(&cert[..bytes_written]) {
-            Ok((rem, name)) => name,
+            Ok((_, name)) => name,
             Err(e) => panic!("Name parsing failed: {:?}", e),
         };
 
@@ -926,10 +919,7 @@ mod tests {
         let mut w = X509CertWriter::new(&mut cert);
         let bytes_written = w.encode_ecdsa_subject_pubkey_info(&test_key).unwrap();
 
-        let name = match SubjectPublicKeyInfo::from_der(&cert[..bytes_written]) {
-            Ok((rem, name)) => name,
-            Err(e) => panic!("Subject pki parsing failed: {:?}", e),
-        };
+        SubjectPublicKeyInfo::from_der(&cert[..bytes_written]).unwrap();
 
         assert_eq!(
             X509CertWriter::get_ecdsa_subject_pubkey_info_size(&test_key, true).unwrap(),
@@ -1007,11 +997,6 @@ mod tests {
                 &measurements,
             )
             .unwrap();
-
-        let mtcb_size =
-            X509CertWriter::get_multi_tcb_info_size(&measurements, /*tagged=*/ true).unwrap();
-        let ext_size =
-            X509CertWriter::get_extensions_size(&measurements, /*tagged=*/ true).unwrap();
 
         let mut parser = TbsCertificateParser::new().with_deep_parse_extensions(false);
         match parser.parse(&cert) {
