@@ -12,23 +12,31 @@ use crate::{
     DPE_PROFILE, HANDLE_SIZE, MAX_HANDLES,
 };
 
-pub struct DpeInstance {
+use core::marker::PhantomData;
+
+pub struct DpeInstance<C: Crypto> {
     contexts: [Context; MAX_HANDLES],
     support: Support,
+
+    // All functions/data in C are static and global. For this reason
+    // DpeInstance doesn't actually need to hold an instance. The PhantomData
+    // is just to make the Crypto trait work.
+    phantom: PhantomData<C>,
 }
 
-impl DpeInstance {
+impl<C: Crypto> DpeInstance<C> {
     const DEFAULT_CONTEXT_HANDLE: [u8; HANDLE_SIZE] = [0; HANDLE_SIZE];
 
-    pub fn new<C: Crypto>(support: Support) -> DpeInstance {
+    pub fn new(support: Support) -> DpeInstance<C> {
         const CONTEXT_INITIALIZER: Context = Context::new();
         let mut dpe = DpeInstance {
             contexts: [CONTEXT_INITIALIZER; MAX_HANDLES],
             support,
+            phantom: PhantomData,
         };
 
         if dpe.support.auto_init {
-            dpe.initialize_context::<C>(&InitCtxCmd::new_use_default())
+            dpe.initialize_context(&InitCtxCmd::new_use_default())
                 .unwrap();
         }
         dpe
@@ -38,10 +46,7 @@ impl DpeInstance {
         Ok(GetProfileResp::new(self.support.get_flags()))
     }
 
-    pub fn initialize_context<C: Crypto>(
-        &mut self,
-        cmd: &InitCtxCmd,
-    ) -> Result<InitCtxResp, DpeErrorCode> {
+    pub fn initialize_context(&mut self, cmd: &InitCtxCmd) -> Result<InitCtxResp, DpeErrorCode> {
         if (cmd.flag_is_default() && self.get_default_context().is_some())
             || (cmd.flag_is_simulation() && !self.support.simulation)
         {
@@ -94,16 +99,11 @@ impl DpeInstance {
     /// # Arguments
     ///
     /// * `cmd` - serialized command
-    pub fn execute_serialized_command<C: Crypto>(
-        &mut self,
-        cmd: &[u8],
-    ) -> Result<Response, DpeErrorCode> {
+    pub fn execute_serialized_command(&mut self, cmd: &[u8]) -> Result<Response, DpeErrorCode> {
         let command = Command::deserialize(cmd)?;
         match command {
             Command::GetProfile => Ok(Response::GetProfile(self.get_profile()?)),
-            Command::InitCtx(context) => {
-                Ok(Response::InitCtx(self.initialize_context::<C>(&context)?))
-            }
+            Command::InitCtx(context) => Ok(Response::InitCtx(self.initialize_context(&context)?)),
             Command::DestroyCtx(context) => self.destroy_context(&context),
         }
     }
@@ -348,14 +348,12 @@ pub mod tests {
 
     #[test]
     fn test_execute_serialized_command() {
-        let mut dpe = DpeInstance::new::<DeterministicCrypto>(SUPPORT);
+        let mut dpe = DpeInstance::<DeterministicCrypto>::new(SUPPORT);
 
         assert_eq!(
             Response::GetProfile(GetProfileResp::new(SUPPORT.get_flags())),
-            dpe.execute_serialized_command::<DeterministicCrypto>(&Vec::<u8>::from(
-                CommandHdr::new(Command::GetProfile)
-            ))
-            .unwrap()
+            dpe.execute_serialized_command(&Vec::<u8>::from(CommandHdr::new(Command::GetProfile)))
+                .unwrap()
         );
 
         // The default context was initialized while creating the instance. Now lets create a
@@ -369,14 +367,13 @@ pub mod tests {
             Response::InitCtx(InitCtxResp {
                 handle: SIMULATION_HANDLE
             }),
-            dpe.execute_serialized_command::<DeterministicCrypto>(&command)
-                .unwrap()
+            dpe.execute_serialized_command(&command).unwrap()
         );
     }
 
     #[test]
     fn test_get_profile() {
-        let dpe = DpeInstance::new::<DeterministicCrypto>(SUPPORT);
+        let dpe = DpeInstance::<DeterministicCrypto>::new(SUPPORT);
         let profile = dpe.get_profile().unwrap();
         assert_eq!(profile.version, CURRENT_PROFILE_VERSION);
         assert_eq!(profile.flags, SUPPORT.get_flags());
@@ -384,12 +381,12 @@ pub mod tests {
 
     #[test]
     fn test_initialize_context() {
-        let mut dpe = DpeInstance::new::<DeterministicCrypto>(Support::default());
+        let mut dpe = DpeInstance::<DeterministicCrypto>::new(Support::default());
 
         // Make sure default context is 0x0.
         assert_eq!(
-            DpeInstance::DEFAULT_CONTEXT_HANDLE,
-            dpe.initialize_context::<DeterministicCrypto>(&InitCtxCmd::new_use_default())
+            DpeInstance::<DeterministicCrypto>::DEFAULT_CONTEXT_HANDLE,
+            dpe.initialize_context(&InitCtxCmd::new_use_default())
                 .unwrap()
                 .handle
         );
@@ -397,7 +394,7 @@ pub mod tests {
         // Try to double initialize the default context.
         assert_eq!(
             DpeErrorCode::ArgumentNotSupported,
-            dpe.initialize_context::<DeterministicCrypto>(&InitCtxCmd::new_use_default())
+            dpe.initialize_context(&InitCtxCmd::new_use_default())
                 .err()
                 .unwrap()
         );
@@ -406,7 +403,7 @@ pub mod tests {
         dpe.get_default_context().unwrap().state = ContextState::Locked;
         assert_eq!(
             DpeErrorCode::ArgumentNotSupported,
-            dpe.initialize_context::<DeterministicCrypto>(&InitCtxCmd::new_use_default())
+            dpe.initialize_context(&InitCtxCmd::new_use_default())
                 .err()
                 .unwrap()
         );
@@ -414,7 +411,7 @@ pub mod tests {
         // Try not setting any flags.
         assert_eq!(
             DpeErrorCode::InvalidArgument,
-            dpe.initialize_context::<DeterministicCrypto>(&InitCtxCmd { flags: 0 })
+            dpe.initialize_context(&InitCtxCmd { flags: 0 })
                 .err()
                 .unwrap()
         );
@@ -422,13 +419,13 @@ pub mod tests {
         // Try simulation when not supported.
         assert_eq!(
             DpeErrorCode::ArgumentNotSupported,
-            dpe.initialize_context::<DeterministicCrypto>(&InitCtxCmd::new_simulation())
+            dpe.initialize_context(&InitCtxCmd::new_simulation())
                 .err()
                 .unwrap()
         );
 
         // Change to support simulation.
-        let mut dpe = DpeInstance::new::<DeterministicCrypto>(Support {
+        let mut dpe = DpeInstance::<DeterministicCrypto>::new(Support {
             simulation: true,
             ..Support::default()
         });
@@ -436,7 +433,7 @@ pub mod tests {
         // Try setting both flags.
         assert_eq!(
             DpeErrorCode::InvalidArgument,
-            dpe.initialize_context::<DeterministicCrypto>(&InitCtxCmd { flags: 3 << 30 })
+            dpe.initialize_context(&InitCtxCmd { flags: 3 << 30 })
                 .err()
                 .unwrap()
         );
@@ -445,7 +442,7 @@ pub mod tests {
         for _ in 0..MAX_HANDLES {
             assert_eq!(
                 SIMULATION_HANDLE,
-                dpe.initialize_context::<DeterministicCrypto>(&InitCtxCmd::new_simulation())
+                dpe.initialize_context(&InitCtxCmd::new_simulation())
                     .unwrap()
                     .handle
             );
@@ -454,7 +451,7 @@ pub mod tests {
         // Try to initilize one more.
         assert_eq!(
             DpeErrorCode::MaxTcis,
-            dpe.initialize_context::<DeterministicCrypto>(&InitCtxCmd::new_simulation())
+            dpe.initialize_context(&InitCtxCmd::new_simulation())
                 .err()
                 .unwrap()
         );
@@ -530,7 +527,7 @@ pub mod tests {
 
     #[test]
     fn test_get_active_context_index() {
-        let mut dpe = DpeInstance::new::<DeterministicCrypto>(Support::default());
+        let mut dpe = DpeInstance::<DeterministicCrypto>::new(Support::default());
         let expected_index = 7;
         dpe.contexts[expected_index]
             .handle
@@ -553,7 +550,7 @@ pub mod tests {
 
     #[test]
     fn test_get_descendants() {
-        let mut dpe = DpeInstance::new::<DeterministicCrypto>(Support::default());
+        let mut dpe = DpeInstance::<DeterministicCrypto>::new(Support::default());
         let root = 7;
         let child_1 = 3;
         let child_1_1 = 0;

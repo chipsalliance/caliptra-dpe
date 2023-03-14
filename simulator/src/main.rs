@@ -12,7 +12,7 @@ use std::process;
 
 const SOCKET_PATH: &str = "/tmp/dpe-sim.socket";
 
-fn handle_request(dpe: &mut DpeInstance, stream: &mut UnixStream) {
+fn handle_request(dpe: &mut DpeInstance<OpensslCrypto>, stream: &mut UnixStream) {
     let mut buf = [0u8; 128];
     let len = stream.read(&mut buf).unwrap();
 
@@ -25,7 +25,7 @@ fn handle_request(dpe: &mut DpeInstance, stream: &mut UnixStream) {
     println!("|");
 
     let mut response = [0u8; 128];
-    let len = execute_command::<OpensslCrypto>(dpe, &buf[..len], &mut response).unwrap();
+    let len = execute_command(dpe, &buf[..len], &mut response).unwrap();
 
     let response_code = u32::from_le_bytes(response[4..8].try_into().unwrap());
     // There are a few vendor error codes starting at 0x1000, so this can be a 2 bytes.
@@ -95,7 +95,7 @@ fn main() -> std::io::Result<()> {
         tagging: args.supports_tagging,
         rotate_context: args.supports_rotate_context,
     };
-    let mut dpe = DpeInstance::new::<OpensslCrypto>(support);
+    let mut dpe = DpeInstance::<OpensslCrypto>::new(support);
 
     println!("DPE listening to socket {SOCKET_PATH}");
 
