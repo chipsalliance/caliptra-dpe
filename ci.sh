@@ -17,6 +17,13 @@ set -ex
   cargo fmt -- --check
   cargo clippy -- --deny=warnings
 )
+( cd ossl_crypto
+  cargo build
+  cargo build --release
+  cargo test
+  cargo fmt -- --check
+  cargo clippy -- --deny=warnings
+)
 ( cd verification
   test -z "$(gofmt -l .)"
   go test

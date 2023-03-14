@@ -6,13 +6,16 @@ Abstract:
 --*/
 use crate::{
     _set_flag,
-    commands::{Command, DestroyCtxCmd, InitCtxCmd, RotateCtxCmd, TagTciCmd},
-    crypto::Crypto,
-    response::{DpeErrorCode, GetProfileResp, NewHandleResp, Response},
-    DPE_PROFILE, HANDLE_SIZE, MAX_HANDLES,
+    commands::{CertifyKeyCmd, Command, DestroyCtxCmd, InitCtxCmd, RotateCtxCmd, TagTciCmd},
+    crypto::{Crypto, EcdsaPub},
+    response::{CertifyKeyResp, DpeErrorCode, GetProfileResp, NewHandleResp, Response},
+    x509::{MeasurementData, Name, X509CertWriter},
+    DPE_PROFILE, HANDLE_SIZE, MAX_CERT_SIZE, MAX_HANDLES,
 };
 
+use core::convert::TryFrom;
 use core::marker::PhantomData;
+use core::mem::size_of;
 
 pub struct DpeInstance<'a, C: Crypto> {
     contexts: [Context; MAX_HANDLES],
@@ -182,6 +185,98 @@ impl<C: Crypto> DpeInstance<'_, C> {
         }))
     }
 
+    pub fn certify_key(
+        &mut self,
+        locality: u32,
+        cmd: &CertifyKeyCmd,
+    ) -> Result<CertifyKeyResp, DpeErrorCode> {
+        let idx = self
+            .get_active_context_pos(&cmd.handle)
+            .ok_or(DpeErrorCode::InvalidHandle)?;
+
+        // Make sure the command is coming from the right locality.
+        if self.contexts[idx].locality != locality {
+            return Err(DpeErrorCode::InvalidHandle);
+        }
+
+        // Get TCI Nodes
+        const INITIALIZER: TciNodeData = TciNodeData::new();
+        let mut nodes = [INITIALIZER; MAX_HANDLES];
+        let tcb_count = self.get_tcb_nodes(&self.contexts[idx], &mut nodes)?;
+
+        // Hash TCI Nodes
+        let mut tci_bytes = [0u8; MAX_HANDLES * size_of::<TciNodeData>()];
+        let mut tci_offset = 0;
+        for n in &nodes[..tcb_count] {
+            tci_offset += n.serialize(&mut tci_bytes[tci_offset..])?;
+        }
+
+        let mut digest = [0; DPE_PROFILE.get_hash_size()];
+        C::hash(DPE_PROFILE, &tci_bytes[..tci_offset], &mut digest)?;
+
+        // Derive CDI and public key
+        let cdi = C::derive_cdi(DPE_PROFILE, &digest, b"DPE")?;
+        let pub_key = C::derive_ecdsa_pub(DPE_PROFILE, &cdi, &cmd.label, b"ECC")?;
+
+        // Hash the public key for the serialNumber name field
+        let mut pub_bytes = [0u8; size_of::<EcdsaPub>()];
+        let pub_offset = pub_key.serialize(&mut pub_bytes)?;
+        let mut pub_digest = [0u8; DPE_PROFILE.get_hash_size()];
+        C::hash(DPE_PROFILE, &pub_bytes[..pub_offset], &mut pub_digest)?;
+
+        // TODO: Let the platform specify issuer name
+        let issuer_name = Name {
+            cn: b"DPE Issuer",
+            serial: &[0; DPE_PROFILE.get_hash_size()],
+        };
+
+        let subject_name = Name {
+            cn: b"DPE Leaf",
+            serial: &pub_digest,
+        };
+
+        let measurements = MeasurementData {
+            _label: &cmd.label,
+            tci_nodes: &nodes[..tcb_count],
+        };
+
+        // Get certificate
+        let mut tbs_buffer = [0u8; MAX_CERT_SIZE];
+        let mut tbs_writer = X509CertWriter::new(&mut tbs_buffer);
+        let mut bytes_written = tbs_writer.encode_ecdsa_tbs(
+            /*serial=*/ &pub_digest,
+            &issuer_name,
+            &subject_name,
+            &pub_key,
+            &measurements,
+        )?;
+
+        let mut tbs_digest = [0u8; DPE_PROFILE.get_hash_size()];
+        C::hash(DPE_PROFILE, &tbs_buffer[..bytes_written], &mut tbs_digest)?;
+        let sig = C::ecdsa_sign_with_alias(DPE_PROFILE, &tbs_digest)?;
+
+        let mut cert = [0u8; MAX_CERT_SIZE];
+        let mut cert_writer = X509CertWriter::new(&mut cert);
+        bytes_written = cert_writer.encode_ecdsa_certificate(&tbs_buffer[..bytes_written], &sig)?;
+        let cert_size = u32::try_from(bytes_written).map_err(|_| DpeErrorCode::InternalError)?;
+
+        // Rotate handle if it isn't the default
+        let rand_handle = self.generate_new_handle()?;
+        let mut context = &mut self.contexts[idx];
+        context.handle = match context.context_type {
+            ContextType::_Normal | ContextType::Simulation => rand_handle,
+            ContextType::Default => Self::DEFAULT_CONTEXT_HANDLE,
+        };
+
+        Ok(CertifyKeyResp {
+            new_context_handle: context.handle,
+            derived_pubkey_x: pub_key.x,
+            derived_pubkey_y: pub_key.y,
+            cert_size,
+            cert,
+        })
+    }
+
     /// Deserializes the command and executes it.
     ///
     /// # Arguments
@@ -203,6 +298,9 @@ impl<C: Crypto> DpeInstance<'_, C> {
             Command::InitCtx(context) => Ok(Response::InitCtx(
                 self.initialize_context(locality, &context)?,
             )),
+            Command::CertifyKey(context) => {
+                Ok(Response::CertifyKey(self.certify_key(locality, &context)?))
+            }
             Command::RotateCtx(cmd) => self.rotate_context(locality, &cmd),
             Command::DestroyCtx(context) => self.destroy_context(locality, &context),
             Command::TagTci(cmd) => self.tag_tci(locality, &cmd),
@@ -254,9 +352,45 @@ impl<C: Crypto> DpeInstance<'_, C> {
         }
         Err(DpeErrorCode::InternalError)
     }
+
+    /// Get the TCI nodes from `context` to the root node following parent
+    /// links. These are the nodes that should contribute to CDI and key
+    /// derivation for `context`.
+    ///
+    /// Returns the number of TCIs written to `nodes`
+    fn get_tcb_nodes(
+        &self,
+        context: &Context,
+        nodes: &mut [TciNodeData],
+    ) -> Result<usize, DpeErrorCode> {
+        let mut curr = context;
+        let mut out_idx = 0;
+
+        loop {
+            if out_idx >= nodes.len() || curr.state != ContextState::Active {
+                return Err(DpeErrorCode::InternalError);
+            }
+
+            // TODO: The root node isn't a real node with measurements and
+            // shouldn't be in the cert. But we don't support DeriveChild yet,
+            // so this is the only node we can create to test cert creation.
+            nodes[out_idx] = curr.tci;
+            out_idx += 1;
+
+            // Found the root
+            if curr.parent_idx == 0xFF {
+                break;
+            }
+
+            curr = &self.contexts[curr.parent_idx as usize];
+        }
+
+        Ok(out_idx)
+    }
 }
 
 #[repr(transparent)]
+#[derive(Copy, Clone)]
 pub struct TciMeasurement(pub [u8; DPE_PROFILE.get_tci_size()]);
 
 impl Default for TciMeasurement {
@@ -302,7 +436,7 @@ impl Support {
 }
 
 #[repr(C, align(4))]
-#[derive(Default)]
+#[derive(Default, Copy, Clone)]
 pub(crate) struct TciNodeData {
     pub tci_type: u32,
 
@@ -332,6 +466,22 @@ impl TciNodeData {
             tci_cumulative: TciMeasurement([0; DPE_PROFILE.get_tci_size()]),
             tci_current: TciMeasurement([0; DPE_PROFILE.get_tci_size()]),
         }
+    }
+
+    fn serialize(&self, dst: &mut [u8]) -> Result<usize, DpeErrorCode> {
+        if dst.len() < size_of::<Self>() {
+            return Err(DpeErrorCode::InternalError);
+        }
+
+        let mut offset: usize = 0;
+        dst[offset..offset + size_of::<u32>()].copy_from_slice(&self.tci_type.to_le_bytes());
+        offset += size_of::<u32>();
+        dst[offset..offset + self.tci_cumulative.0.len()].copy_from_slice(&self.tci_cumulative.0);
+        offset += self.tci_cumulative.0.len();
+        dst[offset..offset + self.tci_current.0.len()].copy_from_slice(&self.tci_current.0);
+        offset += self.tci_current.0.len();
+
+        Ok(offset)
     }
 }
 
@@ -466,6 +616,9 @@ pub mod tests {
     use crate::{
         commands::CommandHdr, crypto::tests::DeterministicCrypto, CURRENT_PROFILE_VERSION,
     };
+    use x509_parser::nom::Parser;
+    use x509_parser::prelude::X509CertificateParser;
+    use x509_parser::prelude::*;
     use zerocopy::AsBytes;
 
     const SUPPORT: Support = Support {
@@ -738,6 +891,32 @@ pub mod tests {
                 }
             )
         );
+    }
+
+    #[test]
+    fn test_certify_key() {
+        let mut dpe =
+            DpeInstance::<DeterministicCrypto>::new(Support::default(), &TEST_LOCALITIES).unwrap();
+
+        let init_resp = dpe
+            .initialize_context(TEST_LOCALITIES[0], &InitCtxCmd::new_use_default())
+            .unwrap();
+        let certify_cmd = CertifyKeyCmd {
+            handle: init_resp.handle,
+            flags: 0,
+            label: [0; DPE_PROFILE.get_hash_size()],
+        };
+
+        let certify_resp = dpe.certify_key(TEST_LOCALITIES[0], &certify_cmd).unwrap();
+        assert_ne!(certify_resp.cert_size, 0);
+
+        let mut parser = X509CertificateParser::new().with_deep_parse_extensions(false);
+        match parser.parse(&certify_resp.cert[..certify_resp.cert_size.try_into().unwrap()]) {
+            Ok((_, cert)) => {
+                assert_eq!(cert.version(), X509Version::V3);
+            }
+            Err(e) => panic!("x509 parsing failed: {:?}", e),
+        };
     }
 
     #[test]

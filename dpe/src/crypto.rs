@@ -9,8 +9,17 @@ use core::mem::size_of;
 
 // An ECDSA signature
 pub struct EcdsaSignature {
-    pub(crate) r: [u8; DPE_PROFILE.get_ecc_int_size()],
-    pub(crate) s: [u8; DPE_PROFILE.get_ecc_int_size()],
+    pub r: [u8; DPE_PROFILE.get_ecc_int_size()],
+    pub s: [u8; DPE_PROFILE.get_ecc_int_size()],
+}
+
+impl Default for EcdsaSignature {
+    fn default() -> EcdsaSignature {
+        EcdsaSignature {
+            r: [0; DPE_PROFILE.get_ecc_int_size()],
+            s: [0; DPE_PROFILE.get_ecc_int_size()],
+        }
+    }
 }
 
 // An ECDSA public key
@@ -96,6 +105,12 @@ pub trait Crypto {
         label: &[u8],
         info: &[u8],
     ) -> Result<EcdsaPub, DpeErrorCode>;
+
+    /// Sign `digest` with the platform Alias Key
+    fn ecdsa_sign_with_alias(
+        profile: DpeProfile,
+        digest: &[u8],
+    ) -> Result<EcdsaSignature, DpeErrorCode>;
 }
 
 #[cfg(test)]
@@ -113,6 +128,13 @@ pub mod tests {
             match profile {
                 DpeProfile::P256Sha256 => MessageDigest::sha256(),
                 DpeProfile::P384Sha384 => MessageDigest::sha384(),
+            }
+        }
+
+        fn get_curve(profile: &DpeProfile) -> Nid {
+            match profile {
+                DpeProfile::P256Sha256 => Nid::X9_62_PRIME256V1,
+                DpeProfile::P384Sha384 => Nid::SECP384R1,
             }
         }
     }
@@ -153,10 +175,7 @@ pub mod tests {
             info: &[u8],
         ) -> Result<EcdsaPub, DpeErrorCode> {
             let md = Self::get_digest(&profile);
-            let nid = match profile {
-                DpeProfile::P256Sha256 => Nid::X9_62_PRIME256V1,
-                DpeProfile::P384Sha384 => Nid::SECP384R1,
-            };
+            let nid = Self::get_curve(&profile);
 
             let point = OpensslCrypto::derive_ecdsa_pub(cdi, label, info, md, nid)
                 .map_err(|_| DpeErrorCode::InternalError)?;
@@ -165,6 +184,21 @@ pub mod tests {
             pub_out.x.copy_from_slice(point.x.as_slice());
             pub_out.y.copy_from_slice(point.y.as_slice());
             Ok(pub_out)
+        }
+
+        fn ecdsa_sign_with_alias(
+            profile: DpeProfile,
+            digest: &[u8],
+        ) -> Result<EcdsaSignature, DpeErrorCode> {
+            let nid = Self::get_curve(&profile);
+            let priv_bytes = vec![0u8; profile.get_ecc_int_size()];
+            let sig = OpensslCrypto::ecdsa_sign_with_alias(digest, priv_bytes.as_slice(), nid)
+                .map_err(|_| DpeErrorCode::InternalError)?;
+
+            let mut sig_out = EcdsaSignature::default();
+            sig_out.r.copy_from_slice(sig.r().to_vec().as_slice());
+            sig_out.s.copy_from_slice(sig.s().to_vec().as_slice());
+            Ok(sig_out)
         }
     }
 }

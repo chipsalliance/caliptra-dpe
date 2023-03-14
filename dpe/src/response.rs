@@ -4,14 +4,16 @@ Licensed under the Apache-2.0 license.
 Abstract:
     DPE reponses and serialization.
 --*/
-use crate::{CURRENT_PROFILE_VERSION, DPE_PROFILE, HANDLE_SIZE, MAX_HANDLES};
+use crate::{CURRENT_PROFILE_VERSION, DPE_PROFILE, HANDLE_SIZE, MAX_CERT_SIZE, MAX_HANDLES};
 use core::mem::size_of;
 
 #[derive(Debug, PartialEq, Eq)]
+#[allow(clippy::large_enum_variant)]
 pub enum Response {
     GetProfile(GetProfileResp),
     InitCtx(NewHandleResp),
     RotateCtx(NewHandleResp),
+    CertifyKey(CertifyKeyResp),
     DestroyCtx,
     TagTci(NewHandleResp),
 }
@@ -27,6 +29,7 @@ impl Response {
         match self {
             Response::GetProfile(response) => response.serialize(dst),
             Response::InitCtx(response) => response.serialize(dst),
+            Response::CertifyKey(response) => response.serialize(dst),
             Response::RotateCtx(response) => response.serialize(dst),
             Response::DestroyCtx => Ok(0),
             Response::TagTci(response) => response.serialize(dst),
@@ -113,6 +116,52 @@ impl NewHandleResp {
 
         dst[..HANDLE_SIZE].copy_from_slice(&self.handle);
         Ok(HANDLE_SIZE)
+    }
+}
+
+#[repr(C)]
+#[derive(Debug, PartialEq, Eq)]
+pub struct CertifyKeyResp {
+    pub new_context_handle: [u8; HANDLE_SIZE],
+    pub derived_pubkey_x: [u8; DPE_PROFILE.get_ecc_int_size()],
+    pub derived_pubkey_y: [u8; DPE_PROFILE.get_ecc_int_size()],
+    pub cert_size: u32,
+    pub cert: [u8; MAX_CERT_SIZE],
+}
+
+impl CertifyKeyResp {
+    pub fn serialize(&self, dst: &mut [u8]) -> Result<usize, DpeErrorCode> {
+        if dst.len() < size_of::<Self>() {
+            return Err(DpeErrorCode::InternalError);
+        }
+
+        let mut offset: usize = 0;
+        dst[offset..offset + HANDLE_SIZE].copy_from_slice(&self.new_context_handle);
+        offset += HANDLE_SIZE;
+        dst[offset..offset + DPE_PROFILE.get_ecc_int_size()]
+            .copy_from_slice(&self.derived_pubkey_x);
+        offset += self.derived_pubkey_x.len();
+        dst[offset..offset + DPE_PROFILE.get_ecc_int_size()]
+            .copy_from_slice(&self.derived_pubkey_y);
+        offset += self.derived_pubkey_y.len();
+        dst[offset..offset + size_of::<u32>()].copy_from_slice(&self.cert_size.to_le_bytes());
+        offset += size_of::<u32>();
+        dst[offset..offset + self.cert.len()].copy_from_slice(&self.cert);
+        offset += self.cert.len();
+
+        Ok(offset)
+    }
+}
+
+impl Default for CertifyKeyResp {
+    fn default() -> Self {
+        Self {
+            new_context_handle: [0; HANDLE_SIZE],
+            derived_pubkey_x: [0; DPE_PROFILE.get_ecc_int_size()],
+            derived_pubkey_y: [0; DPE_PROFILE.get_ecc_int_size()],
+            cert_size: 0,
+            cert: [0; MAX_CERT_SIZE],
+        }
     }
 }
 

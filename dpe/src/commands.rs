@@ -11,6 +11,7 @@ use core::mem::size_of;
 pub enum Command {
     GetProfile,
     InitCtx(InitCtxCmd),
+    CertifyKey(CertifyKeyCmd),
     RotateCtx(RotateCtxCmd),
     DestroyCtx(DestroyCtxCmd),
     TagTci(TagTciCmd),
@@ -42,7 +43,7 @@ impl Command {
             Command::GET_PROFILE => Ok(Command::GetProfile),
             Command::INITIALIZE_CONTEXT => Ok(Command::InitCtx(InitCtxCmd::try_from(bytes)?)),
             Command::DERIVE_CHILD => Err(DpeErrorCode::InvalidCommand),
-            Command::CERTIFY_KEY => Err(DpeErrorCode::InvalidCommand),
+            Command::CERTIFY_KEY => Ok(Command::CertifyKey(CertifyKeyCmd::try_from(bytes)?)),
             Command::SIGN => Err(DpeErrorCode::InvalidCommand),
             Command::ROTATE_CONTEXT_HANDLE => {
                 Ok(Command::RotateCtx(RotateCtxCmd::try_from(bytes)?))
@@ -183,6 +184,50 @@ impl TryFrom<&[u8]> for RotateCtxCmd {
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq)]
 #[cfg_attr(test, derive(zerocopy::AsBytes, zerocopy::FromBytes))]
+pub struct CertifyKeyCmd {
+    pub handle: [u8; HANDLE_SIZE],
+    pub flags: u32,
+    pub label: [u8; DPE_PROFILE.get_hash_size()],
+}
+
+impl CertifyKeyCmd {
+    pub const fn new() -> CertifyKeyCmd {
+        CertifyKeyCmd {
+            handle: [0; HANDLE_SIZE],
+            flags: 0,
+            label: [0; DPE_PROFILE.get_hash_size()],
+        }
+    }
+}
+
+impl TryFrom<&[u8]> for CertifyKeyCmd {
+    type Error = DpeErrorCode;
+
+    fn try_from(raw: &[u8]) -> Result<Self, Self::Error> {
+        if raw.len() < size_of::<CertifyKeyCmd>() {
+            return Err(DpeErrorCode::InvalidArgument);
+        }
+
+        let mut cmd = CertifyKeyCmd::new();
+        let mut offset: usize = 0;
+
+        cmd.handle
+            .copy_from_slice(&raw[offset..offset + HANDLE_SIZE]);
+        offset += HANDLE_SIZE;
+
+        cmd.flags = u32::from_le_bytes(raw[offset..offset + size_of::<u32>()].try_into().unwrap());
+        offset += size_of::<u32>();
+
+        cmd.label
+            .copy_from_slice(&raw[offset..offset + DPE_PROFILE.get_hash_size()]);
+
+        Ok(cmd)
+    }
+}
+
+#[repr(C)]
+#[derive(Debug, PartialEq, Eq)]
+#[cfg_attr(test, derive(zerocopy::AsBytes, zerocopy::FromBytes))]
 pub struct DestroyCtxCmd {
     pub handle: [u8; HANDLE_SIZE],
     pub flags: u32,
@@ -242,7 +287,7 @@ impl TryFrom<&[u8]> for TagTciCmd {
 mod tests {
     use super::*;
     use crate::dpe_instance::tests::{SIMULATION_HANDLE, TEST_HANDLE};
-    use crate::DpeProfile;
+    use crate::{DpeProfile, DPE_PROFILE};
     use zerocopy::{AsBytes, FromBytes};
 
     const DEFAULT_COMMAND: CommandHdr = CommandHdr {
@@ -263,6 +308,11 @@ mod tests {
     const TEST_TAG_TCI_CMD: TagTciCmd = TagTciCmd {
         handle: SIMULATION_HANDLE,
         tag: 0x1234_5678,
+    };
+    const TEST_CERTIFY_KEY_CMD: CertifyKeyCmd = CertifyKeyCmd {
+        handle: SIMULATION_HANDLE,
+        flags: 0x1234_5678,
+        label: [0xaa; DPE_PROFILE.get_hash_size()],
     };
 
     #[test]
@@ -368,6 +418,18 @@ mod tests {
     }
 
     #[test]
+    fn test_deserialize_certify_key() {
+        let mut command = CommandHdr::new(Command::CertifyKey(TEST_CERTIFY_KEY_CMD))
+            .as_bytes()
+            .to_vec();
+        command.extend(TEST_CERTIFY_KEY_CMD.as_bytes());
+        assert_eq!(
+            Ok(Command::CertifyKey(TEST_CERTIFY_KEY_CMD)),
+            Command::deserialize(&command)
+        );
+    }
+
+    #[test]
     fn test_deserialize_unsupported_commands() {
         // Commands that are not implemented.
         let invalid_command = Err(DpeErrorCode::InvalidCommand);
@@ -376,16 +438,6 @@ mod tests {
             Command::deserialize(
                 CommandHdr {
                     cmd_id: Command::DERIVE_CHILD,
-                    ..DEFAULT_COMMAND
-                }
-                .as_bytes()
-            )
-        );
-        assert_eq!(
-            invalid_command,
-            Command::deserialize(
-                CommandHdr {
-                    cmd_id: Command::CERTIFY_KEY,
                     ..DEFAULT_COMMAND
                 }
                 .as_bytes()
@@ -529,6 +581,23 @@ mod tests {
     }
 
     #[test]
+    fn test_slice_to_certify_key() {
+        let invalid_argument: Result<CertifyKeyCmd, DpeErrorCode> =
+            Err(DpeErrorCode::InvalidArgument);
+
+        // Test if too small.
+        assert_eq!(
+            invalid_argument,
+            CertifyKeyCmd::try_from([0u8; size_of::<CertifyKeyCmd>() - 1].as_slice())
+        );
+
+        assert_eq!(
+            TEST_CERTIFY_KEY_CMD,
+            CertifyKeyCmd::try_from(TEST_CERTIFY_KEY_CMD.as_bytes()).unwrap()
+        );
+    }
+
+    #[test]
     fn test_slice_to_destroy_ctx() {
         let invalid_argument: Result<DestroyCtxCmd, DpeErrorCode> =
             Err(DpeErrorCode::InvalidArgument);
@@ -564,6 +633,7 @@ mod tests {
             let cmd_id = match command {
                 Command::GetProfile => Command::GET_PROFILE,
                 Command::InitCtx(_) => Command::INITIALIZE_CONTEXT,
+                Command::CertifyKey(_) => Command::CERTIFY_KEY,
                 Command::RotateCtx(_) => Command::ROTATE_CONTEXT_HANDLE,
                 Command::DestroyCtx(_) => Command::DESTROY_CONTEXT,
                 Command::TagTci(_) => Command::TAG_TCI,

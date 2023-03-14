@@ -5,11 +5,6 @@
 //! DPE requires encoding variable-length certificates. This module provides
 //! this functionality for a no_std environment.
 
-// TODO: Remove once we don't generate those warnings. They currently polute the
-// script output and prevents easily identifying more important warnings and
-// errors.
-#![allow(dead_code)]
-
 use crate::{
     crypto::{EcdsaPub, EcdsaSignature},
     dpe_instance::{TciMeasurement, TciNodeData},
@@ -18,13 +13,13 @@ use crate::{
 };
 
 pub struct Name<'a> {
-    cn: &'a str,
-    serial: &'a str,
+    pub cn: &'a [u8],
+    pub serial: &'a [u8],
 }
 
 pub struct MeasurementData<'a> {
-    label: &'a [u8],
-    tci_nodes: &'a [&'a TciNodeData],
+    pub(crate) _label: &'a [u8],
+    pub(crate) tci_nodes: &'a [TciNodeData],
 }
 
 pub struct X509CertWriter<'a> {
@@ -42,7 +37,6 @@ impl X509CertWriter<'_> {
     const GENERALIZE_TIME_TAG: u8 = 0x18;
     const SEQUENCE_TAG: u8 = 0x30;
     const SEQUENCE_OF_TAG: u8 = 0x30;
-    const SET_TAG: u8 = 0x31;
     const SET_OF_TAG: u8 = 0x31;
 
     // Constants for setting tag bits
@@ -57,6 +51,8 @@ impl X509CertWriter<'_> {
         // ECDSA with SHA384
         DpeProfile::P384Sha384 => &[0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x04, 0x03, 0x03],
     };
+
+    const EC_PUB_OID: &[u8] = &[0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x02, 0x01];
 
     const CURVE_OID: &[u8] = match DPE_PROFILE {
         // P256
@@ -151,12 +147,12 @@ impl X509CertWriter<'_> {
     fn get_rdn_size(name: &Name, tagged: bool) -> Result<usize, DpeErrorCode> {
         let cn_seq_size = Self::get_structure_size(
             Self::get_bytes_size(&Self::RDN_COMMON_NAME_OID, /*tagged=*/ true)?
-                + Self::get_bytes_size(name.cn.as_bytes(), true)?,
+                + Self::get_bytes_size(name.cn, true)?,
             /*tagged=*/ true,
         )?;
         let serialnumber_seq_size = Self::get_structure_size(
             Self::get_bytes_size(&Self::RDN_COMMON_NAME_OID, /*tagged=*/ true)?
-                + Self::get_bytes_size(name.serial.as_bytes(), /*tagged=*/ true)?,
+                + Self::get_bytes_size(name.serial, /*tagged=*/ true)?,
             /*tagged=*/ true,
         )?;
 
@@ -166,11 +162,18 @@ impl X509CertWriter<'_> {
         Self::get_structure_size(set_len, tagged)
     }
 
-    /// Calculate the number of bytes an ECC AlgorithmIdentifier will be
+    /// Calculate the number of bytes an ECC Public Key AlgorithmIdentifier
     /// If `tagged`, include the tag and size fields
-    fn get_ecc_alg_id_size(tagged: bool) -> Result<usize, DpeErrorCode> {
-        let len = Self::get_bytes_size(Self::ECDSA_OID, true)?
+    fn get_ec_pub_alg_id_size(tagged: bool) -> Result<usize, DpeErrorCode> {
+        let len = Self::get_bytes_size(Self::EC_PUB_OID, true)?
             + Self::get_bytes_size(Self::CURVE_OID, true)?;
+        Self::get_structure_size(len, tagged)
+    }
+
+    /// Calculate the number of bytes an ECDSA signature AlgorithmIdentifier
+    /// If `tagged`, include the tag and size fields
+    fn get_ecdsa_sig_alg_id_size(tagged: bool) -> Result<usize, DpeErrorCode> {
+        let len = Self::get_bytes_size(Self::ECDSA_OID, true)?;
         Self::get_structure_size(len, tagged)
     }
 
@@ -188,10 +191,9 @@ impl X509CertWriter<'_> {
         tagged: bool,
     ) -> Result<usize, DpeErrorCode> {
         let point_size = 1 + pubkey.x.len() + pubkey.y.len();
-
-        let bitstring_size = 1 + Self::get_structure_size(point_size, /*tagged=*/ true)?;
+        let bitstring_size = 1 + point_size;
         let seq_size = Self::get_structure_size(bitstring_size, /*tagged=*/ true)?
-            + Self::get_ecc_alg_id_size(/*tagged=*/ true)?;
+            + Self::get_ec_pub_alg_id_size(/*tagged=*/ true)?;
 
         Self::get_structure_size(seq_size, tagged)
     }
@@ -251,7 +253,7 @@ impl X509CertWriter<'_> {
 
         // Size of concatenated tcb infos
         let tcb_infos_size = measurements.tci_nodes.len()
-            * Self::get_tcb_info_size(measurements.tci_nodes[0], /*tagged=*/ true)?;
+            * Self::get_tcb_info_size(&measurements.tci_nodes[0], /*tagged=*/ true)?;
 
         // Size of tcb infos including SEQUENCE OF tag/size
         let multi_tcb_info_size = Self::get_structure_size(tcb_infos_size, /*tagged=*/ true)?;
@@ -289,7 +291,7 @@ impl X509CertWriter<'_> {
     ) -> Result<usize, DpeErrorCode> {
         let tbs_size = Self::get_version_size(/*tagged=*/ true)?
             + Self::get_integer_bytes_size(serial_number, /*tagged=*/ true)?
-            + Self::get_ecc_alg_id_size(/*tagged=*/ true)?
+            + Self::get_ecdsa_sig_alg_id_size(/*tagged=*/ true)?
             + Self::get_rdn_size(issuer_name, /*tagged=*/ true)?
             + Self::get_validity_size(/*tagged=*/ true)?
             + Self::get_rdn_size(subject_name, /*tagged=*/ true)?
@@ -381,10 +383,10 @@ impl X509CertWriter<'_> {
         Ok(bytes_written)
     }
 
-    fn encode_printable_string(&mut self, s: &str) -> Result<usize, DpeErrorCode> {
+    fn encode_printable_string(&mut self, s: &[u8]) -> Result<usize, DpeErrorCode> {
         let mut bytes_written = self.encode_tag_field(Self::PRINTABLE_STRING_TAG)?;
         bytes_written += self.encode_size_field(s.len())?;
-        bytes_written += self.encode_bytes(s.as_bytes())?;
+        bytes_written += self.encode_bytes(s)?;
 
         Ok(bytes_written)
     }
@@ -442,8 +444,8 @@ impl X509CertWriter<'_> {
         Ok(bytes_written)
     }
 
-    /// DER-encodes the AlgorithmIdentifier for the signing algorithm used by
-    /// the active DPE profile.
+    /// DER-encodes the AlgorithmIdentifier for the EC public key algorithm
+    /// used by the active DPE profile.
     ///
     /// AlgorithmIdentifier  ::=  SEQUENCE  {
     ///     algorithm   OBJECT IDENTIFIER,
@@ -455,13 +457,30 @@ impl X509CertWriter<'_> {
     ///       -- implicitCurve   NULL
     ///       -- specifiedCurve  SpecifiedECDomain
     ///     }
-    fn encode_ecc_alg_id(&mut self) -> Result<usize, DpeErrorCode> {
-        let seq_size = Self::get_ecc_alg_id_size(/*tagged=*/ false)?;
+    fn encode_ec_pub_alg_id(&mut self) -> Result<usize, DpeErrorCode> {
+        let seq_size = Self::get_ec_pub_alg_id_size(/*tagged=*/ false)?;
+
+        let mut bytes_written = self.encode_tag_field(Self::SEQUENCE_TAG)?;
+        bytes_written += self.encode_size_field(seq_size)?;
+        bytes_written += self.encode_oid(Self::EC_PUB_OID)?;
+        bytes_written += self.encode_oid(Self::CURVE_OID)?;
+
+        Ok(bytes_written)
+    }
+
+    /// DER-encodes the AlgorithmIdentifier for the ECDSA signature algorithm
+    /// used by the active DPE profile.
+    ///
+    /// AlgorithmIdentifier  ::=  SEQUENCE  {
+    ///     algorithm   OBJECT IDENTIFIER,
+    ///     parameters  ECParameters
+    ///     }
+    fn encode_ecdsa_sig_alg_id(&mut self) -> Result<usize, DpeErrorCode> {
+        let seq_size = Self::get_ecdsa_sig_alg_id_size(/*tagged=*/ false)?;
 
         let mut bytes_written = self.encode_tag_field(Self::SEQUENCE_TAG)?;
         bytes_written += self.encode_size_field(seq_size)?;
         bytes_written += self.encode_oid(Self::ECDSA_OID)?;
-        bytes_written += self.encode_oid(Self::CURVE_OID)?;
 
         Ok(bytes_written)
     }
@@ -496,18 +515,21 @@ impl X509CertWriter<'_> {
     /// in uncompressed format.
     ///
     /// ECPoint ::= OCTET STRING
+    ///
+    /// The ECPoint OCTET STRING is mapped to the subjectPublicKey BIT STRING
+    /// directly, which means the OCTET STRING tag and size fields are omitted.
     fn encode_ecdsa_subject_pubkey_info(
         &mut self,
         pubkey: &EcdsaPub,
     ) -> Result<usize, DpeErrorCode> {
         let point_size = 1 + pubkey.x.len() + pubkey.y.len();
-        let bitstring_size = 1 + Self::get_structure_size(point_size, /*tagged=*/ true)?;
+        let bitstring_size = 1 + point_size;
         let seq_size = Self::get_structure_size(bitstring_size, /*tagged=*/ true)?
-            + Self::get_ecc_alg_id_size(/*tagged=*/ true)?;
+            + Self::get_ec_pub_alg_id_size(/*tagged=*/ true)?;
 
         let mut bytes_written = self.encode_tag_field(Self::SEQUENCE_TAG)?;
         bytes_written += self.encode_size_field(seq_size)?;
-        bytes_written += self.encode_ecc_alg_id()?;
+        bytes_written += self.encode_ec_pub_alg_id()?;
 
         bytes_written += self.encode_tag_field(Self::BIT_STRING_TAG)?;
         bytes_written += self.encode_size_field(bitstring_size)?;
@@ -515,8 +537,6 @@ impl X509CertWriter<'_> {
         // are used.
         bytes_written += self.encode_byte(0)?;
 
-        bytes_written += self.encode_tag_field(Self::OCTET_STRING_TAG)?;
-        bytes_written += self.encode_size_field(point_size)?;
         bytes_written += self.encode_byte(0x4)?;
         bytes_written += self.encode_bytes(&pubkey.x)?;
         bytes_written += self.encode_bytes(&pubkey.y)?;
@@ -652,7 +672,7 @@ impl X509CertWriter<'_> {
         bytes_written += self.encode_byte(0xFF)?; // Mark extension as critical
 
         let tcb_infos_size =
-            Self::get_tcb_info_size(measurements.tci_nodes[0], /*tagged=*/ true)?
+            Self::get_tcb_info_size(&measurements.tci_nodes[0], /*tagged=*/ true)?
                 * measurements.tci_nodes.len();
         bytes_written += self.encode_byte(Self::OCTET_STRING_TAG)?;
         bytes_written += self.encode_size_field(Self::get_structure_size(
@@ -734,7 +754,7 @@ impl X509CertWriter<'_> {
         bytes_written += self.encode_integer_bytes(serial_number)?;
 
         // signature
-        bytes_written += self.encode_ecc_alg_id()?;
+        bytes_written += self.encode_ecdsa_sig_alg_id()?;
 
         // issuer
         bytes_written += self.encode_rdn(issuer_name)?;
@@ -764,23 +784,11 @@ impl X509CertWriter<'_> {
     ///    signatureValue       BIT STRING  }
     pub fn encode_ecdsa_certificate(
         &mut self,
-        serial_number: &[u8],
-        issuer_name: &Name,
-        subject_name: &Name,
-        pubkey: &EcdsaPub,
-        measurements: &MeasurementData,
+        tbs: &[u8],
         sig: &EcdsaSignature,
     ) -> Result<usize, DpeErrorCode> {
-        let tbs_size = Self::get_tbs_size(
-            serial_number,
-            issuer_name,
-            subject_name,
-            pubkey,
-            measurements,
-            /*tagged=*/ true,
-        )?;
-        let cert_size = tbs_size
-            + Self::get_ecc_alg_id_size(/*tagged=*/ true)?
+        let cert_size = tbs.len()
+            + Self::get_ecdsa_sig_alg_id_size(/*tagged=*/ true)?
             + Self::get_ecdsa_signature_size(sig, /*tagged=*/ true)?;
 
         // Certificate sequence
@@ -788,16 +796,10 @@ impl X509CertWriter<'_> {
         bytes_written += self.encode_size_field(cert_size)?;
 
         // TBS
-        bytes_written += self.encode_ecdsa_tbs(
-            serial_number,
-            issuer_name,
-            subject_name,
-            pubkey,
-            measurements,
-        )?;
+        bytes_written += self.encode_bytes(tbs)?;
 
         // Alg ID
-        bytes_written += self.encode_ecc_alg_id()?;
+        bytes_written += self.encode_ecdsa_sig_alg_id()?;
 
         // Signature
         bytes_written += self.encode_ecdsa_signature(sig)?;
@@ -811,6 +813,7 @@ mod tests {
     use crate::x509::{EcdsaPub, EcdsaSignature, MeasurementData, Name, X509CertWriter};
     use crate::{dpe_instance::TciMeasurement, dpe_instance::TciNodeData, DPE_PROFILE};
     use asn1;
+    use std::str;
     use x509_parser::certificate::X509CertificateParser;
     use x509_parser::nom::Parser;
     use x509_parser::prelude::*;
@@ -886,8 +889,8 @@ mod tests {
     fn test_rdn() {
         let mut cert = [0u8; 128];
         let test_name = Name {
-            cn: "Caliptra Alias",
-            serial: "0x00000000",
+            cn: b"Caliptra Alias",
+            serial: b"0x00000000",
         };
 
         let mut w = X509CertWriter::new(&mut cert);
@@ -898,7 +901,11 @@ mod tests {
             Err(e) => panic!("Name parsing failed: {:?}", e),
         };
 
-        let expected = format!("CN={} + serialNumber={}", test_name.cn, test_name.serial);
+        let expected = format!(
+            "CN={} + serialNumber={}",
+            str::from_utf8(test_name.cn).unwrap(),
+            str::from_utf8(test_name.serial).unwrap()
+        );
         let actual = name.to_string_with_registry(oid_registry()).unwrap();
         assert_eq!(expected, actual);
 
@@ -967,13 +974,13 @@ mod tests {
 
         let test_serial = [0x1F; 20];
         let test_issuer_name = Name {
-            cn: "Caliptra Alias",
-            serial: "0x00000000",
+            cn: b"Caliptra Alias",
+            serial: b"0x00000000",
         };
 
         let test_subject_name = Name {
-            cn: "DPE Leaf",
-            serial: "0x00000000",
+            cn: b"DPE Leaf",
+            serial: b"0x00000000",
         };
 
         let test_pub = EcdsaPub {
@@ -984,8 +991,8 @@ mod tests {
         let node = TciNodeData::new();
 
         let measurements = MeasurementData {
-            label: &[0; DPE_PROFILE.get_hash_size()],
-            tci_nodes: &[&node],
+            _label: &[0; DPE_PROFILE.get_hash_size()],
+            tci_nodes: &[node],
         };
 
         let bytes_written = w
@@ -1010,18 +1017,15 @@ mod tests {
 
     #[test]
     fn test_full_cert() {
-        let mut cert = [0u8; 1024];
-        let mut w = X509CertWriter::new(&mut cert);
-
         let test_serial = [0x1F; 20];
         let test_issuer_name = Name {
-            cn: "Caliptra Alias",
-            serial: "0x00000000",
+            cn: b"Caliptra Alias",
+            serial: b"0x00000000",
         };
 
         let test_subject_name = Name {
-            cn: "DPE Leaf",
-            serial: "0x00000000",
+            cn: b"DPE Leaf",
+            serial: b"0x00000000",
         };
 
         let test_pub = EcdsaPub {
@@ -1036,19 +1040,26 @@ mod tests {
         let node = TciNodeData::new();
 
         let measurements = MeasurementData {
-            label: &[0; DPE_PROFILE.get_hash_size()],
-            tci_nodes: &[&node],
+            _label: &[0; DPE_PROFILE.get_hash_size()],
+            tci_nodes: &[node],
         };
 
-        let bytes_written = w
-            .encode_ecdsa_certificate(
+        let mut tbs = [0u8; 1024];
+        let mut tbs_writer = X509CertWriter::new(&mut tbs);
+        let mut bytes_written = tbs_writer
+            .encode_ecdsa_tbs(
                 &test_serial,
                 &test_issuer_name,
                 &test_subject_name,
                 &test_pub,
                 &measurements,
-                &test_sig,
             )
+            .unwrap();
+
+        let mut cert = [0u8; 1024];
+        let mut w = X509CertWriter::new(&mut cert);
+        bytes_written = w
+            .encode_ecdsa_certificate(&tbs[..bytes_written], &test_sig)
             .unwrap();
 
         let mut parser = X509CertificateParser::new().with_deep_parse_extensions(false);

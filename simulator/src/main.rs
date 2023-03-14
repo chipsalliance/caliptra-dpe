@@ -10,7 +10,7 @@ use openssl::{hash::MessageDigest, nid::Nid};
 
 use dpe::{
     commands::Command,
-    crypto::{Crypto, EcdsaPub},
+    crypto::{Crypto, EcdsaPub, EcdsaSignature},
     dpe_instance::{DpeInstance, Support},
     execute_command,
     response::DpeErrorCode,
@@ -146,6 +146,13 @@ impl SimCrypto {
             DpeProfile::P384Sha384 => MessageDigest::sha384(),
         }
     }
+
+    fn get_curve(profile: &DpeProfile) -> Nid {
+        match profile {
+            DpeProfile::P256Sha256 => Nid::X9_62_PRIME256V1,
+            DpeProfile::P384Sha384 => Nid::SECP384R1,
+        }
+    }
 }
 
 impl Crypto for SimCrypto {
@@ -193,5 +200,20 @@ impl Crypto for SimCrypto {
         pub_out.x.copy_from_slice(point.x.as_slice());
         pub_out.y.copy_from_slice(point.y.as_slice());
         Ok(pub_out)
+    }
+
+    fn ecdsa_sign_with_alias(
+        profile: DpeProfile,
+        digest: &[u8],
+    ) -> Result<EcdsaSignature, DpeErrorCode> {
+        let nid = Self::get_curve(&profile);
+        let priv_bytes = vec![0u8; profile.get_ecc_int_size()];
+        let sig = OpensslCrypto::ecdsa_sign_with_alias(digest, priv_bytes.as_slice(), nid)
+            .map_err(|_| DpeErrorCode::InternalError)?;
+
+        let mut sig_out = EcdsaSignature::default();
+        sig_out.r.copy_from_slice(sig.r().to_vec().as_slice());
+        sig_out.s.copy_from_slice(sig.s().to_vec().as_slice());
+        Ok(sig_out)
     }
 }
