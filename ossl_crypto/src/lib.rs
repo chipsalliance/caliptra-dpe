@@ -9,10 +9,12 @@
 
 use openssl::{
     bn::{BigNum, BigNumContext},
-    ec::{EcGroup, EcPoint},
+    ec::{EcGroup, EcKey, EcPoint},
+    ecdsa::EcdsaSig,
     error::ErrorStack,
     hash::{hash, MessageDigest},
     nid::Nid,
+    pkey::Private,
 };
 use openssl_kdf::{perform_kdf, KdfArgument, KdfKbMode, KdfMacType, KdfType};
 use std::vec::Vec;
@@ -58,7 +60,7 @@ impl OpensslCrypto {
     /// Use SP800-108 HMAC-CTR KDF to derive a private key and return the
     /// corresponding public key
     pub fn derive_ecdsa_pub(
-        cdi: &Vec<u8>,
+        cdi: &[u8],
         label: &[u8],
         info: &[u8],
         md: MessageDigest,
@@ -84,9 +86,7 @@ impl OpensslCrypto {
 
         let mut pub_point = EcPoint::new(&group).unwrap();
         let mut bn_ctx = BigNumContext::new().unwrap();
-        pub_point
-            .mul_generator(&group, &priv_bn, &mut bn_ctx)
-            .unwrap();
+        pub_point.mul_generator(&group, &priv_bn, &bn_ctx).unwrap();
 
         let mut x = BigNum::new().unwrap();
         let mut y = BigNum::new().unwrap();
@@ -100,5 +100,24 @@ impl OpensslCrypto {
             y: y.to_vec_padded((group.order_bits() / 8).try_into().unwrap())
                 .unwrap(),
         })
+    }
+
+    /// Sign `digest` with `priv`
+    pub fn ecdsa_sign_with_alias(
+        digest: &[u8],
+        priv_key: &[u8],
+        curve: Nid,
+    ) -> Result<EcdsaSig, ErrorStack> {
+        let group = EcGroup::from_curve_name(curve)?;
+
+        let priv_bn = BigNum::from_slice(priv_key)?;
+
+        let mut pub_point = EcPoint::new(&group)?;
+        let bn_ctx = BigNumContext::new()?;
+        pub_point.mul_generator(&group, &priv_bn, &bn_ctx).unwrap();
+
+        let ec_priv = EcKey::from_private_components(&group, &priv_bn, &pub_point)?;
+
+        EcdsaSig::sign::<Private>(digest, &ec_priv)
     }
 }

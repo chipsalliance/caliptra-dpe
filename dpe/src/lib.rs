@@ -14,6 +14,7 @@ pub mod dpe_instance;
 pub mod response;
 mod x509;
 
+const MAX_CERT_SIZE: usize = 2048;
 const MAX_HANDLES: usize = 24;
 const HANDLE_SIZE: usize = 16;
 const CURRENT_PROFILE_VERSION: u32 = 0;
@@ -43,6 +44,7 @@ impl DpeProfile {
 
 #[cfg(feature = "dpe_profile_p256_sha256")]
 pub const DPE_PROFILE: DpeProfile = DpeProfile::P256Sha256;
+
 #[cfg(feature = "dpe_profile_p384_sha384")]
 pub const DPE_PROFILE: DpeProfile = DpeProfile::P384Sha384;
 
