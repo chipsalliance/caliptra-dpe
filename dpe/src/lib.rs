@@ -49,11 +49,11 @@ pub const DPE_PROFILE: DpeProfile = DpeProfile::P384Sha384;
 /// Execute a DPE command.
 /// Returns the number of bytes written to `response`.
 pub fn execute_command<C: Crypto>(
-    dpe: &mut dpe_instance::DpeInstance,
+    dpe: &mut dpe_instance::DpeInstance<C>,
     cmd: &[u8],
     response: &mut [u8],
 ) -> Result<usize, DpeErrorCode> {
-    match dpe.execute_serialized_command::<C>(cmd) {
+    match dpe.execute_serialized_command(cmd) {
         Ok(response_data) => {
             // Add the response header.
             let header_len = ResponseHdr::new(DpeErrorCode::NoError).serialize(response)?;
