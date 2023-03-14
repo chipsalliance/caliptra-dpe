@@ -139,6 +139,7 @@ version = "0.1.0"
 dependencies = [
  "asn1",
  "openssl",
+ "ossl_crypto",
  "x509-parser",
 ]
 
@@ -258,6 +259,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "openssl-kdf"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3a1fa996d05b13619516a4a4a76da9d0c1ffd60b1d1f3f3523f0bd5d27c12f27"
+dependencies = [
+ "foreign-types",
+ "libc",
+ "openssl",
+ "openssl-sys",
+ "pkg-config",
+ "thiserror",
+]
+
+[[package]]
 name = "openssl-macros"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -279,6 +294,14 @@ dependencies = [
  "libc",
  "pkg-config",
  "vcpkg",
+]
+
+[[package]]
+name = "ossl_crypto"
+version = "0.1.0"
+dependencies = [
+ "openssl",
+ "openssl-kdf",
 ]
 
 [[package]]
