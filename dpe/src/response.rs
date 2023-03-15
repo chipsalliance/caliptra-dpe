@@ -136,7 +136,7 @@ pub enum DpeErrorCode {
     InvalidArgument = 3,
     ArgumentNotSupported = 4,
     InvalidHandle = 0x1000,
-    InvalidDomain = 0x1001,
+    InvalidLocality = 0x1001,
     BadTag = 0x1002,
     HandleDefined = 0x1003,
     MaxTcis = 0x1004,
@@ -193,7 +193,7 @@ mod tests {
         test_error_code_serialize(DpeErrorCode::InvalidArgument);
         test_error_code_serialize(DpeErrorCode::ArgumentNotSupported);
         test_error_code_serialize(DpeErrorCode::InvalidHandle);
-        test_error_code_serialize(DpeErrorCode::InvalidDomain);
+        test_error_code_serialize(DpeErrorCode::InvalidLocality);
         test_error_code_serialize(DpeErrorCode::BadTag);
         test_error_code_serialize(DpeErrorCode::HandleDefined);
         test_error_code_serialize(DpeErrorCode::MaxTcis);

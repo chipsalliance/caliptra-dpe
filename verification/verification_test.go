@@ -6,6 +6,11 @@ import (
 	"testing"
 )
 
+const (
+	AUTO_INIT_LOCALITY uint32 = 0
+	OTHER_LOCALITY     uint32 = 0x4f544852
+)
+
 var sim_exe = flag.String("sim", "../simulator/target/debug/simulator", "path to simulator executable")
 
 func TestGetProfile(t *testing.T) {
@@ -17,7 +22,7 @@ func TestGetProfile(t *testing.T) {
 	}
 
 	client := DpeClient{transport: &SimulatorTransport{}}
-	err, respHdr, _ := client.GetProfile()
+	err, respHdr, _ := client.GetProfile(AUTO_INIT_LOCALITY)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,7 +40,7 @@ func TestInitializeContext(t *testing.T) {
 	}
 
 	client := DpeClient{transport: &SimulatorTransport{}}
-	err, respHdr, _ := client.GetProfile()
+	err, respHdr, _ := client.GetProfile(AUTO_INIT_LOCALITY)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +48,7 @@ func TestInitializeContext(t *testing.T) {
 		t.Fatal("Unable to get profile.")
 	}
 
-	err, respHdr, _ = client.Initialize(NewInitCtxIsDefault())
+	err, respHdr, _ = client.Initialize(AUTO_INIT_LOCALITY, NewInitCtxIsDefault())
 	if err != nil {
 		t.Fatal(err)
 	}

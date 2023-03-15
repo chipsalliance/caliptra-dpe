@@ -14,9 +14,10 @@ use crate::{
 
 use core::marker::PhantomData;
 
-pub struct DpeInstance<C: Crypto> {
+pub struct DpeInstance<'a, C: Crypto> {
     contexts: [Context; MAX_HANDLES],
     support: Support,
+    localities: &'a [u32],
 
     // All functions/data in C are static and global. For this reason
     // DpeInstance doesn't actually need to hold an instance. The PhantomData
@@ -24,29 +25,47 @@ pub struct DpeInstance<C: Crypto> {
     phantom: PhantomData<C>,
 }
 
-impl<C: Crypto> DpeInstance<C> {
+impl<C: Crypto> DpeInstance<'_, C> {
     const DEFAULT_CONTEXT_HANDLE: [u8; HANDLE_SIZE] = [0; HANDLE_SIZE];
+    pub const AUTO_INIT_LOCALITY: u32 = 0;
 
-    pub fn new(support: Support) -> DpeInstance<C> {
+    /// Create a new DPE instance.
+    ///
+    /// # Arguments
+    ///
+    /// * `support` - optional functionality the instance supports
+    /// * `localities` - all possible valid localities for the system
+    pub fn new(support: Support, localities: &[u32]) -> Result<DpeInstance<C>, DpeErrorCode> {
+        if localities.is_empty() {
+            return Err(DpeErrorCode::InvalidLocality);
+        }
         const CONTEXT_INITIALIZER: Context = Context::new();
         let mut dpe = DpeInstance {
             contexts: [CONTEXT_INITIALIZER; MAX_HANDLES],
             support,
+            localities,
             phantom: PhantomData,
         };
 
         if dpe.support.auto_init {
-            dpe.initialize_context(&InitCtxCmd::new_use_default())
-                .unwrap();
+            // Make sure the auto-initialized locality is listed.
+            if !localities.iter().any(|&l| l == Self::AUTO_INIT_LOCALITY) {
+                return Err(DpeErrorCode::InvalidLocality);
+            }
+            dpe.initialize_context(Self::AUTO_INIT_LOCALITY, &InitCtxCmd::new_use_default())?;
         }
-        dpe
+        Ok(dpe)
     }
 
     pub fn get_profile(&self) -> Result<GetProfileResp, DpeErrorCode> {
         Ok(GetProfileResp::new(self.support.get_flags()))
     }
 
-    pub fn initialize_context(&mut self, cmd: &InitCtxCmd) -> Result<InitCtxResp, DpeErrorCode> {
+    pub fn initialize_context(
+        &mut self,
+        locality: u32,
+        cmd: &InitCtxCmd,
+    ) -> Result<InitCtxResp, DpeErrorCode> {
         if (cmd.flag_is_default() && self.get_default_context().is_some())
             || (cmd.flag_is_simulation() && !self.support.simulation)
         {
@@ -72,16 +91,25 @@ impl<C: Crypto> DpeInstance<C> {
             (ContextType::Simulation, handle)
         };
 
-        context.activate(context_type, &handle);
+        context.activate(context_type, locality, &handle);
         Ok(InitCtxResp { handle })
     }
 
     /// Rotate the handle for given context to another random value. This also allows changing the
     /// locality of the context.
-    pub fn rotate_context(&mut self, cmd: &RotateCtxCmd) -> Result<Response, DpeErrorCode> {
+    pub fn rotate_context(
+        &mut self,
+        locality: u32,
+        cmd: &RotateCtxCmd,
+    ) -> Result<Response, DpeErrorCode> {
         let context = self
             .get_active_context_mut(&cmd.handle)
             .ok_or(DpeErrorCode::InvalidHandle)?;
+
+        // Make sure the command is coming from the right locality.
+        if context.locality != locality {
+            return Err(DpeErrorCode::InvalidHandle);
+        }
 
         C::rand_bytes(&mut context.handle)?;
         Ok(Response::RotateCtx(RotateCtxResp {
@@ -90,10 +118,19 @@ impl<C: Crypto> DpeInstance<C> {
     }
 
     /// Destroy a context and optionally all of its descendants.
-    pub fn destroy_context(&mut self, cmd: &DestroyCtxCmd) -> Result<Response, DpeErrorCode> {
+    pub fn destroy_context(
+        &mut self,
+        locality: u32,
+        cmd: &DestroyCtxCmd,
+    ) -> Result<Response, DpeErrorCode> {
         let (idx, context) = self
             .get_active_context_index(&cmd.handle)
             .ok_or(DpeErrorCode::InvalidHandle)?;
+
+        // Make sure the command is coming from the right locality.
+        if context.locality != locality {
+            return Err(DpeErrorCode::InvalidHandle);
+        }
 
         let to_destroy = if cmd.flag_is_destroy_descendants() {
             (1 << idx) | self.get_descendants(context)?
@@ -111,14 +148,25 @@ impl<C: Crypto> DpeInstance<C> {
     ///
     /// # Arguments
     ///
+    /// * `locality` - which hardware locality is making the request
     /// * `cmd` - serialized command
-    pub fn execute_serialized_command(&mut self, cmd: &[u8]) -> Result<Response, DpeErrorCode> {
+    pub fn execute_serialized_command(
+        &mut self,
+        locality: u32,
+        cmd: &[u8],
+    ) -> Result<Response, DpeErrorCode> {
+        // Make sure the command is coming from a valid locality.
+        if !self.localities.iter().any(|&l| l == locality) {
+            return Err(DpeErrorCode::InvalidLocality);
+        }
         let command = Command::deserialize(cmd)?;
         match command {
             Command::GetProfile => Ok(Response::GetProfile(self.get_profile()?)),
-            Command::InitCtx(context) => Ok(Response::InitCtx(self.initialize_context(&context)?)),
-            Command::RotateCtx(cmd) => self.rotate_context(&cmd),
-            Command::DestroyCtx(context) => self.destroy_context(&context),
+            Command::InitCtx(context) => Ok(Response::InitCtx(
+                self.initialize_context(locality, &context)?,
+            )),
+            Command::RotateCtx(cmd) => self.rotate_context(locality, &cmd),
+            Command::DestroyCtx(context) => self.destroy_context(locality, &context),
         }
     }
 
@@ -268,12 +316,14 @@ enum ContextType {
 struct Context {
     handle: [u8; HANDLE_SIZE],
     tci: TciNodeData,
-    // Bitmap of the node indices that are children of this node
+    /// Bitmap of the node indices that are children of this node
     children: u32,
-    // Index in DPE instance of the parent context. 0xFF if this node is the root
+    /// Index in DPE instance of the parent context. 0xFF if this node is the root
     parent_idx: u8,
     context_type: ContextType,
     state: ContextState,
+    /// Which hardware locality owns the context.
+    locality: u32,
 }
 
 impl Context {
@@ -287,6 +337,7 @@ impl Context {
             parent_idx: Self::ROOT_INDEX,
             context_type: ContextType::Default,
             state: ContextState::Inactive,
+            locality: 0,
         }
     }
 
@@ -295,15 +346,22 @@ impl Context {
     /// # Arguments
     ///
     /// * `context_type` - Context type this will become.
+    /// * `locality` - Which hardware locality owns the context.
     /// * `handle` - Value that will be used to refer to the context. Random value for simulation
     ///   contexts and 0x0 for the default context.
-    pub fn activate(&mut self, context_type: ContextType, handle: &[u8; HANDLE_SIZE]) {
+    pub fn activate(
+        &mut self,
+        context_type: ContextType,
+        locality: u32,
+        handle: &[u8; HANDLE_SIZE],
+    ) {
         self.handle.copy_from_slice(handle);
         self.tci = TciNodeData::new();
         self.children = 0;
         self.parent_idx = Self::ROOT_INDEX;
         self.context_type = context_type;
         self.state = ContextState::Active;
+        self.locality = locality;
     }
 
     /// Destroy this context so it can no longer be used until it is re-initialized. The default
@@ -368,14 +426,93 @@ pub mod tests {
     pub const SIMULATION_HANDLE: [u8; HANDLE_SIZE] =
         [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
 
+    pub const TEST_LOCALITIES: [u32; 2] = [
+        DpeInstance::<DeterministicCrypto>::AUTO_INIT_LOCALITY,
+        u32::from_be_bytes(*b"OTHR"),
+    ];
+
+    #[test]
+    fn test_localities() {
+        // Empty list of localities.
+        assert_eq!(
+            DpeErrorCode::InvalidLocality,
+            DpeInstance::<DeterministicCrypto>::new(SUPPORT, &[])
+                .err()
+                .unwrap()
+        );
+
+        // Auto-init without the auto-init locality.
+        assert_eq!(
+            DpeErrorCode::InvalidLocality,
+            DpeInstance::<DeterministicCrypto>::new(SUPPORT, &TEST_LOCALITIES[1..])
+                .err()
+                .unwrap()
+        );
+
+        let mut dpe = DpeInstance::<DeterministicCrypto>::new(SUPPORT, &TEST_LOCALITIES).unwrap();
+        assert_eq!(
+            Err(DpeErrorCode::InvalidLocality),
+            dpe.execute_serialized_command(
+                0x1234_5678, // test value that is not part of the localities
+                &Vec::<u8>::from(CommandHdr::new(Command::GetProfile)),
+            )
+        );
+
+        // Make sure requests work for all localities.
+        for l in TEST_LOCALITIES {
+            assert_eq!(
+                Response::GetProfile(GetProfileResp::new(SUPPORT.get_flags())),
+                dpe.execute_serialized_command(
+                    l,
+                    &Vec::<u8>::from(CommandHdr::new(Command::GetProfile)),
+                )
+                .unwrap()
+            );
+        }
+
+        // Initialize a context to run some tests against.
+        dpe.initialize_context(TEST_LOCALITIES[1], &InitCtxCmd::new_simulation())
+            .unwrap();
+
+        // Make sure the locality was recorded correctly.
+        let (_, context) = dpe.get_active_context_index(&SIMULATION_HANDLE).unwrap();
+        assert_eq!(context.locality, TEST_LOCALITIES[1]);
+
+        // Make sure the other locality can't destroy it.
+        assert_eq!(
+            Err(DpeErrorCode::InvalidHandle),
+            dpe.destroy_context(
+                TEST_LOCALITIES[0],
+                &DestroyCtxCmd {
+                    handle: SIMULATION_HANDLE,
+                    flags: 0
+                }
+            )
+        );
+
+        // Make sure right locality can destroy it.
+        assert!(dpe
+            .destroy_context(
+                TEST_LOCALITIES[1],
+                &DestroyCtxCmd {
+                    handle: SIMULATION_HANDLE,
+                    flags: 0,
+                },
+            )
+            .is_ok());
+    }
+
     #[test]
     fn test_execute_serialized_command() {
-        let mut dpe = DpeInstance::<DeterministicCrypto>::new(SUPPORT);
+        let mut dpe = DpeInstance::<DeterministicCrypto>::new(SUPPORT, &TEST_LOCALITIES).unwrap();
 
         assert_eq!(
             Response::GetProfile(GetProfileResp::new(SUPPORT.get_flags())),
-            dpe.execute_serialized_command(&Vec::<u8>::from(CommandHdr::new(Command::GetProfile)))
-                .unwrap()
+            dpe.execute_serialized_command(
+                TEST_LOCALITIES[0],
+                &Vec::<u8>::from(CommandHdr::new(Command::GetProfile)),
+            )
+            .unwrap()
         );
 
         // The default context was initialized while creating the instance. Now lets create a
@@ -389,13 +526,14 @@ pub mod tests {
             Response::InitCtx(InitCtxResp {
                 handle: SIMULATION_HANDLE
             }),
-            dpe.execute_serialized_command(&command).unwrap()
+            dpe.execute_serialized_command(TEST_LOCALITIES[0], &command)
+                .unwrap()
         );
     }
 
     #[test]
     fn test_get_profile() {
-        let dpe = DpeInstance::<DeterministicCrypto>::new(SUPPORT);
+        let dpe = DpeInstance::<DeterministicCrypto>::new(SUPPORT, &TEST_LOCALITIES).unwrap();
         let profile = dpe.get_profile().unwrap();
         assert_eq!(profile.version, CURRENT_PROFILE_VERSION);
         assert_eq!(profile.flags, SUPPORT.get_flags());
@@ -403,12 +541,13 @@ pub mod tests {
 
     #[test]
     fn test_initialize_context() {
-        let mut dpe = DpeInstance::<DeterministicCrypto>::new(Support::default());
+        let mut dpe =
+            DpeInstance::<DeterministicCrypto>::new(Support::default(), &TEST_LOCALITIES).unwrap();
 
         // Make sure default context is 0x0.
         assert_eq!(
             DpeInstance::<DeterministicCrypto>::DEFAULT_CONTEXT_HANDLE,
-            dpe.initialize_context(&InitCtxCmd::new_use_default())
+            dpe.initialize_context(TEST_LOCALITIES[0], &InitCtxCmd::new_use_default())
                 .unwrap()
                 .handle
         );
@@ -416,7 +555,7 @@ pub mod tests {
         // Try to double initialize the default context.
         assert_eq!(
             DpeErrorCode::ArgumentNotSupported,
-            dpe.initialize_context(&InitCtxCmd::new_use_default())
+            dpe.initialize_context(TEST_LOCALITIES[0], &InitCtxCmd::new_use_default())
                 .err()
                 .unwrap()
         );
@@ -425,7 +564,7 @@ pub mod tests {
         dpe.get_default_context().unwrap().state = ContextState::Locked;
         assert_eq!(
             DpeErrorCode::ArgumentNotSupported,
-            dpe.initialize_context(&InitCtxCmd::new_use_default())
+            dpe.initialize_context(TEST_LOCALITIES[0], &InitCtxCmd::new_use_default())
                 .err()
                 .unwrap()
         );
@@ -433,7 +572,7 @@ pub mod tests {
         // Try not setting any flags.
         assert_eq!(
             DpeErrorCode::InvalidArgument,
-            dpe.initialize_context(&InitCtxCmd { flags: 0 })
+            dpe.initialize_context(TEST_LOCALITIES[0], &InitCtxCmd { flags: 0 })
                 .err()
                 .unwrap()
         );
@@ -441,21 +580,25 @@ pub mod tests {
         // Try simulation when not supported.
         assert_eq!(
             DpeErrorCode::ArgumentNotSupported,
-            dpe.initialize_context(&InitCtxCmd::new_simulation())
+            dpe.initialize_context(TEST_LOCALITIES[0], &InitCtxCmd::new_simulation())
                 .err()
                 .unwrap()
         );
 
         // Change to support simulation.
-        let mut dpe = DpeInstance::<DeterministicCrypto>::new(Support {
-            simulation: true,
-            ..Support::default()
-        });
+        let mut dpe = DpeInstance::<DeterministicCrypto>::new(
+            Support {
+                simulation: true,
+                ..Support::default()
+            },
+            &TEST_LOCALITIES,
+        )
+        .unwrap();
 
         // Try setting both flags.
         assert_eq!(
             DpeErrorCode::InvalidArgument,
-            dpe.initialize_context(&InitCtxCmd { flags: 3 << 30 })
+            dpe.initialize_context(TEST_LOCALITIES[0], &InitCtxCmd { flags: 3 << 30 })
                 .err()
                 .unwrap()
         );
@@ -464,7 +607,7 @@ pub mod tests {
         for _ in 0..MAX_HANDLES {
             assert_eq!(
                 SIMULATION_HANDLE,
-                dpe.initialize_context(&InitCtxCmd::new_simulation())
+                dpe.initialize_context(TEST_LOCALITIES[0], &InitCtxCmd::new_simulation())
                     .unwrap()
                     .handle
             );
@@ -473,7 +616,7 @@ pub mod tests {
         // Try to initilize one more.
         assert_eq!(
             DpeErrorCode::MaxTcis,
-            dpe.initialize_context(&InitCtxCmd::new_simulation())
+            dpe.initialize_context(TEST_LOCALITIES[0], &InitCtxCmd::new_simulation())
                 .err()
                 .unwrap()
         );
@@ -481,19 +624,39 @@ pub mod tests {
 
     #[test]
     fn test_rotate_context() {
-        let mut dpe = DpeInstance::<DeterministicCrypto>::new(Support {
-            auto_init: true,
-            ..Support::default()
-        });
+        let mut dpe = DpeInstance::<DeterministicCrypto>::new(
+            Support {
+                auto_init: true,
+                ..Support::default()
+            },
+            &TEST_LOCALITIES,
+        )
+        .unwrap();
 
         // Invalid handle.
         assert_eq!(
             Err(DpeErrorCode::InvalidHandle),
-            dpe.rotate_context(&RotateCtxCmd {
-                handle: TEST_HANDLE,
-                flags: 0,
-                target_locality: 0
-            })
+            dpe.rotate_context(
+                TEST_LOCALITIES[0],
+                &RotateCtxCmd {
+                    handle: TEST_HANDLE,
+                    flags: 0,
+                    target_locality: 0
+                }
+            )
+        );
+
+        // Wrong locality.
+        assert_eq!(
+            Err(DpeErrorCode::InvalidHandle),
+            dpe.rotate_context(
+                TEST_LOCALITIES[1],
+                &RotateCtxCmd {
+                    handle: DpeInstance::<DeterministicCrypto>::DEFAULT_CONTEXT_HANDLE,
+                    flags: 0,
+                    target_locality: 0
+                }
+            )
         );
 
         // Rotate default handle.
@@ -501,11 +664,14 @@ pub mod tests {
             Ok(Response::RotateCtx(RotateCtxResp {
                 handle: SIMULATION_HANDLE
             })),
-            dpe.rotate_context(&RotateCtxCmd {
-                handle: DpeInstance::<DeterministicCrypto>::DEFAULT_CONTEXT_HANDLE,
-                flags: 0,
-                target_locality: 0
-            })
+            dpe.rotate_context(
+                TEST_LOCALITIES[0],
+                &RotateCtxCmd {
+                    handle: DpeInstance::<DeterministicCrypto>::DEFAULT_CONTEXT_HANDLE,
+                    flags: 0,
+                    target_locality: 0
+                }
+            )
         );
     }
 
@@ -579,7 +745,8 @@ pub mod tests {
 
     #[test]
     fn test_get_active_context_index() {
-        let mut dpe = DpeInstance::<DeterministicCrypto>::new(Support::default());
+        let mut dpe =
+            DpeInstance::<DeterministicCrypto>::new(Support::default(), &TEST_LOCALITIES).unwrap();
         let expected_index = 7;
         dpe.contexts[expected_index]
             .handle
@@ -602,7 +769,8 @@ pub mod tests {
 
     #[test]
     fn test_get_descendants() {
-        let mut dpe = DpeInstance::<DeterministicCrypto>::new(Support::default());
+        let mut dpe =
+            DpeInstance::<DeterministicCrypto>::new(Support::default(), &TEST_LOCALITIES).unwrap();
         let root = 7;
         let child_1 = 3;
         let child_1_1 = 0;

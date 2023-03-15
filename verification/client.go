@@ -16,7 +16,7 @@ type DpeClient struct {
 	profile   uint32
 }
 
-func (c *DpeClient) Initialize(cmd *InitCtxCmd) (error, RespHdr, InitCtxResp) {
+func (c *DpeClient) Initialize(locality uint32, cmd *InitCtxCmd) (error, RespHdr, InitCtxResp) {
 	hdr := CommandHdr{
 		magic:   CmdMagic,
 		cmd:     InitCtxCode,
@@ -24,6 +24,7 @@ func (c *DpeClient) Initialize(cmd *InitCtxCmd) (error, RespHdr, InitCtxResp) {
 	}
 
 	buf := &bytes.Buffer{}
+	binary.Write(buf, binary.LittleEndian, locality)
 	binary.Write(buf, binary.LittleEndian, hdr)
 	binary.Write(buf, binary.LittleEndian, cmd)
 
@@ -47,13 +48,14 @@ func (c *DpeClient) Initialize(cmd *InitCtxCmd) (error, RespHdr, InitCtxResp) {
 	return nil, respHdr, respStruct
 }
 
-func (c *DpeClient) GetProfile() (error, RespHdr, GetProfileResp) {
+func (c *DpeClient) GetProfile(locality uint32) (error, RespHdr, GetProfileResp) {
 	hdr := CommandHdr{
 		magic: CmdMagic,
 		cmd:   GetProfileCode,
 	}
 
 	buf := &bytes.Buffer{}
+	binary.Write(buf, binary.LittleEndian, locality)
 	binary.Write(buf, binary.LittleEndian, hdr)
 
 	err, resp := c.transport.SendCmd(buf.Bytes())
