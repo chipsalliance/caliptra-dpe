@@ -5,7 +5,7 @@ use dpe::dpe_instance::{DpeInstance, Support};
 use dpe::response::DpeErrorCode;
 use dpe::{execute_command, DpeProfile};
 use std::fs;
-use std::io::{Read, Write};
+use std::io::{Error, ErrorKind, Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
 use std::process;
@@ -14,18 +14,27 @@ const SOCKET_PATH: &str = "/tmp/dpe-sim.socket";
 
 fn handle_request(dpe: &mut DpeInstance<OpensslCrypto>, stream: &mut UnixStream) {
     let mut buf = [0u8; 128];
-    let len = stream.read(&mut buf).unwrap();
+    let (locality, cmd) = {
+        let len = stream.read(&mut buf).unwrap();
+        (
+            u32::from_le_bytes(buf[..4].try_into().unwrap()),
+            &buf[4..len],
+        )
+    };
 
     println!("----------------------------------");
-    if let Ok(command) = Command::deserialize(&buf[..len]) {
-        println!("| {command:x?}",);
+    if let Ok(command) = Command::deserialize(cmd) {
+        println!("| Locality `{locality:#x}` requested {command:x?}",);
     } else {
-        println!("| Received invalid command. {:02x?}", &buf[..len])
+        println!(
+            "| Locality `{locality:#010x}` requested invalid command. {:02x?}",
+            cmd
+        )
     }
     println!("|");
 
     let mut response = [0u8; 128];
-    let len = execute_command(dpe, &buf[..len], &mut response).unwrap();
+    let len = execute_command(dpe, locality, cmd, &mut response).unwrap();
 
     let response_code = u32::from_le_bytes(response[4..8].try_into().unwrap());
     // There are a few vendor error codes starting at 0x1000, so this can be a 2 bytes.
@@ -72,6 +81,10 @@ struct Args {
 }
 
 fn main() -> std::io::Result<()> {
+    const LOCALITIES: [u32; 2] = [
+        DpeInstance::<OpensslCrypto>::AUTO_INIT_LOCALITY,
+        u32::from_be_bytes(*b"OTHR"),
+    ];
     let args = Args::parse();
 
     let socket = Path::new(SOCKET_PATH);
@@ -95,7 +108,12 @@ fn main() -> std::io::Result<()> {
         tagging: args.supports_tagging,
         rotate_context: args.supports_rotate_context,
     };
-    let mut dpe = DpeInstance::<OpensslCrypto>::new(support);
+    let mut dpe = DpeInstance::<OpensslCrypto>::new(support, &LOCALITIES).map_err(|err| {
+        Error::new(
+            ErrorKind::Other,
+            format!("{err:?} while creating new DPE instance"),
+        )
+    })?;
 
     println!("DPE listening to socket {SOCKET_PATH}");
 
