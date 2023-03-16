@@ -90,7 +90,7 @@ impl GetProfileResp {
         dst[0..4].copy_from_slice(&self.version.to_le_bytes());
         dst[4..8].copy_from_slice(&self.max_tci_nodes.to_le_bytes());
         dst[8..12].copy_from_slice(&self.flags.to_le_bytes());
-        Ok(8)
+        Ok(size_of::<GetProfileResp>())
     }
 }
 
@@ -216,7 +216,7 @@ mod tests {
 
         let mut response_buffer = [0; size_of::<GetProfileResp>()];
         assert_eq!(
-            8,
+            12,
             DEFAULT_GET_PROFILE_RESPONSE
                 .serialize(response_buffer.as_mut_slice())
                 .unwrap()
