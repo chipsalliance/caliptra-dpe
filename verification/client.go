@@ -32,6 +32,14 @@ type Transport interface {
 	// it supports, but this function is used by tests to know how to test the DPE
 	// instance.
 	GetSupport() Support
+	// Returns the profile the transport supports.
+	GetProfile() uint32
+	// Returns a slice of all the localities the instance supports.
+	GetLocalities() []uint32
+	// Returns the Maximum number of the TCIs instance can have.
+	GetMaxTciNodes() uint32
+	// Returns the version of the profile the instance implements.
+	GetProfileVersion() uint32
 }
 
 type DpeClient struct {
@@ -53,20 +61,26 @@ func (c *DpeClient) Initialize(locality uint32, cmd *InitCtxCmd) (error, RespHdr
 
 	err, resp := c.transport.SendCmd(buf.Bytes())
 	if err != nil {
-		return err, RespHdr{}, InitCtxResp{}
+		return err, RespHdr{Status: 0xffffffff}, InitCtxResp{}
 	}
 
 	respHdr := RespHdr{}
 	respStruct := InitCtxResp{}
 
 	r := bytes.NewReader(resp)
-	binary.Read(r, binary.LittleEndian, &respHdr)
+	err = binary.Read(r, binary.LittleEndian, &respHdr)
+	if err != nil {
+		return err, RespHdr{Status: 0xffffffff}, InitCtxResp{}
+	}
 	err = c.checkRespHdr(respHdr)
 	if err != nil {
-		return err, RespHdr{}, InitCtxResp{}
+		return err, respHdr, InitCtxResp{}
 	}
 
-	binary.Read(r, binary.LittleEndian, &respStruct)
+	err = binary.Read(r, binary.LittleEndian, &respStruct)
+	if err != nil {
+		return err, respHdr, InitCtxResp{}
+	}
 
 	return nil, respHdr, respStruct
 }
@@ -83,20 +97,26 @@ func (c *DpeClient) GetProfile(locality uint32) (error, RespHdr, GetProfileResp)
 
 	err, resp := c.transport.SendCmd(buf.Bytes())
 	if err != nil {
-		return err, RespHdr{}, GetProfileResp{}
+		return err, RespHdr{Status: 0xffffffff}, GetProfileResp{}
 	}
 
 	respHdr := RespHdr{}
 	respStruct := GetProfileResp{}
 
 	r := bytes.NewReader(resp)
-	binary.Read(r, binary.LittleEndian, &respHdr)
+	err = binary.Read(r, binary.LittleEndian, &respHdr)
+	if err != nil {
+		return err, RespHdr{Status: 0xffffffff}, GetProfileResp{}
+	}
 	err = c.checkRespHdr(respHdr)
 	if err != nil {
-		return err, RespHdr{}, GetProfileResp{}
+		return err, respHdr, GetProfileResp{}
 	}
 
-	binary.Read(r, binary.LittleEndian, &respStruct)
+	err = binary.Read(r, binary.LittleEndian, &respStruct)
+	if err != nil {
+		return err, respHdr, GetProfileResp{}
+	}
 	if respHdr.Status == 0 {
 		c.profile = respHdr.Profile
 	}
@@ -112,4 +132,24 @@ func (c *DpeClient) checkRespHdr(hdr RespHdr) error {
 		return errors.New("Invalid response magic value.")
 	}
 	return nil
+}
+
+func (s *Support) ToFlags() uint32 {
+	flags := uint32(0)
+	if s.Simulation {
+		flags |= (1 << 31)
+	}
+	if s.ExtendTci {
+		flags |= (1 << 30)
+	}
+	if s.AutoInit {
+		flags |= (1 << 29)
+	}
+	if s.Tagging {
+		flags |= (1 << 28)
+	}
+	if s.RotateContext {
+		flags |= (1 << 27)
+	}
+	return flags
 }
