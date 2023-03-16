@@ -13,6 +13,7 @@ pub enum Response {
     InitCtx(InitCtxResp),
     RotateCtx(RotateCtxResp),
     DestroyCtx,
+    TagTci(TagTciResp),
 }
 
 impl Response {
@@ -28,6 +29,7 @@ impl Response {
             Response::InitCtx(response) => response.serialize(dst),
             Response::RotateCtx(response) => response.serialize(dst),
             Response::DestroyCtx => Ok(0),
+            Response::TagTci(response) => response.serialize(dst),
         }
     }
 }
@@ -118,6 +120,23 @@ pub struct RotateCtxResp {
 }
 
 impl RotateCtxResp {
+    pub fn serialize(&self, dst: &mut [u8]) -> Result<usize, DpeErrorCode> {
+        if dst.len() < size_of::<Self>() {
+            return Err(DpeErrorCode::InternalError);
+        }
+
+        dst[..HANDLE_SIZE].copy_from_slice(&self.handle);
+        Ok(HANDLE_SIZE)
+    }
+}
+
+#[repr(C)]
+#[derive(Debug, PartialEq, Eq)]
+pub struct TagTciResp {
+    pub handle: [u8; HANDLE_SIZE],
+}
+
+impl TagTciResp {
     pub fn serialize(&self, dst: &mut [u8]) -> Result<usize, DpeErrorCode> {
         if dst.len() < size_of::<Self>() {
             return Err(DpeErrorCode::InternalError);
