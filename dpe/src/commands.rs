@@ -13,6 +13,7 @@ pub enum Command {
     InitCtx(InitCtxCmd),
     RotateCtx(RotateCtxCmd),
     DestroyCtx(DestroyCtxCmd),
+    TagTci(TagTciCmd),
 }
 
 impl Command {
@@ -49,7 +50,7 @@ impl Command {
             Command::DESTROY_CONTEXT => Ok(Command::DestroyCtx(DestroyCtxCmd::try_from(bytes)?)),
             Command::GET_CERTIFICATE_CHAIN => Err(DpeErrorCode::InvalidCommand),
             Command::EXTEND_TCI => Err(DpeErrorCode::InvalidCommand),
-            Command::TAG_TCI => Err(DpeErrorCode::InvalidCommand),
+            Command::TAG_TCI => Ok(Command::TagTci(TagTciCmd::try_from(bytes)?)),
             Command::GET_TAGGED_TCI => Err(DpeErrorCode::InvalidCommand),
             _ => Err(DpeErrorCode::InvalidCommand),
         }
@@ -210,6 +211,28 @@ impl TryFrom<&[u8]> for DestroyCtxCmd {
     }
 }
 
+#[repr(C)]
+#[derive(Debug, PartialEq, Eq)]
+pub struct TagTciCmd {
+    pub handle: [u8; HANDLE_SIZE],
+    pub tag: u32,
+}
+
+impl TryFrom<&[u8]> for TagTciCmd {
+    type Error = DpeErrorCode;
+
+    fn try_from(raw: &[u8]) -> Result<Self, Self::Error> {
+        if raw.len() < size_of::<TagTciCmd>() {
+            return Err(DpeErrorCode::InvalidArgument);
+        }
+
+        Ok(TagTciCmd {
+            handle: raw[0..HANDLE_SIZE].try_into().unwrap(),
+            tag: u32::from_le_bytes(raw[HANDLE_SIZE..HANDLE_SIZE + 4].try_into().unwrap()),
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -232,6 +255,10 @@ mod tests {
     const TEST_DESTROY_CTX_CMD: DestroyCtxCmd = DestroyCtxCmd {
         handle: SIMULATION_HANDLE,
         flags: 0x1234_5678,
+    };
+    const TEST_TAG_TCI_CMD: TagTciCmd = TagTciCmd {
+        handle: SIMULATION_HANDLE,
+        tag: 0x1234_5678,
     };
 
     #[test]
@@ -275,6 +302,17 @@ mod tests {
             );
         }
 
+        // TagTciCmd
+        {
+            let mut command: Vec<u8> =
+                Vec::<u8>::from(CommandHdr::new(Command::TagTci(TEST_TAG_TCI_CMD)));
+            command.extend(Vec::<u8>::from(TEST_TAG_TCI_CMD));
+            assert_eq!(
+                Ok(Command::TagTci(TEST_TAG_TCI_CMD)),
+                Command::deserialize(&command)
+            );
+        }
+
         // Commands that are not implemented.
         let invalid_command = Err(DpeErrorCode::InvalidCommand);
         assert_eq!(
@@ -309,13 +347,6 @@ mod tests {
             invalid_command,
             Command::deserialize(&Vec::<u8>::from(CommandHdr {
                 cmd_id: Command::EXTEND_TCI,
-                ..DEFAULT_COMMAND
-            }))
-        );
-        assert_eq!(
-            invalid_command,
-            Command::deserialize(&Vec::<u8>::from(CommandHdr {
-                cmd_id: Command::TAG_TCI,
                 ..DEFAULT_COMMAND
             }))
         );
@@ -440,6 +471,20 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_slice_to_tag_tci() {
+        // Test if too small.
+        assert_eq!(
+            Err(DpeErrorCode::InvalidArgument),
+            TagTciCmd::try_from([0u8; size_of::<TagTciCmd>() - 1].as_slice())
+        );
+
+        assert_eq!(
+            TEST_TAG_TCI_CMD,
+            TagTciCmd::try_from(Vec::<u8>::from(TEST_DESTROY_CTX_CMD).as_slice()).unwrap()
+        );
+    }
+
     impl From<CommandHdr> for Vec<u8> {
         fn from(value: CommandHdr) -> Self {
             let mut raw = vec![];
@@ -477,6 +522,15 @@ mod tests {
         }
     }
 
+    impl From<TagTciCmd> for Vec<u8> {
+        fn from(value: TagTciCmd) -> Self {
+            let mut raw = vec![];
+            raw.extend(value.handle);
+            raw.extend_from_slice(&value.tag.to_le_bytes());
+            raw
+        }
+    }
+
     impl CommandHdr {
         pub fn new(command: Command) -> CommandHdr {
             let cmd_id = match command {
@@ -484,6 +538,7 @@ mod tests {
                 Command::InitCtx(_) => Command::INITIALIZE_CONTEXT,
                 Command::RotateCtx(_) => Command::ROTATE_CONTEXT_HANDLE,
                 Command::DestroyCtx(_) => Command::DESTROY_CONTEXT,
+                Command::TagTci(_) => Command::TAG_TCI,
             };
             CommandHdr {
                 magic: Self::DPE_COMMAND_MAGIC,

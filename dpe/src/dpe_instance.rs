@@ -6,9 +6,9 @@ Abstract:
 --*/
 use crate::{
     _set_flag,
-    commands::{Command, DestroyCtxCmd, InitCtxCmd, RotateCtxCmd},
+    commands::{Command, DestroyCtxCmd, InitCtxCmd, RotateCtxCmd, TagTciCmd},
     crypto::Crypto,
-    response::{DpeErrorCode, GetProfileResp, InitCtxResp, Response, RotateCtxResp},
+    response::{DpeErrorCode, GetProfileResp, InitCtxResp, Response, RotateCtxResp, TagTciResp},
     DPE_PROFILE, HANDLE_SIZE, MAX_HANDLES,
 };
 
@@ -27,6 +27,7 @@ pub struct DpeInstance<'a, C: Crypto> {
 
 impl<C: Crypto> DpeInstance<'_, C> {
     const DEFAULT_CONTEXT_HANDLE: [u8; HANDLE_SIZE] = [0; HANDLE_SIZE];
+    const MAX_NEW_HANDLE_ATTEMPTS: usize = 8;
     pub const AUTO_INIT_LOCALITY: u32 = 0;
 
     /// Create a new DPE instance.
@@ -79,19 +80,17 @@ impl<C: Crypto> DpeInstance<'_, C> {
             return Err(DpeErrorCode::InvalidArgument);
         }
 
-        let context = self
-            .get_next_inactive_context_mut()
+        let idx = self
+            .get_next_inactive_context_pos()
             .ok_or(DpeErrorCode::MaxTcis)?;
         let (context_type, handle) = if cmd.flag_is_default() {
             (ContextType::Default, Self::DEFAULT_CONTEXT_HANDLE)
         } else {
             // Simulation.
-            let mut handle = [0; HANDLE_SIZE];
-            C::rand_bytes(&mut handle)?;
-            (ContextType::Simulation, handle)
+            (ContextType::Simulation, self.generate_new_handle()?)
         };
 
-        context.activate(context_type, locality, &handle);
+        self.contexts[idx].activate(context_type, locality, &handle);
         Ok(InitCtxResp { handle })
     }
 
@@ -102,19 +101,21 @@ impl<C: Crypto> DpeInstance<'_, C> {
         locality: u32,
         cmd: &RotateCtxCmd,
     ) -> Result<Response, DpeErrorCode> {
-        let context = self
-            .get_active_context_mut(&cmd.handle)
+        if !self.support.rotate_context {
+            return Err(DpeErrorCode::InvalidCommand);
+        }
+        let idx = self
+            .get_active_context_pos(&cmd.handle)
             .ok_or(DpeErrorCode::InvalidHandle)?;
 
         // Make sure the command is coming from the right locality.
-        if context.locality != locality {
+        if self.contexts[idx].locality != locality {
             return Err(DpeErrorCode::InvalidHandle);
         }
 
-        C::rand_bytes(&mut context.handle)?;
-        Ok(Response::RotateCtx(RotateCtxResp {
-            handle: context.handle,
-        }))
+        let new_handle = self.generate_new_handle()?;
+        self.contexts[idx].handle = new_handle;
+        Ok(Response::RotateCtx(RotateCtxResp { handle: new_handle }))
     }
 
     /// Destroy a context and optionally all of its descendants.
@@ -123,10 +124,10 @@ impl<C: Crypto> DpeInstance<'_, C> {
         locality: u32,
         cmd: &DestroyCtxCmd,
     ) -> Result<Response, DpeErrorCode> {
-        let (idx, context) = self
-            .get_active_context_index(&cmd.handle)
+        let idx = self
+            .get_active_context_pos(&cmd.handle)
             .ok_or(DpeErrorCode::InvalidHandle)?;
-
+        let context = &self.contexts[idx];
         // Make sure the command is coming from the right locality.
         if context.locality != locality {
             return Err(DpeErrorCode::InvalidHandle);
@@ -142,6 +143,43 @@ impl<C: Crypto> DpeInstance<'_, C> {
             self.contexts[idx].destroy();
         }
         Ok(Response::DestroyCtx)
+    }
+
+    pub fn tag_tci(&mut self, locality: u32, cmd: &TagTciCmd) -> Result<Response, DpeErrorCode> {
+        // Make sure this command is supported.
+        if !self.support.tagging {
+            return Err(DpeErrorCode::InvalidCommand);
+        }
+        // Make sure the tag isn't used by any other contexts.
+        if self.contexts.iter().any(|c| c.has_tag && c.tag == cmd.tag) {
+            return Err(DpeErrorCode::BadTag);
+        }
+
+        let idx = self
+            .get_active_context_pos(&cmd.handle)
+            .ok_or(DpeErrorCode::InvalidHandle)?;
+
+        // Make sure the command is coming from the right locality.
+        if self.contexts[idx].locality != locality {
+            return Err(DpeErrorCode::InvalidHandle);
+        }
+        if self.contexts[idx].has_tag {
+            return Err(DpeErrorCode::BadTag);
+        }
+
+        let rand_handle = self.generate_new_handle()?;
+        let context = &mut self.contexts[idx];
+        // Because handles are one-time use, let's rotate the handle, if it isn't the default.
+        context.handle = match context.context_type {
+            ContextType::_Normal | ContextType::Simulation => rand_handle,
+            ContextType::Default => Self::DEFAULT_CONTEXT_HANDLE,
+        };
+        context.has_tag = true;
+        context.tag = cmd.tag;
+
+        Ok(Response::TagTci(TagTciResp {
+            handle: context.handle,
+        }))
     }
 
     /// Deserializes the command and executes it.
@@ -167,26 +205,20 @@ impl<C: Crypto> DpeInstance<'_, C> {
             )),
             Command::RotateCtx(cmd) => self.rotate_context(locality, &cmd),
             Command::DestroyCtx(context) => self.destroy_context(locality, &context),
+            Command::TagTci(cmd) => self.tag_tci(locality, &cmd),
         }
     }
 
-    fn get_active_context_index(&self, handle: &[u8; HANDLE_SIZE]) -> Option<(usize, &Context)> {
+    fn get_active_context_pos(&self, handle: &[u8; HANDLE_SIZE]) -> Option<usize> {
         self.contexts
             .iter()
-            .enumerate()
-            .find(|(_, context)| context.state == ContextState::Active && &context.handle == handle)
+            .position(|context| context.state == ContextState::Active && &context.handle == handle)
     }
 
-    fn get_active_context_mut(&mut self, handle: &[u8; HANDLE_SIZE]) -> Option<&mut Context> {
+    fn get_next_inactive_context_pos(&self) -> Option<usize> {
         self.contexts
-            .iter_mut()
-            .find(|context| context.state == ContextState::Active && &context.handle == handle)
-    }
-
-    fn get_next_inactive_context_mut(&mut self) -> Option<&mut Context> {
-        self.contexts
-            .iter_mut()
-            .find(|context| context.state == ContextState::Inactive)
+            .iter()
+            .position(|context| context.state == ContextState::Inactive)
     }
 
     fn get_default_context(&mut self) -> Option<&mut Context> {
@@ -208,6 +240,19 @@ impl<C: Crypto> DpeInstance<'_, C> {
             descendants |= self.get_descendants(&self.contexts[idx])?;
         }
         Ok(descendants)
+    }
+
+    fn generate_new_handle(&self) -> Result<[u8; HANDLE_SIZE], DpeErrorCode> {
+        for _ in 0..Self::MAX_NEW_HANDLE_ATTEMPTS {
+            let mut handle = [0; HANDLE_SIZE];
+            C::rand_bytes(&mut handle)?;
+            if handle != Self::DEFAULT_CONTEXT_HANDLE
+                && !self.contexts.iter().any(|c| c.handle == handle)
+            {
+                return Ok(handle);
+            }
+        }
+        Err(DpeErrorCode::InternalError)
     }
 }
 
@@ -324,6 +369,10 @@ struct Context {
     state: ContextState,
     /// Which hardware locality owns the context.
     locality: u32,
+    /// Whether a tag has been assigned to the context.
+    has_tag: bool,
+    /// Optional tag assigned to the context.
+    tag: u32,
 }
 
 impl Context {
@@ -338,6 +387,8 @@ impl Context {
             context_type: ContextType::Default,
             state: ContextState::Inactive,
             locality: 0,
+            has_tag: false,
+            tag: 0,
         }
     }
 
@@ -368,6 +419,8 @@ impl Context {
     /// context cannot be re-initialized.
     pub fn destroy(&mut self) {
         self.tci = TciNodeData::new();
+        self.has_tag = false;
+        self.tag = 0;
         self.state = match self.context_type {
             // Once a default context is destroyed, it cannot be used until the next reset cycle.
             ContextType::Default => ContextState::Locked,
@@ -418,8 +471,8 @@ pub mod tests {
         simulation: true,
         extend_tci: false,
         auto_init: true,
-        tagging: false,
-        rotate_context: false,
+        tagging: true,
+        rotate_context: true,
     };
     pub const TEST_HANDLE: [u8; HANDLE_SIZE] =
         [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
@@ -475,8 +528,10 @@ pub mod tests {
             .unwrap();
 
         // Make sure the locality was recorded correctly.
-        let (_, context) = dpe.get_active_context_index(&SIMULATION_HANDLE).unwrap();
-        assert_eq!(context.locality, TEST_LOCALITIES[1]);
+        assert_eq!(
+            dpe.contexts[dpe.get_active_context_pos(&SIMULATION_HANDLE).unwrap()].locality,
+            TEST_LOCALITIES[1]
+        );
 
         // Make sure the other locality can't destroy it.
         assert_eq!(
@@ -603,17 +658,12 @@ pub mod tests {
                 .unwrap()
         );
 
-        // Initialize all of the contexts except the default.
-        for _ in 0..MAX_HANDLES {
-            assert_eq!(
-                SIMULATION_HANDLE,
-                dpe.initialize_context(TEST_LOCALITIES[0], &InitCtxCmd::new_simulation())
-                    .unwrap()
-                    .handle
-            );
+        // Set all handles as active.
+        for context in dpe.contexts.iter_mut() {
+            context.state = ContextState::Active;
         }
 
-        // Try to initilize one more.
+        // Try to initialize a context when it is full.
         assert_eq!(
             DpeErrorCode::MaxTcis,
             dpe.initialize_context(TEST_LOCALITIES[0], &InitCtxCmd::new_simulation())
@@ -624,14 +674,32 @@ pub mod tests {
 
     #[test]
     fn test_rotate_context() {
+        let mut dpe =
+            DpeInstance::<DeterministicCrypto>::new(Support::default(), &TEST_LOCALITIES).unwrap();
+        // Make sure it returns an error if the command is marked unsupported.
+        assert_eq!(
+            Err(DpeErrorCode::InvalidCommand),
+            dpe.rotate_context(
+                TEST_LOCALITIES[0],
+                &RotateCtxCmd {
+                    handle: DpeInstance::<DeterministicCrypto>::DEFAULT_CONTEXT_HANDLE,
+                    flags: 0,
+                    target_locality: 0
+                }
+            )
+        );
+
+        // Make a new instance that supports RotateContext.
         let mut dpe = DpeInstance::<DeterministicCrypto>::new(
             Support {
-                auto_init: true,
+                rotate_context: true,
                 ..Support::default()
             },
             &TEST_LOCALITIES,
         )
         .unwrap();
+        dpe.initialize_context(TEST_LOCALITIES[0], &InitCtxCmd::new_use_default())
+            .unwrap();
 
         // Invalid handle.
         assert_eq!(
@@ -753,18 +821,133 @@ pub mod tests {
             .copy_from_slice(&SIMULATION_HANDLE);
 
         // Has not been activated.
-        assert!(dpe.get_active_context_index(&SIMULATION_HANDLE).is_none());
+        assert!(dpe.get_active_context_pos(&SIMULATION_HANDLE).is_none());
 
         // Check if it is locked.
         dpe.contexts[expected_index].state = ContextState::Locked;
-        assert!(dpe.get_active_context_index(&SIMULATION_HANDLE).is_none());
+        assert!(dpe.get_active_context_pos(&SIMULATION_HANDLE).is_none());
 
         // Should find it now.
         dpe.contexts[expected_index].state = ContextState::Active;
-        let (result_idx, result_context) =
-            dpe.get_active_context_index(&SIMULATION_HANDLE).unwrap();
-        assert_eq!(expected_index, result_idx);
-        assert_eq!(dpe.contexts[expected_index].handle, result_context.handle);
+        let idx = dpe.get_active_context_pos(&SIMULATION_HANDLE).unwrap();
+        assert_eq!(expected_index, idx);
+    }
+
+    #[test]
+    fn test_tag_tci() {
+        let mut dpe =
+            DpeInstance::<DeterministicCrypto>::new(Support::default(), &TEST_LOCALITIES).unwrap();
+        // Make sure it returns an error if the command is marked unsupported.
+        assert_eq!(
+            Err(DpeErrorCode::InvalidCommand),
+            dpe.tag_tci(
+                TEST_LOCALITIES[0],
+                &TagTciCmd {
+                    handle: DpeInstance::<DeterministicCrypto>::DEFAULT_CONTEXT_HANDLE,
+                    tag: 0,
+                }
+            )
+        );
+
+        // Make a new instance that supports tagging.
+        let mut dpe = DpeInstance::<DeterministicCrypto>::new(
+            Support {
+                tagging: true,
+                simulation: true,
+                ..Support::default()
+            },
+            &TEST_LOCALITIES,
+        )
+        .unwrap();
+        dpe.initialize_context(TEST_LOCALITIES[0], &InitCtxCmd::new_use_default())
+            .unwrap();
+        // Make a simulation context to test against.
+        dpe.initialize_context(TEST_LOCALITIES[1], &InitCtxCmd::new_simulation())
+            .unwrap();
+
+        // Give the simulation context another handle so we can prove the handle rotates when it
+        // gets tagged.
+        let simulation_ctx =
+            &mut dpe.contexts[dpe.get_active_context_pos(&SIMULATION_HANDLE).unwrap()];
+        let sim_tmp_handle = [0xff; HANDLE_SIZE];
+        simulation_ctx.handle = sim_tmp_handle;
+        assert_ne!(sim_tmp_handle, SIMULATION_HANDLE);
+
+        // Invalid handle.
+        assert_eq!(
+            Err(DpeErrorCode::InvalidHandle),
+            dpe.tag_tci(
+                TEST_LOCALITIES[0],
+                &TagTciCmd {
+                    handle: TEST_HANDLE,
+                    tag: 0,
+                }
+            )
+        );
+
+        // Wrong locality.
+        assert_eq!(
+            Err(DpeErrorCode::InvalidHandle),
+            dpe.tag_tci(
+                TEST_LOCALITIES[1],
+                &TagTciCmd {
+                    handle: DpeInstance::<DeterministicCrypto>::DEFAULT_CONTEXT_HANDLE,
+                    tag: 0,
+                }
+            )
+        );
+
+        // Tag default handle.
+        assert_eq!(
+            Ok(Response::TagTci(TagTciResp {
+                handle: DpeInstance::<DeterministicCrypto>::DEFAULT_CONTEXT_HANDLE,
+            })),
+            dpe.tag_tci(
+                TEST_LOCALITIES[0],
+                &TagTciCmd {
+                    handle: DpeInstance::<DeterministicCrypto>::DEFAULT_CONTEXT_HANDLE,
+                    tag: 0,
+                }
+            )
+        );
+
+        // Try to re-tag the default context.
+        assert_eq!(
+            Err(DpeErrorCode::BadTag),
+            dpe.tag_tci(
+                TEST_LOCALITIES[0],
+                &TagTciCmd {
+                    handle: DpeInstance::<DeterministicCrypto>::DEFAULT_CONTEXT_HANDLE,
+                    tag: 1,
+                }
+            )
+        );
+
+        // Try same tag on simulation.
+        assert_eq!(
+            Err(DpeErrorCode::BadTag),
+            dpe.tag_tci(
+                TEST_LOCALITIES[1],
+                &TagTciCmd {
+                    handle: sim_tmp_handle,
+                    tag: 0,
+                }
+            )
+        );
+
+        // Tag simulation.
+        assert_eq!(
+            Ok(Response::TagTci(TagTciResp {
+                handle: SIMULATION_HANDLE,
+            })),
+            dpe.tag_tci(
+                TEST_LOCALITIES[1],
+                &TagTciCmd {
+                    handle: sim_tmp_handle,
+                    tag: 1,
+                }
+            )
+        );
     }
 
     #[test]
