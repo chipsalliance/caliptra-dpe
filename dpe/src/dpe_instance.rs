@@ -8,7 +8,7 @@ use crate::{
     _set_flag,
     commands::{Command, DestroyCtxCmd, InitCtxCmd, RotateCtxCmd, TagTciCmd},
     crypto::Crypto,
-    response::{DpeErrorCode, GetProfileResp, InitCtxResp, Response, RotateCtxResp, TagTciResp},
+    response::{DpeErrorCode, GetProfileResp, NewHandleResp, Response},
     DPE_PROFILE, HANDLE_SIZE, MAX_HANDLES,
 };
 
@@ -66,7 +66,7 @@ impl<C: Crypto> DpeInstance<'_, C> {
         &mut self,
         locality: u32,
         cmd: &InitCtxCmd,
-    ) -> Result<InitCtxResp, DpeErrorCode> {
+    ) -> Result<NewHandleResp, DpeErrorCode> {
         if (cmd.flag_is_default() && self.get_default_context().is_some())
             || (cmd.flag_is_simulation() && !self.support.simulation)
         {
@@ -91,7 +91,7 @@ impl<C: Crypto> DpeInstance<'_, C> {
         };
 
         self.contexts[idx].activate(context_type, locality, &handle);
-        Ok(InitCtxResp { handle })
+        Ok(NewHandleResp { handle })
     }
 
     /// Rotate the handle for given context to another random value. This also allows changing the
@@ -115,7 +115,7 @@ impl<C: Crypto> DpeInstance<'_, C> {
 
         let new_handle = self.generate_new_handle()?;
         self.contexts[idx].handle = new_handle;
-        Ok(Response::RotateCtx(RotateCtxResp { handle: new_handle }))
+        Ok(Response::RotateCtx(NewHandleResp { handle: new_handle }))
     }
 
     /// Destroy a context and optionally all of its descendants.
@@ -177,7 +177,7 @@ impl<C: Crypto> DpeInstance<'_, C> {
         context.has_tag = true;
         context.tag = cmd.tag;
 
-        Ok(Response::TagTci(TagTciResp {
+        Ok(Response::TagTci(NewHandleResp {
             handle: context.handle,
         }))
     }
@@ -575,7 +575,7 @@ pub mod tests {
             .to_vec();
         command.extend(InitCtxCmd::new_simulation().as_bytes());
         assert_eq!(
-            Response::InitCtx(InitCtxResp {
+            Response::InitCtx(NewHandleResp {
                 handle: SIMULATION_HANDLE
             }),
             dpe.execute_serialized_command(TEST_LOCALITIES[0], &command)
@@ -726,7 +726,7 @@ pub mod tests {
 
         // Rotate default handle.
         assert_eq!(
-            Ok(Response::RotateCtx(RotateCtxResp {
+            Ok(Response::RotateCtx(NewHandleResp {
                 handle: SIMULATION_HANDLE
             })),
             dpe.rotate_context(
@@ -896,7 +896,7 @@ pub mod tests {
 
         // Tag default handle.
         assert_eq!(
-            Ok(Response::TagTci(TagTciResp {
+            Ok(Response::TagTci(NewHandleResp {
                 handle: DpeInstance::<DeterministicCrypto>::DEFAULT_CONTEXT_HANDLE,
             })),
             dpe.tag_tci(
@@ -934,7 +934,7 @@ pub mod tests {
 
         // Tag simulation.
         assert_eq!(
-            Ok(Response::TagTci(TagTciResp {
+            Ok(Response::TagTci(NewHandleResp {
                 handle: SIMULATION_HANDLE,
             })),
             dpe.tag_tci(

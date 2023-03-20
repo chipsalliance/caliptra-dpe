@@ -10,10 +10,10 @@ use core::mem::size_of;
 #[derive(Debug, PartialEq, Eq)]
 pub enum Response {
     GetProfile(GetProfileResp),
-    InitCtx(InitCtxResp),
-    RotateCtx(RotateCtxResp),
+    InitCtx(NewHandleResp),
+    RotateCtx(NewHandleResp),
     DestroyCtx,
-    TagTci(TagTciResp),
+    TagTci(NewHandleResp),
 }
 
 impl Response {
@@ -101,47 +101,11 @@ impl GetProfileResp {
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq)]
 #[cfg_attr(test, derive(zerocopy::AsBytes, zerocopy::FromBytes))]
-pub struct InitCtxResp {
+pub struct NewHandleResp {
     pub handle: [u8; HANDLE_SIZE],
 }
 
-impl InitCtxResp {
-    pub fn serialize(&self, dst: &mut [u8]) -> Result<usize, DpeErrorCode> {
-        if dst.len() < size_of::<Self>() {
-            return Err(DpeErrorCode::InternalError);
-        }
-
-        dst[..HANDLE_SIZE].copy_from_slice(&self.handle);
-        Ok(HANDLE_SIZE)
-    }
-}
-
-#[repr(C)]
-#[derive(Debug, PartialEq, Eq)]
-#[cfg_attr(test, derive(zerocopy::AsBytes, zerocopy::FromBytes))]
-pub struct RotateCtxResp {
-    pub handle: [u8; HANDLE_SIZE],
-}
-
-impl RotateCtxResp {
-    pub fn serialize(&self, dst: &mut [u8]) -> Result<usize, DpeErrorCode> {
-        if dst.len() < size_of::<Self>() {
-            return Err(DpeErrorCode::InternalError);
-        }
-
-        dst[..HANDLE_SIZE].copy_from_slice(&self.handle);
-        Ok(HANDLE_SIZE)
-    }
-}
-
-#[repr(C)]
-#[derive(Debug, PartialEq, Eq)]
-#[cfg_attr(test, derive(zerocopy::AsBytes, zerocopy::FromBytes))]
-pub struct TagTciResp {
-    pub handle: [u8; HANDLE_SIZE],
-}
-
-impl TagTciResp {
+impl NewHandleResp {
     pub fn serialize(&self, dst: &mut [u8]) -> Result<usize, DpeErrorCode> {
         if dst.len() < size_of::<Self>() {
             return Err(DpeErrorCode::InternalError);
@@ -178,7 +142,7 @@ mod tests {
         max_tci_nodes: MAX_HANDLES as u32,
         flags: TEST_FLAGS,
     };
-    const DEFAULT_INIT_CTX_RESPONSE: InitCtxResp = InitCtxResp {
+    const TEST_NEW_HANDLE_RESP: NewHandleResp = NewHandleResp {
         handle: TEST_HANDLE,
     };
 
@@ -196,8 +160,8 @@ mod tests {
         assert_eq!(answer, response);
 
         // Initialize context
-        DEFAULT_INIT_CTX_RESPONSE.serialize(&mut answer).unwrap();
-        Response::InitCtx(DEFAULT_INIT_CTX_RESPONSE)
+        TEST_NEW_HANDLE_RESP.serialize(&mut answer).unwrap();
+        Response::InitCtx(TEST_NEW_HANDLE_RESP)
             .serialize(&mut response)
             .unwrap();
         assert_eq!(answer, response);
@@ -243,22 +207,22 @@ mod tests {
     }
 
     #[test]
-    fn test_initialize_context_serialize() {
+    fn test_serialize_new_handle_response() {
         // Test too small slice.
-        let mut response_buffer = [0; size_of::<InitCtxResp>() - 1];
+        let mut response_buffer = [0; size_of::<NewHandleResp>() - 1];
         assert_eq!(
             Err(DpeErrorCode::InternalError),
-            DEFAULT_INIT_CTX_RESPONSE.serialize(response_buffer.as_mut_slice())
+            TEST_NEW_HANDLE_RESP.serialize(response_buffer.as_mut_slice())
         );
-        let mut response_buffer = [0; size_of::<InitCtxResp>()];
+        let mut response_buffer = [0; size_of::<NewHandleResp>()];
 
         assert_eq!(
             HANDLE_SIZE,
-            DEFAULT_INIT_CTX_RESPONSE
+            TEST_NEW_HANDLE_RESP
                 .serialize(response_buffer.as_mut_slice())
                 .unwrap()
         );
-        assert_eq!(DEFAULT_INIT_CTX_RESPONSE.as_bytes(), response_buffer);
+        assert_eq!(TEST_NEW_HANDLE_RESP.as_bytes(), response_buffer);
     }
 
     fn test_error_code_serialize(error_code: DpeErrorCode) {
