@@ -61,6 +61,7 @@ impl Command {
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq)]
+#[cfg_attr(test, derive(zerocopy::AsBytes, zerocopy::FromBytes))]
 pub struct CommandHdr {
     pub magic: u32,
     pub cmd_id: u32,
@@ -98,6 +99,7 @@ impl TryFrom<&[u8]> for CommandHdr {
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq)]
+#[cfg_attr(test, derive(zerocopy::AsBytes, zerocopy::FromBytes))]
 pub struct InitCtxCmd {
     pub flags: u32,
 }
@@ -143,6 +145,7 @@ impl TryFrom<&[u8]> for InitCtxCmd {
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq)]
+#[cfg_attr(test, derive(zerocopy::AsBytes, zerocopy::FromBytes))]
 pub struct RotateCtxCmd {
     pub handle: [u8; HANDLE_SIZE],
     pub flags: u32,
@@ -179,6 +182,7 @@ impl TryFrom<&[u8]> for RotateCtxCmd {
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq)]
+#[cfg_attr(test, derive(zerocopy::AsBytes, zerocopy::FromBytes))]
 pub struct DestroyCtxCmd {
     pub handle: [u8; HANDLE_SIZE],
     pub flags: u32,
@@ -213,6 +217,7 @@ impl TryFrom<&[u8]> for DestroyCtxCmd {
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq)]
+#[cfg_attr(test, derive(zerocopy::AsBytes, zerocopy::FromBytes))]
 pub struct TagTciCmd {
     pub handle: [u8; HANDLE_SIZE],
     pub tag: u32,
@@ -238,8 +243,7 @@ mod tests {
     use super::*;
     use crate::dpe_instance::tests::{SIMULATION_HANDLE, TEST_HANDLE};
     use crate::DpeProfile;
-    use std::vec;
-    use std::vec::Vec;
+    use zerocopy::{AsBytes, FromBytes};
 
     const DEFAULT_COMMAND: CommandHdr = CommandHdr {
         magic: CommandHdr::DPE_COMMAND_MAGIC,
@@ -262,100 +266,170 @@ mod tests {
     };
 
     #[test]
-    fn test_deserialize() {
+    fn try_from_cmd_hdr() {
+        let command_bytes = DEFAULT_COMMAND.as_bytes();
+        assert_eq!(
+            CommandHdr::read_from_prefix(command_bytes).unwrap(),
+            CommandHdr::try_from(command_bytes).unwrap(),
+        );
+    }
+
+    #[test]
+    fn try_from_init_ctx() {
+        let command_bytes = TEST_INIT_CTX_CMD.as_bytes();
+        assert_eq!(
+            InitCtxCmd::read_from_prefix(command_bytes).unwrap(),
+            InitCtxCmd::try_from(command_bytes).unwrap(),
+        );
+    }
+
+    #[test]
+    fn try_from_rotate_ctx() {
+        let command_bytes = TEST_ROTATE_CTX_CMD.as_bytes();
+        assert_eq!(
+            RotateCtxCmd::read_from_prefix(command_bytes).unwrap(),
+            RotateCtxCmd::try_from(command_bytes).unwrap(),
+        );
+    }
+
+    #[test]
+    fn try_from_destroy_ctx() {
+        let command_bytes = TEST_DESTROY_CTX_CMD.as_bytes();
+        assert_eq!(
+            DestroyCtxCmd::read_from_prefix(command_bytes).unwrap(),
+            DestroyCtxCmd::try_from(command_bytes).unwrap(),
+        );
+    }
+
+    #[test]
+    fn try_from_tag_tci() {
+        let command_bytes = TEST_TAG_TCI_CMD.as_bytes();
+        assert_eq!(
+            TagTciCmd::read_from_prefix(command_bytes).unwrap(),
+            TagTciCmd::try_from(command_bytes).unwrap(),
+        );
+    }
+
+    #[test]
+    fn test_deserialize_get_profile() {
         // Commands that can be deserialized.
         assert_eq!(
             Ok(Command::GetProfile),
-            Command::deserialize(&Vec::<u8>::from(CommandHdr::new(Command::GetProfile)))
+            Command::deserialize(CommandHdr::new(Command::GetProfile).as_bytes())
         );
+    }
 
-        // InitCtx
-        {
-            let mut command: Vec<u8> =
-                Vec::<u8>::from(CommandHdr::new(Command::InitCtx(TEST_INIT_CTX_CMD)));
-            command.extend(Vec::<u8>::from(TEST_INIT_CTX_CMD));
-            assert_eq!(
-                Ok(Command::InitCtx(TEST_INIT_CTX_CMD)),
-                Command::deserialize(&command)
-            );
-        }
+    #[test]
+    fn test_deserialize_init_ctx() {
+        let mut command = CommandHdr::new(Command::InitCtx(TEST_INIT_CTX_CMD))
+            .as_bytes()
+            .to_vec();
+        command.extend(TEST_INIT_CTX_CMD.as_bytes());
+        assert_eq!(
+            Ok(Command::InitCtx(TEST_INIT_CTX_CMD)),
+            Command::deserialize(&command)
+        );
+    }
 
-        // RotateCtx
-        {
-            let mut command: Vec<u8> =
-                Vec::<u8>::from(CommandHdr::new(Command::RotateCtx(TEST_ROTATE_CTX_CMD)));
-            command.extend(Vec::<u8>::from(TEST_ROTATE_CTX_CMD));
-            assert_eq!(
-                Ok(Command::RotateCtx(TEST_ROTATE_CTX_CMD)),
-                Command::deserialize(&command)
-            );
-        }
+    #[test]
+    fn test_deserialize_rotate_context() {
+        let mut command = CommandHdr::new(Command::RotateCtx(TEST_ROTATE_CTX_CMD))
+            .as_bytes()
+            .to_vec();
+        command.extend(TEST_ROTATE_CTX_CMD.as_bytes());
+        assert_eq!(
+            Ok(Command::RotateCtx(TEST_ROTATE_CTX_CMD)),
+            Command::deserialize(&command)
+        );
+    }
 
-        // DestroyCtx
-        {
-            let mut command: Vec<u8> =
-                Vec::<u8>::from(CommandHdr::new(Command::DestroyCtx(TEST_DESTROY_CTX_CMD)));
-            command.extend(Vec::<u8>::from(TEST_DESTROY_CTX_CMD));
-            assert_eq!(
-                Ok(Command::DestroyCtx(TEST_DESTROY_CTX_CMD)),
-                Command::deserialize(&command)
-            );
-        }
+    #[test]
+    fn test_deserialize_destroy_context() {
+        let mut command = CommandHdr::new(Command::DestroyCtx(TEST_DESTROY_CTX_CMD))
+            .as_bytes()
+            .to_vec();
+        command.extend(TEST_DESTROY_CTX_CMD.as_bytes());
+        assert_eq!(
+            Ok(Command::DestroyCtx(TEST_DESTROY_CTX_CMD)),
+            Command::deserialize(&command)
+        );
+    }
 
-        // TagTciCmd
-        {
-            let mut command: Vec<u8> =
-                Vec::<u8>::from(CommandHdr::new(Command::TagTci(TEST_TAG_TCI_CMD)));
-            command.extend(Vec::<u8>::from(TEST_TAG_TCI_CMD));
-            assert_eq!(
-                Ok(Command::TagTci(TEST_TAG_TCI_CMD)),
-                Command::deserialize(&command)
-            );
-        }
+    #[test]
+    fn test_deserialize_tag_tci() {
+        let mut command = CommandHdr::new(Command::TagTci(TEST_TAG_TCI_CMD))
+            .as_bytes()
+            .to_vec();
+        command.extend(TEST_TAG_TCI_CMD.as_bytes());
+        assert_eq!(
+            Ok(Command::TagTci(TEST_TAG_TCI_CMD)),
+            Command::deserialize(&command)
+        );
+    }
 
+    #[test]
+    fn test_deserialize_unsupported_commands() {
         // Commands that are not implemented.
         let invalid_command = Err(DpeErrorCode::InvalidCommand);
         assert_eq!(
             invalid_command,
-            Command::deserialize(&Vec::<u8>::from(CommandHdr {
-                cmd_id: Command::DERIVE_CHILD,
-                ..DEFAULT_COMMAND
-            }))
+            Command::deserialize(
+                CommandHdr {
+                    cmd_id: Command::DERIVE_CHILD,
+                    ..DEFAULT_COMMAND
+                }
+                .as_bytes()
+            )
         );
         assert_eq!(
             invalid_command,
-            Command::deserialize(&Vec::<u8>::from(CommandHdr {
-                cmd_id: Command::CERTIFY_KEY,
-                ..DEFAULT_COMMAND
-            }))
+            Command::deserialize(
+                CommandHdr {
+                    cmd_id: Command::CERTIFY_KEY,
+                    ..DEFAULT_COMMAND
+                }
+                .as_bytes()
+            )
         );
         assert_eq!(
             invalid_command,
-            Command::deserialize(&Vec::<u8>::from(CommandHdr {
-                cmd_id: Command::SIGN,
-                ..DEFAULT_COMMAND
-            }))
+            Command::deserialize(
+                CommandHdr {
+                    cmd_id: Command::SIGN,
+                    ..DEFAULT_COMMAND
+                }
+                .as_bytes()
+            )
         );
         assert_eq!(
             invalid_command,
-            Command::deserialize(&Vec::<u8>::from(CommandHdr {
-                cmd_id: Command::GET_CERTIFICATE_CHAIN,
-                ..DEFAULT_COMMAND
-            }))
+            Command::deserialize(
+                CommandHdr {
+                    cmd_id: Command::GET_CERTIFICATE_CHAIN,
+                    ..DEFAULT_COMMAND
+                }
+                .as_bytes()
+            )
         );
         assert_eq!(
             invalid_command,
-            Command::deserialize(&Vec::<u8>::from(CommandHdr {
-                cmd_id: Command::EXTEND_TCI,
-                ..DEFAULT_COMMAND
-            }))
+            Command::deserialize(
+                CommandHdr {
+                    cmd_id: Command::EXTEND_TCI,
+                    ..DEFAULT_COMMAND
+                }
+                .as_bytes()
+            )
         );
         assert_eq!(
             invalid_command,
-            Command::deserialize(&Vec::<u8>::from(CommandHdr {
-                cmd_id: Command::GET_TAGGED_TCI,
-                ..DEFAULT_COMMAND
-            }))
+            Command::deserialize(
+                CommandHdr {
+                    cmd_id: Command::GET_TAGGED_TCI,
+                    ..DEFAULT_COMMAND
+                }
+                .as_bytes()
+            )
         );
     }
 
@@ -373,11 +447,11 @@ mod tests {
         assert_eq!(
             invalid_command,
             CommandHdr::try_from(
-                Vec::<u8>::from(CommandHdr {
+                CommandHdr {
                     magic: 0,
                     ..DEFAULT_COMMAND
-                })
-                .as_slice()
+                }
+                .as_bytes()
             )
         );
 
@@ -391,22 +465,22 @@ mod tests {
         assert_eq!(
             invalid_command,
             CommandHdr::try_from(
-                Vec::<u8>::from(CommandHdr {
+                CommandHdr {
                     profile: wrong_profile,
                     cmd_id: Command::INITIALIZE_CONTEXT,
                     ..DEFAULT_COMMAND
-                })
-                .as_slice()
+                }
+                .as_bytes()
             )
         );
 
         // Make sure GetProfile doesn't care.
         assert!(CommandHdr::try_from(
-            Vec::<u8>::from(CommandHdr {
+            CommandHdr {
                 profile: wrong_profile,
                 ..DEFAULT_COMMAND
-            })
-            .as_slice()
+            }
+            .as_bytes()
         )
         .is_ok());
 
@@ -417,7 +491,7 @@ mod tests {
         };
         assert_eq!(
             GOOD_HEADER,
-            CommandHdr::try_from(Vec::<u8>::from(GOOD_HEADER).as_slice()).unwrap()
+            CommandHdr::try_from(GOOD_HEADER.as_bytes()).unwrap()
         );
     }
 
@@ -433,7 +507,7 @@ mod tests {
 
         assert_eq!(
             TEST_INIT_CTX_CMD,
-            InitCtxCmd::try_from(Vec::<u8>::from(TEST_INIT_CTX_CMD).as_slice()).unwrap()
+            InitCtxCmd::try_from(TEST_INIT_CTX_CMD.as_bytes()).unwrap()
         );
     }
 
@@ -450,7 +524,7 @@ mod tests {
 
         assert_eq!(
             TEST_ROTATE_CTX_CMD,
-            RotateCtxCmd::try_from(Vec::<u8>::from(TEST_ROTATE_CTX_CMD).as_slice()).unwrap()
+            RotateCtxCmd::try_from(TEST_ROTATE_CTX_CMD.as_bytes()).unwrap()
         );
     }
 
@@ -467,7 +541,7 @@ mod tests {
 
         assert_eq!(
             TEST_DESTROY_CTX_CMD,
-            DestroyCtxCmd::try_from(Vec::<u8>::from(TEST_DESTROY_CTX_CMD).as_slice()).unwrap()
+            DestroyCtxCmd::try_from(TEST_DESTROY_CTX_CMD.as_bytes()).unwrap()
         );
     }
 
@@ -481,54 +555,8 @@ mod tests {
 
         assert_eq!(
             TEST_TAG_TCI_CMD,
-            TagTciCmd::try_from(Vec::<u8>::from(TEST_DESTROY_CTX_CMD).as_slice()).unwrap()
+            TagTciCmd::try_from(TEST_DESTROY_CTX_CMD.as_bytes()).unwrap()
         );
-    }
-
-    impl From<CommandHdr> for Vec<u8> {
-        fn from(value: CommandHdr) -> Self {
-            let mut raw = vec![];
-            raw.extend_from_slice(&value.magic.to_le_bytes());
-            raw.extend_from_slice(&value.cmd_id.to_le_bytes());
-            raw.extend_from_slice(&value.profile.to_le_bytes());
-            raw
-        }
-    }
-
-    impl From<InitCtxCmd> for Vec<u8> {
-        fn from(value: InitCtxCmd) -> Self {
-            let mut raw = vec![];
-            raw.extend_from_slice(&value.flags.to_le_bytes());
-            raw
-        }
-    }
-
-    impl From<RotateCtxCmd> for Vec<u8> {
-        fn from(value: RotateCtxCmd) -> Self {
-            let mut raw = vec![];
-            raw.extend(value.handle);
-            raw.extend_from_slice(&value.flags.to_le_bytes());
-            raw.extend_from_slice(&value.target_locality.to_le_bytes());
-            raw
-        }
-    }
-
-    impl From<DestroyCtxCmd> for Vec<u8> {
-        fn from(value: DestroyCtxCmd) -> Self {
-            let mut raw = vec![];
-            raw.extend(value.handle);
-            raw.extend_from_slice(&value.flags.to_le_bytes());
-            raw
-        }
-    }
-
-    impl From<TagTciCmd> for Vec<u8> {
-        fn from(value: TagTciCmd) -> Self {
-            let mut raw = vec![];
-            raw.extend(value.handle);
-            raw.extend_from_slice(&value.tag.to_le_bytes());
-            raw
-        }
     }
 
     impl CommandHdr {

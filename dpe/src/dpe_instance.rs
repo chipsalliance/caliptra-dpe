@@ -466,6 +466,7 @@ pub mod tests {
     use crate::{
         commands::CommandHdr, crypto::tests::DeterministicCrypto, CURRENT_PROFILE_VERSION,
     };
+    use zerocopy::AsBytes;
 
     const SUPPORT: Support = Support {
         simulation: true,
@@ -507,7 +508,7 @@ pub mod tests {
             Err(DpeErrorCode::InvalidLocality),
             dpe.execute_serialized_command(
                 0x1234_5678, // test value that is not part of the localities
-                &Vec::<u8>::from(CommandHdr::new(Command::GetProfile)),
+                CommandHdr::new(Command::GetProfile).as_bytes(),
             )
         );
 
@@ -515,11 +516,8 @@ pub mod tests {
         for l in TEST_LOCALITIES {
             assert_eq!(
                 Response::GetProfile(GetProfileResp::new(SUPPORT.get_flags())),
-                dpe.execute_serialized_command(
-                    l,
-                    &Vec::<u8>::from(CommandHdr::new(Command::GetProfile)),
-                )
-                .unwrap()
+                dpe.execute_serialized_command(l, CommandHdr::new(Command::GetProfile).as_bytes())
+                    .unwrap()
             );
         }
 
@@ -565,18 +563,17 @@ pub mod tests {
             Response::GetProfile(GetProfileResp::new(SUPPORT.get_flags())),
             dpe.execute_serialized_command(
                 TEST_LOCALITIES[0],
-                &Vec::<u8>::from(CommandHdr::new(Command::GetProfile)),
+                CommandHdr::new(Command::GetProfile).as_bytes(),
             )
             .unwrap()
         );
 
         // The default context was initialized while creating the instance. Now lets create a
         // simulation context.
-        let mut command = Vec::<u8>::from(CommandHdr::new(Command::InitCtx(
-            InitCtxCmd::new_simulation(),
-        )));
-
-        command.extend(Vec::<u8>::from(InitCtxCmd::new_simulation()));
+        let mut command = CommandHdr::new(Command::InitCtx(InitCtxCmd::new_simulation()))
+            .as_bytes()
+            .to_vec();
+        command.extend(InitCtxCmd::new_simulation().as_bytes());
         assert_eq!(
             Response::InitCtx(InitCtxResp {
                 handle: SIMULATION_HANDLE

@@ -38,6 +38,7 @@ impl Response {
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq)]
+#[cfg_attr(test, derive(zerocopy::AsBytes, zerocopy::FromBytes))]
 pub struct ResponseHdr {
     pub magic: u32,
     pub status: u32,
@@ -69,6 +70,7 @@ impl ResponseHdr {
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq)]
+#[cfg_attr(test, derive(zerocopy::AsBytes, zerocopy::FromBytes))]
 pub struct GetProfileResp {
     pub version: u32,
     pub max_tci_nodes: u32,
@@ -98,6 +100,7 @@ impl GetProfileResp {
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq)]
+#[cfg_attr(test, derive(zerocopy::AsBytes, zerocopy::FromBytes))]
 pub struct InitCtxResp {
     pub handle: [u8; HANDLE_SIZE],
 }
@@ -115,6 +118,7 @@ impl InitCtxResp {
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq)]
+#[cfg_attr(test, derive(zerocopy::AsBytes, zerocopy::FromBytes))]
 pub struct RotateCtxResp {
     pub handle: [u8; HANDLE_SIZE],
 }
@@ -132,6 +136,7 @@ impl RotateCtxResp {
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq)]
+#[cfg_attr(test, derive(zerocopy::AsBytes, zerocopy::FromBytes))]
 pub struct TagTciResp {
     pub handle: [u8; HANDLE_SIZE],
 }
@@ -165,7 +170,7 @@ pub enum DpeErrorCode {
 mod tests {
     use super::*;
     use crate::dpe_instance::tests::TEST_HANDLE;
-    use std::vec;
+    use zerocopy::AsBytes;
 
     const TEST_FLAGS: u32 = 0x7E57_B175;
     const DEFAULT_GET_PROFILE_RESPONSE: GetProfileResp = GetProfileResp {
@@ -226,22 +231,15 @@ mod tests {
             Err(DpeErrorCode::InternalError),
             DEFAULT_GET_PROFILE_RESPONSE.serialize(response_buffer.as_mut_slice())
         );
-
-        // Test good case.
-        let mut answer = vec![];
-        answer.extend_from_slice(&CURRENT_PROFILE_VERSION.to_le_bytes());
-        answer.extend_from_slice(&(MAX_HANDLES as u32).to_le_bytes());
-        answer.extend_from_slice(&TEST_FLAGS.to_le_bytes());
-
         let mut response_buffer = [0; size_of::<GetProfileResp>()];
+
         assert_eq!(
             12,
             DEFAULT_GET_PROFILE_RESPONSE
                 .serialize(response_buffer.as_mut_slice())
                 .unwrap()
         );
-
-        assert_eq!(answer.as_slice(), response_buffer);
+        assert_eq!(DEFAULT_GET_PROFILE_RESPONSE.as_bytes(), response_buffer);
     }
 
     #[test]
@@ -252,36 +250,25 @@ mod tests {
             Err(DpeErrorCode::InternalError),
             DEFAULT_INIT_CTX_RESPONSE.serialize(response_buffer.as_mut_slice())
         );
-
-        // Test good case.
-        let mut answer = vec![];
-        answer.extend(TEST_HANDLE);
-
         let mut response_buffer = [0; size_of::<InitCtxResp>()];
+
         assert_eq!(
             HANDLE_SIZE,
             DEFAULT_INIT_CTX_RESPONSE
                 .serialize(response_buffer.as_mut_slice())
                 .unwrap()
         );
-
-        assert_eq!(answer.as_slice(), response_buffer);
+        assert_eq!(DEFAULT_INIT_CTX_RESPONSE.as_bytes(), response_buffer);
     }
 
     fn test_error_code_serialize(error_code: DpeErrorCode) {
-        let mut answer = vec![];
-        answer.extend_from_slice(&ResponseHdr::DPE_RESPONSE_MAGIC.to_le_bytes());
-        answer.extend_from_slice(&(error_code as u32).to_le_bytes());
-        answer.extend_from_slice(&(DPE_PROFILE as u32).to_le_bytes());
-
+        let rsp_hdr = ResponseHdr::new(error_code);
         let mut response_buffer = [0; size_of::<ResponseHdr>()];
+
         assert_eq!(
             12,
-            ResponseHdr::new(error_code)
-                .serialize(response_buffer.as_mut_slice())
-                .unwrap()
+            rsp_hdr.serialize(response_buffer.as_mut_slice()).unwrap()
         );
-
-        assert_eq!(answer.as_slice(), response_buffer);
+        assert_eq!(rsp_hdr.as_bytes(), response_buffer);
     }
 }
