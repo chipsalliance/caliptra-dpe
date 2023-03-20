@@ -6,6 +6,7 @@ const (
 
 	GetProfileCode uint32 = 0x1
 	InitCtxCode    uint32 = 0x5
+	DestroyCtxCode uint32 = 0xf
 
 	DPE_PROFILE_P256_SHA256 uint32 = 1
 	DPE_PROFILE_P384_SHA384 uint32 = 2
@@ -46,6 +47,19 @@ func NewInitCtxIsDefault() *InitCtxCmd {
 
 func NewInitCtxIsSimulation() *InitCtxCmd {
 	return &InitCtxCmd{flags: 1 << 31}
+}
+
+type DestroyCtxCmd struct {
+	handle [16]byte
+	flags  uint32
+}
+
+func NewDestroyCtx(handle [16]byte, destroy_descendants bool) *DestroyCtxCmd {
+	flags := uint32(0)
+	if destroy_descendants {
+		flags |= 1 << 31
+	}
+	return &DestroyCtxCmd{handle: handle, flags: flags}
 }
 
 type InitCtxResp struct {

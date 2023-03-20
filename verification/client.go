@@ -124,6 +124,39 @@ func (c *DpeClient) GetProfile(locality uint32) (error, RespHdr, GetProfileResp)
 	return nil, respHdr, respStruct
 }
 
+// Send the command to destroy a context.
+func (c *DpeClient) DestroyContext(locality uint32, cmd *DestroyCtxCmd) (error, RespHdr) {
+	hdr := CommandHdr{
+		magic:   CmdMagic,
+		cmd:     DestroyCtxCode,
+		profile: c.profile,
+	}
+
+	buf := &bytes.Buffer{}
+	binary.Write(buf, binary.LittleEndian, locality)
+	binary.Write(buf, binary.LittleEndian, hdr)
+	binary.Write(buf, binary.LittleEndian, cmd)
+
+	err, resp := c.transport.SendCmd(buf.Bytes())
+	if err != nil {
+		return err, RespHdr{Status: 0xffffffff}
+	}
+
+	respHdr := RespHdr{}
+
+	r := bytes.NewReader(resp)
+	err = binary.Read(r, binary.LittleEndian, &respHdr)
+	if err != nil {
+		return err, RespHdr{Status: 0xffffffff}
+	}
+	err = c.checkRespHdr(respHdr)
+	if err != nil {
+		return err, respHdr
+	}
+
+	return nil, respHdr
+}
+
 // Check that the response header has all expected values and did not have any
 // errors.
 func (c *DpeClient) checkRespHdr(hdr RespHdr) error {
