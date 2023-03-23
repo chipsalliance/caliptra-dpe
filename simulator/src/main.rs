@@ -1,5 +1,6 @@
 use clap::Parser;
-use ossl_crypto::OpensslCrypto;
+use dpe::crypto::Hasher;
+use ossl_crypto::{OpensslCrypto, OpensslHasher};
 use std::fs;
 use std::io::{Error, ErrorKind, Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -137,6 +138,22 @@ fn main() -> std::io::Result<()> {
     Ok(())
 }
 
+pub struct SimHasher(ossl_crypto::OpensslHasher);
+
+impl Hasher for SimHasher {
+    fn update(&mut self, bytes: &[u8]) -> Result<(), DpeErrorCode> {
+        self.0
+            .update(bytes)
+            .map_err(|_| DpeErrorCode::InternalError)
+    }
+
+    fn finish(self, digest: &mut [u8]) -> Result<(), DpeErrorCode> {
+        self.0
+            .finish(digest)
+            .map_err(|_| DpeErrorCode::InternalError)
+    }
+}
+
 struct SimCrypto;
 
 impl SimCrypto {
@@ -150,6 +167,7 @@ impl SimCrypto {
 
 impl Crypto for SimCrypto {
     type Cdi = Vec<u8>;
+    type Hasher = SimHasher;
 
     /// Uses incrementing values for each byte to ensure tests are
     /// deterministic
@@ -157,9 +175,11 @@ impl Crypto for SimCrypto {
         OpensslCrypto::rand_bytes(dst).map_err(|_| DpeErrorCode::InternalError)
     }
 
-    fn hash(profile: DpeProfile, bytes: &[u8], digest: &mut [u8]) -> Result<(), DpeErrorCode> {
+    fn hash_initialize(profile: DpeProfile) -> Result<Self::Hasher, DpeErrorCode> {
         let md = Self::get_digest(&profile);
-        OpensslCrypto::hash(bytes, digest, md).map_err(|_| DpeErrorCode::InternalError)
+        Ok(SimHasher(
+            OpensslHasher::new(md).map_err(|_| DpeErrorCode::InternalError)?,
+        ))
     }
 
     fn derive_cdi(
