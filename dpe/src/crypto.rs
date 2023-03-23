@@ -53,8 +53,28 @@ impl Default for EcdsaPub {
     }
 }
 
+pub trait Hasher: Sized {
+    /// Adds a chunk to the running hash.
+    ///
+    /// # Arguments
+    ///
+    /// * `bytes` - Value to add to hash.
+    fn update(&mut self, bytes: &[u8]) -> Result<(), DpeErrorCode>;
+
+    /// Finish a running hash operation and return the result.
+    ///
+    /// Once this function has been called, the object can no longer be used and
+    /// a new one must be created to hash more data.
+    ///
+    /// # Arguments
+    ///
+    /// * `digest` - Where the computed digest should be written.
+    fn finish(self, digest: &mut [u8]) -> Result<(), DpeErrorCode>;
+}
+
 pub trait Crypto {
     type Cdi;
+    type Hasher: Hasher;
 
     /// Fills the buffer with random values.
     ///
@@ -71,7 +91,21 @@ pub trait Crypto {
     ///   use.
     /// * `bytes` - Value to be hashed.
     /// * `digest` - Where the computed digest should be written.
-    fn hash(profile: DpeProfile, bytes: &[u8], digest: &mut [u8]) -> Result<(), DpeErrorCode>;
+    fn hash(profile: DpeProfile, bytes: &[u8], digest: &mut [u8]) -> Result<(), DpeErrorCode> {
+        let mut hasher = Self::hash_initialize(profile)?;
+        hasher.update(bytes)?;
+        hasher.finish(digest)
+    }
+
+    /// Initialize a running hash. Returns an object that will be able to complete the rest.
+    ///
+    /// Used for hashing multiple buffers that may not be in consecutive memory.
+    ///
+    /// # Arguments
+    ///
+    /// * `profile` - Which profile is being used. This will tell the platform which algorithm to
+    ///   use.
+    fn hash_initialize(profile: DpeProfile) -> Result<Self::Hasher, DpeErrorCode>;
 
     /// Derive a CDI based on the current base CDI and measurements.
     ///
@@ -117,8 +151,24 @@ pub trait Crypto {
 pub mod tests {
     use super::*;
     use openssl::{hash::MessageDigest, nid::Nid};
-    use ossl_crypto::OpensslCrypto;
+    use ossl_crypto::{OpensslCrypto, OpensslHasher};
     use std::vec::Vec;
+
+    pub struct TestHasher(OpensslHasher);
+
+    impl Hasher for TestHasher {
+        fn update(&mut self, bytes: &[u8]) -> Result<(), DpeErrorCode> {
+            self.0
+                .update(bytes)
+                .map_err(|_| DpeErrorCode::InternalError)
+        }
+
+        fn finish(self, digest: &mut [u8]) -> Result<(), DpeErrorCode> {
+            self.0
+                .finish(digest)
+                .map_err(|_| DpeErrorCode::InternalError)
+        }
+    }
 
     /// Uses known values for outputs to simulate operations that can be easily checked in tests.
     pub struct DeterministicCrypto;
@@ -141,6 +191,7 @@ pub mod tests {
 
     impl Crypto for DeterministicCrypto {
         type Cdi = Vec<u8>;
+        type Hasher = TestHasher;
 
         /// Uses incrementing values for each byte to ensure tests are
         /// deterministic
@@ -151,9 +202,11 @@ pub mod tests {
             Ok(())
         }
 
-        fn hash(profile: DpeProfile, bytes: &[u8], digest: &mut [u8]) -> Result<(), DpeErrorCode> {
+        fn hash_initialize(profile: DpeProfile) -> Result<Self::Hasher, DpeErrorCode> {
             let md = Self::get_digest(&profile);
-            OpensslCrypto::hash(bytes, digest, md).map_err(|_| DpeErrorCode::InternalError)
+            Ok(TestHasher(
+                OpensslHasher::new(md).map_err(|_| DpeErrorCode::InternalError)?,
+            ))
         }
 
         fn derive_cdi(

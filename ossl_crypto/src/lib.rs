@@ -24,6 +24,30 @@ pub struct EccPoint {
     pub y: Vec<u8>,
 }
 
+pub struct OpensslHasher {
+    hasher: openssl::hash::Hasher,
+}
+
+impl OpensslHasher {
+    pub fn new(md: MessageDigest) -> Result<OpensslHasher, ErrorStack> {
+        Ok(OpensslHasher { hasher: openssl::hash::Hasher::new(md)? })
+    }
+
+    pub fn update(&mut self, bytes: &[u8]) -> Result<(), ErrorStack> {
+        self.hasher
+            .update(bytes)
+    }
+
+    pub fn finish(mut self, digest: &mut [u8]) -> Result<(), ErrorStack> {
+        digest.copy_from_slice(
+            &self
+                .hasher
+                .finish()?,
+        );
+        Ok(())
+    }
+}
+
 /// Uses known values for outputs to simulate operations that can be easily checked in tests.
 pub struct OpensslCrypto;
 
