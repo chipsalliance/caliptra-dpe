@@ -17,8 +17,10 @@ set -ex
   cargo fmt -- --check
   cargo clippy -- --deny=warnings
 )
-( cd ossl_crypto
+( cd crypto
   cargo build
+  cargo build --features=openssl
+  cargo build --features=deterministic_rand
   cargo build --release
   cargo test
   cargo fmt -- --check

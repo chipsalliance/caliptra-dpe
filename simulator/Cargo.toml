@@ -10,4 +10,4 @@ ctrlc = { version = "3.0", features = ["termination"] }
 openssl = "0.10"
 clap = { version = "4.1.8", features = ["derive"] }
 dpe = { path = "../dpe" }
-ossl_crypto = { path = "../ossl_crypto" }
+crypto = { path = "../crypto", features = ["openssl"] }

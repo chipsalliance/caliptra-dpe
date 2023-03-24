@@ -7,15 +7,14 @@ Abstract:
 use crate::{
     _set_flag,
     commands::{CertifyKeyCmd, Command, DestroyCtxCmd, InitCtxCmd, RotateCtxCmd, TagTciCmd},
-    crypto::{Crypto, EcdsaPub},
     response::{CertifyKeyResp, DpeErrorCode, GetProfileResp, NewHandleResp, Response},
-    x509::{MeasurementData, Name, X509CertWriter},
+    x509::{EcdsaPub, EcdsaSignature, MeasurementData, Name, X509CertWriter},
     DPE_PROFILE, HANDLE_SIZE, MAX_CERT_SIZE, MAX_HANDLES,
 };
-
 use core::convert::TryFrom;
 use core::marker::PhantomData;
 use core::mem::size_of;
+use crypto::Crypto;
 
 pub struct DpeInstance<'a, C: Crypto> {
     contexts: [Context; MAX_HANDLES],
@@ -212,17 +211,33 @@ impl<C: Crypto> DpeInstance<'_, C> {
         }
 
         let mut digest = [0; DPE_PROFILE.get_hash_size()];
-        C::hash(DPE_PROFILE, &tci_bytes[..tci_offset], &mut digest)?;
+        C::hash(DPE_PROFILE.alg_len(), &tci_bytes[..tci_offset], &mut digest)
+            .map_err(|_| DpeErrorCode::InternalError)?;
 
         // Derive CDI and public key
-        let cdi = C::derive_cdi(DPE_PROFILE, &digest, b"DPE")?;
-        let pub_key = C::derive_ecdsa_pub(DPE_PROFILE, &cdi, &cmd.label, b"ECC")?;
+        let cdi = C::derive_cdi(DPE_PROFILE.alg_len(), &digest, b"DPE")
+            .map_err(|_| DpeErrorCode::InternalError)?;
+        let mut pub_key = EcdsaPub::default();
+        C::derive_ecdsa_pub(
+            DPE_PROFILE.alg_len(),
+            &cdi,
+            &cmd.label,
+            b"ECC",
+            &mut pub_key.x,
+            &mut pub_key.y,
+        )
+        .map_err(|_| DpeErrorCode::InternalError)?;
 
         // Hash the public key for the serialNumber name field
         let mut pub_bytes = [0u8; size_of::<EcdsaPub>()];
         let pub_offset = pub_key.serialize(&mut pub_bytes)?;
         let mut pub_digest = [0u8; DPE_PROFILE.get_hash_size()];
-        C::hash(DPE_PROFILE, &pub_bytes[..pub_offset], &mut pub_digest)?;
+        C::hash(
+            DPE_PROFILE.alg_len(),
+            &pub_bytes[..pub_offset],
+            &mut pub_digest,
+        )
+        .map_err(|_| DpeErrorCode::InternalError)?;
 
         // TODO: Let the platform specify issuer name
         let issuer_name = Name {
@@ -252,8 +267,15 @@ impl<C: Crypto> DpeInstance<'_, C> {
         )?;
 
         let mut tbs_digest = [0u8; DPE_PROFILE.get_hash_size()];
-        C::hash(DPE_PROFILE, &tbs_buffer[..bytes_written], &mut tbs_digest)?;
-        let sig = C::ecdsa_sign_with_alias(DPE_PROFILE, &tbs_digest)?;
+        C::hash(
+            DPE_PROFILE.alg_len(),
+            &tbs_buffer[..bytes_written],
+            &mut tbs_digest,
+        )
+        .map_err(|_| DpeErrorCode::InternalError)?;
+        let mut sig = EcdsaSignature::default();
+        C::ecdsa_sign_with_alias(DPE_PROFILE.alg_len(), &tbs_digest, &mut sig.r, &mut sig.s)
+            .map_err(|_| DpeErrorCode::InternalError)?;
 
         let mut cert = [0u8; MAX_CERT_SIZE];
         let mut cert_writer = X509CertWriter::new(&mut cert);
@@ -343,7 +365,7 @@ impl<C: Crypto> DpeInstance<'_, C> {
     fn generate_new_handle(&self) -> Result<[u8; HANDLE_SIZE], DpeErrorCode> {
         for _ in 0..Self::MAX_NEW_HANDLE_ATTEMPTS {
             let mut handle = [0; HANDLE_SIZE];
-            C::rand_bytes(&mut handle)?;
+            C::rand_bytes(&mut handle).map_err(|_| DpeErrorCode::InternalError)?;
             if handle != Self::DEFAULT_CONTEXT_HANDLE
                 && !self.contexts.iter().any(|c| c.handle == handle)
             {
@@ -613,9 +635,8 @@ impl Iterator for FlagsIter {
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::{
-        commands::CommandHdr, crypto::tests::DeterministicCrypto, CURRENT_PROFILE_VERSION,
-    };
+    use crate::{commands::CommandHdr, CURRENT_PROFILE_VERSION};
+    use crypto::OpensslCrypto;
     use x509_parser::nom::Parser;
     use x509_parser::prelude::X509CertificateParser;
     use x509_parser::prelude::*;
@@ -634,7 +655,7 @@ pub mod tests {
         [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
 
     pub const TEST_LOCALITIES: [u32; 2] = [
-        DpeInstance::<DeterministicCrypto>::AUTO_INIT_LOCALITY,
+        DpeInstance::<OpensslCrypto>::AUTO_INIT_LOCALITY,
         u32::from_be_bytes(*b"OTHR"),
     ];
 
@@ -643,7 +664,7 @@ pub mod tests {
         // Empty list of localities.
         assert_eq!(
             DpeErrorCode::InvalidLocality,
-            DpeInstance::<DeterministicCrypto>::new(SUPPORT, &[])
+            DpeInstance::<OpensslCrypto>::new(SUPPORT, &[])
                 .err()
                 .unwrap()
         );
@@ -651,12 +672,12 @@ pub mod tests {
         // Auto-init without the auto-init locality.
         assert_eq!(
             DpeErrorCode::InvalidLocality,
-            DpeInstance::<DeterministicCrypto>::new(SUPPORT, &TEST_LOCALITIES[1..])
+            DpeInstance::<OpensslCrypto>::new(SUPPORT, &TEST_LOCALITIES[1..])
                 .err()
                 .unwrap()
         );
 
-        let mut dpe = DpeInstance::<DeterministicCrypto>::new(SUPPORT, &TEST_LOCALITIES).unwrap();
+        let mut dpe = DpeInstance::<OpensslCrypto>::new(SUPPORT, &TEST_LOCALITIES).unwrap();
         assert_eq!(
             Err(DpeErrorCode::InvalidLocality),
             dpe.execute_serialized_command(
@@ -710,7 +731,7 @@ pub mod tests {
 
     #[test]
     fn test_execute_serialized_command() {
-        let mut dpe = DpeInstance::<DeterministicCrypto>::new(SUPPORT, &TEST_LOCALITIES).unwrap();
+        let mut dpe = DpeInstance::<OpensslCrypto>::new(SUPPORT, &TEST_LOCALITIES).unwrap();
 
         assert_eq!(
             Response::GetProfile(GetProfileResp::new(SUPPORT.get_flags())),
@@ -738,7 +759,7 @@ pub mod tests {
 
     #[test]
     fn test_get_profile() {
-        let dpe = DpeInstance::<DeterministicCrypto>::new(SUPPORT, &TEST_LOCALITIES).unwrap();
+        let dpe = DpeInstance::<OpensslCrypto>::new(SUPPORT, &TEST_LOCALITIES).unwrap();
         let profile = dpe.get_profile().unwrap();
         assert_eq!(profile.version, CURRENT_PROFILE_VERSION);
         assert_eq!(profile.flags, SUPPORT.get_flags());
@@ -747,11 +768,11 @@ pub mod tests {
     #[test]
     fn test_initialize_context() {
         let mut dpe =
-            DpeInstance::<DeterministicCrypto>::new(Support::default(), &TEST_LOCALITIES).unwrap();
+            DpeInstance::<OpensslCrypto>::new(Support::default(), &TEST_LOCALITIES).unwrap();
 
         // Make sure default context is 0x0.
         assert_eq!(
-            DpeInstance::<DeterministicCrypto>::DEFAULT_CONTEXT_HANDLE,
+            DpeInstance::<OpensslCrypto>::DEFAULT_CONTEXT_HANDLE,
             dpe.initialize_context(TEST_LOCALITIES[0], &InitCtxCmd::new_use_default())
                 .unwrap()
                 .handle
@@ -791,7 +812,7 @@ pub mod tests {
         );
 
         // Change to support simulation.
-        let mut dpe = DpeInstance::<DeterministicCrypto>::new(
+        let mut dpe = DpeInstance::<OpensslCrypto>::new(
             Support {
                 simulation: true,
                 ..Support::default()
@@ -825,14 +846,14 @@ pub mod tests {
     #[test]
     fn test_rotate_context() {
         let mut dpe =
-            DpeInstance::<DeterministicCrypto>::new(Support::default(), &TEST_LOCALITIES).unwrap();
+            DpeInstance::<OpensslCrypto>::new(Support::default(), &TEST_LOCALITIES).unwrap();
         // Make sure it returns an error if the command is marked unsupported.
         assert_eq!(
             Err(DpeErrorCode::InvalidCommand),
             dpe.rotate_context(
                 TEST_LOCALITIES[0],
                 &RotateCtxCmd {
-                    handle: DpeInstance::<DeterministicCrypto>::DEFAULT_CONTEXT_HANDLE,
+                    handle: DpeInstance::<OpensslCrypto>::DEFAULT_CONTEXT_HANDLE,
                     flags: 0,
                     target_locality: 0
                 }
@@ -840,7 +861,7 @@ pub mod tests {
         );
 
         // Make a new instance that supports RotateContext.
-        let mut dpe = DpeInstance::<DeterministicCrypto>::new(
+        let mut dpe = DpeInstance::<OpensslCrypto>::new(
             Support {
                 rotate_context: true,
                 ..Support::default()
@@ -870,7 +891,7 @@ pub mod tests {
             dpe.rotate_context(
                 TEST_LOCALITIES[1],
                 &RotateCtxCmd {
-                    handle: DpeInstance::<DeterministicCrypto>::DEFAULT_CONTEXT_HANDLE,
+                    handle: DpeInstance::<OpensslCrypto>::DEFAULT_CONTEXT_HANDLE,
                     flags: 0,
                     target_locality: 0
                 }
@@ -885,7 +906,7 @@ pub mod tests {
             dpe.rotate_context(
                 TEST_LOCALITIES[0],
                 &RotateCtxCmd {
-                    handle: DpeInstance::<DeterministicCrypto>::DEFAULT_CONTEXT_HANDLE,
+                    handle: DpeInstance::<OpensslCrypto>::DEFAULT_CONTEXT_HANDLE,
                     flags: 0,
                     target_locality: 0
                 }
@@ -896,7 +917,7 @@ pub mod tests {
     #[test]
     fn test_certify_key() {
         let mut dpe =
-            DpeInstance::<DeterministicCrypto>::new(Support::default(), &TEST_LOCALITIES).unwrap();
+            DpeInstance::<OpensslCrypto>::new(Support::default(), &TEST_LOCALITIES).unwrap();
 
         let init_resp = dpe
             .initialize_context(TEST_LOCALITIES[0], &InitCtxCmd::new_use_default())
@@ -990,7 +1011,7 @@ pub mod tests {
     #[test]
     fn test_get_active_context_index() {
         let mut dpe =
-            DpeInstance::<DeterministicCrypto>::new(Support::default(), &TEST_LOCALITIES).unwrap();
+            DpeInstance::<OpensslCrypto>::new(Support::default(), &TEST_LOCALITIES).unwrap();
         let expected_index = 7;
         dpe.contexts[expected_index]
             .handle
@@ -1012,21 +1033,21 @@ pub mod tests {
     #[test]
     fn test_tag_tci() {
         let mut dpe =
-            DpeInstance::<DeterministicCrypto>::new(Support::default(), &TEST_LOCALITIES).unwrap();
+            DpeInstance::<OpensslCrypto>::new(Support::default(), &TEST_LOCALITIES).unwrap();
         // Make sure it returns an error if the command is marked unsupported.
         assert_eq!(
             Err(DpeErrorCode::InvalidCommand),
             dpe.tag_tci(
                 TEST_LOCALITIES[0],
                 &TagTciCmd {
-                    handle: DpeInstance::<DeterministicCrypto>::DEFAULT_CONTEXT_HANDLE,
+                    handle: DpeInstance::<OpensslCrypto>::DEFAULT_CONTEXT_HANDLE,
                     tag: 0,
                 }
             )
         );
 
         // Make a new instance that supports tagging.
-        let mut dpe = DpeInstance::<DeterministicCrypto>::new(
+        let mut dpe = DpeInstance::<OpensslCrypto>::new(
             Support {
                 tagging: true,
                 simulation: true,
@@ -1067,7 +1088,7 @@ pub mod tests {
             dpe.tag_tci(
                 TEST_LOCALITIES[1],
                 &TagTciCmd {
-                    handle: DpeInstance::<DeterministicCrypto>::DEFAULT_CONTEXT_HANDLE,
+                    handle: DpeInstance::<OpensslCrypto>::DEFAULT_CONTEXT_HANDLE,
                     tag: 0,
                 }
             )
@@ -1076,12 +1097,12 @@ pub mod tests {
         // Tag default handle.
         assert_eq!(
             Ok(Response::TagTci(NewHandleResp {
-                handle: DpeInstance::<DeterministicCrypto>::DEFAULT_CONTEXT_HANDLE,
+                handle: DpeInstance::<OpensslCrypto>::DEFAULT_CONTEXT_HANDLE,
             })),
             dpe.tag_tci(
                 TEST_LOCALITIES[0],
                 &TagTciCmd {
-                    handle: DpeInstance::<DeterministicCrypto>::DEFAULT_CONTEXT_HANDLE,
+                    handle: DpeInstance::<OpensslCrypto>::DEFAULT_CONTEXT_HANDLE,
                     tag: 0,
                 }
             )
@@ -1093,7 +1114,7 @@ pub mod tests {
             dpe.tag_tci(
                 TEST_LOCALITIES[0],
                 &TagTciCmd {
-                    handle: DpeInstance::<DeterministicCrypto>::DEFAULT_CONTEXT_HANDLE,
+                    handle: DpeInstance::<OpensslCrypto>::DEFAULT_CONTEXT_HANDLE,
                     tag: 1,
                 }
             )
@@ -1129,7 +1150,7 @@ pub mod tests {
     #[test]
     fn test_get_descendants() {
         let mut dpe =
-            DpeInstance::<DeterministicCrypto>::new(Support::default(), &TEST_LOCALITIES).unwrap();
+            DpeInstance::<OpensslCrypto>::new(Support::default(), &TEST_LOCALITIES).unwrap();
         let root = 7;
         let child_1 = 3;
         let child_1_1 = 0;

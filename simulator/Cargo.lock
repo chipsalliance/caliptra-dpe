@@ -64,6 +64,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "crypto"
+version = "0.1.0"
+dependencies = [
+ "openssl",
+ "openssl-kdf",
+]
+
+[[package]]
 name = "ctrlc"
 version = "3.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -76,6 +84,9 @@ dependencies = [
 [[package]]
 name = "dpe"
 version = "0.1.0"
+dependencies = [
+ "crypto",
+]
 
 [[package]]
 name = "errno"
@@ -237,14 +248,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9b7820b9daea5457c9f21c69448905d723fbd21136ccf521748f23fd49e723ee"
 
 [[package]]
-name = "ossl_crypto"
-version = "0.1.0"
-dependencies = [
- "openssl",
- "openssl-kdf",
-]
-
-[[package]]
 name = "pkg-config"
 version = "0.3.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -311,10 +314,10 @@ name = "simulator"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "crypto",
  "ctrlc",
  "dpe",
  "openssl",
- "ossl_crypto",
 ]
 
 [[package]]
