@@ -109,6 +109,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "crypto"
+version = "0.1.0"
+dependencies = [
+ "openssl",
+ "openssl-kdf",
+]
+
+[[package]]
 name = "data-encoding"
 version = "2.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -144,8 +152,8 @@ name = "dpe"
 version = "0.1.0"
 dependencies = [
  "asn1",
+ "crypto",
  "openssl",
- "ossl_crypto",
  "x509-parser",
  "zerocopy",
 ]
@@ -301,14 +309,6 @@ dependencies = [
  "libc",
  "pkg-config",
  "vcpkg",
-]
-
-[[package]]
-name = "ossl_crypto"
-version = "0.1.0"
-dependencies = [
- "openssl",
- "openssl-kdf",
 ]
 
 [[package]]

@@ -6,11 +6,11 @@
 //! this functionality for a no_std environment.
 
 use crate::{
-    crypto::{EcdsaPub, EcdsaSignature},
     dpe_instance::{TciMeasurement, TciNodeData},
     response::DpeErrorCode,
     DpeProfile, DPE_PROFILE,
 };
+use core::mem::size_of;
 
 pub struct Name<'a> {
     pub cn: &'a [u8],
@@ -25,6 +25,52 @@ pub struct MeasurementData<'a> {
 pub struct X509CertWriter<'a> {
     certificate: &'a mut [u8],
     offset: usize,
+}
+
+// An ECDSA signature
+pub struct EcdsaSignature {
+    pub(crate) r: [u8; DPE_PROFILE.get_ecc_int_size()],
+    pub(crate) s: [u8; DPE_PROFILE.get_ecc_int_size()],
+}
+
+impl Default for EcdsaSignature {
+    fn default() -> EcdsaSignature {
+        EcdsaSignature {
+            r: [0; DPE_PROFILE.get_ecc_int_size()],
+            s: [0; DPE_PROFILE.get_ecc_int_size()],
+        }
+    }
+}
+
+// An ECDSA public key
+pub struct EcdsaPub {
+    pub x: [u8; DPE_PROFILE.get_ecc_int_size()],
+    pub y: [u8; DPE_PROFILE.get_ecc_int_size()],
+}
+
+impl EcdsaPub {
+    pub fn serialize(&self, dst: &mut [u8]) -> Result<usize, DpeErrorCode> {
+        if dst.len() < size_of::<Self>() {
+            return Err(DpeErrorCode::InternalError);
+        }
+
+        let mut offset: usize = 0;
+        dst[offset..offset + self.x.len()].copy_from_slice(&self.x);
+        offset += self.x.len();
+        dst[offset..offset + self.y.len()].copy_from_slice(&self.y);
+        offset += self.y.len();
+
+        Ok(offset)
+    }
+}
+
+impl Default for EcdsaPub {
+    fn default() -> EcdsaPub {
+        EcdsaPub {
+            x: [0; DPE_PROFILE.get_ecc_int_size()],
+            y: [0; DPE_PROFILE.get_ecc_int_size()],
+        }
+    }
 }
 
 impl X509CertWriter<'_> {

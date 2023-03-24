@@ -9,7 +9,6 @@ Abstract:
 use crypto::Crypto;
 use response::{DpeErrorCode, ResponseHdr};
 pub mod commands;
-pub mod crypto;
 pub mod dpe_instance;
 pub mod response;
 mod x509;
@@ -39,6 +38,12 @@ impl DpeProfile {
     }
     pub const fn get_hash_size(&self) -> usize {
         self.get_tci_size()
+    }
+    pub const fn alg_len(&self) -> crypto::AlgLen {
+        match self {
+            DpeProfile::P256Sha256 => crypto::AlgLen::Bit256,
+            DpeProfile::P384Sha384 => crypto::AlgLen::Bit384,
+        }
     }
 }
 
