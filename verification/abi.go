@@ -4,25 +4,29 @@ const (
 	CmdMagic  uint32 = 0x44504543
 	RespMagic uint32 = 0x44504552
 
-	GetProfileCode uint32 = 0x1
-	InitCtxCode    uint32 = 0x5
-	DestroyCtxCode uint32 = 0xf
-
 	DPE_PROFILE_P256_SHA256 uint32 = 1
 	DPE_PROFILE_P384_SHA384 uint32 = 2
 
 	CURRENT_PROFILE_VERSION uint32 = 0
 )
 
+type CommandCode uint32
+
+const (
+	CommandGetProfile        CommandCode = 0x1
+	CommandInitializeContext CommandCode = 0x5
+	CommandDestroyContext    CommandCode = 0xf
+)
+
 type CommandHdr struct {
 	magic   uint32
-	cmd     uint32
+	cmd     CommandCode
 	profile uint32
 }
 
 type RespHdr struct {
 	Magic   uint32
-	Status  uint32
+	Status  Status
 	Profile uint32
 }
 
