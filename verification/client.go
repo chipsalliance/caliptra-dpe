@@ -21,12 +21,23 @@ type Transport interface {
 	SendCmd(buf []byte) (error, []byte)
 }
 
-type DpeClient struct {
+type Client struct {
 	transport Transport
 	profile   uint32
 }
 
-func (c *DpeClient) Initialize(cmd *InitCtxCmd) (*InitCtxResp, error) {
+// NewClient initializes a new DPE client, including querying the underlying implementation for its profile.
+func NewClient(t Transport) (*Client, error) {
+	client := Client{transport: t}
+	rsp, err := client.GetProfile()
+	if err != nil {
+		return nil, fmt.Errorf("could not query DPE profile: %w", err)
+	}
+	client.profile = rsp.Profile
+	return &client, nil
+}
+
+func (c *Client) InitializeContext(cmd *InitCtxCmd) (*InitCtxResp, error) {
 	hdr := CommandHdr{
 		magic:   CmdMagic,
 		cmd:     InitCtxCode,
@@ -63,7 +74,7 @@ func (c *DpeClient) Initialize(cmd *InitCtxCmd) (*InitCtxResp, error) {
 	return &respStruct, nil
 }
 
-func (c *DpeClient) GetProfile() (*GetProfileResp, error) {
+func (c *Client) GetProfile() (*GetProfileResp, error) {
 	hdr := CommandHdr{
 		magic: CmdMagic,
 		cmd:   GetProfileCode,
@@ -100,9 +111,6 @@ func (c *DpeClient) GetProfile() (*GetProfileResp, error) {
 	if err != nil {
 		return nil, err
 	}
-	if respHdr.Status == 0 {
-		c.profile = respHdr.Profile
-	}
 
 	return &GetProfileResp{
 		// Special case for GetProfile: copy the profile from the inner packet header into the response structure.
@@ -114,7 +122,7 @@ func (c *DpeClient) GetProfile() (*GetProfileResp, error) {
 }
 
 // Send the command to destroy a context.
-func (c *DpeClient) DestroyContext(cmd *DestroyCtxCmd) error {
+func (c *Client) DestroyContext(cmd *DestroyCtxCmd) error {
 	hdr := CommandHdr{
 		magic:   CmdMagic,
 		cmd:     DestroyCtxCode,
@@ -146,7 +154,7 @@ func (c *DpeClient) DestroyContext(cmd *DestroyCtxCmd) error {
 }
 
 // checkRespHdr checks that the response header has all expected values and did not indicate an error.
-func (c *DpeClient) checkRespHdr(hdr RespHdr) error {
+func (c *Client) checkRespHdr(hdr RespHdr) error {
 	if hdr.Magic != RespMagic {
 		fmt.Println(hdr)
 		return errors.New("invalid response magic value")
