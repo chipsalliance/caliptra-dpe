@@ -30,7 +30,7 @@ type TestDPEInstance interface {
 	// Returns a slice of all the localities the instance supports.
 	GetSupportedLocalities() []uint32
 	// Sets the current locality.
-	SetLocality(locality uint32) error
+	SetLocality(locality uint32)
 	// Gets the current locality.
 	GetLocality() uint32
 	// Returns the Maximum number of the TCIs instance can have.
@@ -80,9 +80,7 @@ func testGetProfile(s TestDPEInstance, t *testing.T) {
 	}
 
 	for _, locality := range s.GetSupportedLocalities() {
-		if err := s.SetLocality(locality); err != nil {
-			t.Fatalf("Unable to set locality: %v", err)
-		}
+		s.SetLocality(locality)
 		rsp, err := client.GetProfile()
 		if err != nil {
 			t.Fatalf("Unable to get profile: %v", err)
@@ -115,9 +113,7 @@ func TestInitializeContext(t *testing.T) {
 
 	for _, s := range simulators {
 		for _, l := range s.GetSupportedLocalities() {
-			if err := s.SetLocality(l); err != nil {
-				t.Fatalf("Unable to set locality: %v", err)
-			}
+			s.SetLocality(l)
 			testInitContext(s, t)
 		}
 	}

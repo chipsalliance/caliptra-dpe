@@ -19,8 +19,11 @@ type Transport interface {
 }
 
 type Client struct {
-	transport Transport
-	profile   uint32
+	transport   Transport
+	Profile     uint32
+	Version     uint32
+	MaxTciNodes uint32
+	Flags       uint32
 }
 
 // NewClient initializes a new DPE client, including querying the underlying implementation for its profile.
@@ -30,14 +33,17 @@ func NewClient(t Transport) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("could not query DPE profile: %w", err)
 	}
-	client.profile = rsp.Profile
+	client.Profile = rsp.Profile
+	client.Version = rsp.Version
+	client.MaxTciNodes = rsp.MaxTciNodes
+	client.Flags = rsp.Flags
 	return &client, nil
 }
 
 func (c *Client) InitializeContext(cmd *InitCtxCmd) (*InitCtxResp, error) {
 	var respStruct InitCtxResp
 
-	if _, err := execCommand(c.transport, CommandInitializeContext, c.profile, cmd, &respStruct); err != nil {
+	if _, err := execCommand(c.transport, CommandInitializeContext, c.Profile, cmd, &respStruct); err != nil {
 		return nil, err
 	}
 
@@ -56,7 +62,7 @@ func (c *Client) GetProfile() (*GetProfileResp, error) {
 		Flags       uint32
 	}{}
 
-	respHdr, err := execCommand(c.transport, CommandGetProfile, c.profile, cmd, &respStruct)
+	respHdr, err := execCommand(c.transport, CommandGetProfile, c.Profile, cmd, &respStruct)
 	if err != nil {
 		return nil, err
 	}
@@ -75,7 +81,7 @@ func (c *Client) DestroyContext(cmd *DestroyCtxCmd) error {
 	// DestroyContext does not return any parameters.
 	respStruct := struct{}{}
 
-	if _, err := execCommand(c.transport, CommandInitializeContext, c.profile, cmd, &respStruct); err != nil {
+	if _, err := execCommand(c.transport, CommandInitializeContext, c.Profile, cmd, &respStruct); err != nil {
 		return err
 	}
 
