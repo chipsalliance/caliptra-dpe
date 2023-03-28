@@ -12,35 +12,76 @@ type Support struct {
 	RotateContext bool
 }
 
-// An interface to define how to test and send messages to a DPE instance.
+// Transport is an interface to define how to test and send messages to a DPE instance.
 type Transport interface {
 	// Send a command to the DPE instance.
 	SendCmd(buf []byte) ([]byte, error)
 }
 
-type Client struct {
+// Client is a connection to a DPE instance, parameterized by hash algorithm and ECC curve.
+type Client[C Curve, D DigestAlgorithm] struct {
 	transport   Transport
-	Profile     uint32
+	Profile     Profile
 	Version     uint32
 	MaxTciNodes uint32
 	Flags       uint32
 }
 
-// NewClient initializes a new DPE client, including querying the underlying implementation for its profile.
-func NewClient(t Transport) (*Client, error) {
-	client := Client{transport: t}
-	rsp, err := client.GetProfile()
-	if err != nil {
-		return nil, fmt.Errorf("could not query DPE profile: %w", err)
+// Client256 is a client that implements DPE_PROFILE_IROT_P256_SHA256
+type Client256 = Client[NISTP256Parameter, SHA256Digest]
+
+// Client384 is a client that implements DPE_PROFILE_IROT_P384_SHA384
+type Client384 = Client[NISTP384Parameter, SHA384Digest]
+
+// dpeProfileImplementsTypeConstraints checks that the requested Client type constraints are compatible with the DPE profile.
+func dpeProfileImplementsTypeConstraints[C Curve, D DigestAlgorithm](profile Profile) error {
+	// Test that the expected value types produced by each DPE profile can be assigned to variables of type C and D
+	var c C
+	var d D
+	switch profile {
+	case ProfileP256SHA256:
+		// We must cast c and d to any in order to perform type assertions on them.
+		// https://go.googlesource.com/proposal/+/refs/heads/master/design/43651-type-parameters.md#why-not-permit-type-assertions-on-values-whose-type-is-a-type-parameter
+		if _, ok := any(c).(NISTP256Parameter); !ok {
+			return fmt.Errorf("an incorrect ECC parameter type was passed to a DPE implementing DPE_PROFILE_IROT_P256_SHA256")
+		}
+		if _, ok := any(d).(SHA256Digest); !ok {
+			return fmt.Errorf("an incorrect digest type was passed to a DPE implementing DPE_PROFILE_IROT_P256_SHA256")
+		}
+		return nil
+	case ProfileP384SHA384:
+		if _, ok := any(c).(NISTP384Parameter); !ok {
+			return fmt.Errorf("an incorrect ECC parameter type was passed to a DPE implementing DPE_PROFILE_IROT_P384_SHA384")
+		}
+		if _, ok := any(d).(SHA384Digest); !ok {
+			return fmt.Errorf("an incorrect digest type was passed to a DPE implementing DPE_PROFILE_IROT_P384_SHA384")
+		}
+		return nil
 	}
-	client.Profile = rsp.Profile
-	client.Version = rsp.Version
-	client.MaxTciNodes = rsp.MaxTciNodes
-	client.Flags = rsp.Flags
-	return &client, nil
+	return fmt.Errorf("unsupported DPE profile: %v", profile)
 }
 
-func (c *Client) InitializeContext(cmd *InitCtxCmd) (*InitCtxResp, error) {
+// NewClient initializes a new DPE client.
+func NewClient[C Curve, D DigestAlgorithm](t Transport) (*Client[C, D], error) {
+	rsp, err := getProfile(t)
+	if err != nil {
+		return nil, fmt.Errorf("could not query DPE for profile: %w", err)
+	}
+
+	if err := dpeProfileImplementsTypeConstraints[C, D](rsp.Profile); err != nil {
+		return nil, err
+	}
+
+	return &Client[C, D]{
+		transport:   t,
+		Profile:     rsp.Profile,
+		Version:     rsp.Version,
+		MaxTciNodes: rsp.MaxTciNodes,
+		Flags:       rsp.Flags,
+	}, nil
+}
+
+func (c *Client[_, _]) InitializeContext(cmd *InitCtxCmd) (*InitCtxResp, error) {
 	var respStruct InitCtxResp
 
 	if _, err := execCommand(c.transport, CommandInitializeContext, c.Profile, cmd, &respStruct); err != nil {
@@ -50,7 +91,8 @@ func (c *Client) InitializeContext(cmd *InitCtxCmd) (*InitCtxResp, error) {
 	return &respStruct, nil
 }
 
-func (c *Client) GetProfile() (*GetProfileResp, error) {
+// getProfile is an internal helper for handling GetProfile as part of either the client API or initialization.
+func getProfile(t Transport) (*GetProfileResp, error) {
 	// GetProfile does not take any parameters.
 	cmd := struct{}{}
 
@@ -62,7 +104,7 @@ func (c *Client) GetProfile() (*GetProfileResp, error) {
 		Flags       uint32
 	}{}
 
-	respHdr, err := execCommand(c.transport, CommandGetProfile, c.Profile, cmd, &respStruct)
+	respHdr, err := execCommand(t, CommandGetProfile, 0, cmd, &respStruct)
 	if err != nil {
 		return nil, err
 	}
@@ -76,8 +118,12 @@ func (c *Client) GetProfile() (*GetProfileResp, error) {
 	}, nil
 }
 
+func (c *Client[_, _]) GetProfile() (*GetProfileResp, error) {
+	return getProfile(c.transport)
+}
+
 // Send the command to destroy a context.
-func (c *Client) DestroyContext(cmd *DestroyCtxCmd) error {
+func (c *Client[_, _]) DestroyContext(cmd *DestroyCtxCmd) error {
 	// DestroyContext does not return any parameters.
 	respStruct := struct{}{}
 

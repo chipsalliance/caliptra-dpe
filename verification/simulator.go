@@ -15,11 +15,11 @@ import (
 const (
 	socketPath = "/tmp/dpe-sim.socket"
 
-	DPE_SIMULATOR_AUTO_INIT_LOCALITY uint32 = 0
-	DPE_SIMULATOR_OTHER_LOCALITY     uint32 = 0x4f544852
-	DPE_SIMULATOR_PROFILE            uint32 = DPE_PROFILE_P256_SHA256
-	DPE_SIMULATOR_MAX_TCI_NODES      uint32 = 24
-	DPE_SIMULATOR_PROFILE_VERSION    uint32 = CURRENT_PROFILE_VERSION
+	DPE_SIMULATOR_AUTO_INIT_LOCALITY uint32  = 0
+	DPE_SIMULATOR_OTHER_LOCALITY     uint32  = 0x4f544852
+	DPE_SIMULATOR_PROFILE            Profile = ProfileP256SHA256
+	DPE_SIMULATOR_MAX_TCI_NODES      uint32  = 24
+	DPE_SIMULATOR_PROFILE_VERSION    uint32  = CURRENT_PROFILE_VERSION
 )
 
 type DpeSimulator struct {
@@ -136,7 +136,7 @@ func (s *DpeSimulator) GetSupport() *Support {
 	return &s.supports
 }
 
-func (s *DpeSimulator) GetProfile() uint32 {
+func (s *DpeSimulator) GetProfile() Profile {
 	return DPE_SIMULATOR_PROFILE
 }
 
