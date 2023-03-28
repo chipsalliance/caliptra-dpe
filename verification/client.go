@@ -26,7 +26,7 @@ type DpeClient struct {
 	profile   uint32
 }
 
-func (c *DpeClient) Initialize(cmd *InitCtxCmd) (error, RespHdr, InitCtxResp) {
+func (c *DpeClient) Initialize(cmd *InitCtxCmd) (*InitCtxResp, error) {
 	hdr := CommandHdr{
 		magic:   CmdMagic,
 		cmd:     InitCtxCode,
@@ -39,7 +39,7 @@ func (c *DpeClient) Initialize(cmd *InitCtxCmd) (error, RespHdr, InitCtxResp) {
 
 	err, resp := c.transport.SendCmd(buf.Bytes())
 	if err != nil {
-		return err, RespHdr{Status: 0xffffffff}, InitCtxResp{}
+		return nil, err
 	}
 
 	respHdr := RespHdr{}
@@ -48,22 +48,22 @@ func (c *DpeClient) Initialize(cmd *InitCtxCmd) (error, RespHdr, InitCtxResp) {
 	r := bytes.NewReader(resp)
 	err = binary.Read(r, binary.LittleEndian, &respHdr)
 	if err != nil {
-		return err, RespHdr{Status: 0xffffffff}, InitCtxResp{}
+		return nil, err
 	}
 	err = c.checkRespHdr(respHdr)
 	if err != nil {
-		return err, respHdr, InitCtxResp{}
+		return nil, err
 	}
 
 	err = binary.Read(r, binary.LittleEndian, &respStruct)
 	if err != nil {
-		return err, respHdr, InitCtxResp{}
+		return nil, err
 	}
 
-	return nil, respHdr, respStruct
+	return &respStruct, nil
 }
 
-func (c *DpeClient) GetProfile() (error, RespHdr, GetProfileResp) {
+func (c *DpeClient) GetProfile() (*GetProfileResp, error) {
 	hdr := CommandHdr{
 		magic: CmdMagic,
 		cmd:   GetProfileCode,
@@ -74,35 +74,47 @@ func (c *DpeClient) GetProfile() (error, RespHdr, GetProfileResp) {
 
 	err, resp := c.transport.SendCmd(buf.Bytes())
 	if err != nil {
-		return err, RespHdr{Status: 0xffffffff}, GetProfileResp{}
+		return nil, err
 	}
 
 	respHdr := RespHdr{}
-	respStruct := GetProfileResp{}
+	// Define an anonymous struct for the actual wire-format members of GetProfile,
+	// since GetProfileResp includes the actual profile copied from the response header.
+	respStruct := struct {
+		Version     uint32
+		MaxTciNodes uint32
+		Flags       uint32
+	}{}
 
 	r := bytes.NewReader(resp)
 	err = binary.Read(r, binary.LittleEndian, &respHdr)
 	if err != nil {
-		return err, RespHdr{Status: 0xffffffff}, GetProfileResp{}
+		return nil, err
 	}
 	err = c.checkRespHdr(respHdr)
 	if err != nil {
-		return err, respHdr, GetProfileResp{}
+		return nil, err
 	}
 
 	err = binary.Read(r, binary.LittleEndian, &respStruct)
 	if err != nil {
-		return err, respHdr, GetProfileResp{}
+		return nil, err
 	}
 	if respHdr.Status == 0 {
 		c.profile = respHdr.Profile
 	}
 
-	return nil, respHdr, respStruct
+	return &GetProfileResp{
+		// Special case for GetProfile: copy the profile from the inner packet header into the response structure.
+		Profile:     respHdr.Profile,
+		Version:     respStruct.Version,
+		MaxTciNodes: respStruct.MaxTciNodes,
+		Flags:       respStruct.Flags,
+	}, nil
 }
 
 // Send the command to destroy a context.
-func (c *DpeClient) DestroyContext(cmd *DestroyCtxCmd) (error, RespHdr) {
+func (c *DpeClient) DestroyContext(cmd *DestroyCtxCmd) error {
 	hdr := CommandHdr{
 		magic:   CmdMagic,
 		cmd:     DestroyCtxCode,
@@ -115,7 +127,7 @@ func (c *DpeClient) DestroyContext(cmd *DestroyCtxCmd) (error, RespHdr) {
 
 	err, resp := c.transport.SendCmd(buf.Bytes())
 	if err != nil {
-		return err, RespHdr{Status: 0xffffffff}
+		return err
 	}
 
 	respHdr := RespHdr{}
@@ -123,22 +135,24 @@ func (c *DpeClient) DestroyContext(cmd *DestroyCtxCmd) (error, RespHdr) {
 	r := bytes.NewReader(resp)
 	err = binary.Read(r, binary.LittleEndian, &respHdr)
 	if err != nil {
-		return err, RespHdr{Status: 0xffffffff}
+		return err
 	}
 	err = c.checkRespHdr(respHdr)
 	if err != nil {
-		return err, respHdr
+		return err
 	}
 
-	return nil, respHdr
+	return nil
 }
 
-// Check that the response header has all expected values and did not have any
-// errors.
+// checkRespHdr checks that the response header has all expected values and did not indicate an error.
 func (c *DpeClient) checkRespHdr(hdr RespHdr) error {
 	if hdr.Magic != RespMagic {
 		fmt.Println(hdr)
-		return errors.New("Invalid response magic value.")
+		return errors.New("invalid response magic value")
+	}
+	if hdr.Status != 0 {
+		return Status(hdr.Status)
 	}
 	return nil
 }
