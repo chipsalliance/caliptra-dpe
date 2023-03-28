@@ -12,17 +12,6 @@ const (
 	DPE_PROFILE_P384_SHA384 uint32 = 2
 
 	CURRENT_PROFILE_VERSION uint32 = 0
-
-	DPE_STATUS_SUCCESS                uint32 = 0
-	DPE_STATUS_INTERNAL_ERROR         uint32 = 1
-	DPE_STATUS_INVALID_COMMAND        uint32 = 2
-	DPE_STATUS_INVALID_ARGUMENT       uint32 = 3
-	DPE_STATUS_ARGUMENT_NOT_SUPPORTED uint32 = 4
-	DPE_STATUS_INVALID_HANDLE         uint32 = 0x1000
-	DPE_STATUS_INVALID_DOMAIN         uint32 = 0x1001
-	DPE_STATUS_BAD_TAG                uint32 = 0x1002
-	DPE_STATUS_HANDLE_DEFINED         uint32 = 0x1003
-	DPE_STATUS_MAX_TCIS               uint32 = 0x1004
 )
 
 type CommandHdr struct {
@@ -67,6 +56,7 @@ type InitCtxResp struct {
 }
 
 type GetProfileResp struct {
+	Profile     uint32
 	Version     uint32
 	MaxTciNodes uint32
 	Flags       uint32

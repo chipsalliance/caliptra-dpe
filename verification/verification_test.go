@@ -1,6 +1,7 @@
 package verification
 
 import (
+	"errors"
 	"flag"
 	"log"
 	"testing"
@@ -79,27 +80,24 @@ func testGetProfile(s TestDPEInstance, t *testing.T) {
 		if err := s.SetLocality(locality); err != nil {
 			t.Fatalf("Unable to set locality: %v", err)
 		}
-		err, respHdr, profile := client.GetProfile()
+		rsp, err := client.GetProfile()
 		if err != nil {
-			t.Fatal(err)
+			t.Fatalf("Unable to get profile: %v", err)
 		}
-		if respHdr.Status != 0 {
-			t.Fatal("Unable to get profile.")
+		if rsp.Profile != s.GetProfile() {
+			t.Fatalf("Incorrect profile. 0x%08x != 0x%08x", s.GetProfile(), rsp.Profile)
 		}
-		if respHdr.Profile != s.GetProfile() {
-			t.Fatalf("Incorrect profile. 0x%08x != 0x%08x", s.GetProfile(), respHdr.Profile)
+		if rsp.Version != s.GetProfileVersion() {
+			t.Fatalf("Incorrect version. 0x%08x != 0x%08x", s.GetProfileVersion(), rsp.Version)
 		}
-		if profile.Version != s.GetProfileVersion() {
-			t.Fatalf("Incorrect version. 0x%08x != 0x%08x", s.GetProfileVersion(), profile.Version)
+		if rsp.MaxTciNodes != s.GetMaxTciNodes() {
+			t.Fatalf("Incorrect max TCI nodes. 0x%08x != 0x%08x", s.GetMaxTciNodes(), rsp.MaxTciNodes)
 		}
-		if profile.MaxTciNodes != s.GetMaxTciNodes() {
-			t.Fatalf("Incorrect max TCI nodes. 0x%08x != 0x%08x", s.GetMaxTciNodes(), profile.MaxTciNodes)
-		}
-		if profile.MaxTciNodes < MIN_TCI_NODES {
+		if rsp.MaxTciNodes < MIN_TCI_NODES {
 			t.Fatalf("DPE instances must be able to support at least %d TCI nodes.", MIN_TCI_NODES)
 		}
-		if profile.Flags != s.GetSupport().ToFlags() {
-			t.Fatalf("Incorrect support flags. 0x%08x != 0x%08x", s.GetSupport().ToFlags(), profile.Flags)
+		if rsp.Flags != s.GetSupport().ToFlags() {
+			t.Fatalf("Incorrect support flags. 0x%08x != 0x%08x", s.GetSupport().ToFlags(), rsp.Flags)
 		}
 	}
 }
@@ -132,23 +130,17 @@ func testInitContext(s TestDPEInstance, t *testing.T) {
 	}
 
 	client := DpeClient{transport: s}
-	// Need to set up the client completely by getting the profile.
-	err, respHdr, profile := client.GetProfile()
+	// Need to set up the client completely by getting the getProfileRsp.
+	getProfileRsp, err := client.GetProfile()
 	if err != nil {
-		t.Fatal(err)
-	}
-	if respHdr.Status != 0 {
-		t.Fatal("Failed to get profile.")
+		t.Fatalf("Failed to get profile: %v", err)
 	}
 
 	// Try to create the default context if isn't done automatically.
 	if !s.GetSupport().AutoInit {
-		err, respHdr, initCtxResp := client.Initialize(NewInitCtxIsDefault())
+		initCtxResp, err := client.Initialize(NewInitCtxIsDefault())
 		if err != nil {
-			t.Fatal(err)
-		}
-		if respHdr.Status != 0 {
-			t.Fatal("Failed to initialize default context.")
+			t.Fatalf("Failed to initialize default context: %v", err)
 		}
 		if initCtxResp.Handle != [16]byte{0} {
 			t.Fatal("Incorrect default context handle.")
@@ -157,38 +149,35 @@ func testInitContext(s TestDPEInstance, t *testing.T) {
 	}
 
 	// Try to initialize another default context.
-	err, respHdr, _ = client.Initialize(NewInitCtxIsDefault())
+	_, err = client.Initialize(NewInitCtxIsDefault())
 	if err == nil {
 		t.Fatal("The instance should return an error when trying to initialize another default context.")
-	}
-	if respHdr.Status != DPE_STATUS_ARGUMENT_NOT_SUPPORTED {
-		t.Fatalf("Incorrect error type. Should return %d, but returned %d", DPE_STATUS_ARGUMENT_NOT_SUPPORTED, respHdr.Status)
+	} else if !errors.Is(err, StatusArgumentNotSupported) {
+		t.Fatalf("Incorrect error type. Should return %q, but returned %q", StatusArgumentNotSupported, err)
 	}
 
 	// Try to initialize a context that is neither default or simulation.
-	err, respHdr, _ = client.Initialize(&InitCtxCmd{})
+	_, err = client.Initialize(&InitCtxCmd{})
 	if err == nil {
 		t.Fatal("The instance should return an error when not default or simulation.")
-	}
-	if respHdr.Status != DPE_STATUS_INVALID_ARGUMENT {
-		t.Fatalf("Incorrect error type. Should return %d, but returned %d", DPE_STATUS_INVALID_ARGUMENT, respHdr.Status)
+	} else if !errors.Is(err, StatusInvalidArgument) {
+		t.Fatalf("Incorrect error type. Should return %q, but returned %q", StatusInvalidArgument, err)
 	}
 
 	if !s.GetSupport().Simulation {
 		// Try to initialize a simulation context when they aren't supported.
-		err, respHdr, _ := client.Initialize(NewInitCtxIsSimulation())
+		_, err = client.Initialize(NewInitCtxIsSimulation())
 		if err == nil {
 			t.Fatal("The instance should return an error when trying to initialize another default context.")
-		}
-		if respHdr.Status != DPE_STATUS_ARGUMENT_NOT_SUPPORTED {
-			t.Fatalf("Incorrect error type. Should return %d, but returned %d", DPE_STATUS_ARGUMENT_NOT_SUPPORTED, respHdr.Status)
+		} else if !errors.Is(err, StatusArgumentNotSupported) {
+			t.Fatalf("Incorrect error type. Should return %q, but returned %q", StatusArgumentNotSupported, err)
 		}
 	} else {
 		// Try to get the correct error for overflowing the contexts. Fill up the
 		// rest of the contexts (-1 for default).
-		for i := uint32(0); i < profile.MaxTciNodes-1; i++ {
-			err, respHdr, initCtxResp := client.Initialize(NewInitCtxIsSimulation())
-			if err != nil || respHdr.Status != 0 {
+		for i := uint32(0); i < getProfileRsp.MaxTciNodes-1; i++ {
+			initCtxResp, err := client.Initialize(NewInitCtxIsSimulation())
+			if err != nil {
 				t.Fatal("The instance should be able to create a simulation context.")
 			}
 			// Could prove difficult to prove it is a cryptographically secure random.
@@ -199,12 +188,11 @@ func testInitContext(s TestDPEInstance, t *testing.T) {
 		}
 
 		// Now try to make one more than the max.
-		err, respHdr, _ := client.Initialize(NewInitCtxIsSimulation())
+		_, err = client.Initialize(NewInitCtxIsSimulation())
 		if err == nil {
 			t.Fatal("Failed to report an error for too many contexts.")
-		}
-		if respHdr.Status != DPE_STATUS_MAX_TCIS {
-			t.Fatalf("Incorrect error type. Should return %d, but returned %d", DPE_STATUS_MAX_TCIS, respHdr.Status)
+		} else if !errors.Is(err, StatusMaxTCIs) {
+			t.Fatalf("Incorrect error type. Should return %q, but returned %q", StatusMaxTCIs, err)
 		}
 	}
 }
