@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"io"
 	"net"
 	"os"
@@ -145,14 +144,8 @@ func (s *DpeSimulator) GetSupportedLocalities() []uint32 {
 	return []uint32{DPE_SIMULATOR_AUTO_INIT_LOCALITY, DPE_SIMULATOR_OTHER_LOCALITY}
 }
 
-func (s *DpeSimulator) SetLocality(locality uint32) error {
-	for _, supportedLocality := range s.GetSupportedLocalities() {
-		if locality == supportedLocality {
-			s.currentLocality = locality
-			return nil
-		}
-	}
-	return fmt.Errorf("unsupported locality: 0x%0x", locality)
+func (s *DpeSimulator) SetLocality(locality uint32) {
+	s.currentLocality = locality
 }
 
 func (s *DpeSimulator) GetLocality() uint32 {
