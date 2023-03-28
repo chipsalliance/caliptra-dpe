@@ -5,7 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net"
 	"os"
 	"os/exec"
@@ -62,7 +62,7 @@ func (s *DpeSimulator) PowerOn() error {
 		return err
 	}
 	if !s.waitForPower( /*on=*/ true) {
-		return errors.New("The simulator never started")
+		return errors.New("the simulator never started")
 	}
 	return nil
 }
@@ -75,7 +75,7 @@ func (s *DpeSimulator) PowerOff() error {
 			return err
 		}
 		if !s.waitForPower( /*on=*/ false) {
-			return errors.New("The simulator never stopped")
+			return errors.New("the simulator never stopped")
 		}
 	}
 	return nil
@@ -104,34 +104,33 @@ func fileExists(filename string) bool {
 	return !info.IsDir()
 }
 
-func (s *DpeSimulator) SendCmd(buf []byte) (error, []byte) {
+func (s *DpeSimulator) SendCmd(buf []byte) ([]byte, error) {
 	// Connect to DPE instance.
 	conn, err := net.Dial("unix", socketPath)
 	if err != nil {
-		return err, []byte{}
+		return nil, err
 	}
 
 	// Prepend the command with the locality.
 	prepended := bytes.NewBuffer(make([]byte, 0, 4+len(buf)))
 	if err := binary.Write(prepended, binary.LittleEndian, s.currentLocality); err != nil {
-		return err, nil
+		return nil, err
 	}
 	if _, err := prepended.Write(buf); err != nil {
-		return err, nil
+		return nil, err
 	}
 
 	// Send the prepended command.
 	num_sent, err := conn.Write(prepended.Bytes())
 	if err != nil {
-		return err, []byte{}
+		return nil, err
 	}
 	if num_sent != len(prepended.Bytes()) {
-		return errors.New("Didn't send the whole command."), []byte{}
+		return nil, errors.New("didn't send the whole command")
 	}
 
 	// Get the response.
-	rec, err := ioutil.ReadAll(conn)
-	return err, rec
+	return io.ReadAll(conn)
 }
 
 func (s *DpeSimulator) GetSupport() *Support {
