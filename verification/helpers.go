@@ -32,7 +32,7 @@ func execCommand(t Transport, code CommandCode, profile uint32, cmd any, rsp any
 	binary.Write(buf, binary.LittleEndian, hdr)
 	binary.Write(buf, binary.LittleEndian, cmd)
 
-	err, resp := t.SendCmd(buf.Bytes())
+	resp, err := t.SendCmd(buf.Bytes())
 	if err != nil {
 		return nil, err
 	}

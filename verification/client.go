@@ -15,7 +15,7 @@ type Support struct {
 // An interface to define how to test and send messages to a DPE instance.
 type Transport interface {
 	// Send a command to the DPE instance.
-	SendCmd(buf []byte) (error, []byte)
+	SendCmd(buf []byte) ([]byte, error)
 }
 
 type Client struct {
