@@ -1,7 +1,10 @@
 package verification
 
 import (
+	"bytes"
+	"encoding/binary"
 	"errors"
+	"fmt"
 	"io/ioutil"
 	"net"
 	"os"
@@ -21,9 +24,10 @@ const (
 )
 
 type DpeSimulator struct {
-	exe_path string
-	cmd      *exec.Cmd
-	supports Support
+	exe_path        string
+	cmd             *exec.Cmd
+	supports        Support
+	currentLocality uint32
 	Transport
 }
 
@@ -107,12 +111,21 @@ func (s *DpeSimulator) SendCmd(buf []byte) (error, []byte) {
 		return err, []byte{}
 	}
 
-	// Send the command.
-	num_sent, err := conn.Write(buf)
+	// Prepend the command with the locality.
+	prepended := bytes.NewBuffer(make([]byte, 0, 4+len(buf)))
+	if err := binary.Write(prepended, binary.LittleEndian, s.currentLocality); err != nil {
+		return err, nil
+	}
+	if _, err := prepended.Write(buf); err != nil {
+		return err, nil
+	}
+
+	// Send the prepended command.
+	num_sent, err := conn.Write(prepended.Bytes())
 	if err != nil {
 		return err, []byte{}
 	}
-	if num_sent != len(buf) {
+	if num_sent != len(prepended.Bytes()) {
 		return errors.New("Didn't send the whole command."), []byte{}
 	}
 
@@ -121,16 +134,30 @@ func (s *DpeSimulator) SendCmd(buf []byte) (error, []byte) {
 	return err, rec
 }
 
-func (s *DpeSimulator) GetSupport() Support {
-	return s.supports
+func (s *DpeSimulator) GetSupport() *Support {
+	return &s.supports
 }
 
 func (s *DpeSimulator) GetProfile() uint32 {
 	return DPE_SIMULATOR_PROFILE
 }
 
-func (s *DpeSimulator) GetLocalities() []uint32 {
+func (s *DpeSimulator) GetSupportedLocalities() []uint32 {
 	return []uint32{DPE_SIMULATOR_AUTO_INIT_LOCALITY, DPE_SIMULATOR_OTHER_LOCALITY}
+}
+
+func (s *DpeSimulator) SetLocality(locality uint32) error {
+	for _, supportedLocality := range s.GetSupportedLocalities() {
+		if locality == supportedLocality {
+			s.currentLocality = locality
+			return nil
+		}
+	}
+	return fmt.Errorf("unsupported locality: 0x%0x", locality)
+}
+
+func (s *DpeSimulator) GetLocality() uint32 {
+	return s.currentLocality
 }
 
 func (s *DpeSimulator) GetMaxTciNodes() uint32 {
