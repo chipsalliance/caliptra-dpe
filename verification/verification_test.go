@@ -26,7 +26,7 @@ type TestDPEInstance interface {
 	// instance.
 	GetSupport() *Support
 	// Returns the profile the transport supports.
-	GetProfile() uint32
+	GetProfile() Profile
 	// Returns a slice of all the localities the instance supports.
 	GetSupportedLocalities() []uint32
 	// Sets the current locality.
@@ -74,7 +74,7 @@ func testGetProfile(d TestDPEInstance, t *testing.T) {
 		}
 		defer d.PowerOff()
 	}
-	client, err := NewClient(d)
+	client, err := NewClient[NISTP256Parameter, SHA256Digest](d)
 	if err != nil {
 		t.Fatalf("Could not initialize client: %v", err)
 	}
@@ -128,7 +128,7 @@ func testInitContext(d TestDPEInstance, t *testing.T) {
 		defer d.PowerOff()
 	}
 
-	client, err := NewClient(d)
+	client, err := NewClient[NISTP256Parameter, SHA256Digest](d)
 	if err != nil {
 		t.Fatalf("Could not initialize client: %v", err)
 	}

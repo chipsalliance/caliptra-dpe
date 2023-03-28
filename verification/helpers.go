@@ -21,7 +21,7 @@ func checkRespHdr(hdr RespHdr) error {
 
 // execCommand executes the command. It returns the response header in the case of success, for internal use (i.e., GetProfile).
 // cmd must be a struct of fixed-size values (or pointer to such), and rsp must be a pointer to such a struct.
-func execCommand(t Transport, code CommandCode, profile uint32, cmd any, rsp any) (*RespHdr, error) {
+func execCommand(t Transport, code CommandCode, profile Profile, cmd any, rsp any) (*RespHdr, error) {
 	hdr := CommandHdr{
 		magic:   CmdMagic,
 		cmd:     code,
