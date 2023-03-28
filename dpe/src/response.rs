@@ -15,6 +15,7 @@ pub enum Response {
     RotateCtx(NewHandleResp),
     CertifyKey(CertifyKeyResp),
     DestroyCtx,
+    ExtendTci(NewHandleResp),
     TagTci(NewHandleResp),
 }
 
@@ -32,6 +33,7 @@ impl Response {
             Response::CertifyKey(response) => response.serialize(dst),
             Response::RotateCtx(response) => response.serialize(dst),
             Response::DestroyCtx => Ok(0),
+            Response::ExtendTci(response) => response.serialize(dst),
             Response::TagTci(response) => response.serialize(dst),
         }
     }

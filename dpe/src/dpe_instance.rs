@@ -6,7 +6,9 @@ Abstract:
 --*/
 use crate::{
     _set_flag,
-    commands::{CertifyKeyCmd, Command, DestroyCtxCmd, InitCtxCmd, RotateCtxCmd, TagTciCmd},
+    commands::{
+        CertifyKeyCmd, Command, DestroyCtxCmd, ExtendTciCmd, InitCtxCmd, RotateCtxCmd, TagTciCmd,
+    },
     response::{CertifyKeyResp, DpeErrorCode, GetProfileResp, NewHandleResp, Response},
     x509::{EcdsaPub, EcdsaSignature, MeasurementData, Name, X509CertWriter},
     DPE_PROFILE, HANDLE_SIZE, MAX_CERT_SIZE, MAX_HANDLES,
@@ -14,7 +16,7 @@ use crate::{
 use core::convert::TryFrom;
 use core::marker::PhantomData;
 use core::mem::size_of;
-use crypto::Crypto;
+use crypto::{Crypto, Hasher};
 
 pub struct DpeInstance<'a, C: Crypto> {
     contexts: [Context; MAX_HANDLES],
@@ -147,6 +149,46 @@ impl<C: Crypto> DpeInstance<'_, C> {
         Ok(Response::DestroyCtx)
     }
 
+    pub fn extend_tci(
+        &mut self,
+        locality: u32,
+        cmd: &ExtendTciCmd,
+    ) -> Result<Response, DpeErrorCode> {
+        // Make sure this command is supported.
+        if !self.support.extend_tci {
+            return Err(DpeErrorCode::InvalidCommand);
+        }
+        let idx = self
+            .get_active_context_pos(&cmd.handle)
+            .ok_or(DpeErrorCode::InvalidHandle)?;
+        let context = &mut self.contexts[idx];
+
+        // Make sure the command is coming from the right locality.
+        if context.locality != locality {
+            return Err(DpeErrorCode::InvalidHandle);
+        }
+
+        // Derive the new TCI.
+        let mut hasher =
+            C::hash_initialize(DPE_PROFILE.alg_len()).map_err(|_| DpeErrorCode::InternalError)?;
+        hasher
+            .update(&context.tci.tci_cumulative.0)
+            .map_err(|_| DpeErrorCode::InternalError)?;
+        hasher
+            .update(&cmd.data)
+            .map_err(|_| DpeErrorCode::InternalError)?;
+        hasher
+            .finish(&mut context.tci.tci_cumulative.0)
+            .map_err(|_| DpeErrorCode::InternalError)?;
+
+        context.tci.tci_current = TciMeasurement(cmd.data);
+        // Rotate the handle if it isn't the default context.
+        self.roll_onetime_use_handle(idx)?;
+        Ok(Response::ExtendTci(NewHandleResp {
+            handle: self.contexts[idx].handle,
+        }))
+    }
+
     pub fn tag_tci(&mut self, locality: u32, cmd: &TagTciCmd) -> Result<Response, DpeErrorCode> {
         // Make sure this command is supported.
         if !self.support.tagging {
@@ -169,13 +211,9 @@ impl<C: Crypto> DpeInstance<'_, C> {
             return Err(DpeErrorCode::BadTag);
         }
 
-        let rand_handle = self.generate_new_handle()?;
-        let context = &mut self.contexts[idx];
         // Because handles are one-time use, let's rotate the handle, if it isn't the default.
-        context.handle = match context.context_type {
-            ContextType::_Normal | ContextType::Simulation => rand_handle,
-            ContextType::Default => Self::DEFAULT_CONTEXT_HANDLE,
-        };
+        self.roll_onetime_use_handle(idx)?;
+        let context = &mut self.contexts[idx];
         context.has_tag = true;
         context.tag = cmd.tag;
 
@@ -283,15 +321,10 @@ impl<C: Crypto> DpeInstance<'_, C> {
         let cert_size = u32::try_from(bytes_written).map_err(|_| DpeErrorCode::InternalError)?;
 
         // Rotate handle if it isn't the default
-        let rand_handle = self.generate_new_handle()?;
-        let mut context = &mut self.contexts[idx];
-        context.handle = match context.context_type {
-            ContextType::_Normal | ContextType::Simulation => rand_handle,
-            ContextType::Default => Self::DEFAULT_CONTEXT_HANDLE,
-        };
+        self.roll_onetime_use_handle(idx)?;
 
         Ok(CertifyKeyResp {
-            new_context_handle: context.handle,
+            new_context_handle: self.contexts[idx].handle,
             derived_pubkey_x: pub_key.x,
             derived_pubkey_y: pub_key.y,
             cert_size,
@@ -325,6 +358,7 @@ impl<C: Crypto> DpeInstance<'_, C> {
             }
             Command::RotateCtx(cmd) => self.rotate_context(locality, &cmd),
             Command::DestroyCtx(context) => self.destroy_context(locality, &context),
+            Command::ExtendTci(cmd) => self.extend_tci(locality, &cmd),
             Command::TagTci(cmd) => self.tag_tci(locality, &cmd),
         }
     }
@@ -373,6 +407,22 @@ impl<C: Crypto> DpeInstance<'_, C> {
             }
         }
         Err(DpeErrorCode::InternalError)
+    }
+
+    /// Rolls the context handle if the context is not the default context.
+    ///
+    /// # Arguments
+    ///
+    /// * `idx` - the index of the context
+    fn roll_onetime_use_handle(&mut self, idx: usize) -> Result<(), DpeErrorCode> {
+        if idx >= MAX_HANDLES {
+            return Err(DpeErrorCode::InternalError);
+        }
+        self.contexts[idx].handle = match self.contexts[idx].context_type {
+            ContextType::Default => Self::DEFAULT_CONTEXT_HANDLE,
+            _ => self.generate_new_handle()?,
+        };
+        Ok(())
     }
 
     /// Get the TCI nodes from `context` to the root node following parent
@@ -635,6 +685,7 @@ impl Iterator for FlagsIter {
 #[cfg(test)]
 pub mod tests {
     use super::*;
+    use crate::DpeProfile;
     use crate::{commands::CommandHdr, CURRENT_PROFILE_VERSION};
     use crypto::OpensslCrypto;
     use x509_parser::nom::Parser;
@@ -1031,6 +1082,120 @@ pub mod tests {
     }
 
     #[test]
+    fn test_extend_tci() {
+        let mut dpe =
+            DpeInstance::<OpensslCrypto>::new(Support::default(), &TEST_LOCALITIES).unwrap();
+        // Make sure it returns an error if the command is marked unsupported.
+        assert_eq!(
+            Err(DpeErrorCode::InvalidCommand),
+            dpe.extend_tci(
+                TEST_LOCALITIES[0],
+                &ExtendTciCmd {
+                    handle: DpeInstance::<OpensslCrypto>::DEFAULT_CONTEXT_HANDLE,
+                    data: [0; DPE_PROFILE.get_hash_size()],
+                }
+            )
+        );
+
+        // Turn on support.
+        dpe.support.extend_tci = true;
+        dpe.initialize_context(TEST_LOCALITIES[0], &InitCtxCmd::new_use_default())
+            .unwrap();
+
+        // Wrong locality.
+        assert_eq!(
+            Err(DpeErrorCode::InvalidHandle),
+            dpe.extend_tci(
+                TEST_LOCALITIES[1],
+                &ExtendTciCmd {
+                    handle: DpeInstance::<OpensslCrypto>::DEFAULT_CONTEXT_HANDLE,
+                    data: [0; DPE_PROFILE.get_hash_size()],
+                }
+            )
+        );
+
+        let handle = dpe.get_default_context().unwrap().handle;
+        let data = [1; DPE_PROFILE.get_hash_size()];
+        dpe.extend_tci(
+            TEST_LOCALITIES[0],
+            &ExtendTciCmd {
+                handle: DpeInstance::<OpensslCrypto>::DEFAULT_CONTEXT_HANDLE,
+                data,
+            },
+        )
+        .unwrap();
+
+        // Make sure extending the default TCI doesn't change the handle.
+        assert_eq!(handle, dpe.get_default_context().unwrap().handle);
+        // Make sure the current TCI was updated correctly.
+        assert_eq!(data, dpe.get_default_context().unwrap().tci.tci_current.0);
+
+        let md = match DPE_PROFILE {
+            DpeProfile::P256Sha256 => openssl::hash::MessageDigest::sha256(),
+            DpeProfile::P384Sha384 => openssl::hash::MessageDigest::sha384(),
+        };
+        let mut hasher = openssl::hash::Hasher::new(md).unwrap();
+
+        // Add the default TCI.
+        hasher.update(&[0; DPE_PROFILE.get_hash_size()]).unwrap();
+        hasher.update(&data).unwrap();
+        let first_cumulative = hasher.finish().unwrap();
+
+        // Make sure the cumulative was computed correctly.
+        assert_eq!(
+            first_cumulative.as_ref(),
+            dpe.get_default_context().unwrap().tci.tci_cumulative.0
+        );
+
+        let data = [2; DPE_PROFILE.get_hash_size()];
+        dpe.extend_tci(
+            TEST_LOCALITIES[0],
+            &ExtendTciCmd {
+                handle: DpeInstance::<OpensslCrypto>::DEFAULT_CONTEXT_HANDLE,
+                data,
+            },
+        )
+        .unwrap();
+        // Make sure the current TCI was updated correctly.
+        assert_eq!(data, dpe.get_default_context().unwrap().tci.tci_current.0);
+
+        let mut hasher = openssl::hash::Hasher::new(md).unwrap();
+        hasher.update(&first_cumulative).unwrap();
+        hasher.update(&data).unwrap();
+        let second_cumulative = hasher.finish().unwrap();
+
+        // Make sure the cumulative was computed correctly.
+        assert_eq!(
+            second_cumulative.as_ref(),
+            dpe.get_default_context().unwrap().tci.tci_cumulative.0
+        );
+
+        dpe.support.simulation = true;
+        dpe.initialize_context(TEST_LOCALITIES[1], &InitCtxCmd::new_simulation())
+            .unwrap();
+
+        // Give the simulation context another handle so we can prove the handle rotates when it
+        // gets extended.
+        let simulation_ctx =
+            &mut dpe.contexts[dpe.get_active_context_pos(&SIMULATION_HANDLE).unwrap()];
+        let sim_tmp_handle = [0xff; HANDLE_SIZE];
+        simulation_ctx.handle = sim_tmp_handle;
+        assert!(dpe.get_active_context_pos(&SIMULATION_HANDLE).is_none());
+
+        dpe.extend_tci(
+            TEST_LOCALITIES[1],
+            &ExtendTciCmd {
+                handle: sim_tmp_handle,
+                data,
+            },
+        )
+        .unwrap();
+        // Make sure it rotated back to the deterministic simulation handle.
+        assert!(dpe.get_active_context_pos(&sim_tmp_handle).is_none());
+        assert!(dpe.get_active_context_pos(&SIMULATION_HANDLE).is_some());
+    }
+
+    #[test]
     fn test_tag_tci() {
         let mut dpe =
             DpeInstance::<OpensslCrypto>::new(Support::default(), &TEST_LOCALITIES).unwrap();
@@ -1061,14 +1226,6 @@ pub mod tests {
         // Make a simulation context to test against.
         dpe.initialize_context(TEST_LOCALITIES[1], &InitCtxCmd::new_simulation())
             .unwrap();
-
-        // Give the simulation context another handle so we can prove the handle rotates when it
-        // gets tagged.
-        let simulation_ctx =
-            &mut dpe.contexts[dpe.get_active_context_pos(&SIMULATION_HANDLE).unwrap()];
-        let sim_tmp_handle = [0xff; HANDLE_SIZE];
-        simulation_ctx.handle = sim_tmp_handle;
-        assert_ne!(sim_tmp_handle, SIMULATION_HANDLE);
 
         // Invalid handle.
         assert_eq!(
@@ -1126,11 +1283,19 @@ pub mod tests {
             dpe.tag_tci(
                 TEST_LOCALITIES[1],
                 &TagTciCmd {
-                    handle: sim_tmp_handle,
+                    handle: SIMULATION_HANDLE,
                     tag: 0,
                 }
             )
         );
+
+        // Give the simulation context another handle so we can prove the handle rotates when it
+        // gets tagged.
+        let simulation_ctx =
+            &mut dpe.contexts[dpe.get_active_context_pos(&SIMULATION_HANDLE).unwrap()];
+        let sim_tmp_handle = [0xff; HANDLE_SIZE];
+        simulation_ctx.handle = sim_tmp_handle;
+        assert!(dpe.get_active_context_pos(&SIMULATION_HANDLE).is_none());
 
         // Tag simulation.
         assert_eq!(
@@ -1145,6 +1310,9 @@ pub mod tests {
                 }
             )
         );
+        // Make sure it rotated back to the deterministic simulation handle.
+        assert!(dpe.get_active_context_pos(&sim_tmp_handle).is_none());
+        assert!(dpe.get_active_context_pos(&SIMULATION_HANDLE).is_some());
     }
 
     #[test]

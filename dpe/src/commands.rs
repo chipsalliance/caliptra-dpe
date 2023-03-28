@@ -14,6 +14,7 @@ pub enum Command {
     CertifyKey(CertifyKeyCmd),
     RotateCtx(RotateCtxCmd),
     DestroyCtx(DestroyCtxCmd),
+    ExtendTci(ExtendTciCmd),
     TagTci(TagTciCmd),
 }
 
@@ -50,7 +51,7 @@ impl Command {
             }
             Command::DESTROY_CONTEXT => Ok(Command::DestroyCtx(DestroyCtxCmd::try_from(bytes)?)),
             Command::GET_CERTIFICATE_CHAIN => Err(DpeErrorCode::InvalidCommand),
-            Command::EXTEND_TCI => Err(DpeErrorCode::InvalidCommand),
+            Command::EXTEND_TCI => Ok(Command::ExtendTci(ExtendTciCmd::try_from(bytes)?)),
             Command::TAG_TCI => Ok(Command::TagTci(TagTciCmd::try_from(bytes)?)),
             Command::GET_TAGGED_TCI => Err(DpeErrorCode::InvalidCommand),
             _ => Err(DpeErrorCode::InvalidCommand),
@@ -263,6 +264,31 @@ impl TryFrom<&[u8]> for DestroyCtxCmd {
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq)]
 #[cfg_attr(test, derive(zerocopy::AsBytes, zerocopy::FromBytes))]
+pub struct ExtendTciCmd {
+    pub handle: [u8; HANDLE_SIZE],
+    pub data: [u8; DPE_PROFILE.get_hash_size()],
+}
+
+impl TryFrom<&[u8]> for ExtendTciCmd {
+    type Error = DpeErrorCode;
+
+    fn try_from(raw: &[u8]) -> Result<Self, Self::Error> {
+        if raw.len() < size_of::<ExtendTciCmd>() {
+            return Err(DpeErrorCode::InvalidArgument);
+        }
+
+        Ok(ExtendTciCmd {
+            handle: raw[0..HANDLE_SIZE].try_into().unwrap(),
+            data: raw[HANDLE_SIZE..HANDLE_SIZE + DPE_PROFILE.get_hash_size()]
+                .try_into()
+                .unwrap(),
+        })
+    }
+}
+
+#[repr(C)]
+#[derive(Debug, PartialEq, Eq)]
+#[cfg_attr(test, derive(zerocopy::AsBytes, zerocopy::FromBytes))]
 pub struct TagTciCmd {
     pub handle: [u8; HANDLE_SIZE],
     pub tag: u32,
@@ -305,14 +331,28 @@ mod tests {
         handle: SIMULATION_HANDLE,
         flags: 0x1234_5678,
     };
-    const TEST_TAG_TCI_CMD: TagTciCmd = TagTciCmd {
-        handle: SIMULATION_HANDLE,
-        tag: 0x1234_5678,
-    };
     const TEST_CERTIFY_KEY_CMD: CertifyKeyCmd = CertifyKeyCmd {
         handle: SIMULATION_HANDLE,
         flags: 0x1234_5678,
         label: [0xaa; DPE_PROFILE.get_hash_size()],
+    };
+    const TEST_EXTEND_TCI_CMD: ExtendTciCmd = ExtendTciCmd {
+        handle: SIMULATION_HANDLE,
+        #[cfg(feature = "dpe_profile_p256_sha256")]
+        data: [
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+            25, 26, 27, 28, 29, 30, 31, 32,
+        ],
+        #[cfg(feature = "dpe_profile_p384_sha384")]
+        data: [
+            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
+            25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46,
+            47, 48,
+        ],
+    };
+    const TEST_TAG_TCI_CMD: TagTciCmd = TagTciCmd {
+        handle: SIMULATION_HANDLE,
+        tag: 0x1234_5678,
     };
 
     #[test]
@@ -348,6 +388,15 @@ mod tests {
         assert_eq!(
             DestroyCtxCmd::read_from_prefix(command_bytes).unwrap(),
             DestroyCtxCmd::try_from(command_bytes).unwrap(),
+        );
+    }
+
+    #[test]
+    fn try_from_extend_tci() {
+        let command_bytes = TEST_EXTEND_TCI_CMD.as_bytes();
+        assert_eq!(
+            ExtendTciCmd::read_from_prefix(command_bytes).unwrap(),
+            ExtendTciCmd::try_from(command_bytes).unwrap(),
         );
     }
 
@@ -406,6 +455,18 @@ mod tests {
     }
 
     #[test]
+    fn test_deserialize_extend_tci() {
+        let mut command = CommandHdr::new(Command::ExtendTci(TEST_EXTEND_TCI_CMD))
+            .as_bytes()
+            .to_vec();
+        command.extend(TEST_EXTEND_TCI_CMD.as_bytes());
+        assert_eq!(
+            Ok(Command::ExtendTci(TEST_EXTEND_TCI_CMD)),
+            Command::deserialize(&command)
+        );
+    }
+
+    #[test]
     fn test_deserialize_tag_tci() {
         let mut command = CommandHdr::new(Command::TagTci(TEST_TAG_TCI_CMD))
             .as_bytes()
@@ -458,16 +519,6 @@ mod tests {
             Command::deserialize(
                 CommandHdr {
                     cmd_id: Command::GET_CERTIFICATE_CHAIN,
-                    ..DEFAULT_COMMAND
-                }
-                .as_bytes()
-            )
-        );
-        assert_eq!(
-            invalid_command,
-            Command::deserialize(
-                CommandHdr {
-                    cmd_id: Command::EXTEND_TCI,
                     ..DEFAULT_COMMAND
                 }
                 .as_bytes()
@@ -615,6 +666,20 @@ mod tests {
     }
 
     #[test]
+    fn test_slice_to_extend_tci() {
+        // Test if too small.
+        assert_eq!(
+            Err(DpeErrorCode::InvalidArgument),
+            ExtendTciCmd::try_from([0u8; size_of::<ExtendTciCmd>() - 1].as_slice())
+        );
+
+        assert_eq!(
+            TEST_EXTEND_TCI_CMD,
+            ExtendTciCmd::try_from(TEST_EXTEND_TCI_CMD.as_bytes()).unwrap()
+        );
+    }
+
+    #[test]
     fn test_slice_to_tag_tci() {
         // Test if too small.
         assert_eq!(
@@ -636,6 +701,7 @@ mod tests {
                 Command::CertifyKey(_) => Command::CERTIFY_KEY,
                 Command::RotateCtx(_) => Command::ROTATE_CONTEXT_HANDLE,
                 Command::DestroyCtx(_) => Command::DESTROY_CONTEXT,
+                Command::ExtendTci(_) => Command::EXTEND_TCI,
                 Command::TagTci(_) => Command::TAG_TCI,
             };
             CommandHdr {
