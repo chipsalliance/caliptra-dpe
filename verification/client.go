@@ -17,29 +17,8 @@ type Support struct {
 
 // An interface to define how to test and send messages to a DPE instance.
 type Transport interface {
-	// If power control is unavailable for the given device, return false from
-	// HasPowerControl and return an error from PowerOn and PowerOff. For devices
-	// that don't support power control but do have reset capability, return true
-	// from HasPowerControl leave PowerOn empty and execute the reset in PowerOff.
-	HasPowerControl() bool
-	// If supported, turns on the device or starts the emulator/simulator.
-	PowerOn() error
-	// If supported, turns of the device, stops the emulator/simulator, or resets.
-	PowerOff() error
 	// Send a command to the DPE instance.
 	SendCmd(buf []byte) (error, []byte)
-	// The Transport implementations are not expected to be able to set the values
-	// it supports, but this function is used by tests to know how to test the DPE
-	// instance.
-	GetSupport() Support
-	// Returns the profile the transport supports.
-	GetProfile() uint32
-	// Returns a slice of all the localities the instance supports.
-	GetLocalities() []uint32
-	// Returns the Maximum number of the TCIs instance can have.
-	GetMaxTciNodes() uint32
-	// Returns the version of the profile the instance implements.
-	GetProfileVersion() uint32
 }
 
 type DpeClient struct {
@@ -47,7 +26,7 @@ type DpeClient struct {
 	profile   uint32
 }
 
-func (c *DpeClient) Initialize(locality uint32, cmd *InitCtxCmd) (error, RespHdr, InitCtxResp) {
+func (c *DpeClient) Initialize(cmd *InitCtxCmd) (error, RespHdr, InitCtxResp) {
 	hdr := CommandHdr{
 		magic:   CmdMagic,
 		cmd:     InitCtxCode,
@@ -55,7 +34,6 @@ func (c *DpeClient) Initialize(locality uint32, cmd *InitCtxCmd) (error, RespHdr
 	}
 
 	buf := &bytes.Buffer{}
-	binary.Write(buf, binary.LittleEndian, locality)
 	binary.Write(buf, binary.LittleEndian, hdr)
 	binary.Write(buf, binary.LittleEndian, cmd)
 
@@ -85,14 +63,13 @@ func (c *DpeClient) Initialize(locality uint32, cmd *InitCtxCmd) (error, RespHdr
 	return nil, respHdr, respStruct
 }
 
-func (c *DpeClient) GetProfile(locality uint32) (error, RespHdr, GetProfileResp) {
+func (c *DpeClient) GetProfile() (error, RespHdr, GetProfileResp) {
 	hdr := CommandHdr{
 		magic: CmdMagic,
 		cmd:   GetProfileCode,
 	}
 
 	buf := &bytes.Buffer{}
-	binary.Write(buf, binary.LittleEndian, locality)
 	binary.Write(buf, binary.LittleEndian, hdr)
 
 	err, resp := c.transport.SendCmd(buf.Bytes())
@@ -125,7 +102,7 @@ func (c *DpeClient) GetProfile(locality uint32) (error, RespHdr, GetProfileResp)
 }
 
 // Send the command to destroy a context.
-func (c *DpeClient) DestroyContext(locality uint32, cmd *DestroyCtxCmd) (error, RespHdr) {
+func (c *DpeClient) DestroyContext(cmd *DestroyCtxCmd) (error, RespHdr) {
 	hdr := CommandHdr{
 		magic:   CmdMagic,
 		cmd:     DestroyCtxCode,
@@ -133,7 +110,6 @@ func (c *DpeClient) DestroyContext(locality uint32, cmd *DestroyCtxCmd) (error, 
 	}
 
 	buf := &bytes.Buffer{}
-	binary.Write(buf, binary.LittleEndian, locality)
 	binary.Write(buf, binary.LittleEndian, hdr)
 	binary.Write(buf, binary.LittleEndian, cmd)
 
