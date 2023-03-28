@@ -65,40 +65,40 @@ func TestGetProfile(t *testing.T) {
 	}
 }
 
-func testGetProfile(s TestDPEInstance, t *testing.T) {
+func testGetProfile(d TestDPEInstance, t *testing.T) {
 	const MIN_TCI_NODES uint32 = 8
-	if s.HasPowerControl() {
-		err := s.PowerOn()
+	if d.HasPowerControl() {
+		err := d.PowerOn()
 		if err != nil {
 			log.Fatal(err)
 		}
-		defer s.PowerOff()
+		defer d.PowerOff()
 	}
-	client, err := NewClient(s)
+	client, err := NewClient(d)
 	if err != nil {
 		t.Fatalf("Could not initialize client: %v", err)
 	}
 
-	for _, locality := range s.GetSupportedLocalities() {
-		s.SetLocality(locality)
+	for _, locality := range d.GetSupportedLocalities() {
+		d.SetLocality(locality)
 		rsp, err := client.GetProfile()
 		if err != nil {
 			t.Fatalf("Unable to get profile: %v", err)
 		}
-		if rsp.Profile != s.GetProfile() {
-			t.Fatalf("Incorrect profile. 0x%08x != 0x%08x", s.GetProfile(), rsp.Profile)
+		if rsp.Profile != d.GetProfile() {
+			t.Fatalf("Incorrect profile. 0x%08x != 0x%08x", d.GetProfile(), rsp.Profile)
 		}
-		if rsp.Version != s.GetProfileVersion() {
-			t.Fatalf("Incorrect version. 0x%08x != 0x%08x", s.GetProfileVersion(), rsp.Version)
+		if rsp.Version != d.GetProfileVersion() {
+			t.Fatalf("Incorrect version. 0x%08x != 0x%08x", d.GetProfileVersion(), rsp.Version)
 		}
-		if rsp.MaxTciNodes != s.GetMaxTciNodes() {
-			t.Fatalf("Incorrect max TCI nodes. 0x%08x != 0x%08x", s.GetMaxTciNodes(), rsp.MaxTciNodes)
+		if rsp.MaxTciNodes != d.GetMaxTciNodes() {
+			t.Fatalf("Incorrect max TCI nodes. 0x%08x != 0x%08x", d.GetMaxTciNodes(), rsp.MaxTciNodes)
 		}
 		if rsp.MaxTciNodes < MIN_TCI_NODES {
 			t.Fatalf("DPE instances must be able to support at least %d TCI nodes.", MIN_TCI_NODES)
 		}
-		if rsp.Flags != s.GetSupport().ToFlags() {
-			t.Fatalf("Incorrect support flags. 0x%08x != 0x%08x", s.GetSupport().ToFlags(), rsp.Flags)
+		if rsp.Flags != d.GetSupport().ToFlags() {
+			t.Fatalf("Incorrect support flags. 0x%08x != 0x%08x", d.GetSupport().ToFlags(), rsp.Flags)
 		}
 	}
 }
@@ -119,22 +119,22 @@ func TestInitializeContext(t *testing.T) {
 	}
 }
 
-func testInitContext(s TestDPEInstance, t *testing.T) {
-	if s.HasPowerControl() {
-		err := s.PowerOn()
+func testInitContext(d TestDPEInstance, t *testing.T) {
+	if d.HasPowerControl() {
+		err := d.PowerOn()
 		if err != nil {
 			log.Fatal(err)
 		}
-		defer s.PowerOff()
+		defer d.PowerOff()
 	}
 
-	client, err := NewClient(s)
+	client, err := NewClient(d)
 	if err != nil {
 		t.Fatalf("Could not initialize client: %v", err)
 	}
 
 	// Try to create the default context if isn't done automatically.
-	if !s.GetSupport().AutoInit {
+	if !d.GetSupport().AutoInit {
 		initCtxResp, err := client.InitializeContext(NewInitCtxIsDefault())
 		if err != nil {
 			t.Fatalf("Failed to initialize default context: %v", err)
@@ -161,7 +161,7 @@ func testInitContext(s TestDPEInstance, t *testing.T) {
 		t.Fatalf("Incorrect error type. Should return %q, but returned %q", StatusInvalidArgument, err)
 	}
 
-	if !s.GetSupport().Simulation {
+	if !d.GetSupport().Simulation {
 		// Try to initialize a simulation context when they aren't supported.
 		_, err = client.InitializeContext(NewInitCtxIsSimulation())
 		if err == nil {
