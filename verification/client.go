@@ -1,9 +1,6 @@
 package verification
 
 import (
-	"bytes"
-	"encoding/binary"
-	"errors"
 	"fmt"
 )
 
@@ -38,36 +35,9 @@ func NewClient(t Transport) (*Client, error) {
 }
 
 func (c *Client) InitializeContext(cmd *InitCtxCmd) (*InitCtxResp, error) {
-	hdr := CommandHdr{
-		magic:   CmdMagic,
-		cmd:     InitCtxCode,
-		profile: c.profile,
-	}
+	var respStruct InitCtxResp
 
-	buf := &bytes.Buffer{}
-	binary.Write(buf, binary.LittleEndian, hdr)
-	binary.Write(buf, binary.LittleEndian, cmd)
-
-	err, resp := c.transport.SendCmd(buf.Bytes())
-	if err != nil {
-		return nil, err
-	}
-
-	respHdr := RespHdr{}
-	respStruct := InitCtxResp{}
-
-	r := bytes.NewReader(resp)
-	err = binary.Read(r, binary.LittleEndian, &respHdr)
-	if err != nil {
-		return nil, err
-	}
-	err = c.checkRespHdr(respHdr)
-	if err != nil {
-		return nil, err
-	}
-
-	err = binary.Read(r, binary.LittleEndian, &respStruct)
-	if err != nil {
+	if _, err := execCommand(c.transport, CommandInitializeContext, c.profile, cmd, &respStruct); err != nil {
 		return nil, err
 	}
 
@@ -75,20 +45,9 @@ func (c *Client) InitializeContext(cmd *InitCtxCmd) (*InitCtxResp, error) {
 }
 
 func (c *Client) GetProfile() (*GetProfileResp, error) {
-	hdr := CommandHdr{
-		magic: CmdMagic,
-		cmd:   GetProfileCode,
-	}
+	// GetProfile does not take any parameters.
+	cmd := struct{}{}
 
-	buf := &bytes.Buffer{}
-	binary.Write(buf, binary.LittleEndian, hdr)
-
-	err, resp := c.transport.SendCmd(buf.Bytes())
-	if err != nil {
-		return nil, err
-	}
-
-	respHdr := RespHdr{}
 	// Define an anonymous struct for the actual wire-format members of GetProfile,
 	// since GetProfileResp includes the actual profile copied from the response header.
 	respStruct := struct {
@@ -97,17 +56,7 @@ func (c *Client) GetProfile() (*GetProfileResp, error) {
 		Flags       uint32
 	}{}
 
-	r := bytes.NewReader(resp)
-	err = binary.Read(r, binary.LittleEndian, &respHdr)
-	if err != nil {
-		return nil, err
-	}
-	err = c.checkRespHdr(respHdr)
-	if err != nil {
-		return nil, err
-	}
-
-	err = binary.Read(r, binary.LittleEndian, &respStruct)
+	respHdr, err := execCommand(c.transport, CommandGetProfile, c.profile, cmd, &respStruct)
 	if err != nil {
 		return nil, err
 	}
@@ -123,45 +72,13 @@ func (c *Client) GetProfile() (*GetProfileResp, error) {
 
 // Send the command to destroy a context.
 func (c *Client) DestroyContext(cmd *DestroyCtxCmd) error {
-	hdr := CommandHdr{
-		magic:   CmdMagic,
-		cmd:     DestroyCtxCode,
-		profile: c.profile,
-	}
+	// DestroyContext does not return any parameters.
+	respStruct := struct{}{}
 
-	buf := &bytes.Buffer{}
-	binary.Write(buf, binary.LittleEndian, hdr)
-	binary.Write(buf, binary.LittleEndian, cmd)
-
-	err, resp := c.transport.SendCmd(buf.Bytes())
-	if err != nil {
+	if _, err := execCommand(c.transport, CommandInitializeContext, c.profile, cmd, &respStruct); err != nil {
 		return err
 	}
 
-	respHdr := RespHdr{}
-
-	r := bytes.NewReader(resp)
-	err = binary.Read(r, binary.LittleEndian, &respHdr)
-	if err != nil {
-		return err
-	}
-	err = c.checkRespHdr(respHdr)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// checkRespHdr checks that the response header has all expected values and did not indicate an error.
-func (c *Client) checkRespHdr(hdr RespHdr) error {
-	if hdr.Magic != RespMagic {
-		fmt.Println(hdr)
-		return errors.New("invalid response magic value")
-	}
-	if hdr.Status != 0 {
-		return Status(hdr.Status)
-	}
 	return nil
 }
 
