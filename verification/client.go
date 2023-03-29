@@ -19,7 +19,7 @@ type Transport interface {
 }
 
 // Client is a connection to a DPE instance, parameterized by hash algorithm and ECC curve.
-type Client[C Curve, D DigestAlgorithm] struct {
+type Client[CurveParameter Curve, Digest DigestAlgorithm] struct {
 	transport   Transport
 	Profile     Profile
 	Version     uint32
@@ -81,6 +81,16 @@ func NewClient[C Curve, D DigestAlgorithm](t Transport) (*Client[C, D], error) {
 	}, nil
 }
 
+// NewClient256 is a convenience wrapper for NewClient[NISTP256Parameter, SHA256Digest].
+func NewClient256(t Transport) (*Client[NISTP256Parameter, SHA256Digest], error) {
+	return NewClient[NISTP256Parameter, SHA256Digest](t)
+}
+
+// NewClient256 is a convenience wrapper for NewClient[NISTP384Parameter, SHA384Digest].
+func NewClient384(t Transport) (*Client[NISTP384Parameter, SHA384Digest], error) {
+	return NewClient[NISTP384Parameter, SHA384Digest](t)
+}
+
 func (c *Client[_, _]) InitializeContext(cmd *InitCtxCmd) (*InitCtxResp, error) {
 	var respStruct InitCtxResp
 
@@ -127,11 +137,40 @@ func (c *Client[_, _]) DestroyContext(cmd *DestroyCtxCmd) error {
 	// DestroyContext does not return any parameters.
 	respStruct := struct{}{}
 
-	if _, err := execCommand(c.transport, CommandInitializeContext, c.Profile, cmd, &respStruct); err != nil {
+	if _, err := execCommand(c.transport, CommandDestroyContext, c.Profile, cmd, &respStruct); err != nil {
 		return err
 	}
 
 	return nil
+}
+
+// CertifyKey calls the DPE CertifyKey command.
+func (c *Client[CurveParameter, Digest]) CertifyKey(cmd *CertifyKeyReq[Digest]) (*CertifyKeyResp[CurveParameter, Digest], error) {
+	// Define an anonymous struct for the response, because we have to accept the variable-sized certificate.
+	respStruct := struct {
+		NewContextHandle  [16]byte
+		DerivedPublicKeyX CurveParameter
+		DerivedPublicKeyY CurveParameter
+		CertificateSize   uint32
+		Certificate       [2048]byte
+	}{}
+
+	_, err := execCommand(c.transport, CommandCertifyKey, c.Profile, cmd, &respStruct)
+	if err != nil {
+		return nil, err
+	}
+
+	// Check that the reported cert size makes sense.
+	if respStruct.CertificateSize > 2048 {
+		return nil, fmt.Errorf("DPE reported a %d-byte cert, which was larger than 2048", respStruct.CertificateSize)
+	}
+
+	return &CertifyKeyResp[CurveParameter, Digest]{
+		NewContextHandle:  respStruct.NewContextHandle,
+		DerivedPublicKeyX: respStruct.DerivedPublicKeyX,
+		DerivedPublicKeyY: respStruct.DerivedPublicKeyY,
+		Certificate:       respStruct.Certificate[:respStruct.CertificateSize],
+	}, nil
 }
 
 func (s *Support) ToFlags() uint32 {
