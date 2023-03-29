@@ -231,26 +231,18 @@ func testCertifyKey(d TestDPEInstance, t *testing.T) {
 		Flags:         0,
 		Label:         [32]byte{0},
 	}
-	certifyKeyResp, err := client.CertifyKey(&certifyKeyReq)
-	if err != nil {
+	if _, err = client.CertifyKey(&certifyKeyReq); err != nil {
 		t.Fatalf("Could not certify key: %v", err)
 	}
-	t.Logf("Certificate: %x", certifyKeyResp.Certificate)
-
-	if d.GetSupport().Simulation {
-		// Certify keys for each new TCI
-		for i := uint32(0); i < client.MaxTciNodes-1; i++ {
-			initCtxResp, err := client.InitializeContext(NewInitCtxIsSimulation())
-			if err != nil {
-				t.Fatal("The instance should be able to create a simulation context.")
-			}
-			defer client.DestroyContext(NewDestroyCtx(initCtxResp.Handle, false))
-
-			certifyKeyResp, err := client.CertifyKey(&certifyKeyReq)
-			if err != nil {
-				t.Fatalf("Could not certify key: %v", err)
-			}
-			t.Logf("Certificate for TCI %v: %x", i, certifyKeyResp.Certificate)
+	// TODO(https://github.com/chipsalliance/caliptra-dpe/issues/44): Parse the certificate when the certificate being produced by the DPE is valid.
+	/*
+		cert, err := x509.ParseCertificate(certifyKeyResp.Certificate)
+		if err != nil {
+			t.Logf("Cert data: %x", certifyKeyResp.Certificate)
+			t.Fatalf("Could not parse certificate: %v", err)
 		}
-	}
+		t.Logf("Certificate: %#v", cert)
+	*/
+
+	// TODO: When DeriveChild is implemented, call it here to add more TCIs and call CertifyKey again.
 }
