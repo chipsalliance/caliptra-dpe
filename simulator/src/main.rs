@@ -15,7 +15,7 @@ use dpe::{
 const SOCKET_PATH: &str = "/tmp/dpe-sim.socket";
 
 fn handle_request(dpe: &mut DpeInstance<OpensslCrypto>, stream: &mut UnixStream) {
-    let mut buf = [0u8; 128];
+    let mut buf = [0u8; 4096];
     let (locality, cmd) = {
         let len = stream.read(&mut buf).unwrap();
         (
@@ -32,7 +32,8 @@ fn handle_request(dpe: &mut DpeInstance<OpensslCrypto>, stream: &mut UnixStream)
     }
     println!("|");
 
-    let mut response = [0u8; 128];
+    let mut response = [0u8; 4096];
+
     let len = execute_command(dpe, locality, cmd, &mut response).unwrap();
 
     let response_code = u32::from_le_bytes(response[4..8].try_into().unwrap());
