@@ -74,7 +74,7 @@ func testGetProfile(d TestDPEInstance, t *testing.T) {
 		}
 		defer d.PowerOff()
 	}
-	client, err := NewClient[NISTP256Parameter, SHA256Digest](d)
+	client, err := NewClient256(d)
 	if err != nil {
 		t.Fatalf("Could not initialize client: %v", err)
 	}
@@ -128,7 +128,7 @@ func testInitContext(d TestDPEInstance, t *testing.T) {
 		defer d.PowerOff()
 	}
 
-	client, err := NewClient[NISTP256Parameter, SHA256Digest](d)
+	client, err := NewClient256(d)
 	if err != nil {
 		t.Fatalf("Could not initialize client: %v", err)
 	}
@@ -195,6 +195,62 @@ func testInitContext(d TestDPEInstance, t *testing.T) {
 			t.Fatal("Failed to report an error for too many contexts.")
 		} else if !errors.Is(err, StatusMaxTCIs) {
 			t.Fatalf("Incorrect error type. Should return %q, but returned %q", StatusMaxTCIs, err)
+		}
+	}
+}
+
+func TestCertifyKey(t *testing.T) {
+	simulators := []TestDPEInstance{
+		// No extra options besides AutoInit.
+		&DpeSimulator{exe_path: *sim_exe, supports: Support{AutoInit: true}},
+		// Supports AutoInit and simulation contexts.
+		&DpeSimulator{exe_path: *sim_exe, supports: Support{AutoInit: true, Simulation: true}},
+	}
+
+	for _, s := range simulators {
+		s.SetLocality(DPE_SIMULATOR_AUTO_INIT_LOCALITY)
+		testCertifyKey(s, t)
+	}
+}
+
+func testCertifyKey(d TestDPEInstance, t *testing.T) {
+	if d.HasPowerControl() {
+		err := d.PowerOn()
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer d.PowerOff()
+	}
+	client, err := NewClient256(d)
+	if err != nil {
+		t.Fatalf("Could not initialize client: %v", err)
+	}
+
+	certifyKeyReq := CertifyKeyReq[SHA256Digest]{
+		ContextHandle: [16]byte{0},
+		Flags:         0,
+		Label:         [32]byte{0},
+	}
+	certifyKeyResp, err := client.CertifyKey(&certifyKeyReq)
+	if err != nil {
+		t.Fatalf("Could not certify key: %v", err)
+	}
+	t.Logf("Certificate: %x", certifyKeyResp.Certificate)
+
+	if d.GetSupport().Simulation {
+		// Certify keys for each new TCI
+		for i := uint32(0); i < client.MaxTciNodes-1; i++ {
+			initCtxResp, err := client.InitializeContext(NewInitCtxIsSimulation())
+			if err != nil {
+				t.Fatal("The instance should be able to create a simulation context.")
+			}
+			defer client.DestroyContext(NewDestroyCtx(initCtxResp.Handle, false))
+
+			certifyKeyResp, err := client.CertifyKey(&certifyKeyReq)
+			if err != nil {
+				t.Fatalf("Could not certify key: %v", err)
+			}
+			t.Logf("Certificate for TCI %v: %x", i, certifyKeyResp.Certificate)
 		}
 	}
 }

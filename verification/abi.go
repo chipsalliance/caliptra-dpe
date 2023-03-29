@@ -12,6 +12,7 @@ type CommandCode uint32
 const (
 	CommandGetProfile        CommandCode = 0x1
 	CommandInitializeContext CommandCode = 0x5
+	CommandCertifyKey        CommandCode = 0x7
 	CommandDestroyContext    CommandCode = 0xf
 )
 
@@ -61,4 +62,23 @@ type GetProfileResp struct {
 	Version     uint32
 	MaxTciNodes uint32
 	Flags       uint32
+}
+
+type CertifyKeyFlags uint32
+
+const (
+	CertifyKeyNDDerivation CertifyKeyFlags = 0x800000
+)
+
+type CertifyKeyReq[Digest DigestAlgorithm] struct {
+	ContextHandle [16]byte
+	Flags         CertifyKeyFlags
+	Label         Digest
+}
+
+type CertifyKeyResp[CurveParameter Curve, Digest DigestAlgorithm] struct {
+	NewContextHandle  [16]byte
+	DerivedPublicKeyX CurveParameter
+	DerivedPublicKeyY CurveParameter
+	Certificate       []byte
 }
