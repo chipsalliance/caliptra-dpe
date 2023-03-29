@@ -7,7 +7,8 @@ Abstract:
 use crate::{
     _set_flag,
     commands::{
-        CertifyKeyCmd, Command, DestroyCtxCmd, ExtendTciCmd, InitCtxCmd, RotateCtxCmd, TagTciCmd,
+        CertifyKeyCmd, Command, DeriveChildCmd, DestroyCtxCmd, ExtendTciCmd, InitCtxCmd,
+        RotateCtxCmd, TagTciCmd,
     },
     response::{CertifyKeyResp, DpeErrorCode, GetProfileResp, NewHandleResp, Response},
     x509::{EcdsaPub, EcdsaSignature, MeasurementData, Name, X509CertWriter},
@@ -96,6 +97,14 @@ impl<C: Crypto> DpeInstance<'_, C> {
 
         self.contexts[idx].activate(context_type, locality, &handle);
         Ok(NewHandleResp { handle })
+    }
+
+    pub fn derive_child(
+        &mut self,
+        _locality: u32,
+        _cmd: &DeriveChildCmd,
+    ) -> Result<Response, DpeErrorCode> {
+        Err(DpeErrorCode::InvalidCommand)
     }
 
     /// Rotate the handle for given context to another random value. This also allows changing the
@@ -353,6 +362,7 @@ impl<C: Crypto> DpeInstance<'_, C> {
             Command::InitCtx(context) => Ok(Response::InitCtx(
                 self.initialize_context(locality, &context)?,
             )),
+            Command::DeriveChild(cmd) => self.derive_child(locality, &cmd),
             Command::CertifyKey(context) => {
                 Ok(Response::CertifyKey(self.certify_key(locality, &context)?))
             }

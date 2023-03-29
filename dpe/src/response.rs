@@ -12,6 +12,7 @@ use core::mem::size_of;
 pub enum Response {
     GetProfile(GetProfileResp),
     InitCtx(NewHandleResp),
+    DeriveChild(DeriveChildResp),
     RotateCtx(NewHandleResp),
     CertifyKey(CertifyKeyResp),
     DestroyCtx,
@@ -30,6 +31,7 @@ impl Response {
         match self {
             Response::GetProfile(response) => response.serialize(dst),
             Response::InitCtx(response) => response.serialize(dst),
+            Response::DeriveChild(response) => response.serialize(dst),
             Response::CertifyKey(response) => response.serialize(dst),
             Response::RotateCtx(response) => response.serialize(dst),
             Response::DestroyCtx => Ok(0),
@@ -123,6 +125,29 @@ impl NewHandleResp {
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq)]
+#[cfg_attr(test, derive(zerocopy::AsBytes, zerocopy::FromBytes))]
+pub struct DeriveChildResp {
+    pub handle: [u8; HANDLE_SIZE],
+    pub parent_handle: [u8; HANDLE_SIZE],
+}
+
+impl DeriveChildResp {
+    pub fn serialize(&self, dst: &mut [u8]) -> Result<usize, DpeErrorCode> {
+        if dst.len() < size_of::<Self>() {
+            return Err(DpeErrorCode::InternalError);
+        }
+
+        let mut offset: usize = 0;
+        dst[offset..offset + HANDLE_SIZE].copy_from_slice(&self.handle);
+        offset += HANDLE_SIZE;
+        dst[offset..offset + HANDLE_SIZE].copy_from_slice(&self.parent_handle);
+        offset += HANDLE_SIZE;
+        Ok(offset)
+    }
+}
+
+#[repr(C)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct CertifyKeyResp {
     pub new_context_handle: [u8; HANDLE_SIZE],
     pub derived_pubkey_x: [u8; DPE_PROFILE.get_ecc_int_size()],
@@ -195,6 +220,13 @@ mod tests {
     };
     const TEST_NEW_HANDLE_RESP: NewHandleResp = NewHandleResp {
         handle: TEST_HANDLE,
+    };
+    const TEST_DERIVE_CHILD_RESP: DeriveChildResp = DeriveChildResp {
+        handle: TEST_HANDLE,
+        parent_handle: [
+            0xff, 0xfe, 0xfd, 0xfc, 0xfb, 0xfa, 0xf9, 0xf8, 0xf7, 0xf6, 0xf5, 0xf4, 0xf3, 0xf2,
+            0xf1, 0xf0,
+        ],
     };
 
     #[test]
@@ -274,6 +306,25 @@ mod tests {
                 .unwrap()
         );
         assert_eq!(TEST_NEW_HANDLE_RESP.as_bytes(), response_buffer);
+    }
+
+    #[test]
+    fn test_serialize_derive_child_response() {
+        // Test too small slice.
+        let mut response_buffer = [0; size_of::<DeriveChildResp>() - 1];
+        assert_eq!(
+            Err(DpeErrorCode::InternalError),
+            TEST_DERIVE_CHILD_RESP.serialize(response_buffer.as_mut_slice())
+        );
+        let mut response_buffer = [0; size_of::<DeriveChildResp>()];
+
+        assert_eq!(
+            2 * HANDLE_SIZE,
+            TEST_DERIVE_CHILD_RESP
+                .serialize(response_buffer.as_mut_slice())
+                .unwrap()
+        );
+        assert_eq!(TEST_DERIVE_CHILD_RESP.as_bytes(), response_buffer);
     }
 
     fn test_error_code_serialize(error_code: DpeErrorCode) {
