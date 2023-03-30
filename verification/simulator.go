@@ -53,6 +53,18 @@ func (s *DpeSimulator) PowerOn() error {
 	if s.supports.RotateContext {
 		args = append(args, "--supports-rotate-context")
 	}
+	if s.supports.CertifyKey {
+		args = append(args, "--supports-certify-key")
+	}
+	if s.supports.CertifyCsr {
+		args = append(args, "--supports-certify-csr")
+	}
+	if s.supports.InternalInfo {
+		args = append(args, "--supports-internal-info")
+	}
+	if s.supports.InternalDice {
+		args = append(args, "--supports-internal-dice")
+	}
 
 	s.cmd = exec.Command(s.exe_path, args...)
 	s.cmd.Stdout = os.Stdout

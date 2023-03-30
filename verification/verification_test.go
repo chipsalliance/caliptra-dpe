@@ -53,11 +53,15 @@ func TestGetProfile(t *testing.T) {
 		&DpeSimulator{exe_path: *sim_exe, supports: Support{Tagging: true}},
 		// Supports rotate context.
 		&DpeSimulator{exe_path: *sim_exe, supports: Support{RotateContext: true}},
+		&DpeSimulator{exe_path: *sim_exe, supports: Support{CertifyKey: true}},
+		&DpeSimulator{exe_path: *sim_exe, supports: Support{CertifyCsr: true}},
+		&DpeSimulator{exe_path: *sim_exe, supports: Support{InternalInfo: true}},
+		&DpeSimulator{exe_path: *sim_exe, supports: Support{InternalDice: true}},
 		// Supports a couple combos.
-		&DpeSimulator{exe_path: *sim_exe, supports: Support{Simulation: true, AutoInit: true, RotateContext: true}},
-		&DpeSimulator{exe_path: *sim_exe, supports: Support{ExtendTci: true, Tagging: true}},
+		&DpeSimulator{exe_path: *sim_exe, supports: Support{Simulation: true, AutoInit: true, RotateContext: true, CertifyCsr: true, InternalDice: true}},
+		&DpeSimulator{exe_path: *sim_exe, supports: Support{ExtendTci: true, Tagging: true, CertifyKey: true, InternalInfo: true}},
 		// Supports everything.
-		&DpeSimulator{exe_path: *sim_exe, supports: Support{Simulation: true, ExtendTci: true, AutoInit: true, Tagging: true, RotateContext: true}},
+		&DpeSimulator{exe_path: *sim_exe, supports: Support{Simulation: true, ExtendTci: true, AutoInit: true, Tagging: true, RotateContext: true, CertifyKey: true, CertifyCsr: true, InternalInfo: true, InternalDice: true}},
 	}
 
 	for _, s := range simulators {

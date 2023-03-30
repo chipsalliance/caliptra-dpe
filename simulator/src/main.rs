@@ -78,6 +78,22 @@ struct Args {
     /// Supports the RotateContextHandle command.
     #[arg(long)]
     supports_rotate_context: bool,
+
+    /// Supports the CertifyKey command.
+    #[arg(long)]
+    supports_certify_key: bool,
+
+    /// Supports the CertifyCsr command.
+    #[arg(long)]
+    supports_certify_csr: bool,
+
+    /// Supports the INTERNAL_INPUT_INFO extension to DeriveChild
+    #[arg(long)]
+    supports_internal_info: bool,
+
+    /// Supports the INTERNAL_INPUT_DICE extension to DeriveChild
+    #[arg(long)]
+    supports_internal_dice: bool,
 }
 
 fn main() -> std::io::Result<()> {
@@ -107,6 +123,10 @@ fn main() -> std::io::Result<()> {
         auto_init: args.supports_auto_init,
         tagging: args.supports_tagging,
         rotate_context: args.supports_rotate_context,
+        certify_key: args.supports_certify_key,
+        certify_csr: args.supports_certify_csr,
+        internal_info: args.supports_internal_info,
+        internal_dice: args.supports_internal_dice,
     };
     let mut dpe = DpeInstance::<OpensslCrypto>::new(support, &LOCALITIES).map_err(|err| {
         Error::new(
