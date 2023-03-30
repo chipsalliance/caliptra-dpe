@@ -9,5 +9,7 @@ edition = "2021"
 ctrlc = { version = "3.0", features = ["termination"] }
 openssl = "0.10"
 clap = { version = "4.1.8", features = ["derive"] }
+log = "0.4.17"
+env_logger = "0.10.0"
 dpe = { path = "../dpe" }
 crypto = { path = "../crypto", features = ["openssl"] }
