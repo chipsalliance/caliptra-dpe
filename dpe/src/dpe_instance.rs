@@ -24,6 +24,10 @@ pub struct DpeInstance<'a, C: Crypto> {
     support: Support,
     localities: &'a [u32],
 
+    /// Can only successfully execute the initialize context command for non-simulation (i.e.
+    /// `InitializeContext(simulation=false)`) once per reset cycle.
+    has_initialized: bool,
+
     // All functions/data in C are static and global. For this reason
     // DpeInstance doesn't actually need to hold an instance. The PhantomData
     // is just to make the Crypto trait work.
@@ -50,6 +54,7 @@ impl<C: Crypto> DpeInstance<'_, C> {
             contexts: [CONTEXT_INITIALIZER; MAX_HANDLES],
             support,
             localities,
+            has_initialized: false,
             phantom: PhantomData,
         };
 
@@ -72,7 +77,8 @@ impl<C: Crypto> DpeInstance<'_, C> {
         locality: u32,
         cmd: &InitCtxCmd,
     ) -> Result<NewHandleResp, DpeErrorCode> {
-        if (cmd.flag_is_default() && self.get_default_context().is_some())
+        // This function can only be called once for non-simulation contexts.
+        if (cmd.flag_is_default() && self.has_initialized)
             || (cmd.flag_is_simulation() && !self.support.simulation)
         {
             return Err(DpeErrorCode::ArgumentNotSupported);
@@ -89,6 +95,7 @@ impl<C: Crypto> DpeInstance<'_, C> {
             .get_next_inactive_context_pos()
             .ok_or(DpeErrorCode::MaxTcis)?;
         let (context_type, handle) = if cmd.flag_is_default() {
+            self.has_initialized = true;
             (ContextType::Normal, Self::DEFAULT_CONTEXT_HANDLE)
         } else {
             // Simulation.
@@ -118,7 +125,7 @@ impl<C: Crypto> DpeInstance<'_, C> {
             return Err(DpeErrorCode::InvalidCommand);
         }
         let idx = self
-            .get_active_context_pos(&cmd.handle)
+            .get_active_context_pos(&cmd.handle, locality)
             .ok_or(DpeErrorCode::InvalidHandle)?;
 
         // Make sure the command is coming from the right locality.
@@ -138,7 +145,7 @@ impl<C: Crypto> DpeInstance<'_, C> {
         cmd: &DestroyCtxCmd,
     ) -> Result<Response, DpeErrorCode> {
         let idx = self
-            .get_active_context_pos(&cmd.handle)
+            .get_active_context_pos(&cmd.handle, locality)
             .ok_or(DpeErrorCode::InvalidHandle)?;
         let context = &self.contexts[idx];
         // Make sure the command is coming from the right locality.
@@ -168,7 +175,7 @@ impl<C: Crypto> DpeInstance<'_, C> {
             return Err(DpeErrorCode::InvalidCommand);
         }
         let idx = self
-            .get_active_context_pos(&cmd.handle)
+            .get_active_context_pos(&cmd.handle, locality)
             .ok_or(DpeErrorCode::InvalidHandle)?;
         let context = &mut self.contexts[idx];
 
@@ -209,7 +216,7 @@ impl<C: Crypto> DpeInstance<'_, C> {
         }
 
         let idx = self
-            .get_active_context_pos(&cmd.handle)
+            .get_active_context_pos(&cmd.handle, locality)
             .ok_or(DpeErrorCode::InvalidHandle)?;
 
         // Make sure the command is coming from the right locality.
@@ -237,7 +244,7 @@ impl<C: Crypto> DpeInstance<'_, C> {
         cmd: &CertifyKeyCmd,
     ) -> Result<CertifyKeyResp, DpeErrorCode> {
         let idx = self
-            .get_active_context_pos(&cmd.handle)
+            .get_active_context_pos(&cmd.handle, locality)
             .ok_or(DpeErrorCode::InvalidHandle)?;
 
         // Make sure the command is coming from the right locality.
@@ -373,23 +380,18 @@ impl<C: Crypto> DpeInstance<'_, C> {
         }
     }
 
-    fn get_active_context_pos(&self, handle: &[u8; HANDLE_SIZE]) -> Option<usize> {
-        self.contexts
-            .iter()
-            .position(|context| context.state == ContextState::Active && &context.handle == handle)
+    fn get_active_context_pos(&self, handle: &[u8; HANDLE_SIZE], locality: u32) -> Option<usize> {
+        self.contexts.iter().position(|context| {
+            context.state == ContextState::Active
+                && &context.handle == handle
+                && context.locality == locality
+        })
     }
 
     fn get_next_inactive_context_pos(&self) -> Option<usize> {
         self.contexts
             .iter()
             .position(|context| context.state == ContextState::Inactive)
-    }
-
-    fn get_default_context(&mut self) -> Option<&mut Context> {
-        self.contexts.iter_mut().find(|context| {
-            matches!(context.state, ContextState::Active)
-                && context.handle == Self::DEFAULT_CONTEXT_HANDLE
-        })
     }
 
     /// Recursive function that will return all of a context's descendants. Returns a u32 that is
@@ -775,7 +777,10 @@ pub mod tests {
 
         // Make sure the locality was recorded correctly.
         assert_eq!(
-            dpe.contexts[dpe.get_active_context_pos(&SIMULATION_HANDLE).unwrap()].locality,
+            dpe.contexts[dpe
+                .get_active_context_pos(&SIMULATION_HANDLE, TEST_LOCALITIES[1])
+                .unwrap()]
+            .locality,
             TEST_LOCALITIES[1]
         );
 
@@ -1129,12 +1134,24 @@ pub mod tests {
             .handle
             .copy_from_slice(&SIMULATION_HANDLE);
 
+        let locality = DpeInstance::<OpensslCrypto>::AUTO_INIT_LOCALITY;
         // Has not been activated.
-        assert!(dpe.get_active_context_pos(&SIMULATION_HANDLE).is_none());
+        assert!(dpe
+            .get_active_context_pos(&SIMULATION_HANDLE, locality)
+            .is_none());
+
+        // Mark it active, but check the wrong locality.
+        let locality = 2;
+        dpe.contexts[expected_index].state = ContextState::Active;
+        assert!(dpe
+            .get_active_context_pos(&SIMULATION_HANDLE, locality)
+            .is_none());
 
         // Should find it now.
-        dpe.contexts[expected_index].state = ContextState::Active;
-        let idx = dpe.get_active_context_pos(&SIMULATION_HANDLE).unwrap();
+        dpe.contexts[expected_index].locality = locality;
+        let idx = dpe
+            .get_active_context_pos(&SIMULATION_HANDLE, locality)
+            .unwrap();
         assert_eq!(expected_index, idx);
     }
 
@@ -1171,7 +1188,12 @@ pub mod tests {
             )
         );
 
-        let handle = dpe.get_default_context().unwrap().handle;
+        let locality = DpeInstance::<OpensslCrypto>::AUTO_INIT_LOCALITY;
+        let default_handle = DpeInstance::<OpensslCrypto>::DEFAULT_CONTEXT_HANDLE;
+        let handle = dpe.contexts[dpe
+            .get_active_context_pos(&default_handle, locality)
+            .unwrap()]
+        .handle;
         let data = [1; DPE_PROFILE.get_hash_size()];
         dpe.extend_tci(
             TEST_LOCALITIES[0],
@@ -1183,9 +1205,12 @@ pub mod tests {
         .unwrap();
 
         // Make sure extending the default TCI doesn't change the handle.
-        assert_eq!(handle, dpe.get_default_context().unwrap().handle);
+        let default_context = &dpe.contexts[dpe
+            .get_active_context_pos(&default_handle, locality)
+            .unwrap()];
+        assert_eq!(handle, default_context.handle);
         // Make sure the current TCI was updated correctly.
-        assert_eq!(data, dpe.get_default_context().unwrap().tci.tci_current.0);
+        assert_eq!(data, default_context.tci.tci_current.0);
 
         let md = match DPE_PROFILE {
             DpeProfile::P256Sha256 => openssl::hash::MessageDigest::sha256(),
@@ -1201,7 +1226,7 @@ pub mod tests {
         // Make sure the cumulative was computed correctly.
         assert_eq!(
             first_cumulative.as_ref(),
-            dpe.get_default_context().unwrap().tci.tci_cumulative.0
+            default_context.tci.tci_cumulative.0
         );
 
         let data = [2; DPE_PROFILE.get_hash_size()];
@@ -1214,7 +1239,10 @@ pub mod tests {
         )
         .unwrap();
         // Make sure the current TCI was updated correctly.
-        assert_eq!(data, dpe.get_default_context().unwrap().tci.tci_current.0);
+        let default_context = &dpe.contexts[dpe
+            .get_active_context_pos(&default_handle, locality)
+            .unwrap()];
+        assert_eq!(data, default_context.tci.tci_current.0);
 
         let mut hasher = openssl::hash::Hasher::new(md).unwrap();
         hasher.update(&first_cumulative).unwrap();
@@ -1224,20 +1252,24 @@ pub mod tests {
         // Make sure the cumulative was computed correctly.
         assert_eq!(
             second_cumulative.as_ref(),
-            dpe.get_default_context().unwrap().tci.tci_cumulative.0
+            default_context.tci.tci_cumulative.0
         );
 
+        let sim_local = TEST_LOCALITIES[1];
         dpe.support.simulation = true;
-        dpe.initialize_context(TEST_LOCALITIES[1], &InitCtxCmd::new_simulation())
+        dpe.initialize_context(sim_local, &InitCtxCmd::new_simulation())
             .unwrap();
 
         // Give the simulation context another handle so we can prove the handle rotates when it
         // gets extended.
-        let simulation_ctx =
-            &mut dpe.contexts[dpe.get_active_context_pos(&SIMULATION_HANDLE).unwrap()];
+        let simulation_ctx = &mut dpe.contexts[dpe
+            .get_active_context_pos(&SIMULATION_HANDLE, sim_local)
+            .unwrap()];
         let sim_tmp_handle = [0xff; HANDLE_SIZE];
         simulation_ctx.handle = sim_tmp_handle;
-        assert!(dpe.get_active_context_pos(&SIMULATION_HANDLE).is_none());
+        assert!(dpe
+            .get_active_context_pos(&SIMULATION_HANDLE, sim_local)
+            .is_none());
 
         dpe.extend_tci(
             TEST_LOCALITIES[1],
@@ -1248,8 +1280,12 @@ pub mod tests {
         )
         .unwrap();
         // Make sure it rotated back to the deterministic simulation handle.
-        assert!(dpe.get_active_context_pos(&sim_tmp_handle).is_none());
-        assert!(dpe.get_active_context_pos(&SIMULATION_HANDLE).is_some());
+        assert!(dpe
+            .get_active_context_pos(&sim_tmp_handle, sim_local)
+            .is_none());
+        assert!(dpe
+            .get_active_context_pos(&SIMULATION_HANDLE, sim_local)
+            .is_some());
     }
 
     #[test]
@@ -1280,8 +1316,9 @@ pub mod tests {
         .unwrap();
         dpe.initialize_context(TEST_LOCALITIES[0], &InitCtxCmd::new_use_default())
             .unwrap();
+        let sim_local = TEST_LOCALITIES[1];
         // Make a simulation context to test against.
-        dpe.initialize_context(TEST_LOCALITIES[1], &InitCtxCmd::new_simulation())
+        dpe.initialize_context(sim_local, &InitCtxCmd::new_simulation())
             .unwrap();
 
         // Invalid handle.
@@ -1348,11 +1385,14 @@ pub mod tests {
 
         // Give the simulation context another handle so we can prove the handle rotates when it
         // gets tagged.
-        let simulation_ctx =
-            &mut dpe.contexts[dpe.get_active_context_pos(&SIMULATION_HANDLE).unwrap()];
+        let simulation_ctx = &mut dpe.contexts[dpe
+            .get_active_context_pos(&SIMULATION_HANDLE, sim_local)
+            .unwrap()];
         let sim_tmp_handle = [0xff; HANDLE_SIZE];
         simulation_ctx.handle = sim_tmp_handle;
-        assert!(dpe.get_active_context_pos(&SIMULATION_HANDLE).is_none());
+        assert!(dpe
+            .get_active_context_pos(&SIMULATION_HANDLE, sim_local)
+            .is_none());
 
         // Tag simulation.
         assert_eq!(
@@ -1368,8 +1408,12 @@ pub mod tests {
             )
         );
         // Make sure it rotated back to the deterministic simulation handle.
-        assert!(dpe.get_active_context_pos(&sim_tmp_handle).is_none());
-        assert!(dpe.get_active_context_pos(&SIMULATION_HANDLE).is_some());
+        assert!(dpe
+            .get_active_context_pos(&sim_tmp_handle, sim_local)
+            .is_none());
+        assert!(dpe
+            .get_active_context_pos(&SIMULATION_HANDLE, sim_local)
+            .is_some());
     }
 
     #[test]
