@@ -488,6 +488,10 @@ pub struct Support {
     pub auto_init: bool,
     pub tagging: bool,
     pub rotate_context: bool,
+    pub certify_key: bool,
+    pub certify_csr: bool,
+    pub internal_info: bool,
+    pub internal_dice: bool,
 }
 
 impl Support {
@@ -499,6 +503,10 @@ impl Support {
             | self.get_auto_init_flag()
             | self.get_tagging_flag()
             | self.get_rotate_context_flag()
+            | self.get_certify_key_flag()
+            | self.get_certify_csr_flag()
+            | self.get_internal_info_flag()
+            | self.get_internal_dice_flag()
     }
     fn get_simulation_flag(&self) -> u32 {
         u32::from(self.simulation) << 31
@@ -514,6 +522,18 @@ impl Support {
     }
     fn get_rotate_context_flag(&self) -> u32 {
         u32::from(self.rotate_context) << 27
+    }
+    fn get_certify_key_flag(&self) -> u32 {
+        u32::from(self.certify_key) << 26
+    }
+    fn get_certify_csr_flag(&self) -> u32 {
+        u32::from(self.certify_csr) << 25
+    }
+    fn get_internal_info_flag(&self) -> u32 {
+        u32::from(self.internal_info) << 24
+    }
+    fn get_internal_dice_flag(&self) -> u32 {
+        u32::from(self.internal_dice) << 23
     }
 }
 
@@ -709,6 +729,10 @@ pub mod tests {
         auto_init: true,
         tagging: true,
         rotate_context: true,
+        certify_key: true,
+        certify_csr: false,
+        internal_info: false,
+        internal_dice: false,
     };
     pub const TEST_HANDLE: [u8; HANDLE_SIZE] =
         [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
@@ -1038,22 +1062,57 @@ pub mod tests {
         }
         .get_flags();
         assert_eq!(flags, 1 << 27);
+        // Supports certify key.
+        let flags = Support {
+            certify_key: true,
+            ..Support::default()
+        }
+        .get_flags();
+        assert_eq!(flags, 1 << 26);
+        // Supports certify csr.
+        let flags = Support {
+            certify_csr: true,
+            ..Support::default()
+        }
+        .get_flags();
+        assert_eq!(flags, 1 << 25);
+        // Supports internal info.
+        let flags = Support {
+            internal_info: true,
+            ..Support::default()
+        }
+        .get_flags();
+        assert_eq!(flags, 1 << 24);
+        // Supports internal DICE.
+        let flags = Support {
+            internal_dice: true,
+            ..Support::default()
+        }
+        .get_flags();
+        assert_eq!(flags, 1 << 23);
         // Supports a couple combos.
         let flags = Support {
             simulation: true,
             auto_init: true,
             rotate_context: true,
+            certify_csr: true,
+            internal_dice: true,
             ..Support::default()
         }
         .get_flags();
-        assert_eq!(flags, (1 << 31) | (1 << 29) | (1 << 27));
+        assert_eq!(
+            flags,
+            (1 << 31) | (1 << 29) | (1 << 27) | (1 << 25) | (1 << 23)
+        );
         let flags = Support {
             extend_tci: true,
             tagging: true,
+            certify_key: true,
+            internal_info: true,
             ..Support::default()
         }
         .get_flags();
-        assert_eq!(flags, (1 << 30) | (1 << 28));
+        assert_eq!(flags, (1 << 30) | (1 << 28) | (1 << 26) | (1 << 24));
         // Supports everything.
         let flags = Support {
             simulation: true,
@@ -1061,11 +1120,23 @@ pub mod tests {
             auto_init: true,
             tagging: true,
             rotate_context: true,
+            certify_key: true,
+            certify_csr: true,
+            internal_info: true,
+            internal_dice: true,
         }
         .get_flags();
         assert_eq!(
             flags,
-            (1 << 31) | (1 << 30) | (1 << 29) | (1 << 28) | (1 << 27)
+            (1 << 31)
+                | (1 << 30)
+                | (1 << 29)
+                | (1 << 28)
+                | (1 << 27)
+                | (1 << 26)
+                | (1 << 25)
+                | (1 << 24)
+                | (1 << 23)
         );
     }
 
