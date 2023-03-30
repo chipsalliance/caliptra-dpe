@@ -1,5 +1,6 @@
 use clap::Parser;
 use crypto::OpensslCrypto;
+use log::{error, info, trace, warn};
 use std::fs;
 use std::io::{Error, ErrorKind, Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -24,13 +25,13 @@ fn handle_request(dpe: &mut DpeInstance<OpensslCrypto>, stream: &mut UnixStream)
         )
     };
 
-    println!("----------------------------------");
+    trace!("----------------------------------");
     if let Ok(command) = Command::deserialize(cmd) {
-        println!("| Locality `{locality:#x}` requested {command:x?}",);
+        trace!("| Locality `{locality:#x}` requested {command:x?}",);
     } else {
-        println!("| Locality `{locality:#010x}` requested invalid command. {cmd:02x?}")
+        trace!("| Locality `{locality:#010x}` requested invalid command. {cmd:02x?}")
     }
-    println!("|");
+    trace!("|");
 
     let mut response = [0u8; 4096];
 
@@ -38,20 +39,15 @@ fn handle_request(dpe: &mut DpeInstance<OpensslCrypto>, stream: &mut UnixStream)
 
     let response_code = u32::from_le_bytes(response[4..8].try_into().unwrap());
     // There are a few vendor error codes starting at 0x1000, so this can be a 2 bytes.
-    println!("| Response Code {response_code:#06x}");
-    println!("----------------------------------");
+    trace!("| Response Code {response_code:#06x}");
+    trace!("----------------------------------");
 
     stream.write_all(&response[..len]).unwrap();
 }
 
 fn cleanup() {
-    match fs::remove_file(SOCKET_PATH) {
-        Ok(_) => {
-            println!();
-        }
-        Err(_) => {
-            println!("Warning: Unable to unlink {SOCKET_PATH}");
-        }
+    if let Err(e) = fs::remove_file(SOCKET_PATH) {
+        warn!("Unable to unlink {SOCKET_PATH}: {e}");
     }
 }
 
@@ -81,6 +77,7 @@ struct Args {
 }
 
 fn main() -> std::io::Result<()> {
+    env_logger::init();
     const LOCALITIES: [u32; 2] = [
         DpeInstance::<OpensslCrypto>::AUTO_INIT_LOCALITY,
         u32::from_be_bytes(*b"OTHR"),
@@ -115,7 +112,7 @@ fn main() -> std::io::Result<()> {
         )
     })?;
 
-    println!("DPE listening to socket {SOCKET_PATH}");
+    info!("DPE listening to socket {SOCKET_PATH}");
 
     for stream in listener.incoming() {
         match stream {
@@ -123,7 +120,7 @@ fn main() -> std::io::Result<()> {
                 handle_request(&mut dpe, &mut stream);
             }
             Err(err) => {
-                println!("Failed to open socket: {err}");
+                error!("Failed to open socket: {err}");
                 cleanup();
                 break;
             }
