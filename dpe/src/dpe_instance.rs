@@ -12,7 +12,7 @@ use crate::{
 };
 use core::marker::PhantomData;
 use core::mem::size_of;
-use crypto::Crypto;
+use crypto::{Crypto, Hasher};
 
 pub struct DpeInstance<'a, C: Crypto> {
     pub(crate) contexts: [Context; MAX_HANDLES],
@@ -203,6 +203,42 @@ impl<C: Crypto> DpeInstance<'_, C> {
 
         Ok(out_idx)
     }
+
+    pub(crate) fn add_tci_measurement(
+        &mut self,
+        idx: usize,
+        measurement: &TciMeasurement,
+        locality: u32,
+    ) -> Result<(), DpeErrorCode> {
+        if idx >= MAX_HANDLES {
+            return Err(DpeErrorCode::InternalError);
+        }
+
+        let context = &mut self.contexts[idx];
+
+        if context.state != ContextState::Active {
+            return Err(DpeErrorCode::InvalidHandle);
+        }
+        if context.locality != locality {
+            return Err(DpeErrorCode::InvalidLocality);
+        }
+
+        // Derive the new TCI as HASH(TCI_CUMULATIVE || INPUT_DATA).
+        let mut hasher =
+            C::hash_initialize(DPE_PROFILE.alg_len()).map_err(|_| DpeErrorCode::InternalError)?;
+        hasher
+            .update(&context.tci.tci_cumulative.0)
+            .map_err(|_| DpeErrorCode::InternalError)?;
+        hasher
+            .update(&measurement.0)
+            .map_err(|_| DpeErrorCode::InternalError)?;
+        hasher
+            .finish(&mut context.tci.tci_cumulative.0)
+            .map_err(|_| DpeErrorCode::InternalError)?;
+
+        context.tci.tci_current = *measurement;
+        Ok(())
+    }
 }
 
 #[repr(transparent)]
@@ -327,9 +363,14 @@ pub(crate) enum ContextState {
     Inactive,
     /// Context is initialized and ready to be used.
     Active,
+    /// A child was derived from this context, but it was not retained. This will need to be
+    /// destroyed automatically if all of it's children have been destroyed. It is preserved for its
+    /// TCI data, but the handle is no longer valid. Because the handle is no longer valid, a client
+    /// cannot command it to be destroyed.
+    Retired,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub(crate) enum ContextType {
     /// Typical context.
     Normal,
@@ -380,14 +421,15 @@ impl Context {
     /// * `locality` - Which hardware locality owns the context.
     /// * `handle` - Value that will be used to refer to the context. Random value for simulation
     ///   contexts and 0x0 for the default context.
-    pub fn activate(&mut self, context_type: ContextType, locality: u32, handle: &ContextHandle) {
-        self.handle = *handle;
+    pub fn activate(&mut self, args: &ActiveContextArgs) {
+        self.handle = *args.handle;
         self.tci = TciNodeData::new();
+        self.tci.tci_type = args.tci_type;
         self.children = 0;
-        self.parent_idx = Self::ROOT_INDEX;
-        self.context_type = context_type;
+        self.parent_idx = args.parent_idx;
+        self.context_type = args.context_type;
         self.state = ContextState::Active;
-        self.locality = locality;
+        self.locality = args.locality;
     }
 
     /// Destroy this context so it can no longer be used until it is re-initialized. The default
@@ -398,6 +440,23 @@ impl Context {
         self.tag = 0;
         self.state = ContextState::Inactive;
     }
+
+    /// Add a child to list of children in the context.
+    pub fn add_child(&mut self, idx: usize) -> Result<(), DpeErrorCode> {
+        if idx >= MAX_HANDLES {
+            return Err(DpeErrorCode::InternalError);
+        }
+        self.children |= 1 << idx;
+        Ok(())
+    }
+}
+
+pub(crate) struct ActiveContextArgs<'a> {
+    pub context_type: ContextType,
+    pub locality: u32,
+    pub handle: &'a ContextHandle,
+    pub tci_type: u32,
+    pub parent_idx: u8,
 }
 
 /// Iterate over all of the bits set to 1 in a u32. Each iteration returns the bit index 0 being the
@@ -739,6 +798,12 @@ pub mod tests {
             .get_active_context_pos(&SIMULATION_HANDLE, locality)
             .is_none());
 
+        // Shouldn't be able to find it if it is retired either.
+        dpe.contexts[expected_index].state = ContextState::Retired;
+        assert!(dpe
+            .get_active_context_pos(&SIMULATION_HANDLE, locality)
+            .is_none());
+
         // Mark it active, but check the wrong locality.
         let locality = 2;
         dpe.contexts[expected_index].state = ContextState::Active;
@@ -752,6 +817,56 @@ pub mod tests {
             .get_active_context_pos(&SIMULATION_HANDLE, locality)
             .unwrap();
         assert_eq!(expected_index, idx);
+    }
+
+    #[test]
+    fn test_add_tci_measurement() {
+        let mut dpe = DpeInstance::<OpensslCrypto>::new_for_test(
+            Support {
+                auto_init: true,
+                ..Default::default()
+            },
+            &TEST_LOCALITIES,
+        )
+        .unwrap();
+
+        // Verify bounds checking.
+        assert_eq!(
+            Err(DpeErrorCode::InternalError),
+            dpe.add_tci_measurement(MAX_HANDLES, &TciMeasurement::default(), TEST_LOCALITIES[0])
+        );
+
+        let data = [1; DPE_PROFILE.get_hash_size()];
+        dpe.add_tci_measurement(0, &TciMeasurement(data), TEST_LOCALITIES[0])
+            .unwrap();
+        let context = &dpe.contexts[0];
+        assert_eq!(data, context.tci.tci_current.0);
+
+        // Compute cumulative.
+        let mut hasher = OpensslCrypto::hash_initialize(DPE_PROFILE.alg_len()).unwrap();
+        hasher.update(&[0; DPE_PROFILE.get_hash_size()]).unwrap();
+        hasher.update(&data).unwrap();
+        let mut first_cumulative = [0; DPE_PROFILE.get_hash_size()];
+        hasher.finish(&mut first_cumulative).unwrap();
+
+        // Make sure the cumulative was computed correctly.
+        assert_eq!(first_cumulative.as_ref(), context.tci.tci_cumulative.0);
+
+        let data = [2; DPE_PROFILE.get_hash_size()];
+        dpe.add_tci_measurement(0, &TciMeasurement(data), TEST_LOCALITIES[0])
+            .unwrap();
+        // Make sure the current TCI was updated correctly.
+        let context = &dpe.contexts[0];
+        assert_eq!(data, context.tci.tci_current.0);
+
+        let mut hasher = OpensslCrypto::hash_initialize(DPE_PROFILE.alg_len()).unwrap();
+        hasher.update(&first_cumulative).unwrap();
+        hasher.update(&data).unwrap();
+        let mut second_cumulative = [0; DPE_PROFILE.get_hash_size()];
+        hasher.finish(&mut second_cumulative).unwrap();
+
+        // Make sure the cumulative was computed correctly.
+        assert_eq!(second_cumulative.as_ref(), context.tci.tci_cumulative.0);
     }
 
     #[test]
