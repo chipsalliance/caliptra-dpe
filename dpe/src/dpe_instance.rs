@@ -7,8 +7,8 @@ Abstract:
 use crate::{
     _set_flag,
     commands::{
-        CertifyKeyCmd, Command, CommandExecution, DeriveChildCmd, DestroyCtxCmd, ExtendTciCmd,
-        InitCtxCmd, RotateCtxCmd, TagTciCmd,
+        CertifyKeyCmd, Command, CommandExecution, DestroyCtxCmd, ExtendTciCmd, InitCtxCmd,
+        RotateCtxCmd, TagTciCmd,
     },
     response::{CertifyKeyResp, DpeErrorCode, GetProfileResp, NewHandleResp, Response},
     x509::{EcdsaPub, EcdsaSignature, MeasurementData, Name, X509CertWriter},
@@ -71,14 +71,6 @@ impl<C: Crypto> DpeInstance<'_, C> {
 
     pub fn get_profile(&self) -> Result<GetProfileResp, DpeErrorCode> {
         Ok(GetProfileResp::new(self.support.get_flags()))
-    }
-
-    pub fn derive_child(
-        &mut self,
-        _locality: u32,
-        _cmd: &DeriveChildCmd,
-    ) -> Result<Response, DpeErrorCode> {
-        Err(DpeErrorCode::InvalidCommand)
     }
 
     /// Rotate the handle for given context to another random value. This also allows changing the
@@ -341,7 +333,7 @@ impl<C: Crypto> DpeInstance<'_, C> {
         match command {
             Command::GetProfile => Ok(Response::GetProfile(self.get_profile()?)),
             Command::InitCtx(cmd) => cmd.execute(self, locality),
-            Command::DeriveChild(cmd) => self.derive_child(locality, &cmd),
+            Command::DeriveChild(cmd) => cmd.execute(self, locality),
             Command::CertifyKey(context) => {
                 Ok(Response::CertifyKey(self.certify_key(locality, &context)?))
             }
