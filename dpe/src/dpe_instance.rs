@@ -15,6 +15,7 @@ use crate::{
     DPE_PROFILE, HANDLE_SIZE, MAX_CERT_SIZE, MAX_HANDLES,
 };
 use core::convert::TryFrom;
+use core::fmt::{Error, Write};
 use core::marker::PhantomData;
 use core::mem::size_of;
 use crypto::{Crypto, Hasher};
@@ -262,12 +263,19 @@ impl<C: Crypto> DpeInstance<'_, C> {
         // TODO: Let the platform specify issuer name
         let issuer_name = Name {
             cn: b"DPE Issuer",
-            serial: &[0; DPE_PROFILE.get_hash_size()],
+            serial: b"000000",
         };
+
+        let mut subject_sn_str = [0u8; DPE_PROFILE.get_hash_size() * 2];
+        let mut w = BufWriter {
+            buf: &mut subject_sn_str,
+            offset: 0,
+        };
+        w.write_hex_str(&pub_digest)?;
 
         let subject_name = Name {
             cn: b"DPE Leaf",
-            serial: &pub_digest,
+            serial: &subject_sn_str,
         };
 
         let measurements = MeasurementData {
@@ -437,6 +445,34 @@ impl<C: Crypto> DpeInstance<'_, C> {
         }
 
         Ok(out_idx)
+    }
+}
+
+struct BufWriter<'a> {
+    buf: &'a mut [u8],
+    offset: usize,
+}
+
+impl Write for BufWriter<'_> {
+    fn write_str(&mut self, s: &str) -> Result<(), Error> {
+        if s.len() > self.buf.len().saturating_sub(self.offset) {
+            return Err(Error::default());
+        }
+
+        self.buf[self.offset..self.offset + s.len()].copy_from_slice(s.as_bytes());
+        self.offset += s.len();
+
+        Ok(())
+    }
+}
+
+impl BufWriter<'_> {
+    fn write_hex_str(&mut self, src: &[u8]) -> Result<(), DpeErrorCode> {
+        for &b in src {
+            write!(self, "{b:02x}").map_err(|_| DpeErrorCode::InternalError)?;
+        }
+
+        Ok(())
     }
 }
 

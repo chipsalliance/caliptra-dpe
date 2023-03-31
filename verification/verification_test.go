@@ -1,6 +1,7 @@
 package verification
 
 import (
+	"crypto/x509"
 	"errors"
 	"flag"
 	"log"
@@ -235,18 +236,17 @@ func testCertifyKey(d TestDPEInstance, t *testing.T) {
 		Flags:         0,
 		Label:         [32]byte{0},
 	}
-	if _, err = client.CertifyKey(&certifyKeyReq); err != nil {
+
+	certifyKeyResp, err := client.CertifyKey(&certifyKeyReq)
+	if err != nil {
 		t.Fatalf("Could not certify key: %v", err)
 	}
-	// TODO(https://github.com/chipsalliance/caliptra-dpe/issues/44): Parse the certificate when the certificate being produced by the DPE is valid.
-	/*
-		cert, err := x509.ParseCertificate(certifyKeyResp.Certificate)
-		if err != nil {
-			t.Logf("Cert data: %x", certifyKeyResp.Certificate)
-			t.Fatalf("Could not parse certificate: %v", err)
-		}
-		t.Logf("Certificate: %#v", cert)
-	*/
+	cert, err := x509.ParseCertificate(certifyKeyResp.Certificate)
+	if err != nil {
+		t.Logf("Cert data: %x", certifyKeyResp.Certificate)
+		t.Fatalf("Could not parse certificate: %v", err)
+	}
+	t.Logf("Certificate: %#v", cert)
 
 	// TODO: When DeriveChild is implemented, call it here to add more TCIs and call CertifyKey again.
 }
