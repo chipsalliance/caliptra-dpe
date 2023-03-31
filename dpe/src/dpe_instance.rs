@@ -6,8 +6,8 @@ Abstract:
 --*/
 use crate::{
     _set_flag,
-    commands::{Command, CommandExecution, InitCtxCmd, TagTciCmd},
-    response::{DpeErrorCode, GetProfileResp, NewHandleResp, Response},
+    commands::{Command, CommandExecution, InitCtxCmd},
+    response::{DpeErrorCode, GetProfileResp, Response},
     DPE_PROFILE, HANDLE_SIZE, MAX_HANDLES,
 };
 use core::marker::PhantomData;
@@ -67,39 +67,6 @@ impl<C: Crypto> DpeInstance<'_, C> {
         Ok(GetProfileResp::new(self.support.get_flags()))
     }
 
-    pub fn tag_tci(&mut self, locality: u32, cmd: &TagTciCmd) -> Result<Response, DpeErrorCode> {
-        // Make sure this command is supported.
-        if !self.support.tagging {
-            return Err(DpeErrorCode::InvalidCommand);
-        }
-        // Make sure the tag isn't used by any other contexts.
-        if self.contexts.iter().any(|c| c.has_tag && c.tag == cmd.tag) {
-            return Err(DpeErrorCode::BadTag);
-        }
-
-        let idx = self
-            .get_active_context_pos(&cmd.handle, locality)
-            .ok_or(DpeErrorCode::InvalidHandle)?;
-
-        // Make sure the command is coming from the right locality.
-        if self.contexts[idx].locality != locality {
-            return Err(DpeErrorCode::InvalidHandle);
-        }
-        if self.contexts[idx].has_tag {
-            return Err(DpeErrorCode::BadTag);
-        }
-
-        // Because handles are one-time use, let's rotate the handle, if it isn't the default.
-        self.roll_onetime_use_handle(idx)?;
-        let context = &mut self.contexts[idx];
-        context.has_tag = true;
-        context.tag = cmd.tag;
-
-        Ok(Response::TagTci(NewHandleResp {
-            handle: context.handle,
-        }))
-    }
-
     /// Deserializes the command and executes it.
     ///
     /// # Arguments
@@ -124,7 +91,7 @@ impl<C: Crypto> DpeInstance<'_, C> {
             Command::RotateCtx(cmd) => cmd.execute(self, locality),
             Command::DestroyCtx(cmd) => cmd.execute(self, locality),
             Command::ExtendTci(cmd) => cmd.execute(self, locality),
-            Command::TagTci(cmd) => self.tag_tci(locality, &cmd),
+            Command::TagTci(cmd) => cmd.execute(self, locality),
         }
     }
 
@@ -459,6 +426,7 @@ impl Iterator for FlagsIter {
 pub mod tests {
     use super::*;
     use crate::commands::DestroyCtxCmd;
+    use crate::response::NewHandleResp;
     use crate::{commands::CommandHdr, CURRENT_PROFILE_VERSION};
     use crypto::OpensslCrypto;
     use zerocopy::AsBytes;
@@ -732,136 +700,6 @@ pub mod tests {
             .get_active_context_pos(&SIMULATION_HANDLE, locality)
             .unwrap();
         assert_eq!(expected_index, idx);
-    }
-
-    #[test]
-    fn test_tag_tci() {
-        let mut dpe =
-            DpeInstance::<OpensslCrypto>::new(Support::default(), &TEST_LOCALITIES).unwrap();
-        // Make sure it returns an error if the command is marked unsupported.
-        assert_eq!(
-            Err(DpeErrorCode::InvalidCommand),
-            dpe.tag_tci(
-                TEST_LOCALITIES[0],
-                &TagTciCmd {
-                    handle: DpeInstance::<OpensslCrypto>::DEFAULT_CONTEXT_HANDLE,
-                    tag: 0,
-                }
-            )
-        );
-
-        // Make a new instance that supports tagging.
-        let mut dpe = DpeInstance::<OpensslCrypto>::new(
-            Support {
-                tagging: true,
-                simulation: true,
-                ..Support::default()
-            },
-            &TEST_LOCALITIES,
-        )
-        .unwrap();
-        InitCtxCmd::new_use_default()
-            .execute(&mut dpe, TEST_LOCALITIES[0])
-            .unwrap();
-        let sim_local = TEST_LOCALITIES[1];
-        // Make a simulation context to test against.
-        InitCtxCmd::new_simulation()
-            .execute(&mut dpe, sim_local)
-            .unwrap();
-
-        // Invalid handle.
-        assert_eq!(
-            Err(DpeErrorCode::InvalidHandle),
-            dpe.tag_tci(
-                TEST_LOCALITIES[0],
-                &TagTciCmd {
-                    handle: TEST_HANDLE,
-                    tag: 0,
-                }
-            )
-        );
-
-        // Wrong locality.
-        assert_eq!(
-            Err(DpeErrorCode::InvalidHandle),
-            dpe.tag_tci(
-                TEST_LOCALITIES[1],
-                &TagTciCmd {
-                    handle: DpeInstance::<OpensslCrypto>::DEFAULT_CONTEXT_HANDLE,
-                    tag: 0,
-                }
-            )
-        );
-
-        // Tag default handle.
-        assert_eq!(
-            Ok(Response::TagTci(NewHandleResp {
-                handle: DpeInstance::<OpensslCrypto>::DEFAULT_CONTEXT_HANDLE,
-            })),
-            dpe.tag_tci(
-                TEST_LOCALITIES[0],
-                &TagTciCmd {
-                    handle: DpeInstance::<OpensslCrypto>::DEFAULT_CONTEXT_HANDLE,
-                    tag: 0,
-                }
-            )
-        );
-
-        // Try to re-tag the default context.
-        assert_eq!(
-            Err(DpeErrorCode::BadTag),
-            dpe.tag_tci(
-                TEST_LOCALITIES[0],
-                &TagTciCmd {
-                    handle: DpeInstance::<OpensslCrypto>::DEFAULT_CONTEXT_HANDLE,
-                    tag: 1,
-                }
-            )
-        );
-
-        // Try same tag on simulation.
-        assert_eq!(
-            Err(DpeErrorCode::BadTag),
-            dpe.tag_tci(
-                TEST_LOCALITIES[1],
-                &TagTciCmd {
-                    handle: SIMULATION_HANDLE,
-                    tag: 0,
-                }
-            )
-        );
-
-        // Give the simulation context another handle so we can prove the handle rotates when it
-        // gets tagged.
-        let simulation_ctx = &mut dpe.contexts[dpe
-            .get_active_context_pos(&SIMULATION_HANDLE, sim_local)
-            .unwrap()];
-        let sim_tmp_handle = [0xff; HANDLE_SIZE];
-        simulation_ctx.handle = sim_tmp_handle;
-        assert!(dpe
-            .get_active_context_pos(&SIMULATION_HANDLE, sim_local)
-            .is_none());
-
-        // Tag simulation.
-        assert_eq!(
-            Ok(Response::TagTci(NewHandleResp {
-                handle: SIMULATION_HANDLE,
-            })),
-            dpe.tag_tci(
-                TEST_LOCALITIES[1],
-                &TagTciCmd {
-                    handle: sim_tmp_handle,
-                    tag: 1,
-                }
-            )
-        );
-        // Make sure it rotated back to the deterministic simulation handle.
-        assert!(dpe
-            .get_active_context_pos(&sim_tmp_handle, sim_local)
-            .is_none());
-        assert!(dpe
-            .get_active_context_pos(&SIMULATION_HANDLE, sim_local)
-            .is_some());
     }
 
     #[test]
