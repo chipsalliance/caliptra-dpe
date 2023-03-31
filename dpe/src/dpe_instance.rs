@@ -89,7 +89,7 @@ impl<C: Crypto> DpeInstance<'_, C> {
             .get_next_inactive_context_pos()
             .ok_or(DpeErrorCode::MaxTcis)?;
         let (context_type, handle) = if cmd.flag_is_default() {
-            (ContextType::Default, Self::DEFAULT_CONTEXT_HANDLE)
+            (ContextType::Normal, Self::DEFAULT_CONTEXT_HANDLE)
         } else {
             // Simulation.
             (ContextType::Simulation, self.generate_new_handle()?)
@@ -387,7 +387,7 @@ impl<C: Crypto> DpeInstance<'_, C> {
 
     fn get_default_context(&mut self) -> Option<&mut Context> {
         self.contexts.iter_mut().find(|context| {
-            matches!(context.state, ContextState::Active | ContextState::Locked)
+            matches!(context.state, ContextState::Active)
                 && context.handle == Self::DEFAULT_CONTEXT_HANDLE
         })
     }
@@ -395,7 +395,7 @@ impl<C: Crypto> DpeInstance<'_, C> {
     /// Recursive function that will return all of a context's descendants. Returns a u32 that is
     /// a bitmap of the node indices.
     fn get_descendants(&self, context: &Context) -> Result<u32, DpeErrorCode> {
-        if matches!(context.state, ContextState::Inactive | ContextState::Locked) {
+        if matches!(context.state, ContextState::Inactive) {
             return Err(DpeErrorCode::InvalidHandle);
         }
 
@@ -428,9 +428,8 @@ impl<C: Crypto> DpeInstance<'_, C> {
         if idx >= MAX_HANDLES {
             return Err(DpeErrorCode::InternalError);
         }
-        self.contexts[idx].handle = match self.contexts[idx].context_type {
-            ContextType::Default => Self::DEFAULT_CONTEXT_HANDLE,
-            _ => self.generate_new_handle()?,
+        if self.contexts[idx].handle != Self::DEFAULT_CONTEXT_HANDLE {
+            self.contexts[idx].handle = self.generate_new_handle()?
         };
         Ok(())
     }
@@ -593,18 +592,12 @@ enum ContextState {
     Inactive,
     /// Context is initialized and ready to be used.
     Active,
-    /// Only used for the default context. If the default context gets destroyed it cannot be
-    /// re-initialized.
-    Locked,
 }
 
 #[derive(Debug, PartialEq, Eq)]
 enum ContextType {
-    /// Typical context, has a randomized handle.
-    _Normal,
-    /// The default context. There can only be one default at any given time. Same as a `Normal`
-    /// context but with a known handle of `0x0`.
-    Default,
+    /// Typical context.
+    Normal,
     /// Has limitations on what operations can be done.
     Simulation,
 }
@@ -636,7 +629,7 @@ impl Context {
             tci: TciNodeData::new(),
             children: 0,
             parent_idx: Self::ROOT_INDEX,
-            context_type: ContextType::Default,
+            context_type: ContextType::Normal,
             state: ContextState::Inactive,
             locality: 0,
             has_tag: false,
@@ -673,11 +666,7 @@ impl Context {
         self.tci = TciNodeData::new();
         self.has_tag = false;
         self.tag = 0;
-        self.state = match self.context_type {
-            // Once a default context is destroyed, it cannot be used until the next reset cycle.
-            ContextType::Default => ContextState::Locked,
-            ContextType::_Normal | ContextType::Simulation => ContextState::Inactive,
-        };
+        self.state = ContextState::Inactive;
     }
 }
 
@@ -864,15 +853,6 @@ pub mod tests {
         );
 
         // Try to double initialize the default context.
-        assert_eq!(
-            DpeErrorCode::ArgumentNotSupported,
-            dpe.initialize_context(TEST_LOCALITIES[0], &InitCtxCmd::new_use_default())
-                .err()
-                .unwrap()
-        );
-
-        // Try to initialize locked default context.
-        dpe.get_default_context().unwrap().state = ContextState::Locked;
         assert_eq!(
             DpeErrorCode::ArgumentNotSupported,
             dpe.initialize_context(TEST_LOCALITIES[0], &InitCtxCmd::new_use_default())
@@ -1152,10 +1132,6 @@ pub mod tests {
         // Has not been activated.
         assert!(dpe.get_active_context_pos(&SIMULATION_HANDLE).is_none());
 
-        // Check if it is locked.
-        dpe.contexts[expected_index].state = ContextState::Locked;
-        assert!(dpe.get_active_context_pos(&SIMULATION_HANDLE).is_none());
-
         // Should find it now.
         dpe.contexts[expected_index].state = ContextState::Active;
         let idx = dpe.get_active_context_pos(&SIMULATION_HANDLE).unwrap();
@@ -1408,13 +1384,6 @@ pub mod tests {
         let child_1_3 = MAX_HANDLES - 2;
 
         // Root isn't active.
-        assert_eq!(
-            dpe.get_descendants(&dpe.contexts[root]),
-            Err(DpeErrorCode::InvalidHandle)
-        );
-
-        // Root is locked.
-        dpe.contexts[root].state = ContextState::Locked;
         assert_eq!(
             dpe.get_descendants(&dpe.contexts[root]),
             Err(DpeErrorCode::InvalidHandle)
