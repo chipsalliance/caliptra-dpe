@@ -4,8 +4,17 @@ Licensed under the Apache-2.0 license.
 Abstract:
     DPE Commands and deserialization.
 --*/
-use crate::{response::DpeErrorCode, DPE_PROFILE, HANDLE_SIZE};
+pub(crate) use self::initialize_context::InitCtxCmd;
+
+use crate::{
+    dpe_instance::DpeInstance,
+    response::{DpeErrorCode, Response},
+    DPE_PROFILE, HANDLE_SIZE,
+};
 use core::mem::size_of;
+use crypto::Crypto;
+
+mod initialize_context;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Command {
@@ -60,6 +69,10 @@ impl Command {
     }
 }
 
+pub trait CommandExecution<C: Crypto> {
+    fn execute(&self, dpe: &mut DpeInstance<C>, locality: u32) -> Result<Response, DpeErrorCode>;
+}
+
 // ABI Command structures
 
 #[repr(C)]
@@ -97,52 +110,6 @@ impl TryFrom<&[u8]> for CommandHdr {
             return Err(DpeErrorCode::InvalidCommand);
         }
         Ok(header)
-    }
-}
-
-#[repr(C)]
-#[derive(Debug, PartialEq, Eq)]
-#[cfg_attr(test, derive(zerocopy::AsBytes, zerocopy::FromBytes))]
-pub struct InitCtxCmd {
-    pub flags: u32,
-}
-
-impl InitCtxCmd {
-    const SIMULATION_FLAG_MASK: u32 = 1 << 31;
-    const DEFAULT_FLAG_MASK: u32 = 1 << 30;
-
-    pub const fn new_use_default() -> InitCtxCmd {
-        InitCtxCmd {
-            flags: Self::DEFAULT_FLAG_MASK,
-        }
-    }
-
-    pub const fn flag_is_simulation(&self) -> bool {
-        self.flags & Self::SIMULATION_FLAG_MASK != 0
-    }
-
-    pub const fn flag_is_default(&self) -> bool {
-        self.flags & Self::DEFAULT_FLAG_MASK != 0
-    }
-
-    #[cfg(test)]
-    pub const fn new_simulation() -> InitCtxCmd {
-        InitCtxCmd {
-            flags: Self::SIMULATION_FLAG_MASK,
-        }
-    }
-}
-
-impl TryFrom<&[u8]> for InitCtxCmd {
-    type Error = DpeErrorCode;
-
-    fn try_from(raw: &[u8]) -> Result<Self, Self::Error> {
-        if raw.len() < size_of::<InitCtxCmd>() {
-            return Err(DpeErrorCode::InvalidArgument);
-        }
-        Ok(InitCtxCmd {
-            flags: u32::from_le_bytes(raw[0..4].try_into().unwrap()),
-        })
     }
 }
 
@@ -405,7 +372,6 @@ mod tests {
         cmd_id: Command::GET_PROFILE,
         profile: DPE_PROFILE as u32,
     };
-    const TEST_INIT_CTX_CMD: InitCtxCmd = InitCtxCmd { flags: 0x1234_5678 };
     const TEST_DERIVE_CHILD_CMD: DeriveChildCmd = DeriveChildCmd {
         handle: SIMULATION_HANDLE,
         data: TEST_DIGEST,
@@ -442,15 +408,6 @@ mod tests {
         assert_eq!(
             CommandHdr::read_from_prefix(command_bytes).unwrap(),
             CommandHdr::try_from(command_bytes).unwrap(),
-        );
-    }
-
-    #[test]
-    fn try_from_init_ctx() {
-        let command_bytes = TEST_INIT_CTX_CMD.as_bytes();
-        assert_eq!(
-            InitCtxCmd::read_from_prefix(command_bytes).unwrap(),
-            InitCtxCmd::try_from(command_bytes).unwrap(),
         );
     }
 
@@ -505,18 +462,6 @@ mod tests {
         assert_eq!(
             Ok(Command::GetProfile),
             Command::deserialize(CommandHdr::new(Command::GetProfile).as_bytes())
-        );
-    }
-
-    #[test]
-    fn test_deserialize_init_ctx() {
-        let mut command = CommandHdr::new(Command::InitCtx(TEST_INIT_CTX_CMD))
-            .as_bytes()
-            .to_vec();
-        command.extend(TEST_INIT_CTX_CMD.as_bytes());
-        assert_eq!(
-            Ok(Command::InitCtx(TEST_INIT_CTX_CMD)),
-            Command::deserialize(&command)
         );
     }
 
@@ -685,22 +630,6 @@ mod tests {
         assert_eq!(
             GOOD_HEADER,
             CommandHdr::try_from(GOOD_HEADER.as_bytes()).unwrap()
-        );
-    }
-
-    #[test]
-    fn test_slice_to_init_ctx() {
-        let invalid_argument: Result<InitCtxCmd, DpeErrorCode> = Err(DpeErrorCode::InvalidArgument);
-
-        // Test if too small.
-        assert_eq!(
-            invalid_argument,
-            InitCtxCmd::try_from([0u8; size_of::<InitCtxCmd>() - 1].as_slice())
-        );
-
-        assert_eq!(
-            TEST_INIT_CTX_CMD,
-            InitCtxCmd::try_from(TEST_INIT_CTX_CMD.as_bytes()).unwrap()
         );
     }
 
