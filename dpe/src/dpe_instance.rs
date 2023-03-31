@@ -6,7 +6,7 @@ Abstract:
 --*/
 use crate::{
     _set_flag,
-    commands::{Command, CommandExecution, DestroyCtxCmd, ExtendTciCmd, InitCtxCmd, TagTciCmd},
+    commands::{Command, CommandExecution, ExtendTciCmd, InitCtxCmd, TagTciCmd},
     response::{DpeErrorCode, GetProfileResp, NewHandleResp, Response},
     DPE_PROFILE, HANDLE_SIZE, MAX_HANDLES,
 };
@@ -65,33 +65,6 @@ impl<C: Crypto> DpeInstance<'_, C> {
 
     pub fn get_profile(&self) -> Result<GetProfileResp, DpeErrorCode> {
         Ok(GetProfileResp::new(self.support.get_flags()))
-    }
-
-    /// Destroy a context and optionally all of its descendants.
-    pub fn destroy_context(
-        &mut self,
-        locality: u32,
-        cmd: &DestroyCtxCmd,
-    ) -> Result<Response, DpeErrorCode> {
-        let idx = self
-            .get_active_context_pos(&cmd.handle, locality)
-            .ok_or(DpeErrorCode::InvalidHandle)?;
-        let context = &self.contexts[idx];
-        // Make sure the command is coming from the right locality.
-        if context.locality != locality {
-            return Err(DpeErrorCode::InvalidHandle);
-        }
-
-        let to_destroy = if cmd.flag_is_destroy_descendants() {
-            (1 << idx) | self.get_descendants(context)?
-        } else {
-            1 << idx
-        };
-
-        for idx in flags_iter(to_destroy, MAX_HANDLES) {
-            self.contexts[idx].destroy();
-        }
-        Ok(Response::DestroyCtx)
     }
 
     pub fn extend_tci(
@@ -189,7 +162,7 @@ impl<C: Crypto> DpeInstance<'_, C> {
             Command::DeriveChild(cmd) => cmd.execute(self, locality),
             Command::CertifyKey(cmd) => cmd.execute(self, locality),
             Command::RotateCtx(cmd) => cmd.execute(self, locality),
-            Command::DestroyCtx(context) => self.destroy_context(locality, &context),
+            Command::DestroyCtx(cmd) => cmd.execute(self, locality),
             Command::ExtendTci(cmd) => self.extend_tci(locality, &cmd),
             Command::TagTci(cmd) => self.tag_tci(locality, &cmd),
         }
@@ -525,6 +498,7 @@ impl Iterator for FlagsIter {
 #[cfg(test)]
 pub mod tests {
     use super::*;
+    use crate::commands::DestroyCtxCmd;
     use crate::DpeProfile;
     use crate::{commands::CommandHdr, CURRENT_PROFILE_VERSION};
     use crypto::OpensslCrypto;
@@ -604,25 +578,20 @@ pub mod tests {
         // Make sure the other locality can't destroy it.
         assert_eq!(
             Err(DpeErrorCode::InvalidHandle),
-            dpe.destroy_context(
-                TEST_LOCALITIES[0],
-                &DestroyCtxCmd {
-                    handle: SIMULATION_HANDLE,
-                    flags: 0
-                }
-            )
+            DestroyCtxCmd {
+                handle: SIMULATION_HANDLE,
+                flags: 0
+            }
+            .execute(&mut dpe, TEST_LOCALITIES[0])
         );
 
         // Make sure right locality can destroy it.
-        assert!(dpe
-            .destroy_context(
-                TEST_LOCALITIES[1],
-                &DestroyCtxCmd {
-                    handle: SIMULATION_HANDLE,
-                    flags: 0,
-                },
-            )
-            .is_ok());
+        assert!(DestroyCtxCmd {
+            handle: SIMULATION_HANDLE,
+            flags: 0,
+        }
+        .execute(&mut dpe, TEST_LOCALITIES[1])
+        .is_ok());
     }
 
     #[test]

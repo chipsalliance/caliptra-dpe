@@ -4,6 +4,7 @@ Licensed under the Apache-2.0 license.
 Abstract:
     DPE Commands and deserialization.
 --*/
+pub(crate) use self::destroy_context::DestroyCtxCmd;
 pub(crate) use self::initialize_context::InitCtxCmd;
 
 use self::certify_key::CertifyKeyCmd;
@@ -20,6 +21,7 @@ use crypto::Crypto;
 
 mod certify_key;
 mod derive_child;
+mod destroy_context;
 mod initialize_context;
 mod rotate_context;
 
@@ -123,41 +125,6 @@ impl TryFrom<&[u8]> for CommandHdr {
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq)]
 #[cfg_attr(test, derive(zerocopy::AsBytes, zerocopy::FromBytes))]
-pub struct DestroyCtxCmd {
-    pub handle: [u8; HANDLE_SIZE],
-    pub flags: u32,
-}
-
-impl DestroyCtxCmd {
-    const DESTROY_CHILDREN_FLAG_MASK: u32 = 1 << 31;
-
-    pub const fn flag_is_destroy_descendants(&self) -> bool {
-        self.flags & Self::DESTROY_CHILDREN_FLAG_MASK != 0
-    }
-}
-
-impl TryFrom<&[u8]> for DestroyCtxCmd {
-    type Error = DpeErrorCode;
-
-    fn try_from(raw: &[u8]) -> Result<Self, Self::Error> {
-        if raw.len() < size_of::<DestroyCtxCmd>() {
-            return Err(DpeErrorCode::InvalidArgument);
-        }
-
-        let mut handle = [0; HANDLE_SIZE];
-        handle.copy_from_slice(&raw[0..HANDLE_SIZE]);
-
-        let raw = &raw[HANDLE_SIZE..];
-        Ok(DestroyCtxCmd {
-            handle,
-            flags: u32::from_le_bytes(raw[0..4].try_into().unwrap()),
-        })
-    }
-}
-
-#[repr(C)]
-#[derive(Debug, PartialEq, Eq)]
-#[cfg_attr(test, derive(zerocopy::AsBytes, zerocopy::FromBytes))]
 pub struct ExtendTciCmd {
     pub handle: [u8; HANDLE_SIZE],
     pub data: [u8; DPE_PROFILE.get_hash_size()],
@@ -226,10 +193,6 @@ pub mod tests {
         cmd_id: Command::GET_PROFILE,
         profile: DPE_PROFILE as u32,
     };
-    const TEST_DESTROY_CTX_CMD: DestroyCtxCmd = DestroyCtxCmd {
-        handle: SIMULATION_HANDLE,
-        flags: 0x1234_5678,
-    };
     const TEST_EXTEND_TCI_CMD: ExtendTciCmd = ExtendTciCmd {
         handle: SIMULATION_HANDLE,
         data: TEST_DIGEST,
@@ -245,15 +208,6 @@ pub mod tests {
         assert_eq!(
             CommandHdr::read_from_prefix(command_bytes).unwrap(),
             CommandHdr::try_from(command_bytes).unwrap(),
-        );
-    }
-
-    #[test]
-    fn try_from_destroy_ctx() {
-        let command_bytes = TEST_DESTROY_CTX_CMD.as_bytes();
-        assert_eq!(
-            DestroyCtxCmd::read_from_prefix(command_bytes).unwrap(),
-            DestroyCtxCmd::try_from(command_bytes).unwrap(),
         );
     }
 
@@ -281,18 +235,6 @@ pub mod tests {
         assert_eq!(
             Ok(Command::GetProfile),
             Command::deserialize(CommandHdr::new(Command::GetProfile).as_bytes())
-        );
-    }
-
-    #[test]
-    fn test_deserialize_destroy_context() {
-        let mut command = CommandHdr::new(Command::DestroyCtx(TEST_DESTROY_CTX_CMD))
-            .as_bytes()
-            .to_vec();
-        command.extend(TEST_DESTROY_CTX_CMD.as_bytes());
-        assert_eq!(
-            Ok(Command::DestroyCtx(TEST_DESTROY_CTX_CMD)),
-            Command::deserialize(&command)
         );
     }
 
@@ -429,23 +371,6 @@ pub mod tests {
     }
 
     #[test]
-    fn test_slice_to_destroy_ctx() {
-        let invalid_argument: Result<DestroyCtxCmd, DpeErrorCode> =
-            Err(DpeErrorCode::InvalidArgument);
-
-        // Test if too small.
-        assert_eq!(
-            invalid_argument,
-            DestroyCtxCmd::try_from([0u8; size_of::<DestroyCtxCmd>() - 1].as_slice())
-        );
-
-        assert_eq!(
-            TEST_DESTROY_CTX_CMD,
-            DestroyCtxCmd::try_from(TEST_DESTROY_CTX_CMD.as_bytes()).unwrap()
-        );
-    }
-
-    #[test]
     fn test_slice_to_extend_tci() {
         // Test if too small.
         assert_eq!(
@@ -469,7 +394,7 @@ pub mod tests {
 
         assert_eq!(
             TEST_TAG_TCI_CMD,
-            TagTciCmd::try_from(TEST_DESTROY_CTX_CMD.as_bytes()).unwrap()
+            TagTciCmd::try_from(TEST_TAG_TCI_CMD.as_bytes()).unwrap()
         );
     }
 
