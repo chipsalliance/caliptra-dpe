@@ -6,7 +6,7 @@ use crate::{
     DPE_PROFILE,
 };
 use core::mem::size_of;
-use crypto::{Crypto, Hasher};
+use crypto::Crypto;
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq)]
@@ -49,20 +49,8 @@ impl<C: Crypto> CommandExecution<C> for ExtendTciCmd {
             return Err(DpeErrorCode::InvalidHandle);
         }
 
-        // Derive the new TCI.
-        let mut hasher =
-            C::hash_initialize(DPE_PROFILE.alg_len()).map_err(|_| DpeErrorCode::InternalError)?;
-        hasher
-            .update(&context.tci.tci_cumulative.0)
-            .map_err(|_| DpeErrorCode::InternalError)?;
-        hasher
-            .update(&self.data)
-            .map_err(|_| DpeErrorCode::InternalError)?;
-        hasher
-            .finish(&mut context.tci.tci_cumulative.0)
-            .map_err(|_| DpeErrorCode::InternalError)?;
+        dpe.add_tci_measurement(idx, &TciMeasurement(self.data), locality)?;
 
-        context.tci.tci_current = TciMeasurement(self.data);
         // Rotate the handle if it isn't the default context.
         dpe.roll_onetime_use_handle(idx)?;
         Ok(Response::ExtendTci(NewHandleResp {
@@ -80,7 +68,6 @@ mod tests {
             tests::{SIMULATION_HANDLE, TEST_LOCALITIES},
             Support,
         },
-        DpeProfile,
     };
     use crypto::OpensslCrypto;
     use zerocopy::{AsBytes, FromBytes};
@@ -177,47 +164,6 @@ mod tests {
         assert_eq!(handle, default_context.handle);
         // Make sure the current TCI was updated correctly.
         assert_eq!(data, default_context.tci.tci_current.0);
-
-        let md = match DPE_PROFILE {
-            DpeProfile::P256Sha256 => openssl::hash::MessageDigest::sha256(),
-            DpeProfile::P384Sha384 => openssl::hash::MessageDigest::sha384(),
-        };
-        let mut hasher = openssl::hash::Hasher::new(md).unwrap();
-
-        // Add the default TCI.
-        hasher.update(&[0; DPE_PROFILE.get_hash_size()]).unwrap();
-        hasher.update(&data).unwrap();
-        let first_cumulative = hasher.finish().unwrap();
-
-        // Make sure the cumulative was computed correctly.
-        assert_eq!(
-            first_cumulative.as_ref(),
-            default_context.tci.tci_cumulative.0
-        );
-
-        let data = [2; DPE_PROFILE.get_hash_size()];
-        ExtendTciCmd {
-            handle: ContextHandle::default(),
-            data,
-        }
-        .execute(&mut dpe, TEST_LOCALITIES[0])
-        .unwrap();
-        // Make sure the current TCI was updated correctly.
-        let default_context = &dpe.contexts[dpe
-            .get_active_context_pos(&default_handle, locality)
-            .unwrap()];
-        assert_eq!(data, default_context.tci.tci_current.0);
-
-        let mut hasher = openssl::hash::Hasher::new(md).unwrap();
-        hasher.update(&first_cumulative).unwrap();
-        hasher.update(&data).unwrap();
-        let second_cumulative = hasher.finish().unwrap();
-
-        // Make sure the cumulative was computed correctly.
-        assert_eq!(
-            second_cumulative.as_ref(),
-            default_context.tci.tci_cumulative.0
-        );
 
         let sim_local = TEST_LOCALITIES[1];
         dpe.support.simulation = true;

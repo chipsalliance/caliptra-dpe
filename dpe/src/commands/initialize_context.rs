@@ -1,7 +1,7 @@
 // Licensed under the Apache-2.0 license.
 use super::CommandExecution;
 use crate::{
-    dpe_instance::{ContextHandle, ContextType, DpeInstance},
+    dpe_instance::{ActiveContextArgs, Context, ContextHandle, ContextType, DpeInstance},
     response::{DpeErrorCode, NewHandleResp, Response},
 };
 use core::mem::size_of;
@@ -67,7 +67,13 @@ impl<C: Crypto> CommandExecution<C> for InitCtxCmd {
             (ContextType::Simulation, dpe.generate_new_handle()?)
         };
 
-        dpe.contexts[idx].activate(context_type, locality, &handle);
+        dpe.contexts[idx].activate(&ActiveContextArgs {
+            context_type,
+            locality,
+            handle: &handle,
+            tci_type: 0,
+            parent_idx: Context::ROOT_INDEX,
+        });
         Ok(Response::InitCtx(NewHandleResp { handle }))
     }
 }
