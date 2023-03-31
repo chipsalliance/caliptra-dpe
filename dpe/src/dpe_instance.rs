@@ -7,8 +7,8 @@ Abstract:
 use crate::{
     _set_flag,
     commands::{
-        CertifyKeyCmd, Command, DeriveChildCmd, DestroyCtxCmd, ExtendTciCmd, InitCtxCmd,
-        RotateCtxCmd, TagTciCmd,
+        CertifyKeyCmd, Command, CommandExecution, DeriveChildCmd, DestroyCtxCmd, ExtendTciCmd,
+        InitCtxCmd, RotateCtxCmd, TagTciCmd,
     },
     response::{CertifyKeyResp, DpeErrorCode, GetProfileResp, NewHandleResp, Response},
     x509::{EcdsaPub, EcdsaSignature, MeasurementData, Name, X509CertWriter},
@@ -20,13 +20,13 @@ use core::mem::size_of;
 use crypto::{Crypto, Hasher};
 
 pub struct DpeInstance<'a, C: Crypto> {
-    contexts: [Context; MAX_HANDLES],
-    support: Support,
-    localities: &'a [u32],
+    pub(crate) contexts: [Context; MAX_HANDLES],
+    pub(crate) support: Support,
+    pub(crate) localities: &'a [u32],
 
     /// Can only successfully execute the initialize context command for non-simulation (i.e.
     /// `InitializeContext(simulation=false)`) once per reset cycle.
-    has_initialized: bool,
+    pub(crate) has_initialized: bool,
 
     // All functions/data in C are static and global. For this reason
     // DpeInstance doesn't actually need to hold an instance. The PhantomData
@@ -35,7 +35,7 @@ pub struct DpeInstance<'a, C: Crypto> {
 }
 
 impl<C: Crypto> DpeInstance<'_, C> {
-    const DEFAULT_CONTEXT_HANDLE: [u8; HANDLE_SIZE] = [0; HANDLE_SIZE];
+    pub(crate) const DEFAULT_CONTEXT_HANDLE: [u8; HANDLE_SIZE] = [0; HANDLE_SIZE];
     const MAX_NEW_HANDLE_ATTEMPTS: usize = 8;
     pub const AUTO_INIT_LOCALITY: u32 = 0;
 
@@ -63,47 +63,13 @@ impl<C: Crypto> DpeInstance<'_, C> {
             if !localities.iter().any(|&l| l == Self::AUTO_INIT_LOCALITY) {
                 return Err(DpeErrorCode::InvalidLocality);
             }
-            dpe.initialize_context(Self::AUTO_INIT_LOCALITY, &InitCtxCmd::new_use_default())?;
+            InitCtxCmd::new_use_default().execute(&mut dpe, Self::AUTO_INIT_LOCALITY)?;
         }
         Ok(dpe)
     }
 
     pub fn get_profile(&self) -> Result<GetProfileResp, DpeErrorCode> {
         Ok(GetProfileResp::new(self.support.get_flags()))
-    }
-
-    pub fn initialize_context(
-        &mut self,
-        locality: u32,
-        cmd: &InitCtxCmd,
-    ) -> Result<NewHandleResp, DpeErrorCode> {
-        // This function can only be called once for non-simulation contexts.
-        if (cmd.flag_is_default() && self.has_initialized)
-            || (cmd.flag_is_simulation() && !self.support.simulation)
-        {
-            return Err(DpeErrorCode::ArgumentNotSupported);
-        }
-
-        // A flag must be set, but it can't be both flags. The base DPE CDI is locked for
-        // non-simulation contexts once it is used once to prevent later software from accessing the
-        // CDI.
-        if !(cmd.flag_is_default() ^ cmd.flag_is_simulation()) {
-            return Err(DpeErrorCode::InvalidArgument);
-        }
-
-        let idx = self
-            .get_next_inactive_context_pos()
-            .ok_or(DpeErrorCode::MaxTcis)?;
-        let (context_type, handle) = if cmd.flag_is_default() {
-            self.has_initialized = true;
-            (ContextType::Normal, Self::DEFAULT_CONTEXT_HANDLE)
-        } else {
-            // Simulation.
-            (ContextType::Simulation, self.generate_new_handle()?)
-        };
-
-        self.contexts[idx].activate(context_type, locality, &handle);
-        Ok(NewHandleResp { handle })
     }
 
     pub fn derive_child(
@@ -366,9 +332,7 @@ impl<C: Crypto> DpeInstance<'_, C> {
         let command = Command::deserialize(cmd)?;
         match command {
             Command::GetProfile => Ok(Response::GetProfile(self.get_profile()?)),
-            Command::InitCtx(context) => Ok(Response::InitCtx(
-                self.initialize_context(locality, &context)?,
-            )),
+            Command::InitCtx(cmd) => cmd.execute(self, locality),
             Command::DeriveChild(cmd) => self.derive_child(locality, &cmd),
             Command::CertifyKey(context) => {
                 Ok(Response::CertifyKey(self.certify_key(locality, &context)?))
@@ -380,7 +344,11 @@ impl<C: Crypto> DpeInstance<'_, C> {
         }
     }
 
-    fn get_active_context_pos(&self, handle: &[u8; HANDLE_SIZE], locality: u32) -> Option<usize> {
+    pub(crate) fn get_active_context_pos(
+        &self,
+        handle: &[u8; HANDLE_SIZE],
+        locality: u32,
+    ) -> Option<usize> {
         self.contexts.iter().position(|context| {
             context.state == ContextState::Active
                 && &context.handle == handle
@@ -388,7 +356,7 @@ impl<C: Crypto> DpeInstance<'_, C> {
         })
     }
 
-    fn get_next_inactive_context_pos(&self) -> Option<usize> {
+    pub(crate) fn get_next_inactive_context_pos(&self) -> Option<usize> {
         self.contexts
             .iter()
             .position(|context| context.state == ContextState::Inactive)
@@ -396,7 +364,7 @@ impl<C: Crypto> DpeInstance<'_, C> {
 
     /// Recursive function that will return all of a context's descendants. Returns a u32 that is
     /// a bitmap of the node indices.
-    fn get_descendants(&self, context: &Context) -> Result<u32, DpeErrorCode> {
+    pub(crate) fn get_descendants(&self, context: &Context) -> Result<u32, DpeErrorCode> {
         if matches!(context.state, ContextState::Inactive) {
             return Err(DpeErrorCode::InvalidHandle);
         }
@@ -408,7 +376,7 @@ impl<C: Crypto> DpeInstance<'_, C> {
         Ok(descendants)
     }
 
-    fn generate_new_handle(&self) -> Result<[u8; HANDLE_SIZE], DpeErrorCode> {
+    pub(crate) fn generate_new_handle(&self) -> Result<[u8; HANDLE_SIZE], DpeErrorCode> {
         for _ in 0..Self::MAX_NEW_HANDLE_ATTEMPTS {
             let mut handle = [0; HANDLE_SIZE];
             C::rand_bytes(&mut handle).map_err(|_| DpeErrorCode::InternalError)?;
@@ -426,7 +394,7 @@ impl<C: Crypto> DpeInstance<'_, C> {
     /// # Arguments
     ///
     /// * `idx` - the index of the context
-    fn roll_onetime_use_handle(&mut self, idx: usize) -> Result<(), DpeErrorCode> {
+    pub(crate) fn roll_onetime_use_handle(&mut self, idx: usize) -> Result<(), DpeErrorCode> {
         if idx >= MAX_HANDLES {
             return Err(DpeErrorCode::InternalError);
         }
@@ -441,7 +409,7 @@ impl<C: Crypto> DpeInstance<'_, C> {
     /// derivation for `context`.
     ///
     /// Returns the number of TCIs written to `nodes`
-    fn get_tcb_nodes(
+    pub(crate) fn get_tcb_nodes(
         &self,
         context: &Context,
         nodes: &mut [TciNodeData],
@@ -589,7 +557,7 @@ impl TciNodeData {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-enum ContextState {
+pub(crate) enum ContextState {
     /// Inactive or uninitialized.
     Inactive,
     /// Context is initialized and ready to be used.
@@ -597,7 +565,7 @@ enum ContextState {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-enum ContextType {
+pub(crate) enum ContextType {
     /// Typical context.
     Normal,
     /// Has limitations on what operations can be done.
@@ -605,21 +573,21 @@ enum ContextType {
 }
 
 #[repr(C, align(4))]
-struct Context {
-    handle: [u8; HANDLE_SIZE],
-    tci: TciNodeData,
+pub(crate) struct Context {
+    pub handle: [u8; HANDLE_SIZE],
+    pub tci: TciNodeData,
     /// Bitmap of the node indices that are children of this node
-    children: u32,
+    pub children: u32,
     /// Index in DPE instance of the parent context. 0xFF if this node is the root
-    parent_idx: u8,
-    context_type: ContextType,
-    state: ContextState,
+    pub parent_idx: u8,
+    pub context_type: ContextType,
+    pub state: ContextState,
     /// Which hardware locality owns the context.
-    locality: u32,
+    pub locality: u32,
     /// Whether a tag has been assigned to the context.
-    has_tag: bool,
+    pub has_tag: bool,
     /// Optional tag assigned to the context.
-    tag: u32,
+    pub tag: u32,
 }
 
 impl Context {
@@ -679,14 +647,14 @@ impl Context {
 ///
 /// * `flags` - bits to be iterated over
 /// * `max` - number of bits to be considered
-fn flags_iter(flags: u32, max: usize) -> FlagsIter {
+pub(crate) fn flags_iter(flags: u32, max: usize) -> FlagsIter {
     assert!((1..=u32::BITS).contains(&(max as u32)));
     FlagsIter {
         flags: flags & (u32::MAX >> (u32::BITS - max as u32)),
     }
 }
 
-struct FlagsIter {
+pub(crate) struct FlagsIter {
     flags: u32,
 }
 
@@ -772,7 +740,8 @@ pub mod tests {
         }
 
         // Initialize a context to run some tests against.
-        dpe.initialize_context(TEST_LOCALITIES[1], &InitCtxCmd::new_simulation())
+        InitCtxCmd::new_simulation()
+            .execute(&mut dpe, TEST_LOCALITIES[1])
             .unwrap();
 
         // Make sure the locality was recorded correctly.
@@ -845,75 +814,6 @@ pub mod tests {
     }
 
     #[test]
-    fn test_initialize_context() {
-        let mut dpe =
-            DpeInstance::<OpensslCrypto>::new(Support::default(), &TEST_LOCALITIES).unwrap();
-
-        // Make sure default context is 0x0.
-        assert_eq!(
-            DpeInstance::<OpensslCrypto>::DEFAULT_CONTEXT_HANDLE,
-            dpe.initialize_context(TEST_LOCALITIES[0], &InitCtxCmd::new_use_default())
-                .unwrap()
-                .handle
-        );
-
-        // Try to double initialize the default context.
-        assert_eq!(
-            DpeErrorCode::ArgumentNotSupported,
-            dpe.initialize_context(TEST_LOCALITIES[0], &InitCtxCmd::new_use_default())
-                .err()
-                .unwrap()
-        );
-
-        // Try not setting any flags.
-        assert_eq!(
-            DpeErrorCode::InvalidArgument,
-            dpe.initialize_context(TEST_LOCALITIES[0], &InitCtxCmd { flags: 0 })
-                .err()
-                .unwrap()
-        );
-
-        // Try simulation when not supported.
-        assert_eq!(
-            DpeErrorCode::ArgumentNotSupported,
-            dpe.initialize_context(TEST_LOCALITIES[0], &InitCtxCmd::new_simulation())
-                .err()
-                .unwrap()
-        );
-
-        // Change to support simulation.
-        let mut dpe = DpeInstance::<OpensslCrypto>::new(
-            Support {
-                simulation: true,
-                ..Support::default()
-            },
-            &TEST_LOCALITIES,
-        )
-        .unwrap();
-
-        // Try setting both flags.
-        assert_eq!(
-            DpeErrorCode::InvalidArgument,
-            dpe.initialize_context(TEST_LOCALITIES[0], &InitCtxCmd { flags: 3 << 30 })
-                .err()
-                .unwrap()
-        );
-
-        // Set all handles as active.
-        for context in dpe.contexts.iter_mut() {
-            context.state = ContextState::Active;
-        }
-
-        // Try to initialize a context when it is full.
-        assert_eq!(
-            DpeErrorCode::MaxTcis,
-            dpe.initialize_context(TEST_LOCALITIES[0], &InitCtxCmd::new_simulation())
-                .err()
-                .unwrap()
-        );
-    }
-
-    #[test]
     fn test_rotate_context() {
         let mut dpe =
             DpeInstance::<OpensslCrypto>::new(Support::default(), &TEST_LOCALITIES).unwrap();
@@ -939,7 +839,8 @@ pub mod tests {
             &TEST_LOCALITIES,
         )
         .unwrap();
-        dpe.initialize_context(TEST_LOCALITIES[0], &InitCtxCmd::new_use_default())
+        InitCtxCmd::new_use_default()
+            .execute(&mut dpe, TEST_LOCALITIES[0])
             .unwrap();
 
         // Invalid handle.
@@ -989,9 +890,13 @@ pub mod tests {
         let mut dpe =
             DpeInstance::<OpensslCrypto>::new(Support::default(), &TEST_LOCALITIES).unwrap();
 
-        let init_resp = dpe
-            .initialize_context(TEST_LOCALITIES[0], &InitCtxCmd::new_use_default())
-            .unwrap();
+        let init_resp = match InitCtxCmd::new_use_default()
+            .execute(&mut dpe, TEST_LOCALITIES[0])
+            .unwrap()
+        {
+            Response::InitCtx(resp) => resp,
+            _ => panic!("Incorrect return type."),
+        };
         let certify_cmd = CertifyKeyCmd {
             handle: init_resp.handle,
             flags: 0,
@@ -1173,7 +1078,8 @@ pub mod tests {
 
         // Turn on support.
         dpe.support.extend_tci = true;
-        dpe.initialize_context(TEST_LOCALITIES[0], &InitCtxCmd::new_use_default())
+        InitCtxCmd::new_use_default()
+            .execute(&mut dpe, TEST_LOCALITIES[0])
             .unwrap();
 
         // Wrong locality.
@@ -1257,7 +1163,8 @@ pub mod tests {
 
         let sim_local = TEST_LOCALITIES[1];
         dpe.support.simulation = true;
-        dpe.initialize_context(sim_local, &InitCtxCmd::new_simulation())
+        InitCtxCmd::new_simulation()
+            .execute(&mut dpe, sim_local)
             .unwrap();
 
         // Give the simulation context another handle so we can prove the handle rotates when it
@@ -1314,11 +1221,13 @@ pub mod tests {
             &TEST_LOCALITIES,
         )
         .unwrap();
-        dpe.initialize_context(TEST_LOCALITIES[0], &InitCtxCmd::new_use_default())
+        InitCtxCmd::new_use_default()
+            .execute(&mut dpe, TEST_LOCALITIES[0])
             .unwrap();
         let sim_local = TEST_LOCALITIES[1];
         // Make a simulation context to test against.
-        dpe.initialize_context(sim_local, &InitCtxCmd::new_simulation())
+        InitCtxCmd::new_simulation()
+            .execute(&mut dpe, sim_local)
             .unwrap();
 
         // Invalid handle.
