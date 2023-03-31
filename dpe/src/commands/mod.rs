@@ -9,6 +9,7 @@ pub(crate) use self::initialize_context::InitCtxCmd;
 
 use self::certify_key::CertifyKeyCmd;
 use self::derive_child::DeriveChildCmd;
+use self::extend_tci::ExtendTciCmd;
 use self::rotate_context::RotateCtxCmd;
 
 use crate::{
@@ -22,6 +23,7 @@ use crypto::Crypto;
 mod certify_key;
 mod derive_child;
 mod destroy_context;
+mod extend_tci;
 mod initialize_context;
 mod rotate_context;
 
@@ -125,31 +127,6 @@ impl TryFrom<&[u8]> for CommandHdr {
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq)]
 #[cfg_attr(test, derive(zerocopy::AsBytes, zerocopy::FromBytes))]
-pub struct ExtendTciCmd {
-    pub handle: [u8; HANDLE_SIZE],
-    pub data: [u8; DPE_PROFILE.get_hash_size()],
-}
-
-impl TryFrom<&[u8]> for ExtendTciCmd {
-    type Error = DpeErrorCode;
-
-    fn try_from(raw: &[u8]) -> Result<Self, Self::Error> {
-        if raw.len() < size_of::<ExtendTciCmd>() {
-            return Err(DpeErrorCode::InvalidArgument);
-        }
-
-        Ok(ExtendTciCmd {
-            handle: raw[0..HANDLE_SIZE].try_into().unwrap(),
-            data: raw[HANDLE_SIZE..HANDLE_SIZE + DPE_PROFILE.get_hash_size()]
-                .try_into()
-                .unwrap(),
-        })
-    }
-}
-
-#[repr(C)]
-#[derive(Debug, PartialEq, Eq)]
-#[cfg_attr(test, derive(zerocopy::AsBytes, zerocopy::FromBytes))]
 pub struct TagTciCmd {
     pub handle: [u8; HANDLE_SIZE],
     pub tag: u32,
@@ -193,10 +170,6 @@ pub mod tests {
         cmd_id: Command::GET_PROFILE,
         profile: DPE_PROFILE as u32,
     };
-    const TEST_EXTEND_TCI_CMD: ExtendTciCmd = ExtendTciCmd {
-        handle: SIMULATION_HANDLE,
-        data: TEST_DIGEST,
-    };
     const TEST_TAG_TCI_CMD: TagTciCmd = TagTciCmd {
         handle: SIMULATION_HANDLE,
         tag: 0x1234_5678,
@@ -208,15 +181,6 @@ pub mod tests {
         assert_eq!(
             CommandHdr::read_from_prefix(command_bytes).unwrap(),
             CommandHdr::try_from(command_bytes).unwrap(),
-        );
-    }
-
-    #[test]
-    fn try_from_extend_tci() {
-        let command_bytes = TEST_EXTEND_TCI_CMD.as_bytes();
-        assert_eq!(
-            ExtendTciCmd::read_from_prefix(command_bytes).unwrap(),
-            ExtendTciCmd::try_from(command_bytes).unwrap(),
         );
     }
 
@@ -235,18 +199,6 @@ pub mod tests {
         assert_eq!(
             Ok(Command::GetProfile),
             Command::deserialize(CommandHdr::new(Command::GetProfile).as_bytes())
-        );
-    }
-
-    #[test]
-    fn test_deserialize_extend_tci() {
-        let mut command = CommandHdr::new(Command::ExtendTci(TEST_EXTEND_TCI_CMD))
-            .as_bytes()
-            .to_vec();
-        command.extend(TEST_EXTEND_TCI_CMD.as_bytes());
-        assert_eq!(
-            Ok(Command::ExtendTci(TEST_EXTEND_TCI_CMD)),
-            Command::deserialize(&command)
         );
     }
 
@@ -367,20 +319,6 @@ pub mod tests {
         assert_eq!(
             GOOD_HEADER,
             CommandHdr::try_from(GOOD_HEADER.as_bytes()).unwrap()
-        );
-    }
-
-    #[test]
-    fn test_slice_to_extend_tci() {
-        // Test if too small.
-        assert_eq!(
-            Err(DpeErrorCode::InvalidArgument),
-            ExtendTciCmd::try_from([0u8; size_of::<ExtendTciCmd>() - 1].as_slice())
-        );
-
-        assert_eq!(
-            TEST_EXTEND_TCI_CMD,
-            ExtendTciCmd::try_from(TEST_EXTEND_TCI_CMD.as_bytes()).unwrap()
         );
     }
 
