@@ -6,9 +6,7 @@ Abstract:
 --*/
 use crate::{
     _set_flag,
-    commands::{
-        Command, CommandExecution, DestroyCtxCmd, ExtendTciCmd, InitCtxCmd, RotateCtxCmd, TagTciCmd,
-    },
+    commands::{Command, CommandExecution, DestroyCtxCmd, ExtendTciCmd, InitCtxCmd, TagTciCmd},
     response::{DpeErrorCode, GetProfileResp, NewHandleResp, Response},
     DPE_PROFILE, HANDLE_SIZE, MAX_HANDLES,
 };
@@ -67,30 +65,6 @@ impl<C: Crypto> DpeInstance<'_, C> {
 
     pub fn get_profile(&self) -> Result<GetProfileResp, DpeErrorCode> {
         Ok(GetProfileResp::new(self.support.get_flags()))
-    }
-
-    /// Rotate the handle for given context to another random value. This also allows changing the
-    /// locality of the context.
-    pub fn rotate_context(
-        &mut self,
-        locality: u32,
-        cmd: &RotateCtxCmd,
-    ) -> Result<Response, DpeErrorCode> {
-        if !self.support.rotate_context {
-            return Err(DpeErrorCode::InvalidCommand);
-        }
-        let idx = self
-            .get_active_context_pos(&cmd.handle, locality)
-            .ok_or(DpeErrorCode::InvalidHandle)?;
-
-        // Make sure the command is coming from the right locality.
-        if self.contexts[idx].locality != locality {
-            return Err(DpeErrorCode::InvalidHandle);
-        }
-
-        let new_handle = self.generate_new_handle()?;
-        self.contexts[idx].handle = new_handle;
-        Ok(Response::RotateCtx(NewHandleResp { handle: new_handle }))
     }
 
     /// Destroy a context and optionally all of its descendants.
@@ -214,7 +188,7 @@ impl<C: Crypto> DpeInstance<'_, C> {
             Command::InitCtx(cmd) => cmd.execute(self, locality),
             Command::DeriveChild(cmd) => cmd.execute(self, locality),
             Command::CertifyKey(cmd) => cmd.execute(self, locality),
-            Command::RotateCtx(cmd) => self.rotate_context(locality, &cmd),
+            Command::RotateCtx(cmd) => cmd.execute(self, locality),
             Command::DestroyCtx(context) => self.destroy_context(locality, &context),
             Command::ExtendTci(cmd) => self.extend_tci(locality, &cmd),
             Command::TagTci(cmd) => self.tag_tci(locality, &cmd),
@@ -685,78 +659,6 @@ pub mod tests {
         let profile = dpe.get_profile().unwrap();
         assert_eq!(profile.version, CURRENT_PROFILE_VERSION);
         assert_eq!(profile.flags, SUPPORT.get_flags());
-    }
-
-    #[test]
-    fn test_rotate_context() {
-        let mut dpe =
-            DpeInstance::<OpensslCrypto>::new(Support::default(), &TEST_LOCALITIES).unwrap();
-        // Make sure it returns an error if the command is marked unsupported.
-        assert_eq!(
-            Err(DpeErrorCode::InvalidCommand),
-            dpe.rotate_context(
-                TEST_LOCALITIES[0],
-                &RotateCtxCmd {
-                    handle: DpeInstance::<OpensslCrypto>::DEFAULT_CONTEXT_HANDLE,
-                    flags: 0,
-                    target_locality: 0
-                }
-            )
-        );
-
-        // Make a new instance that supports RotateContext.
-        let mut dpe = DpeInstance::<OpensslCrypto>::new(
-            Support {
-                rotate_context: true,
-                ..Support::default()
-            },
-            &TEST_LOCALITIES,
-        )
-        .unwrap();
-        InitCtxCmd::new_use_default()
-            .execute(&mut dpe, TEST_LOCALITIES[0])
-            .unwrap();
-
-        // Invalid handle.
-        assert_eq!(
-            Err(DpeErrorCode::InvalidHandle),
-            dpe.rotate_context(
-                TEST_LOCALITIES[0],
-                &RotateCtxCmd {
-                    handle: TEST_HANDLE,
-                    flags: 0,
-                    target_locality: 0
-                }
-            )
-        );
-
-        // Wrong locality.
-        assert_eq!(
-            Err(DpeErrorCode::InvalidHandle),
-            dpe.rotate_context(
-                TEST_LOCALITIES[1],
-                &RotateCtxCmd {
-                    handle: DpeInstance::<OpensslCrypto>::DEFAULT_CONTEXT_HANDLE,
-                    flags: 0,
-                    target_locality: 0
-                }
-            )
-        );
-
-        // Rotate default handle.
-        assert_eq!(
-            Ok(Response::RotateCtx(NewHandleResp {
-                handle: SIMULATION_HANDLE
-            })),
-            dpe.rotate_context(
-                TEST_LOCALITIES[0],
-                &RotateCtxCmd {
-                    handle: DpeInstance::<OpensslCrypto>::DEFAULT_CONTEXT_HANDLE,
-                    flags: 0,
-                    target_locality: 0
-                }
-            )
-        );
     }
 
     #[test]
