@@ -8,6 +8,8 @@ pub(crate) use self::initialize_context::InitCtxCmd;
 
 use self::certify_key::CertifyKeyCmd;
 use self::derive_child::DeriveChildCmd;
+use self::rotate_context::RotateCtxCmd;
+
 use crate::{
     dpe_instance::DpeInstance,
     response::{DpeErrorCode, Response},
@@ -19,6 +21,7 @@ use crypto::Crypto;
 mod certify_key;
 mod derive_child;
 mod initialize_context;
+mod rotate_context;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Command {
@@ -120,43 +123,6 @@ impl TryFrom<&[u8]> for CommandHdr {
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq)]
 #[cfg_attr(test, derive(zerocopy::AsBytes, zerocopy::FromBytes))]
-pub struct RotateCtxCmd {
-    pub handle: [u8; HANDLE_SIZE],
-    pub flags: u32,
-    pub target_locality: u32,
-}
-
-impl RotateCtxCmd {
-    const CHANGE_LOCALITY_FLAG: u32 = 31;
-
-    pub const fn flag_is_change_locality(&self) -> bool {
-        self.flags & Self::CHANGE_LOCALITY_FLAG != 0
-    }
-}
-
-impl TryFrom<&[u8]> for RotateCtxCmd {
-    type Error = DpeErrorCode;
-
-    fn try_from(raw: &[u8]) -> Result<Self, Self::Error> {
-        if raw.len() < size_of::<RotateCtxCmd>() {
-            return Err(DpeErrorCode::InvalidArgument);
-        }
-
-        let mut handle = [0; HANDLE_SIZE];
-        handle.copy_from_slice(&raw[0..HANDLE_SIZE]);
-
-        let raw = &raw[HANDLE_SIZE..];
-        Ok(RotateCtxCmd {
-            handle,
-            flags: u32::from_le_bytes(raw[0..4].try_into().unwrap()),
-            target_locality: u32::from_le_bytes(raw[4..8].try_into().unwrap()),
-        })
-    }
-}
-
-#[repr(C)]
-#[derive(Debug, PartialEq, Eq)]
-#[cfg_attr(test, derive(zerocopy::AsBytes, zerocopy::FromBytes))]
 pub struct DestroyCtxCmd {
     pub handle: [u8; HANDLE_SIZE],
     pub flags: u32,
@@ -240,7 +206,7 @@ impl TryFrom<&[u8]> for TagTciCmd {
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::dpe_instance::tests::{SIMULATION_HANDLE, TEST_HANDLE};
+    use crate::dpe_instance::tests::SIMULATION_HANDLE;
     use crate::{DpeProfile, DPE_PROFILE};
     use zerocopy::{AsBytes, FromBytes};
 
@@ -259,11 +225,6 @@ pub mod tests {
         magic: CommandHdr::DPE_COMMAND_MAGIC,
         cmd_id: Command::GET_PROFILE,
         profile: DPE_PROFILE as u32,
-    };
-    const TEST_ROTATE_CTX_CMD: RotateCtxCmd = RotateCtxCmd {
-        flags: 0x1234_5678,
-        handle: TEST_HANDLE,
-        target_locality: 0x9876_5432,
     };
     const TEST_DESTROY_CTX_CMD: DestroyCtxCmd = DestroyCtxCmd {
         handle: SIMULATION_HANDLE,
@@ -284,15 +245,6 @@ pub mod tests {
         assert_eq!(
             CommandHdr::read_from_prefix(command_bytes).unwrap(),
             CommandHdr::try_from(command_bytes).unwrap(),
-        );
-    }
-
-    #[test]
-    fn try_from_rotate_ctx() {
-        let command_bytes = TEST_ROTATE_CTX_CMD.as_bytes();
-        assert_eq!(
-            RotateCtxCmd::read_from_prefix(command_bytes).unwrap(),
-            RotateCtxCmd::try_from(command_bytes).unwrap(),
         );
     }
 
@@ -329,18 +281,6 @@ pub mod tests {
         assert_eq!(
             Ok(Command::GetProfile),
             Command::deserialize(CommandHdr::new(Command::GetProfile).as_bytes())
-        );
-    }
-
-    #[test]
-    fn test_deserialize_rotate_context() {
-        let mut command = CommandHdr::new(Command::RotateCtx(TEST_ROTATE_CTX_CMD))
-            .as_bytes()
-            .to_vec();
-        command.extend(TEST_ROTATE_CTX_CMD.as_bytes());
-        assert_eq!(
-            Ok(Command::RotateCtx(TEST_ROTATE_CTX_CMD)),
-            Command::deserialize(&command)
         );
     }
 
@@ -485,23 +425,6 @@ pub mod tests {
         assert_eq!(
             GOOD_HEADER,
             CommandHdr::try_from(GOOD_HEADER.as_bytes()).unwrap()
-        );
-    }
-
-    #[test]
-    fn test_slice_to_rotate_ctx() {
-        let invalid_argument: Result<RotateCtxCmd, DpeErrorCode> =
-            Err(DpeErrorCode::InvalidArgument);
-
-        // Test if too small.
-        assert_eq!(
-            invalid_argument,
-            RotateCtxCmd::try_from([0u8; size_of::<RotateCtxCmd>() - 1].as_slice())
-        );
-
-        assert_eq!(
-            TEST_ROTATE_CTX_CMD,
-            RotateCtxCmd::try_from(TEST_ROTATE_CTX_CMD.as_bytes()).unwrap()
         );
     }
 
