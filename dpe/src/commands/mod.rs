@@ -6,6 +6,7 @@ Abstract:
 --*/
 pub(crate) use self::initialize_context::InitCtxCmd;
 
+use self::certify_key::CertifyKeyCmd;
 use self::derive_child::DeriveChildCmd;
 use crate::{
     dpe_instance::DpeInstance,
@@ -15,6 +16,7 @@ use crate::{
 use core::mem::size_of;
 use crypto::Crypto;
 
+mod certify_key;
 mod derive_child;
 mod initialize_context;
 
@@ -155,50 +157,6 @@ impl TryFrom<&[u8]> for RotateCtxCmd {
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq)]
 #[cfg_attr(test, derive(zerocopy::AsBytes, zerocopy::FromBytes))]
-pub struct CertifyKeyCmd {
-    pub handle: [u8; HANDLE_SIZE],
-    pub flags: u32,
-    pub label: [u8; DPE_PROFILE.get_hash_size()],
-}
-
-impl CertifyKeyCmd {
-    pub const fn new() -> CertifyKeyCmd {
-        CertifyKeyCmd {
-            handle: [0; HANDLE_SIZE],
-            flags: 0,
-            label: [0; DPE_PROFILE.get_hash_size()],
-        }
-    }
-}
-
-impl TryFrom<&[u8]> for CertifyKeyCmd {
-    type Error = DpeErrorCode;
-
-    fn try_from(raw: &[u8]) -> Result<Self, Self::Error> {
-        if raw.len() < size_of::<CertifyKeyCmd>() {
-            return Err(DpeErrorCode::InvalidArgument);
-        }
-
-        let mut cmd = CertifyKeyCmd::new();
-        let mut offset: usize = 0;
-
-        cmd.handle
-            .copy_from_slice(&raw[offset..offset + HANDLE_SIZE]);
-        offset += HANDLE_SIZE;
-
-        cmd.flags = u32::from_le_bytes(raw[offset..offset + size_of::<u32>()].try_into().unwrap());
-        offset += size_of::<u32>();
-
-        cmd.label
-            .copy_from_slice(&raw[offset..offset + DPE_PROFILE.get_hash_size()]);
-
-        Ok(cmd)
-    }
-}
-
-#[repr(C)]
-#[derive(Debug, PartialEq, Eq)]
-#[cfg_attr(test, derive(zerocopy::AsBytes, zerocopy::FromBytes))]
 pub struct DestroyCtxCmd {
     pub handle: [u8; HANDLE_SIZE],
     pub flags: u32,
@@ -311,11 +269,6 @@ pub mod tests {
         handle: SIMULATION_HANDLE,
         flags: 0x1234_5678,
     };
-    const TEST_CERTIFY_KEY_CMD: CertifyKeyCmd = CertifyKeyCmd {
-        handle: SIMULATION_HANDLE,
-        flags: 0x1234_5678,
-        label: [0xaa; DPE_PROFILE.get_hash_size()],
-    };
     const TEST_EXTEND_TCI_CMD: ExtendTciCmd = ExtendTciCmd {
         handle: SIMULATION_HANDLE,
         data: TEST_DIGEST,
@@ -423,18 +376,6 @@ pub mod tests {
         command.extend(TEST_TAG_TCI_CMD.as_bytes());
         assert_eq!(
             Ok(Command::TagTci(TEST_TAG_TCI_CMD)),
-            Command::deserialize(&command)
-        );
-    }
-
-    #[test]
-    fn test_deserialize_certify_key() {
-        let mut command = CommandHdr::new(Command::CertifyKey(TEST_CERTIFY_KEY_CMD))
-            .as_bytes()
-            .to_vec();
-        command.extend(TEST_CERTIFY_KEY_CMD.as_bytes());
-        assert_eq!(
-            Ok(Command::CertifyKey(TEST_CERTIFY_KEY_CMD)),
             Command::deserialize(&command)
         );
     }
@@ -561,23 +502,6 @@ pub mod tests {
         assert_eq!(
             TEST_ROTATE_CTX_CMD,
             RotateCtxCmd::try_from(TEST_ROTATE_CTX_CMD.as_bytes()).unwrap()
-        );
-    }
-
-    #[test]
-    fn test_slice_to_certify_key() {
-        let invalid_argument: Result<CertifyKeyCmd, DpeErrorCode> =
-            Err(DpeErrorCode::InvalidArgument);
-
-        // Test if too small.
-        assert_eq!(
-            invalid_argument,
-            CertifyKeyCmd::try_from([0u8; size_of::<CertifyKeyCmd>() - 1].as_slice())
-        );
-
-        assert_eq!(
-            TEST_CERTIFY_KEY_CMD,
-            CertifyKeyCmd::try_from(TEST_CERTIFY_KEY_CMD.as_bytes()).unwrap()
         );
     }
 
