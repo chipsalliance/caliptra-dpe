@@ -1,9 +1,8 @@
 // Licensed under the Apache-2.0 license.
 use super::CommandExecution;
 use crate::{
-    dpe_instance::DpeInstance,
+    dpe_instance::{ContextHandle, DpeInstance},
     response::{DpeErrorCode, NewHandleResp, Response},
-    HANDLE_SIZE,
 };
 use core::mem::size_of;
 use crypto::Crypto;
@@ -12,7 +11,7 @@ use crypto::Crypto;
 #[derive(Debug, PartialEq, Eq)]
 #[cfg_attr(test, derive(zerocopy::AsBytes, zerocopy::FromBytes))]
 pub struct TagTciCmd {
-    handle: [u8; HANDLE_SIZE],
+    handle: ContextHandle,
     tag: u32,
 }
 
@@ -25,8 +24,12 @@ impl TryFrom<&[u8]> for TagTciCmd {
         }
 
         Ok(TagTciCmd {
-            handle: raw[0..HANDLE_SIZE].try_into().unwrap(),
-            tag: u32::from_le_bytes(raw[HANDLE_SIZE..HANDLE_SIZE + 4].try_into().unwrap()),
+            handle: ContextHandle::try_from(raw)?,
+            tag: u32::from_le_bytes(
+                raw[ContextHandle::SIZE..ContextHandle::SIZE + 4]
+                    .try_into()
+                    .unwrap(),
+            ),
         })
     }
 }
@@ -127,7 +130,7 @@ mod tests {
         assert_eq!(
             Err(DpeErrorCode::InvalidCommand),
             TagTciCmd {
-                handle: DpeInstance::<OpensslCrypto>::DEFAULT_CONTEXT_HANDLE,
+                handle: ContextHandle::default(),
                 tag: 0,
             }
             .execute(&mut dpe, TEST_LOCALITIES[0])
@@ -166,7 +169,7 @@ mod tests {
         assert_eq!(
             Err(DpeErrorCode::InvalidHandle),
             TagTciCmd {
-                handle: DpeInstance::<OpensslCrypto>::DEFAULT_CONTEXT_HANDLE,
+                handle: ContextHandle::default(),
                 tag: 0,
             }
             .execute(&mut dpe, TEST_LOCALITIES[1])
@@ -175,10 +178,10 @@ mod tests {
         // Tag default handle.
         assert_eq!(
             Ok(Response::TagTci(NewHandleResp {
-                handle: DpeInstance::<OpensslCrypto>::DEFAULT_CONTEXT_HANDLE,
+                handle: ContextHandle::default(),
             })),
             TagTciCmd {
-                handle: DpeInstance::<OpensslCrypto>::DEFAULT_CONTEXT_HANDLE,
+                handle: ContextHandle::default(),
                 tag: 0,
             }
             .execute(&mut dpe, TEST_LOCALITIES[0])
@@ -188,7 +191,7 @@ mod tests {
         assert_eq!(
             Err(DpeErrorCode::BadTag),
             TagTciCmd {
-                handle: DpeInstance::<OpensslCrypto>::DEFAULT_CONTEXT_HANDLE,
+                handle: ContextHandle::default(),
                 tag: 1,
             }
             .execute(&mut dpe, TEST_LOCALITIES[0])
@@ -209,7 +212,7 @@ mod tests {
         let simulation_ctx = &mut dpe.contexts[dpe
             .get_active_context_pos(&SIMULATION_HANDLE, sim_local)
             .unwrap()];
-        let sim_tmp_handle = [0xff; HANDLE_SIZE];
+        let sim_tmp_handle = ContextHandle([0xff; ContextHandle::SIZE]);
         simulation_ctx.handle = sim_tmp_handle;
         assert!(dpe
             .get_active_context_pos(&SIMULATION_HANDLE, sim_local)

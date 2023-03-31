@@ -1,10 +1,10 @@
 // Licensed under the Apache-2.0 license.
 use super::CommandExecution;
 use crate::{
-    dpe_instance::{DpeInstance, TciNodeData},
+    dpe_instance::{ContextHandle, DpeInstance, TciNodeData},
     response::{CertifyKeyResp, DpeErrorCode, Response},
     x509::{EcdsaPub, EcdsaSignature, MeasurementData, Name, X509CertWriter},
-    DPE_PROFILE, HANDLE_SIZE, MAX_CERT_SIZE, MAX_HANDLES,
+    DPE_PROFILE, MAX_CERT_SIZE, MAX_HANDLES,
 };
 use core::{
     fmt::{Error, Write},
@@ -16,7 +16,7 @@ use crypto::Crypto;
 #[derive(Debug, PartialEq, Eq)]
 #[cfg_attr(test, derive(zerocopy::AsBytes, zerocopy::FromBytes))]
 pub struct CertifyKeyCmd {
-    handle: [u8; HANDLE_SIZE],
+    handle: ContextHandle,
     flags: u32,
     label: [u8; DPE_PROFILE.get_hash_size()],
 }
@@ -24,7 +24,7 @@ pub struct CertifyKeyCmd {
 impl CertifyKeyCmd {
     const fn new() -> CertifyKeyCmd {
         CertifyKeyCmd {
-            handle: [0; HANDLE_SIZE],
+            handle: ContextHandle::default(),
             flags: 0,
             label: [0; DPE_PROFILE.get_hash_size()],
         }
@@ -185,9 +185,8 @@ impl TryFrom<&[u8]> for CertifyKeyCmd {
         let mut cmd = CertifyKeyCmd::new();
         let mut offset: usize = 0;
 
-        cmd.handle
-            .copy_from_slice(&raw[offset..offset + HANDLE_SIZE]);
-        offset += HANDLE_SIZE;
+        cmd.handle = ContextHandle::try_from(raw)?;
+        offset += ContextHandle::SIZE;
 
         cmd.flags = u32::from_le_bytes(raw[offset..offset + size_of::<u32>()].try_into().unwrap());
         offset += size_of::<u32>();

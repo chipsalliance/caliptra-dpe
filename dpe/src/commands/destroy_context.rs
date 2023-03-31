@@ -1,9 +1,9 @@
 // Licensed under the Apache-2.0 license.
 use super::CommandExecution;
 use crate::{
-    dpe_instance::{flags_iter, DpeInstance},
+    dpe_instance::{flags_iter, ContextHandle, DpeInstance},
     response::{DpeErrorCode, Response},
-    HANDLE_SIZE, MAX_HANDLES,
+    MAX_HANDLES,
 };
 use core::mem::size_of;
 use crypto::Crypto;
@@ -12,7 +12,7 @@ use crypto::Crypto;
 #[derive(Debug, PartialEq, Eq)]
 #[cfg_attr(test, derive(zerocopy::AsBytes, zerocopy::FromBytes))]
 pub struct DestroyCtxCmd {
-    pub handle: [u8; HANDLE_SIZE],
+    pub handle: ContextHandle,
     pub flags: u32,
 }
 
@@ -32,10 +32,9 @@ impl TryFrom<&[u8]> for DestroyCtxCmd {
             return Err(DpeErrorCode::InvalidArgument);
         }
 
-        let mut handle = [0; HANDLE_SIZE];
-        handle.copy_from_slice(&raw[0..HANDLE_SIZE]);
+        let handle = ContextHandle::try_from(raw)?;
 
-        let raw = &raw[HANDLE_SIZE..];
+        let raw = &raw[ContextHandle::SIZE..];
         Ok(DestroyCtxCmd {
             handle,
             flags: u32::from_le_bytes(raw[0..4].try_into().unwrap()),

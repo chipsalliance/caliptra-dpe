@@ -1,7 +1,7 @@
 // Licensed under the Apache-2.0 license.
 use super::CommandExecution;
 use crate::{
-    dpe_instance::{ContextType, DpeInstance},
+    dpe_instance::{ContextHandle, ContextType, DpeInstance},
     response::{DpeErrorCode, NewHandleResp, Response},
 };
 use core::mem::size_of;
@@ -61,10 +61,7 @@ impl<C: Crypto> CommandExecution<C> for InitCtxCmd {
             .ok_or(DpeErrorCode::MaxTcis)?;
         let (context_type, handle) = if self.flag_is_default() {
             dpe.has_initialized = true;
-            (
-                ContextType::Normal,
-                DpeInstance::<C>::DEFAULT_CONTEXT_HANDLE,
-            )
+            (ContextType::Normal, ContextHandle::default())
         } else {
             // Simulation.
             (ContextType::Simulation, dpe.generate_new_handle()?)
@@ -150,7 +147,7 @@ mod tests {
             _ => panic!("Wrong response type."),
         };
         // Make sure default context is 0x0.
-        assert_eq!(DpeInstance::<OpensslCrypto>::DEFAULT_CONTEXT_HANDLE, handle);
+        assert_eq!(ContextHandle::default(), handle);
 
         // Try to double initialize the default context.
         assert_eq!(

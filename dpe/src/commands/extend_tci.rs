@@ -1,9 +1,9 @@
 // Licensed under the Apache-2.0 license.
 use super::CommandExecution;
 use crate::{
-    dpe_instance::{DpeInstance, TciMeasurement},
+    dpe_instance::{ContextHandle, DpeInstance, TciMeasurement},
     response::{DpeErrorCode, NewHandleResp, Response},
-    DPE_PROFILE, HANDLE_SIZE,
+    DPE_PROFILE,
 };
 use core::mem::size_of;
 use crypto::{Crypto, Hasher};
@@ -12,7 +12,7 @@ use crypto::{Crypto, Hasher};
 #[derive(Debug, PartialEq, Eq)]
 #[cfg_attr(test, derive(zerocopy::AsBytes, zerocopy::FromBytes))]
 pub struct ExtendTciCmd {
-    handle: [u8; HANDLE_SIZE],
+    handle: ContextHandle,
     data: [u8; DPE_PROFILE.get_hash_size()],
 }
 
@@ -25,8 +25,8 @@ impl TryFrom<&[u8]> for ExtendTciCmd {
         }
 
         Ok(ExtendTciCmd {
-            handle: raw[0..HANDLE_SIZE].try_into().unwrap(),
-            data: raw[HANDLE_SIZE..HANDLE_SIZE + DPE_PROFILE.get_hash_size()]
+            handle: ContextHandle::try_from(raw)?,
+            data: raw[ContextHandle::SIZE..ContextHandle::SIZE + DPE_PROFILE.get_hash_size()]
                 .try_into()
                 .unwrap(),
         })
@@ -133,7 +133,7 @@ mod tests {
         assert_eq!(
             Err(DpeErrorCode::InvalidCommand),
             ExtendTciCmd {
-                handle: DpeInstance::<OpensslCrypto>::DEFAULT_CONTEXT_HANDLE,
+                handle: ContextHandle::default(),
                 data: [0; DPE_PROFILE.get_hash_size()],
             }
             .execute(&mut dpe, TEST_LOCALITIES[0])
@@ -149,21 +149,21 @@ mod tests {
         assert_eq!(
             Err(DpeErrorCode::InvalidHandle),
             ExtendTciCmd {
-                handle: DpeInstance::<OpensslCrypto>::DEFAULT_CONTEXT_HANDLE,
+                handle: ContextHandle::default(),
                 data: [0; DPE_PROFILE.get_hash_size()],
             }
             .execute(&mut dpe, TEST_LOCALITIES[1])
         );
 
         let locality = DpeInstance::<OpensslCrypto>::AUTO_INIT_LOCALITY;
-        let default_handle = DpeInstance::<OpensslCrypto>::DEFAULT_CONTEXT_HANDLE;
+        let default_handle = ContextHandle::default();
         let handle = dpe.contexts[dpe
             .get_active_context_pos(&default_handle, locality)
             .unwrap()]
         .handle;
         let data = [1; DPE_PROFILE.get_hash_size()];
         ExtendTciCmd {
-            handle: DpeInstance::<OpensslCrypto>::DEFAULT_CONTEXT_HANDLE,
+            handle: ContextHandle::default(),
             data,
         }
         .execute(&mut dpe, TEST_LOCALITIES[0])
@@ -196,7 +196,7 @@ mod tests {
 
         let data = [2; DPE_PROFILE.get_hash_size()];
         ExtendTciCmd {
-            handle: DpeInstance::<OpensslCrypto>::DEFAULT_CONTEXT_HANDLE,
+            handle: ContextHandle::default(),
             data,
         }
         .execute(&mut dpe, TEST_LOCALITIES[0])
@@ -229,7 +229,7 @@ mod tests {
         let simulation_ctx = &mut dpe.contexts[dpe
             .get_active_context_pos(&SIMULATION_HANDLE, sim_local)
             .unwrap()];
-        let sim_tmp_handle = [0xff; HANDLE_SIZE];
+        let sim_tmp_handle = ContextHandle([0xff; ContextHandle::SIZE]);
         simulation_ctx.handle = sim_tmp_handle;
         assert!(dpe
             .get_active_context_pos(&SIMULATION_HANDLE, sim_local)

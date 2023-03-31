@@ -8,7 +8,7 @@ use crate::{
     _set_flag,
     commands::{Command, CommandExecution, InitCtxCmd},
     response::{DpeErrorCode, GetProfileResp, Response},
-    DPE_PROFILE, HANDLE_SIZE, MAX_HANDLES,
+    DPE_PROFILE, MAX_HANDLES,
 };
 use core::marker::PhantomData;
 use core::mem::size_of;
@@ -30,7 +30,6 @@ pub struct DpeInstance<'a, C: Crypto> {
 }
 
 impl<C: Crypto> DpeInstance<'_, C> {
-    pub(crate) const DEFAULT_CONTEXT_HANDLE: [u8; HANDLE_SIZE] = [0; HANDLE_SIZE];
     const MAX_NEW_HANDLE_ATTEMPTS: usize = 8;
     pub const AUTO_INIT_LOCALITY: u32 = 0;
 
@@ -97,7 +96,7 @@ impl<C: Crypto> DpeInstance<'_, C> {
 
     pub(crate) fn get_active_context_pos(
         &self,
-        handle: &[u8; HANDLE_SIZE],
+        handle: &ContextHandle,
         locality: u32,
     ) -> Option<usize> {
         self.contexts.iter().position(|context| {
@@ -127,13 +126,11 @@ impl<C: Crypto> DpeInstance<'_, C> {
         Ok(descendants)
     }
 
-    pub(crate) fn generate_new_handle(&self) -> Result<[u8; HANDLE_SIZE], DpeErrorCode> {
+    pub(crate) fn generate_new_handle(&self) -> Result<ContextHandle, DpeErrorCode> {
         for _ in 0..Self::MAX_NEW_HANDLE_ATTEMPTS {
-            let mut handle = [0; HANDLE_SIZE];
-            C::rand_bytes(&mut handle).map_err(|_| DpeErrorCode::InternalError)?;
-            if handle != Self::DEFAULT_CONTEXT_HANDLE
-                && !self.contexts.iter().any(|c| c.handle == handle)
-            {
+            let mut handle = ContextHandle::default();
+            C::rand_bytes(&mut handle.0).map_err(|_| DpeErrorCode::InternalError)?;
+            if !handle.is_default() && !self.contexts.iter().any(|c| c.handle == handle) {
                 return Ok(handle);
             }
         }
@@ -149,7 +146,7 @@ impl<C: Crypto> DpeInstance<'_, C> {
         if idx >= MAX_HANDLES {
             return Err(DpeErrorCode::InternalError);
         }
-        if self.contexts[idx].handle != Self::DEFAULT_CONTEXT_HANDLE {
+        if !self.contexts[idx].handle.is_default() {
             self.contexts[idx].handle = self.generate_new_handle()?
         };
         Ok(())
@@ -325,7 +322,7 @@ pub(crate) enum ContextType {
 
 #[repr(C, align(4))]
 pub(crate) struct Context {
-    pub handle: [u8; HANDLE_SIZE],
+    pub handle: ContextHandle,
     pub tci: TciNodeData,
     /// Bitmap of the node indices that are children of this node
     pub children: u32,
@@ -346,7 +343,7 @@ impl Context {
 
     const fn new() -> Context {
         Context {
-            handle: [0; HANDLE_SIZE],
+            handle: ContextHandle::default(),
             tci: TciNodeData::new(),
             children: 0,
             parent_idx: Self::ROOT_INDEX,
@@ -366,13 +363,8 @@ impl Context {
     /// * `locality` - Which hardware locality owns the context.
     /// * `handle` - Value that will be used to refer to the context. Random value for simulation
     ///   contexts and 0x0 for the default context.
-    pub fn activate(
-        &mut self,
-        context_type: ContextType,
-        locality: u32,
-        handle: &[u8; HANDLE_SIZE],
-    ) {
-        self.handle.copy_from_slice(handle);
+    pub fn activate(&mut self, context_type: ContextType, locality: u32, handle: &ContextHandle) {
+        self.handle = *handle;
         self.tci = TciNodeData::new();
         self.children = 0;
         self.parent_idx = Self::ROOT_INDEX;
@@ -422,6 +414,48 @@ impl Iterator for FlagsIter {
     }
 }
 
+#[repr(C)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[cfg_attr(test, derive(zerocopy::AsBytes, zerocopy::FromBytes))]
+pub struct ContextHandle(pub [u8; ContextHandle::SIZE]);
+
+impl ContextHandle {
+    pub const SIZE: usize = 16;
+    const DEFAULT: [u8; Self::SIZE] = [0; Self::SIZE];
+
+    /// Returns the default context handle.
+    pub const fn default() -> ContextHandle {
+        ContextHandle(Self::DEFAULT)
+    }
+
+    /// Whether the handle is the default context handle.
+    pub fn is_default(&self) -> bool {
+        self.0 == Self::DEFAULT
+    }
+
+    /// Serializes a handle to the given destination and returns the length copied.
+    pub fn serialize(&self, dst: &mut [u8]) -> Result<usize, DpeErrorCode> {
+        if dst.len() < size_of::<Self>() {
+            return Err(DpeErrorCode::InternalError);
+        }
+
+        dst[..ContextHandle::SIZE].copy_from_slice(&self.0);
+        Ok(ContextHandle::SIZE)
+    }
+}
+
+impl TryFrom<&[u8]> for ContextHandle {
+    type Error = DpeErrorCode;
+
+    fn try_from(raw: &[u8]) -> Result<Self, Self::Error> {
+        if raw.len() < size_of::<ContextHandle>() {
+            return Err(DpeErrorCode::InvalidArgument);
+        }
+
+        Ok(ContextHandle(raw[0..Self::SIZE].try_into().unwrap()))
+    }
+}
+
 #[cfg(test)]
 pub mod tests {
     use super::*;
@@ -442,10 +476,10 @@ pub mod tests {
         internal_info: false,
         internal_dice: false,
     };
-    pub const TEST_HANDLE: [u8; HANDLE_SIZE] =
-        [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
-    pub const SIMULATION_HANDLE: [u8; HANDLE_SIZE] =
-        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+    pub const TEST_HANDLE: ContextHandle =
+        ContextHandle([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
+    pub const SIMULATION_HANDLE: ContextHandle =
+        ContextHandle([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
 
     pub const TEST_LOCALITIES: [u32; 2] = [
         DpeInstance::<OpensslCrypto>::AUTO_INIT_LOCALITY,
@@ -677,9 +711,7 @@ pub mod tests {
         let mut dpe =
             DpeInstance::<OpensslCrypto>::new(Support::default(), &TEST_LOCALITIES).unwrap();
         let expected_index = 7;
-        dpe.contexts[expected_index]
-            .handle
-            .copy_from_slice(&SIMULATION_HANDLE);
+        dpe.contexts[expected_index].handle = SIMULATION_HANDLE;
 
         let locality = DpeInstance::<OpensslCrypto>::AUTO_INIT_LOCALITY;
         // Has not been activated.
