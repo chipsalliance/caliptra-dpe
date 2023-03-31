@@ -1,9 +1,8 @@
 // Licensed under the Apache-2.0 license.
 use super::CommandExecution;
 use crate::{
-    dpe_instance::DpeInstance,
+    dpe_instance::{ContextHandle, DpeInstance},
     response::{DpeErrorCode, NewHandleResp, Response},
-    HANDLE_SIZE,
 };
 use core::mem::size_of;
 use crypto::Crypto;
@@ -12,7 +11,7 @@ use crypto::Crypto;
 #[derive(Debug, PartialEq, Eq)]
 #[cfg_attr(test, derive(zerocopy::AsBytes, zerocopy::FromBytes))]
 pub struct RotateCtxCmd {
-    handle: [u8; HANDLE_SIZE],
+    handle: ContextHandle,
     flags: u32,
     target_locality: u32,
 }
@@ -25,10 +24,9 @@ impl TryFrom<&[u8]> for RotateCtxCmd {
             return Err(DpeErrorCode::InvalidArgument);
         }
 
-        let mut handle = [0; HANDLE_SIZE];
-        handle.copy_from_slice(&raw[0..HANDLE_SIZE]);
+        let handle = ContextHandle::try_from(raw)?;
 
-        let raw = &raw[HANDLE_SIZE..];
+        let raw = &raw[ContextHandle::SIZE..];
         Ok(RotateCtxCmd {
             handle,
             flags: u32::from_le_bytes(raw[0..4].try_into().unwrap()),
@@ -122,7 +120,7 @@ mod tests {
         assert_eq!(
             Err(DpeErrorCode::InvalidCommand),
             RotateCtxCmd {
-                handle: DpeInstance::<OpensslCrypto>::DEFAULT_CONTEXT_HANDLE,
+                handle: ContextHandle::default(),
                 flags: 0,
                 target_locality: 0
             }
@@ -157,7 +155,7 @@ mod tests {
         assert_eq!(
             Err(DpeErrorCode::InvalidHandle),
             RotateCtxCmd {
-                handle: DpeInstance::<OpensslCrypto>::DEFAULT_CONTEXT_HANDLE,
+                handle: ContextHandle::default(),
                 flags: 0,
                 target_locality: 0
             }
@@ -170,7 +168,7 @@ mod tests {
                 handle: SIMULATION_HANDLE
             })),
             RotateCtxCmd {
-                handle: DpeInstance::<OpensslCrypto>::DEFAULT_CONTEXT_HANDLE,
+                handle: ContextHandle::default(),
                 flags: 0,
                 target_locality: 0
             }

@@ -4,7 +4,9 @@ Licensed under the Apache-2.0 license.
 Abstract:
     DPE reponses and serialization.
 --*/
-use crate::{CURRENT_PROFILE_VERSION, DPE_PROFILE, HANDLE_SIZE, MAX_CERT_SIZE, MAX_HANDLES};
+use crate::{
+    dpe_instance::ContextHandle, CURRENT_PROFILE_VERSION, DPE_PROFILE, MAX_CERT_SIZE, MAX_HANDLES,
+};
 use core::mem::size_of;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -109,17 +111,12 @@ impl GetProfileResp {
 #[derive(Debug, PartialEq, Eq)]
 #[cfg_attr(test, derive(zerocopy::AsBytes, zerocopy::FromBytes))]
 pub struct NewHandleResp {
-    pub handle: [u8; HANDLE_SIZE],
+    pub handle: ContextHandle,
 }
 
 impl NewHandleResp {
     pub fn serialize(&self, dst: &mut [u8]) -> Result<usize, DpeErrorCode> {
-        if dst.len() < size_of::<Self>() {
-            return Err(DpeErrorCode::InternalError);
-        }
-
-        dst[..HANDLE_SIZE].copy_from_slice(&self.handle);
-        Ok(HANDLE_SIZE)
+        self.handle.serialize(dst)
     }
 }
 
@@ -127,8 +124,8 @@ impl NewHandleResp {
 #[derive(Debug, PartialEq, Eq)]
 #[cfg_attr(test, derive(zerocopy::AsBytes, zerocopy::FromBytes))]
 pub struct DeriveChildResp {
-    pub handle: [u8; HANDLE_SIZE],
-    pub parent_handle: [u8; HANDLE_SIZE],
+    pub handle: ContextHandle,
+    pub parent_handle: ContextHandle,
 }
 
 impl DeriveChildResp {
@@ -138,10 +135,8 @@ impl DeriveChildResp {
         }
 
         let mut offset: usize = 0;
-        dst[offset..offset + HANDLE_SIZE].copy_from_slice(&self.handle);
-        offset += HANDLE_SIZE;
-        dst[offset..offset + HANDLE_SIZE].copy_from_slice(&self.parent_handle);
-        offset += HANDLE_SIZE;
+        offset += self.handle.serialize(&mut dst[offset..])?;
+        offset += self.parent_handle.serialize(&mut dst[offset..])?;
         Ok(offset)
     }
 }
@@ -149,7 +144,7 @@ impl DeriveChildResp {
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq)]
 pub struct CertifyKeyResp {
-    pub new_context_handle: [u8; HANDLE_SIZE],
+    pub new_context_handle: ContextHandle,
     pub derived_pubkey_x: [u8; DPE_PROFILE.get_ecc_int_size()],
     pub derived_pubkey_y: [u8; DPE_PROFILE.get_ecc_int_size()],
     pub cert_size: u32,
@@ -163,8 +158,7 @@ impl CertifyKeyResp {
         }
 
         let mut offset: usize = 0;
-        dst[offset..offset + HANDLE_SIZE].copy_from_slice(&self.new_context_handle);
-        offset += HANDLE_SIZE;
+        offset += self.new_context_handle.serialize(&mut dst[offset..])?;
         dst[offset..offset + DPE_PROFILE.get_ecc_int_size()]
             .copy_from_slice(&self.derived_pubkey_x);
         offset += self.derived_pubkey_x.len();
@@ -183,7 +177,7 @@ impl CertifyKeyResp {
 impl Default for CertifyKeyResp {
     fn default() -> Self {
         Self {
-            new_context_handle: [0; HANDLE_SIZE],
+            new_context_handle: ContextHandle::default(),
             derived_pubkey_x: [0; DPE_PROFILE.get_ecc_int_size()],
             derived_pubkey_y: [0; DPE_PROFILE.get_ecc_int_size()],
             cert_size: 0,
@@ -223,10 +217,10 @@ mod tests {
     };
     const TEST_DERIVE_CHILD_RESP: DeriveChildResp = DeriveChildResp {
         handle: TEST_HANDLE,
-        parent_handle: [
+        parent_handle: ContextHandle([
             0xff, 0xfe, 0xfd, 0xfc, 0xfb, 0xfa, 0xf9, 0xf8, 0xf7, 0xf6, 0xf5, 0xf4, 0xf3, 0xf2,
             0xf1, 0xf0,
-        ],
+        ]),
     };
 
     #[test]
@@ -300,7 +294,7 @@ mod tests {
         let mut response_buffer = [0; size_of::<NewHandleResp>()];
 
         assert_eq!(
-            HANDLE_SIZE,
+            ContextHandle::SIZE,
             TEST_NEW_HANDLE_RESP
                 .serialize(response_buffer.as_mut_slice())
                 .unwrap()
@@ -319,7 +313,7 @@ mod tests {
         let mut response_buffer = [0; size_of::<DeriveChildResp>()];
 
         assert_eq!(
-            2 * HANDLE_SIZE,
+            2 * ContextHandle::SIZE,
             TEST_DERIVE_CHILD_RESP
                 .serialize(response_buffer.as_mut_slice())
                 .unwrap()

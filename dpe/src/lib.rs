@@ -15,7 +15,6 @@ mod x509;
 
 const MAX_CERT_SIZE: usize = 2048;
 const MAX_HANDLES: usize = 24;
-const HANDLE_SIZE: usize = 16;
 const CURRENT_PROFILE_VERSION: u32 = 0;
 
 pub enum DpeProfile {

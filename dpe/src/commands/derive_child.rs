@@ -1,9 +1,9 @@
 // Licensed under the Apache-2.0 license.
 use super::CommandExecution;
 use crate::{
-    dpe_instance::DpeInstance,
+    dpe_instance::{ContextHandle, DpeInstance},
     response::{DpeErrorCode, Response},
-    DPE_PROFILE, HANDLE_SIZE,
+    DPE_PROFILE,
 };
 use core::mem::size_of;
 use crypto::Crypto;
@@ -12,7 +12,7 @@ use crypto::Crypto;
 #[derive(Debug, PartialEq, Eq)]
 #[cfg_attr(test, derive(zerocopy::AsBytes, zerocopy::FromBytes))]
 pub struct DeriveChildCmd {
-    handle: [u8; HANDLE_SIZE],
+    handle: ContextHandle,
     data: [u8; DPE_PROFILE.get_hash_size()],
     flags: u32,
     tcb_type: u32,
@@ -58,9 +58,8 @@ impl TryFrom<&[u8]> for DeriveChildCmd {
 
         let mut offset: usize = 0;
 
-        let mut handle = [0; HANDLE_SIZE];
-        handle.copy_from_slice(&raw[offset..offset + HANDLE_SIZE]);
-        offset += HANDLE_SIZE;
+        let handle = ContextHandle::try_from(raw)?;
+        offset += ContextHandle::SIZE;
 
         let mut data = [0; DPE_PROFILE.get_hash_size()];
         data.copy_from_slice(&raw[offset..offset + DPE_PROFILE.get_hash_size()]);
