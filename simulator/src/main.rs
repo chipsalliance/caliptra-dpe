@@ -125,12 +125,13 @@ fn main() -> std::io::Result<()> {
         internal_info: args.supports_internal_info,
         internal_dice: args.supports_internal_dice,
     };
-    let mut dpe = DpeInstance::<OpensslCrypto>::new(support, &LOCALITIES).map_err(|err| {
-        Error::new(
-            ErrorKind::Other,
-            format!("{err:?} while creating new DPE instance"),
-        )
-    })?;
+    let mut dpe =
+        DpeInstance::<OpensslCrypto>::new_for_test(support, &LOCALITIES).map_err(|err| {
+            Error::new(
+                ErrorKind::Other,
+                format!("{err:?} while creating new DPE instance"),
+            )
+        })?;
 
     info!("DPE listening to socket {SOCKET_PATH}");
 

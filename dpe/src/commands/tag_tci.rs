@@ -122,7 +122,8 @@ mod tests {
     #[test]
     fn test_tag_tci() {
         let mut dpe =
-            DpeInstance::<OpensslCrypto>::new(Support::default(), &TEST_LOCALITIES).unwrap();
+            DpeInstance::<OpensslCrypto>::new_for_test(Support::default(), &TEST_LOCALITIES)
+                .unwrap();
         // Make sure it returns an error if the command is marked unsupported.
         assert_eq!(
             Err(DpeErrorCode::InvalidCommand),
@@ -134,7 +135,7 @@ mod tests {
         );
 
         // Make a new instance that supports tagging.
-        let mut dpe = DpeInstance::<OpensslCrypto>::new(
+        let mut dpe = DpeInstance::<OpensslCrypto>::new_for_test(
             Support {
                 tagging: true,
                 simulation: true,
