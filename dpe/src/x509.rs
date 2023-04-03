@@ -10,11 +10,13 @@ use crate::{
     response::DpeErrorCode,
     DpeProfile, DPE_PROFILE,
 };
-use core::mem::size_of;
 
+/// Type for specifying an X.509 RelativeDistinguisedName
+///
+/// `serial` is expected to hold a hex string of the hash of the public key
 pub struct Name<'a> {
     pub cn: &'a [u8],
-    pub serial: &'a [u8],
+    pub serial: [u8; DPE_PROFILE.get_hash_size() * 2],
 }
 
 pub struct MeasurementData<'a> {
@@ -46,22 +48,6 @@ impl Default for EcdsaSignature {
 pub struct EcdsaPub {
     pub x: [u8; DPE_PROFILE.get_ecc_int_size()],
     pub y: [u8; DPE_PROFILE.get_ecc_int_size()],
-}
-
-impl EcdsaPub {
-    pub fn serialize(&self, dst: &mut [u8]) -> Result<usize, DpeErrorCode> {
-        if dst.len() < size_of::<Self>() {
-            return Err(DpeErrorCode::InternalError);
-        }
-
-        let mut offset: usize = 0;
-        dst[offset..offset + self.x.len()].copy_from_slice(&self.x);
-        offset += self.x.len();
-        dst[offset..offset + self.y.len()].copy_from_slice(&self.y);
-        offset += self.y.len();
-
-        Ok(offset)
-    }
 }
 
 impl Default for EcdsaPub {
@@ -198,7 +184,7 @@ impl X509CertWriter<'_> {
         )?;
         let serialnumber_seq_size = Self::get_structure_size(
             Self::get_bytes_size(&Self::RDN_COMMON_NAME_OID, /*tagged=*/ true)?
-                + Self::get_bytes_size(name.serial, /*tagged=*/ true)?,
+                + Self::get_bytes_size(&name.serial, /*tagged=*/ true)?,
             /*tagged=*/ true,
         )?;
 
@@ -485,7 +471,7 @@ impl X509CertWriter<'_> {
         bytes_written += self.encode_tag_field(Self::SEQUENCE_TAG)?;
         bytes_written += self.encode_size_field(serialnumber_size)?;
         bytes_written += self.encode_oid(&Self::RDN_SERIALNUMBER_OID)?;
-        bytes_written += self.encode_printable_string(name.serial)?;
+        bytes_written += self.encode_printable_string(&name.serial)?;
 
         Ok(bytes_written)
     }
@@ -933,10 +919,10 @@ mod tests {
 
     #[test]
     fn test_rdn() {
-        let mut cert = [0u8; 128];
+        let mut cert = [0u8; 256];
         let test_name = Name {
             cn: b"Caliptra Alias",
-            serial: b"0x00000000",
+            serial: [0x0u8; DPE_PROFILE.get_hash_size() * 2],
         };
 
         let mut w = X509CertWriter::new(&mut cert);
@@ -950,7 +936,7 @@ mod tests {
         let expected = format!(
             "CN={} + serialNumber={}",
             str::from_utf8(test_name.cn).unwrap(),
-            str::from_utf8(test_name.serial).unwrap()
+            str::from_utf8(&test_name.serial).unwrap()
         );
         let actual = name.to_string_with_registry(oid_registry()).unwrap();
         assert_eq!(expected, actual);
@@ -1021,12 +1007,12 @@ mod tests {
         let test_serial = [0x1F; 20];
         let test_issuer_name = Name {
             cn: b"Caliptra Alias",
-            serial: b"0x00000000",
+            serial: [0x00; DPE_PROFILE.get_hash_size() * 2],
         };
 
         let test_subject_name = Name {
             cn: b"DPE Leaf",
-            serial: b"0x00000000",
+            serial: [0x00; DPE_PROFILE.get_hash_size() * 2],
         };
 
         let test_pub = EcdsaPub {
@@ -1066,12 +1052,12 @@ mod tests {
         let test_serial = [0x1F; 20];
         let test_issuer_name = Name {
             cn: b"Caliptra Alias",
-            serial: b"0x00000000",
+            serial: [0x00; DPE_PROFILE.get_hash_size() * 2],
         };
 
         let test_subject_name = Name {
             cn: b"DPE Leaf",
-            serial: b"0x00000000",
+            serial: [0x00; DPE_PROFILE.get_hash_size() * 2],
         };
 
         let test_pub = EcdsaPub {

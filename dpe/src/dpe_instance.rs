@@ -23,6 +23,9 @@ pub struct DpeInstance<'a, C: Crypto> {
     /// `InitializeContext(simulation=false)`) once per reset cycle.
     pub(crate) has_initialized: bool,
 
+    // Issuer Common Name to use in DPE leaf certs
+    pub(crate) issuer_cn: &'a [u8],
+
     // All functions/data in C are static and global. For this reason
     // DpeInstance doesn't actually need to hold an instance. The PhantomData
     // is just to make the Crypto trait work.
@@ -39,7 +42,11 @@ impl<C: Crypto> DpeInstance<'_, C> {
     ///
     /// * `support` - optional functionality the instance supports
     /// * `localities` - all possible valid localities for the system
-    pub fn new(support: Support, localities: &[u32]) -> Result<DpeInstance<C>, DpeErrorCode> {
+    pub fn new<'a>(
+        support: Support,
+        localities: &'a [u32],
+        issuer_cn: &'a [u8],
+    ) -> Result<DpeInstance<'a, C>, DpeErrorCode> {
         if localities.is_empty() {
             return Err(DpeErrorCode::InvalidLocality);
         }
@@ -49,6 +56,7 @@ impl<C: Crypto> DpeInstance<'_, C> {
             support,
             localities,
             has_initialized: false,
+            issuer_cn,
             phantom: PhantomData,
         };
 
@@ -60,6 +68,14 @@ impl<C: Crypto> DpeInstance<'_, C> {
             InitCtxCmd::new_use_default().execute(&mut dpe, Self::AUTO_INIT_LOCALITY)?;
         }
         Ok(dpe)
+    }
+
+    pub fn new_for_test(
+        support: Support,
+        localities: &[u32],
+    ) -> Result<DpeInstance<C>, DpeErrorCode> {
+        const TEST_ISSUER: &[u8] = b"Test Issuer";
+        Self::new(support, localities, TEST_ISSUER)
     }
 
     pub fn get_profile(&self) -> Result<GetProfileResp, DpeErrorCode> {
@@ -491,7 +507,7 @@ pub mod tests {
         // Empty list of localities.
         assert_eq!(
             DpeErrorCode::InvalidLocality,
-            DpeInstance::<OpensslCrypto>::new(SUPPORT, &[])
+            DpeInstance::<OpensslCrypto>::new_for_test(SUPPORT, &[])
                 .err()
                 .unwrap()
         );
@@ -499,12 +515,13 @@ pub mod tests {
         // Auto-init without the auto-init locality.
         assert_eq!(
             DpeErrorCode::InvalidLocality,
-            DpeInstance::<OpensslCrypto>::new(SUPPORT, &TEST_LOCALITIES[1..])
+            DpeInstance::<OpensslCrypto>::new_for_test(SUPPORT, &TEST_LOCALITIES[1..])
                 .err()
                 .unwrap()
         );
 
-        let mut dpe = DpeInstance::<OpensslCrypto>::new(SUPPORT, &TEST_LOCALITIES).unwrap();
+        let mut dpe =
+            DpeInstance::<OpensslCrypto>::new_for_test(SUPPORT, &TEST_LOCALITIES).unwrap();
         assert_eq!(
             Err(DpeErrorCode::InvalidLocality),
             dpe.execute_serialized_command(
@@ -557,7 +574,8 @@ pub mod tests {
 
     #[test]
     fn test_execute_serialized_command() {
-        let mut dpe = DpeInstance::<OpensslCrypto>::new(SUPPORT, &TEST_LOCALITIES).unwrap();
+        let mut dpe =
+            DpeInstance::<OpensslCrypto>::new_for_test(SUPPORT, &TEST_LOCALITIES).unwrap();
 
         assert_eq!(
             Response::GetProfile(GetProfileResp::new(SUPPORT.get_flags())),
@@ -585,7 +603,7 @@ pub mod tests {
 
     #[test]
     fn test_get_profile() {
-        let dpe = DpeInstance::<OpensslCrypto>::new(SUPPORT, &TEST_LOCALITIES).unwrap();
+        let dpe = DpeInstance::<OpensslCrypto>::new_for_test(SUPPORT, &TEST_LOCALITIES).unwrap();
         let profile = dpe.get_profile().unwrap();
         assert_eq!(profile.version, CURRENT_PROFILE_VERSION);
         assert_eq!(profile.flags, SUPPORT.get_flags());
@@ -709,7 +727,8 @@ pub mod tests {
     #[test]
     fn test_get_active_context_index() {
         let mut dpe =
-            DpeInstance::<OpensslCrypto>::new(Support::default(), &TEST_LOCALITIES).unwrap();
+            DpeInstance::<OpensslCrypto>::new_for_test(Support::default(), &TEST_LOCALITIES)
+                .unwrap();
         let expected_index = 7;
         dpe.contexts[expected_index].handle = SIMULATION_HANDLE;
 
@@ -737,7 +756,8 @@ pub mod tests {
     #[test]
     fn test_get_descendants() {
         let mut dpe =
-            DpeInstance::<OpensslCrypto>::new(Support::default(), &TEST_LOCALITIES).unwrap();
+            DpeInstance::<OpensslCrypto>::new_for_test(Support::default(), &TEST_LOCALITIES)
+                .unwrap();
         let root = 7;
         let child_1 = 3;
         let child_1_1 = 0;

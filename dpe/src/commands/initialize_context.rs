@@ -137,7 +137,8 @@ mod tests {
     #[test]
     fn test_initialize_context() {
         let mut dpe =
-            DpeInstance::<OpensslCrypto>::new(Support::default(), &TEST_LOCALITIES).unwrap();
+            DpeInstance::<OpensslCrypto>::new_for_test(Support::default(), &TEST_LOCALITIES)
+                .unwrap();
 
         let handle = match InitCtxCmd::new_use_default()
             .execute(&mut dpe, TEST_LOCALITIES[0])
@@ -168,7 +169,7 @@ mod tests {
         );
 
         // Change to support simulation.
-        let mut dpe = DpeInstance::<OpensslCrypto>::new(
+        let mut dpe = DpeInstance::<OpensslCrypto>::new_for_test(
             Support {
                 simulation: true,
                 ..Support::default()

@@ -42,6 +42,13 @@ impl OpensslCrypto {
             AlgLen::Bit384 => Nid::SECP384R1,
         }
     }
+
+    fn get_priv_byes(algs: AlgLen) -> Result<Vec<u8>, CryptoError> {
+        let priv_bytes = vec![0u8; algs.size()];
+        let mut priv_digest = vec![0u8; algs.size()];
+        Self::hash(algs, &priv_bytes, &mut priv_digest)?;
+        Ok(priv_digest)
+    }
 }
 
 impl Crypto for OpensslCrypto {
@@ -144,7 +151,7 @@ impl Crypto for OpensslCrypto {
         sig_s: &mut [u8],
     ) -> Result<(), CryptoError> {
         let nid = Self::get_curve(algs);
-        let priv_bytes = vec![0u8; algs.size()];
+        let priv_bytes = Self::get_priv_byes(algs)?;
         let group = EcGroup::from_curve_name(nid).map_err(|_| CryptoError::CryptoLibError)?;
         let priv_bn =
             BigNum::from_slice(priv_bytes.as_slice()).map_err(|_| CryptoError::CryptoLibError)?;
@@ -158,8 +165,48 @@ impl Crypto for OpensslCrypto {
 
         let sig =
             EcdsaSig::sign::<Private>(digest, &ec_priv).map_err(|_| CryptoError::CryptoLibError)?;
-        sig_r.copy_from_slice(sig.r().to_vec().as_slice());
-        sig_s.copy_from_slice(sig.s().to_vec().as_slice());
+        sig_r.copy_from_slice(
+            sig.r()
+                .to_vec_padded((group.order_bits() / 8).try_into().unwrap())
+                .unwrap()
+                .as_slice(),
+        );
+        sig_s.copy_from_slice(
+            sig.s()
+                .to_vec_padded((group.order_bits() / 8).try_into().unwrap())
+                .unwrap()
+                .as_slice(),
+        );
         Ok(())
+    }
+
+    fn get_ecdsa_alias_serial(algs: AlgLen, serial: &mut [u8]) -> Result<(), CryptoError> {
+        let nid = Self::get_curve(algs);
+        let priv_bytes = Self::get_priv_byes(algs)?;
+
+        let group = EcGroup::from_curve_name(nid).map_err(|_| CryptoError::CryptoLibError)?;
+        let priv_bn =
+            BigNum::from_slice(priv_bytes.as_slice()).map_err(|_| CryptoError::CryptoLibError)?;
+
+        let mut pub_point = EcPoint::new(&group).map_err(|_| CryptoError::CryptoLibError)?;
+        let mut bn_ctx = BigNumContext::new().map_err(|_| CryptoError::CryptoLibError)?;
+        pub_point.mul_generator(&group, &priv_bn, &bn_ctx).unwrap();
+
+        let mut x = BigNum::new().map_err(|_| CryptoError::CryptoLibError)?;
+        let mut y = BigNum::new().map_err(|_| CryptoError::CryptoLibError)?;
+        pub_point
+            .affine_coordinates(&group, &mut x, &mut y, &mut bn_ctx)
+            .map_err(|_| CryptoError::CryptoLibError)?;
+
+        Self::get_pubkey_serial(
+            algs,
+            x.to_vec_padded((group.order_bits() / 8).try_into().unwrap())
+                .unwrap()
+                .as_slice(),
+            y.to_vec_padded((group.order_bits() / 8).try_into().unwrap())
+                .unwrap()
+                .as_slice(),
+            serial,
+        )
     }
 }

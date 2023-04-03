@@ -6,10 +6,7 @@ use crate::{
     x509::{EcdsaPub, EcdsaSignature, MeasurementData, Name, X509CertWriter},
     DPE_PROFILE, MAX_CERT_SIZE, MAX_HANDLES,
 };
-use core::{
-    fmt::{Error, Write},
-    mem::size_of,
-};
+use core::mem::size_of;
 use crypto::Crypto;
 
 #[repr(C)]
@@ -72,34 +69,24 @@ impl<C: Crypto> CommandExecution<C> for CertifyKeyCmd {
         )
         .map_err(|_| DpeErrorCode::InternalError)?;
 
-        // Hash the public key for the serialNumber name field
-        let mut pub_bytes = [0u8; size_of::<EcdsaPub>()];
-        let pub_offset = pub_key.serialize(&mut pub_bytes)?;
-        let mut pub_digest = [0u8; DPE_PROFILE.get_hash_size()];
-        C::hash(
+        let mut issuer_name = Name {
+            cn: dpe.issuer_cn,
+            serial: [0u8; DPE_PROFILE.get_hash_size() * 2],
+        };
+        C::get_ecdsa_alias_serial(DPE_PROFILE.alg_len(), &mut issuer_name.serial)
+            .map_err(|_| DpeErrorCode::InternalError)?;
+
+        let mut subject_name = Name {
+            cn: b"DPE Leaf",
+            serial: [0u8; DPE_PROFILE.get_hash_size() * 2],
+        };
+        C::get_pubkey_serial(
             DPE_PROFILE.alg_len(),
-            &pub_bytes[..pub_offset],
-            &mut pub_digest,
+            &pub_key.x,
+            &pub_key.y,
+            &mut subject_name.serial,
         )
         .map_err(|_| DpeErrorCode::InternalError)?;
-
-        // TODO: Let the platform specify issuer name
-        let issuer_name = Name {
-            cn: b"DPE Issuer",
-            serial: b"000000",
-        };
-
-        let mut subject_sn_str = [0u8; DPE_PROFILE.get_hash_size() * 2];
-        let mut w = BufWriter {
-            buf: &mut subject_sn_str,
-            offset: 0,
-        };
-        w.write_hex_str(&pub_digest)?;
-
-        let subject_name = Name {
-            cn: b"DPE Leaf",
-            serial: &subject_sn_str,
-        };
 
         let measurements = MeasurementData {
             _label: &self.label,
@@ -110,7 +97,8 @@ impl<C: Crypto> CommandExecution<C> for CertifyKeyCmd {
         let mut tbs_buffer = [0u8; MAX_CERT_SIZE];
         let mut tbs_writer = X509CertWriter::new(&mut tbs_buffer);
         let mut bytes_written = tbs_writer.encode_ecdsa_tbs(
-            /*serial=*/ &pub_digest,
+            /*serial=*/
+            &subject_name.serial[..20], // Serial number must be truncated to 20 bytes
             &issuer_name,
             &subject_name,
             &pub_key,
@@ -143,34 +131,6 @@ impl<C: Crypto> CommandExecution<C> for CertifyKeyCmd {
             cert_size,
             cert,
         }))
-    }
-}
-
-struct BufWriter<'a> {
-    buf: &'a mut [u8],
-    offset: usize,
-}
-
-impl Write for BufWriter<'_> {
-    fn write_str(&mut self, s: &str) -> Result<(), Error> {
-        if s.len() > self.buf.len().saturating_sub(self.offset) {
-            return Err(Error::default());
-        }
-
-        self.buf[self.offset..self.offset + s.len()].copy_from_slice(s.as_bytes());
-        self.offset += s.len();
-
-        Ok(())
-    }
-}
-
-impl BufWriter<'_> {
-    fn write_hex_str(&mut self, src: &[u8]) -> Result<(), DpeErrorCode> {
-        for &b in src {
-            write!(self, "{b:02x}").map_err(|_| DpeErrorCode::InternalError)?;
-        }
-
-        Ok(())
     }
 }
 
@@ -252,7 +212,8 @@ mod tests {
     #[test]
     fn test_certify_key() {
         let mut dpe =
-            DpeInstance::<OpensslCrypto>::new(Support::default(), &TEST_LOCALITIES).unwrap();
+            DpeInstance::<OpensslCrypto>::new_for_test(Support::default(), &TEST_LOCALITIES)
+                .unwrap();
 
         let init_resp = match InitCtxCmd::new_use_default()
             .execute(&mut dpe, TEST_LOCALITIES[0])

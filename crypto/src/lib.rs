@@ -10,11 +10,15 @@ pub use crate::openssl::*;
 #[cfg(feature = "openssl")]
 pub mod openssl;
 
+use core::fmt::{Error, Write};
+
 #[derive(Debug, Clone, Copy)]
 pub enum AlgLen {
     Bit256,
     Bit384,
 }
+
+const MAX_HASH_SIZE: usize = 384 / 8;
 
 impl AlgLen {
     pub const fn size(self) -> usize {
@@ -71,6 +75,41 @@ pub trait Crypto {
         let mut hasher = Self::hash_initialize(algs)?;
         hasher.update(bytes)?;
         hasher.finish(digest)
+    }
+
+    /// Compute the serial number of an ECDSA public key by computing the hash
+    /// over the point in uncompressed format.
+    ///
+    /// This function outputs the serial number as a hex string
+    ///
+    /// # Arguments
+    ///
+    /// * `algs` - Length of algorithm to use.
+    /// * `x` - x portion of EC public key
+    /// * `y` - y portion of EC public key
+    /// * `serial` - Output buffer to write serial number
+    fn get_pubkey_serial(
+        algs: AlgLen,
+        x: &[u8],
+        y: &[u8],
+        serial: &mut [u8],
+    ) -> Result<(), CryptoError> {
+        if serial.len() < algs.size() * 2 {
+            return Err(CryptoError::CryptoLibError);
+        }
+
+        let mut hasher = Self::hash_initialize(algs)?;
+        let mut pub_digest = [0u8; MAX_HASH_SIZE];
+        hasher.update(&[0x4u8])?;
+        hasher.update(x)?;
+        hasher.update(y)?;
+        hasher.finish(&mut pub_digest[..algs.size()])?;
+
+        let mut w = BufWriter {
+            buf: serial,
+            offset: 0,
+        };
+        w.write_hex_str(&pub_digest[..algs.size()])
     }
 
     /// Initialize a running hash. Returns an object that will be able to complete the rest.
@@ -131,4 +170,41 @@ pub trait Crypto {
         sig_r: &mut [u8],
         sig_s: &mut [u8],
     ) -> Result<(), CryptoError>;
+
+    /// Compute the serial number string for the alias public key
+    ///
+    /// # Arguments
+    ///
+    /// * `algs` - Length of algorithm to use.
+    /// * `serial` - Output buffer to write serial number
+    fn get_ecdsa_alias_serial(algs: AlgLen, serial: &mut [u8]) -> Result<(), CryptoError>;
+}
+
+/// Writer for a static buffer
+struct BufWriter<'a> {
+    buf: &'a mut [u8],
+    offset: usize,
+}
+
+impl Write for BufWriter<'_> {
+    fn write_str(&mut self, s: &str) -> Result<(), Error> {
+        if s.len() > self.buf.len().saturating_sub(self.offset) {
+            return Err(Error::default());
+        }
+
+        self.buf[self.offset..self.offset + s.len()].copy_from_slice(s.as_bytes());
+        self.offset += s.len();
+
+        Ok(())
+    }
+}
+
+impl BufWriter<'_> {
+    fn write_hex_str(&mut self, src: &[u8]) -> Result<(), CryptoError> {
+        for &b in src {
+            write!(self, "{b:02x}").map_err(|_| CryptoError::CryptoLibError)?;
+        }
+
+        Ok(())
+    }
 }
