@@ -109,6 +109,7 @@ impl<C: Crypto> DpeInstance<'_, C> {
             Command::DestroyCtx(cmd) => cmd.execute(self, locality),
             Command::ExtendTci(cmd) => cmd.execute(self, locality),
             Command::TagTci(cmd) => cmd.execute(self, locality),
+            Command::GetTaggedTci(cmd) => cmd.execute(self, locality),
         }
     }
 

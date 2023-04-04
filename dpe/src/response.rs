@@ -21,6 +21,7 @@ pub enum Response {
     DestroyCtx,
     ExtendTci(NewHandleResp),
     TagTci(NewHandleResp),
+    GetTaggedTci(GetTaggedTciResp),
 }
 
 impl Response {
@@ -41,6 +42,7 @@ impl Response {
             Response::DestroyCtx => Ok(0),
             Response::ExtendTci(response) => response.serialize(dst),
             Response::TagTci(response) => response.serialize(dst),
+            Response::GetTaggedTci(response) => response.serialize(dst),
         }
     }
 }
@@ -215,6 +217,31 @@ impl SignResp {
     }
 }
 
+#[repr(C)]
+#[derive(Debug, PartialEq, Eq)]
+#[cfg_attr(test, derive(zerocopy::AsBytes, zerocopy::FromBytes))]
+pub struct GetTaggedTciResp {
+    pub tci_cumulative: TciMeasurement,
+    pub tci_current: TciMeasurement,
+}
+
+impl GetTaggedTciResp {
+    pub fn serialize(&self, dst: &mut [u8]) -> Result<usize, DpeErrorCode> {
+        if dst.len() < size_of::<Self>() {
+            return Err(DpeErrorCode::InternalError);
+        }
+
+        let mut offset: usize = 0;
+
+        dst[offset..offset + DPE_PROFILE.get_tci_size()].copy_from_slice(&self.tci_cumulative.0);
+        offset += DPE_PROFILE.get_tci_size();
+        dst[offset..offset + DPE_PROFILE.get_tci_size()].copy_from_slice(&self.tci_current.0);
+        offset += DPE_PROFILE.get_tci_size();
+
+        Ok(offset)
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum DpeErrorCode {
     NoError = 0,
@@ -250,6 +277,10 @@ mod tests {
             0xff, 0xfe, 0xfd, 0xfc, 0xfb, 0xfa, 0xf9, 0xf8, 0xf7, 0xf6, 0xf5, 0xf4, 0xf3, 0xf2,
             0xf1, 0xf0,
         ]),
+    };
+    const TEST_GET_TAGGED_TCI_RESP: GetTaggedTciResp = GetTaggedTciResp {
+        tci_cumulative: TciMeasurement([0x5C; DPE_PROFILE.get_tci_size()]),
+        tci_current: TciMeasurement([0x36; DPE_PROFILE.get_tci_size()]),
     };
 
     #[test]
@@ -374,6 +405,32 @@ mod tests {
             sign.serialize(response_buffer.as_mut_slice()).unwrap()
         );
         assert_eq!(sign.as_bytes(), response_buffer);
+    }
+
+    #[test]
+    fn test_serialize_get_tagged_tci_response() {
+        // Test too small slice.
+        let mut response_buffer = [0; 2 * DPE_PROFILE.get_tci_size() - 1];
+        assert_eq!(
+            Err(DpeErrorCode::InternalError),
+            TEST_GET_TAGGED_TCI_RESP.serialize(response_buffer.as_mut_slice())
+        );
+        let mut response_buffer = [0; 2 * DPE_PROFILE.get_tci_size()];
+
+        assert_eq!(
+            2 * DPE_PROFILE.get_tci_size(),
+            TEST_GET_TAGGED_TCI_RESP
+                .serialize(response_buffer.as_mut_slice())
+                .unwrap()
+        );
+        assert!(response_buffer
+            .iter()
+            .take(DPE_PROFILE.get_tci_size())
+            .all(|&b| b == 0x5C));
+        assert!(response_buffer
+            .iter()
+            .skip(DPE_PROFILE.get_tci_size())
+            .all(|&b| b == 0x36));
     }
 
     fn test_error_code_serialize(error_code: DpeErrorCode) {

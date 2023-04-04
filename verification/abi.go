@@ -14,6 +14,8 @@ const (
 	CommandInitializeContext CommandCode = 0x5
 	CommandCertifyKey        CommandCode = 0x7
 	CommandDestroyContext    CommandCode = 0xf
+	CommandTagTCI            CommandCode = 0x1002
+	CommandGetTaggedTCI      CommandCode = 0x1003
 )
 
 type CommandHdr struct {
@@ -40,12 +42,14 @@ func NewInitCtxIsSimulation() *InitCtxCmd {
 	return &InitCtxCmd{flags: 1 << 31}
 }
 
+type ContextHandle [16]byte
+
 type DestroyCtxCmd struct {
-	handle [16]byte
+	handle ContextHandle
 	flags  uint32
 }
 
-func NewDestroyCtx(handle [16]byte, destroy_descendants bool) *DestroyCtxCmd {
+func NewDestroyCtx(handle ContextHandle, destroy_descendants bool) *DestroyCtxCmd {
 	flags := uint32(0)
 	if destroy_descendants {
 		flags |= 1 << 31
@@ -54,7 +58,7 @@ func NewDestroyCtx(handle [16]byte, destroy_descendants bool) *DestroyCtxCmd {
 }
 
 type InitCtxResp struct {
-	Handle [16]byte
+	Handle ContextHandle
 }
 
 type GetProfileResp struct {
@@ -71,14 +75,34 @@ const (
 )
 
 type CertifyKeyReq[Digest DigestAlgorithm] struct {
-	ContextHandle [16]byte
+	ContextHandle ContextHandle
 	Flags         CertifyKeyFlags
 	Label         Digest
 }
 
 type CertifyKeyResp[CurveParameter Curve, Digest DigestAlgorithm] struct {
-	NewContextHandle  [16]byte
+	NewContextHandle  ContextHandle
 	DerivedPublicKeyX CurveParameter
 	DerivedPublicKeyY CurveParameter
 	Certificate       []byte
+}
+
+type TCITag uint32
+
+type TagTCIReq struct {
+	ContextHandle ContextHandle
+	Tag           TCITag
+}
+
+type TagTCIResp struct {
+	NewContextHandle ContextHandle
+}
+
+type GetTaggedTCIReq struct {
+	Tag TCITag
+}
+
+type GetTaggedTCIResp[Digest DigestAlgorithm] struct {
+	CumulativeTCI Digest
+	CurrentTCI    Digest
 }
