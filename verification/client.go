@@ -177,6 +177,30 @@ func (c *Client[CurveParameter, Digest]) CertifyKey(cmd *CertifyKeyReq[Digest]) 
 	}, nil
 }
 
+// TagTCI calls the DPE TagTCI command.
+func (c *Client[_, _]) TagTCI(cmd *TagTCIReq) (*TagTCIResp, error) {
+	var respStruct TagTCIResp
+
+	_, err := execCommand(c.transport, CommandTagTCI, c.Profile, cmd, &respStruct)
+	if err != nil {
+		return nil, err
+	}
+
+	return &respStruct, nil
+}
+
+// GetTaggedTCI calls the DPE GetTaggedTCI command.
+func (c *Client[_, Digest]) GetTaggedTCI(cmd *GetTaggedTCIReq) (*GetTaggedTCIResp[Digest], error) {
+	var respStruct GetTaggedTCIResp[Digest]
+
+	_, err := execCommand(c.transport, CommandGetTaggedTCI, c.Profile, cmd, &respStruct)
+	if err != nil {
+		return nil, err
+	}
+
+	return &respStruct, nil
+}
+
 func (s *Support) ToFlags() uint32 {
 	flags := uint32(0)
 	if s.Simulation {

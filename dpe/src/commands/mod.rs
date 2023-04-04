@@ -10,6 +10,7 @@ pub(crate) use self::initialize_context::InitCtxCmd;
 use self::certify_key::CertifyKeyCmd;
 use self::derive_child::DeriveChildCmd;
 use self::extend_tci::ExtendTciCmd;
+use self::get_tagged_tci::GetTaggedTciCmd;
 use self::rotate_context::RotateCtxCmd;
 use self::sign::SignCmd;
 use self::tag_tci::TagTciCmd;
@@ -26,6 +27,7 @@ mod certify_key;
 mod derive_child;
 mod destroy_context;
 mod extend_tci;
+mod get_tagged_tci;
 mod initialize_context;
 mod rotate_context;
 mod sign;
@@ -42,6 +44,7 @@ pub enum Command {
     DestroyCtx(DestroyCtxCmd),
     ExtendTci(ExtendTciCmd),
     TagTci(TagTciCmd),
+    GetTaggedTci(GetTaggedTciCmd),
 }
 
 impl Command {
@@ -79,7 +82,7 @@ impl Command {
             Command::GET_CERTIFICATE_CHAIN => Err(DpeErrorCode::InvalidCommand),
             Command::EXTEND_TCI => Ok(Command::ExtendTci(ExtendTciCmd::try_from(bytes)?)),
             Command::TAG_TCI => Ok(Command::TagTci(TagTciCmd::try_from(bytes)?)),
-            Command::GET_TAGGED_TCI => Err(DpeErrorCode::InvalidCommand),
+            Command::GET_TAGGED_TCI => Ok(Command::GetTaggedTci(GetTaggedTciCmd::try_from(bytes)?)),
             _ => Err(DpeErrorCode::InvalidCommand),
         }
     }
@@ -280,6 +283,7 @@ pub mod tests {
                 Command::DestroyCtx(_) => Command::DESTROY_CONTEXT,
                 Command::ExtendTci(_) => Command::EXTEND_TCI,
                 Command::TagTci(_) => Command::TAG_TCI,
+                Command::GetTaggedTci(_) => Command::GET_TAGGED_TCI,
             };
             CommandHdr {
                 magic: Self::DPE_COMMAND_MAGIC,
