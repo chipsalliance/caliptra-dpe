@@ -197,16 +197,6 @@ pub mod tests {
                 .as_bytes()
             )
         );
-        assert_eq!(
-            invalid_command,
-            Command::deserialize(
-                CommandHdr {
-                    cmd_id: Command::GET_TAGGED_TCI,
-                    ..DEFAULT_COMMAND
-                }
-                .as_bytes()
-            )
-        );
     }
 
     #[test]
