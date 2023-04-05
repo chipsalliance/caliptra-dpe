@@ -29,7 +29,7 @@ impl TryFrom<&[u8]> for GetTaggedTciCmd {
 }
 
 impl<C: Crypto> CommandExecution<C> for GetTaggedTciCmd {
-    fn execute(&self, dpe: &mut DpeInstance<C>, locality: u32) -> Result<Response, DpeErrorCode> {
+    fn execute(&self, dpe: &mut DpeInstance<C>, _: u32) -> Result<Response, DpeErrorCode> {
         // Make sure this command is supported.
         if !dpe.support.tagging {
             return Err(DpeErrorCode::InvalidCommand);
@@ -42,11 +42,6 @@ impl<C: Crypto> CommandExecution<C> for GetTaggedTciCmd {
             .iter()
             .find(|c| c.has_tag && c.tag == self.tag)
             .ok_or(DpeErrorCode::BadTag)?;
-
-        // Make sure the command is coming from the locality that owns the found context.
-        if ctx.locality != locality {
-            return Err(DpeErrorCode::InvalidHandle);
-        }
 
         Ok(Response::GetTaggedTci(GetTaggedTciResp {
             tci_cumulative: ctx.tci.tci_cumulative,
