@@ -9,7 +9,8 @@ use crate::{
 };
 use core::mem::size_of;
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug)]
+#[cfg_attr(test, derive(PartialEq, Eq))]
 #[allow(clippy::large_enum_variant)]
 pub enum Response {
     GetProfile(GetProfileResp),
