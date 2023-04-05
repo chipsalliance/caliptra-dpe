@@ -11,6 +11,7 @@ use self::certify_key::CertifyKeyCmd;
 use self::derive_child::DeriveChildCmd;
 use self::extend_tci::ExtendTciCmd;
 use self::rotate_context::RotateCtxCmd;
+use self::sign::SignCmd;
 use self::tag_tci::TagTciCmd;
 
 use crate::{
@@ -27,6 +28,7 @@ mod destroy_context;
 mod extend_tci;
 mod initialize_context;
 mod rotate_context;
+mod sign;
 mod tag_tci;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -35,6 +37,7 @@ pub enum Command {
     InitCtx(InitCtxCmd),
     DeriveChild(DeriveChildCmd),
     CertifyKey(CertifyKeyCmd),
+    Sign(SignCmd),
     RotateCtx(RotateCtxCmd),
     DestroyCtx(DestroyCtxCmd),
     ExtendTci(ExtendTciCmd),
@@ -68,7 +71,7 @@ impl Command {
             Command::INITIALIZE_CONTEXT => Ok(Command::InitCtx(InitCtxCmd::try_from(bytes)?)),
             Command::DERIVE_CHILD => Err(DpeErrorCode::InvalidCommand),
             Command::CERTIFY_KEY => Ok(Command::CertifyKey(CertifyKeyCmd::try_from(bytes)?)),
-            Command::SIGN => Err(DpeErrorCode::InvalidCommand),
+            Command::SIGN => Ok(Command::Sign(SignCmd::try_from(bytes)?)),
             Command::ROTATE_CONTEXT_HANDLE => {
                 Ok(Command::RotateCtx(RotateCtxCmd::try_from(bytes)?))
             }
@@ -185,16 +188,6 @@ pub mod tests {
             invalid_command,
             Command::deserialize(
                 CommandHdr {
-                    cmd_id: Command::SIGN,
-                    ..DEFAULT_COMMAND
-                }
-                .as_bytes()
-            )
-        );
-        assert_eq!(
-            invalid_command,
-            Command::deserialize(
-                CommandHdr {
                     cmd_id: Command::GET_CERTIFICATE_CHAIN,
                     ..DEFAULT_COMMAND
                 }
@@ -282,6 +275,7 @@ pub mod tests {
                 Command::InitCtx(_) => Command::INITIALIZE_CONTEXT,
                 Command::DeriveChild(_) => Command::DERIVE_CHILD,
                 Command::CertifyKey(_) => Command::CERTIFY_KEY,
+                Command::Sign(_) => Command::SIGN,
                 Command::RotateCtx(_) => Command::ROTATE_CONTEXT_HANDLE,
                 Command::DestroyCtx(_) => Command::DESTROY_CONTEXT,
                 Command::ExtendTci(_) => Command::EXTEND_TCI,

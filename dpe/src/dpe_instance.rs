@@ -103,6 +103,7 @@ impl<C: Crypto> DpeInstance<'_, C> {
             Command::InitCtx(cmd) => cmd.execute(self, locality),
             Command::DeriveChild(cmd) => cmd.execute(self, locality),
             Command::CertifyKey(cmd) => cmd.execute(self, locality),
+            Command::Sign(cmd) => cmd.execute(self, locality),
             Command::RotateCtx(cmd) => cmd.execute(self, locality),
             Command::DestroyCtx(cmd) => cmd.execute(self, locality),
             Command::ExtendTci(cmd) => cmd.execute(self, locality),

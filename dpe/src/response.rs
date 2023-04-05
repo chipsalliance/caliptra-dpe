@@ -17,6 +17,7 @@ pub enum Response {
     DeriveChild(DeriveChildResp),
     RotateCtx(NewHandleResp),
     CertifyKey(CertifyKeyResp),
+    Sign(SignResp),
     DestroyCtx,
     ExtendTci(NewHandleResp),
     TagTci(NewHandleResp),
@@ -35,6 +36,7 @@ impl Response {
             Response::InitCtx(response) => response.serialize(dst),
             Response::DeriveChild(response) => response.serialize(dst),
             Response::CertifyKey(response) => response.serialize(dst),
+            Response::Sign(response) => response.serialize(dst),
             Response::RotateCtx(response) => response.serialize(dst),
             Response::DestroyCtx => Ok(0),
             Response::ExtendTci(response) => response.serialize(dst),
@@ -186,6 +188,33 @@ impl Default for CertifyKeyResp {
     }
 }
 
+#[repr(C)]
+#[derive(Debug, PartialEq, Eq)]
+#[cfg_attr(test, derive(zerocopy::AsBytes, zerocopy::FromBytes))]
+pub struct SignResp {
+    pub new_context_handle: ContextHandle,
+    pub sig_r_or_hmac: [u8; DPE_PROFILE.get_ecc_int_size()],
+    pub sig_s: [u8; DPE_PROFILE.get_ecc_int_size()],
+}
+
+impl SignResp {
+    pub fn serialize(&self, dst: &mut [u8]) -> Result<usize, DpeErrorCode> {
+        if dst.len() < size_of::<Self>() {
+            return Err(DpeErrorCode::InternalError);
+        }
+
+        let mut offset: usize = 0;
+
+        offset += self.new_context_handle.serialize(dst)?;
+        dst[offset..offset + DPE_PROFILE.get_ecc_int_size()].copy_from_slice(&self.sig_r_or_hmac);
+        offset += self.sig_r_or_hmac.len();
+        dst[offset..offset + DPE_PROFILE.get_ecc_int_size()].copy_from_slice(&self.sig_s);
+        offset += self.sig_s.len();
+
+        Ok(offset)
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum DpeErrorCode {
     NoError = 0,
@@ -319,6 +348,32 @@ mod tests {
                 .unwrap()
         );
         assert_eq!(TEST_DERIVE_CHILD_RESP.as_bytes(), response_buffer);
+    }
+
+    #[test]
+    fn test_serialize_sign_response() {
+        let sig_r_or_hmac: [u8; DPE_PROFILE.get_ecc_int_size()] =
+            core::array::from_fn(|i| (i + 1) as u8);
+        let sig_s: [u8; DPE_PROFILE.get_ecc_int_size()] =
+            core::array::from_fn(|i| (0xff - i) as u8);
+        let sign = SignResp {
+            new_context_handle: TEST_HANDLE,
+            sig_r_or_hmac,
+            sig_s,
+        };
+        // Test too small slice.
+        let mut response_buffer = [0; size_of::<SignResp>() - 1];
+        assert_eq!(
+            Err(DpeErrorCode::InternalError),
+            sign.serialize(response_buffer.as_mut_slice())
+        );
+        let mut response_buffer = [0; size_of::<SignResp>()];
+
+        assert_eq!(
+            ContextHandle::SIZE + 2 * DPE_PROFILE.get_ecc_int_size(),
+            sign.serialize(response_buffer.as_mut_slice()).unwrap()
+        );
+        assert_eq!(sign.as_bytes(), response_buffer);
     }
 
     fn test_error_code_serialize(error_code: DpeErrorCode) {
