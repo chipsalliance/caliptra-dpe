@@ -169,20 +169,19 @@ impl<C: Crypto> DpeInstance<'_, C> {
         Ok(())
     }
 
-    /// Get the TCI nodes from `context` to the root node following parent
+    /// Get the TCI nodes from the context at `start_idx` to the root node following parent
     /// links. These are the nodes that should contribute to CDI and key
-    /// derivation for `context`.
+    /// derivation for the context at `start_idx`.
     ///
     /// Returns the number of TCIs written to `nodes`
     pub(crate) fn get_tcb_nodes(
         &self,
-        context: &Context,
+        start_idx: usize,
         nodes: &mut [TciNodeData],
     ) -> Result<usize, DpeErrorCode> {
-        let mut curr = context;
         let mut out_idx = 0;
 
-        loop {
+        for curr in ChildToRootIter::new(start_idx, &self.contexts)? {
             if out_idx >= nodes.len() || curr.state != ContextState::Active {
                 return Err(DpeErrorCode::InternalError);
             }
@@ -192,13 +191,6 @@ impl<C: Crypto> DpeInstance<'_, C> {
             // so this is the only node we can create to test cert creation.
             nodes[out_idx] = curr.tci;
             out_idx += 1;
-
-            // Found the root
-            if curr.parent_idx == 0xFF {
-                break;
-            }
-
-            curr = &self.contexts[curr.parent_idx as usize];
         }
 
         Ok(out_idx)
@@ -238,6 +230,39 @@ impl<C: Crypto> DpeInstance<'_, C> {
 
         context.tci.tci_current = *measurement;
         Ok(())
+    }
+
+    /// Derive the CDI for a child node.
+    ///
+    /// Goes up the TciNodeData chain hashing each along the way until it gets to the root node.
+    ///
+    /// # Arguments
+    ///
+    /// * `start_idx` - index of the leaf context
+    pub(crate) fn derive_cdi(&self, start_idx: usize) -> Result<C::Cdi, DpeErrorCode> {
+        let mut hasher =
+            C::hash_initialize(DPE_PROFILE.alg_len()).map_err(|_| DpeErrorCode::InternalError)?;
+
+        // Hash each node.
+        for context in ChildToRootIter::new(start_idx, &self.contexts)? {
+            if context.state != ContextState::Active {
+                return Err(DpeErrorCode::InternalError);
+            }
+
+            let mut tci_bytes = [0u8; size_of::<TciNodeData>()];
+            let len = context.tci.serialize(&mut tci_bytes)?;
+            hasher
+                .update(&tci_bytes[..len])
+                .map_err(|_| DpeErrorCode::InternalError)?;
+        }
+
+        let mut digest = [0; DPE_PROFILE.get_hash_size()];
+        hasher
+            .finish(&mut digest)
+            .map_err(|_| DpeErrorCode::InternalError)?;
+
+        C::derive_cdi(DPE_PROFILE.alg_len(), &digest, b"DPE")
+            .map_err(|_| DpeErrorCode::InternalError)
     }
 }
 
@@ -487,6 +512,40 @@ impl Iterator for FlagsIter {
         let idx = self.flags.trailing_zeros() as usize;
         self.flags &= !(1 << idx);
         Some(idx)
+    }
+}
+
+pub(crate) struct ChildToRootIter<'a> {
+    idx: usize,
+    contexts: &'a [Context],
+    done: bool,
+}
+
+impl ChildToRootIter<'_> {
+    /// Create a new iterator that will start at the leaf and go to the root node.
+    pub fn new(leaf_idx: usize, contexts: &[Context]) -> Result<ChildToRootIter, DpeErrorCode> {
+        Ok(ChildToRootIter {
+            idx: leaf_idx,
+            contexts,
+            done: false,
+        })
+    }
+}
+
+impl<'a> Iterator for ChildToRootIter<'a> {
+    type Item = &'a Context;
+
+    fn next(&mut self) -> Option<&'a Context> {
+        if self.done {
+            return None;
+        }
+
+        let context = &self.contexts[self.idx];
+        if context.parent_idx == Context::ROOT_INDEX {
+            self.done = true;
+        }
+        self.idx = context.parent_idx as usize;
+        Some(context)
     }
 }
 
@@ -920,5 +979,38 @@ pub mod tests {
             dpe.get_descendants(&dpe.contexts[child_1_2]).unwrap()
         );
         assert_eq!(children, dpe.get_descendants(&dpe.contexts[root]).unwrap());
+    }
+
+    #[test]
+    fn test_child_to_root_iter() {
+        const INITIALIZER_CONTEXT: Context = Context::new();
+        let mut contexts = [INITIALIZER_CONTEXT; MAX_HANDLES];
+        let chain_indeces = [2, 4, 1, 13, MAX_HANDLES - 1, 3, 0, 9];
+        let root_index = chain_indeces[0];
+
+        // Lets put the context's index in the tag to make it easy to find later.
+        contexts[root_index].tag = root_index as u32;
+
+        // Assign all of the childrens' parents and put their index in the tag.
+        for (parent_chain_idx, child_idx) in chain_indeces.iter().skip(1).enumerate() {
+            let parent_idx = chain_indeces[parent_chain_idx];
+            contexts[*child_idx].parent_idx = parent_idx as u8;
+            contexts[*child_idx].tag = *child_idx as u32;
+        }
+
+        let mut count = 0;
+        let leaf_index = chain_indeces[chain_indeces.len() - 1];
+
+        for (answer, context) in chain_indeces
+            .iter()
+            .rev()
+            .zip(ChildToRootIter::new(leaf_index, &contexts).unwrap())
+        {
+            assert_eq!(*answer, context.tag as usize);
+            count += 1;
+        }
+
+        // Check we didn't accidentally skip any.
+        assert_eq!(chain_indeces.len(), count);
     }
 }
