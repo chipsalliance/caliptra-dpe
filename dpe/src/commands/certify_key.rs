@@ -15,9 +15,9 @@ use crypto::Crypto;
 #[derive(Debug, PartialEq, Eq)]
 #[cfg_attr(test, derive(zerocopy::AsBytes, zerocopy::FromBytes))]
 pub struct CertifyKeyCmd {
-    handle: ContextHandle,
-    flags: u32,
-    label: [u8; DPE_PROFILE.get_hash_size()],
+    pub handle: ContextHandle,
+    pub flags: u32,
+    pub label: [u8; DPE_PROFILE.get_hash_size()],
 }
 
 impl CertifyKeyCmd {

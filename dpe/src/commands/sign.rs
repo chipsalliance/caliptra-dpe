@@ -1,9 +1,9 @@
 // Licensed under the Apache-2.0 license.
 use super::CommandExecution;
 use crate::{
-    context::ContextHandle,
+    context::{ContextHandle, ContextType},
     dpe_instance::DpeInstance,
-    response::{DpeErrorCode, Response},
+    response::{DpeErrorCode, Response, SignResp},
     DPE_PROFILE,
 };
 use core::mem::size_of;
@@ -17,6 +17,20 @@ pub struct SignCmd {
     label: [u8; DPE_PROFILE.get_hash_size()],
     flags: u32,
     digest: [u8; DPE_PROFILE.get_hash_size()],
+}
+
+impl SignCmd {
+    const _IS_SYMMETRIC: u32 = 1 << 31;
+    const _ND_DERIVATION: u32 = 1 << 30;
+
+    const fn _uses_symmetric(&self) -> bool {
+        self.flags & Self::_IS_SYMMETRIC != 0
+    }
+
+    /// Uses non-deterministic derivation. If symmetric algorithms are used, this flag is ignored.
+    const fn _uses_nd_derivation(&self) -> bool {
+        !self._uses_symmetric() && self.flags & Self::_ND_DERIVATION != 0
+    }
 }
 
 impl TryFrom<&[u8]> for SignCmd {
@@ -52,8 +66,42 @@ impl TryFrom<&[u8]> for SignCmd {
 }
 
 impl<C: Crypto> CommandExecution<C> for SignCmd {
-    fn execute(&self, _dpe: &mut DpeInstance<C>, _locality: u32) -> Result<Response, DpeErrorCode> {
-        Err(DpeErrorCode::InvalidCommand)
+    fn execute(&self, dpe: &mut DpeInstance<C>, locality: u32) -> Result<Response, DpeErrorCode> {
+        let idx = dpe
+            .get_active_context_pos(&self.handle, locality)
+            .ok_or(DpeErrorCode::InvalidHandle)?;
+        let context = &dpe.contexts[idx];
+
+        if context.locality != locality {
+            return Err(DpeErrorCode::InvalidHandle);
+        }
+        if context.context_type == ContextType::Simulation {
+            return Err(DpeErrorCode::InvalidArgument);
+        }
+
+        let cdi = dpe.derive_cdi(idx)?;
+        let (mut r, mut s) = (
+            [0; DPE_PROFILE.get_ecc_int_size()],
+            [0; DPE_PROFILE.get_ecc_int_size()],
+        );
+        C::ecdsa_sign_with_derived(
+            DPE_PROFILE.alg_len(),
+            &cdi,
+            &self.label,
+            b"ECC",
+            &self.digest,
+            &mut r,
+            &mut s,
+        )
+        .map_err(|_| DpeErrorCode::InternalError)?;
+
+        dpe.roll_onetime_use_handle(idx)?;
+
+        Ok(Response::Sign(SignResp {
+            new_context_handle: dpe.contexts[idx].handle,
+            sig_r_or_hmac: r,
+            sig_s: s,
+        }))
     }
 }
 
@@ -61,9 +109,16 @@ impl<C: Crypto> CommandExecution<C> for SignCmd {
 mod tests {
     use super::*;
     use crate::{
-        commands::{tests::TEST_DIGEST, Command, CommandHdr},
-        dpe_instance::tests::SIMULATION_HANDLE,
+        commands::{
+            certify_key::CertifyKeyCmd, tests::TEST_DIGEST, Command, CommandHdr, DeriveChildCmd,
+            InitCtxCmd,
+        },
+        dpe_instance::tests::{SIMULATION_HANDLE, TEST_LOCALITIES},
+        support::test::SUPPORT,
     };
+    use crypto::OpensslCrypto;
+    use openssl::x509::X509;
+    use openssl::{bn::BigNum, ecdsa::EcdsaSig};
     use zerocopy::{AsBytes, FromBytes};
 
     #[cfg(feature = "dpe_profile_p256_sha256")]
@@ -117,5 +172,142 @@ mod tests {
             TEST_SIGN_CMD,
             SignCmd::try_from(TEST_SIGN_CMD.as_bytes()).unwrap()
         );
+    }
+
+    #[test]
+    fn test_uses_nd_derivation() {
+        // No flags set.
+        assert!(!SignCmd {
+            flags: 0,
+            ..TEST_SIGN_CMD
+        }
+        ._uses_nd_derivation());
+
+        // Other flag set.
+        assert!(!SignCmd {
+            flags: SignCmd::_IS_SYMMETRIC,
+            ..TEST_SIGN_CMD
+        }
+        ._uses_nd_derivation());
+
+        // Just non-deterministic flag set.
+        assert!(SignCmd {
+            flags: SignCmd::_ND_DERIVATION,
+            ..TEST_SIGN_CMD
+        }
+        ._uses_nd_derivation());
+
+        // If both are set, it ignores non-deterministic derivation.
+        assert!(!SignCmd {
+            flags: SignCmd::_IS_SYMMETRIC | SignCmd::_ND_DERIVATION,
+            ..TEST_SIGN_CMD
+        }
+        ._uses_nd_derivation());
+    }
+
+    #[test]
+    fn test_bad_command_inputs() {
+        let mut dpe =
+            DpeInstance::<OpensslCrypto>::new_for_test(SUPPORT, &TEST_LOCALITIES).unwrap();
+
+        // Bad handle.
+        assert_eq!(
+            Err(DpeErrorCode::InvalidHandle),
+            SignCmd {
+                handle: ContextHandle([0xff; ContextHandle::SIZE]),
+                label: TEST_LABEL,
+                flags: 0,
+                digest: TEST_DIGEST
+            }
+            .execute(&mut dpe, TEST_LOCALITIES[0])
+        );
+
+        // Wrong locality.
+        assert!(dpe
+            .get_active_context_pos(&ContextHandle::default(), TEST_LOCALITIES[0])
+            .is_some());
+        assert_eq!(
+            Err(DpeErrorCode::InvalidHandle),
+            SignCmd {
+                handle: ContextHandle::default(),
+                label: TEST_LABEL,
+                flags: 0,
+                digest: TEST_DIGEST
+            }
+            .execute(&mut dpe, TEST_LOCALITIES[1])
+        );
+
+        // Simulation contexts should not support the Sign command.
+        InitCtxCmd::new_simulation()
+            .execute(&mut dpe, TEST_LOCALITIES[0])
+            .unwrap();
+        assert!(dpe
+            .get_active_context_pos(&SIMULATION_HANDLE, TEST_LOCALITIES[0])
+            .is_some());
+        assert_eq!(
+            Err(DpeErrorCode::InvalidArgument),
+            SignCmd {
+                handle: SIMULATION_HANDLE,
+                label: TEST_LABEL,
+                flags: 0,
+                digest: TEST_DIGEST
+            }
+            .execute(&mut dpe, TEST_LOCALITIES[0])
+        );
+    }
+
+    #[test]
+    fn test_asymmetric_deterministic() {
+        let mut dpe =
+            DpeInstance::<OpensslCrypto>::new_for_test(SUPPORT, &TEST_LOCALITIES).unwrap();
+
+        for i in 0..3 {
+            DeriveChildCmd {
+                handle: ContextHandle::default(),
+                data: [i; DPE_PROFILE.get_hash_size()],
+                flags: DeriveChildCmd::MAKE_DEFAULT,
+                tci_type: i as u32,
+                target_locality: 0,
+            }
+            .execute(&mut dpe, TEST_LOCALITIES[0])
+            .unwrap();
+        }
+
+        let sig = {
+            let cmd = SignCmd {
+                handle: ContextHandle::default(),
+                label: TEST_LABEL,
+                flags: 0,
+                digest: TEST_DIGEST,
+            };
+            let resp = match cmd.execute(&mut dpe, TEST_LOCALITIES[0]).unwrap() {
+                Response::Sign(resp) => resp,
+                _ => panic!("Incorrect response type"),
+            };
+
+            EcdsaSig::from_private_components(
+                BigNum::from_slice(&resp.sig_r_or_hmac).unwrap(),
+                BigNum::from_slice(&resp.sig_s).unwrap(),
+            )
+            .unwrap()
+        };
+
+        let ec_pub_key = {
+            let cmd = CertifyKeyCmd {
+                handle: ContextHandle::default(),
+                flags: 0,
+                label: TEST_LABEL,
+            };
+            let certify_resp = match cmd.execute(&mut dpe, TEST_LOCALITIES[0]).unwrap() {
+                Response::CertifyKey(resp) => resp,
+                _ => panic!("Incorrect response type"),
+            };
+            let x509 =
+                X509::from_der(&certify_resp.cert[..certify_resp.cert_size.try_into().unwrap()])
+                    .unwrap();
+            x509.public_key().unwrap().ec_key().unwrap()
+        };
+
+        assert!(sig.verify(&TEST_DIGEST, &ec_pub_key).unwrap());
     }
 }

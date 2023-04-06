@@ -8,7 +8,8 @@ pub(crate) use self::derive_child::DeriveChildCmd;
 pub(crate) use self::destroy_context::DestroyCtxCmd;
 pub(crate) use self::initialize_context::InitCtxCmd;
 
-use self::certify_key::CertifyKeyCmd;
+pub(in crate::commands) use self::certify_key::CertifyKeyCmd;
+
 use self::extend_tci::ExtendTciCmd;
 use self::get_tagged_tci::GetTaggedTciCmd;
 use self::rotate_context::RotateCtxCmd;

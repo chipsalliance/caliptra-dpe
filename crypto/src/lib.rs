@@ -172,6 +172,25 @@ pub trait Crypto {
         sig_s: &mut [u8],
     ) -> Result<(), CryptoError>;
 
+    /// Sign `digest` with a derived key from the CDI.
+    ///
+    /// # Arguments
+    ///
+    /// * `algs` - Which length of algorithms to use.
+    /// * `cdi` - CDI from which to derive the signing key
+    /// * `digest` - Digest of data to be signed.
+    /// * `sig_r` - Destination for signature's R component.
+    /// * `sig_s` - Destination for signature's S component.
+    fn ecdsa_sign_with_derived(
+        algs: AlgLen,
+        cdi: &Self::Cdi,
+        label: &[u8],
+        info: &[u8],
+        digest: &[u8],
+        sig_r: &mut [u8],
+        sig_s: &mut [u8],
+    ) -> Result<(), CryptoError>;
+
     /// Compute the serial number string for the alias public key
     ///
     /// # Arguments

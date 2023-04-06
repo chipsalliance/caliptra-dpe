@@ -49,6 +49,39 @@ impl OpensslCrypto {
         Self::hash(algs, &priv_bytes, &mut priv_digest)?;
         Ok(priv_digest)
     }
+
+    pub fn derive_ecdsa_key(
+        algs: AlgLen,
+        cdi: &<OpensslCrypto as Crypto>::Cdi,
+        label: &[u8],
+        info: &[u8],
+    ) -> EcKey<Private> {
+        let nid = Self::get_curve(algs);
+        let md = Self::get_digest(algs);
+        let args = [
+            &KdfArgument::KbMode(KdfKbMode::Counter),
+            &KdfArgument::Mac(KdfMacType::Hmac(md)),
+            &KdfArgument::KbInfo(label),
+            &KdfArgument::Salt(info),
+            &KdfArgument::Key(cdi),
+        ];
+
+        // Generate key
+        let priv_bn = BigNum::from_slice(
+            perform_kdf(KdfType::KeyBased, &args, md.size())
+                .unwrap()
+                .as_slice(),
+        )
+        .unwrap();
+
+        let group = EcGroup::from_curve_name(nid).unwrap();
+
+        let mut pub_point = EcPoint::new(&group).unwrap();
+        let bn_ctx = BigNumContext::new().unwrap();
+        pub_point.mul_generator(&group, &priv_bn, &bn_ctx).unwrap();
+
+        EcKey::from_private_components(&group, &priv_bn, &pub_point).unwrap()
+    }
 }
 
 impl Crypto for OpensslCrypto {
@@ -100,36 +133,19 @@ impl Crypto for OpensslCrypto {
         pub_x: &mut [u8],
         pub_y: &mut [u8],
     ) -> Result<(), CryptoError> {
-        let md = Self::get_digest(algs);
         let nid = Self::get_curve(algs);
 
-        let args = [
-            &KdfArgument::KbMode(KdfKbMode::Counter),
-            &KdfArgument::Mac(KdfMacType::Hmac(md)),
-            &KdfArgument::KbInfo(label),
-            &KdfArgument::Salt(info),
-            &KdfArgument::Key(cdi),
-        ];
-
         // Generate public key
-        let priv_bn = BigNum::from_slice(
-            perform_kdf(KdfType::KeyBased, &args, md.size())
-                .unwrap()
-                .as_slice(),
-        )
-        .unwrap();
+        let priv_key = Self::derive_ecdsa_key(algs, cdi, label, info);
 
         let group = EcGroup::from_curve_name(nid).unwrap();
-
-        let mut pub_point = EcPoint::new(&group).unwrap();
         let mut bn_ctx = BigNumContext::new().unwrap();
-        pub_point
-            .mul_generator(&group, &priv_bn, &mut bn_ctx)
-            .unwrap();
 
         let mut x = BigNum::new().unwrap();
         let mut y = BigNum::new().unwrap();
-        pub_point
+
+        priv_key
+            .public_key()
             .affine_coordinates(&group, &mut x, &mut y, &mut bn_ctx)
             .unwrap();
 
@@ -165,6 +181,35 @@ impl Crypto for OpensslCrypto {
 
         let sig =
             EcdsaSig::sign::<Private>(digest, &ec_priv).map_err(|_| CryptoError::CryptoLibError)?;
+        sig_r.copy_from_slice(
+            sig.r()
+                .to_vec_padded((group.order_bits() / 8).try_into().unwrap())
+                .unwrap()
+                .as_slice(),
+        );
+        sig_s.copy_from_slice(
+            sig.s()
+                .to_vec_padded((group.order_bits() / 8).try_into().unwrap())
+                .unwrap()
+                .as_slice(),
+        );
+        Ok(())
+    }
+
+    fn ecdsa_sign_with_derived(
+        algs: AlgLen,
+        cdi: &Self::Cdi,
+        label: &[u8],
+        info: &[u8],
+        digest: &[u8],
+        sig_r: &mut [u8],
+        sig_s: &mut [u8],
+    ) -> Result<(), CryptoError> {
+        let nid = Self::get_curve(algs);
+        let priv_key = Self::derive_ecdsa_key(algs, cdi, label, info);
+        let group = EcGroup::from_curve_name(nid).unwrap();
+
+        let sig = EcdsaSig::sign::<Private>(digest, &priv_key).unwrap();
         sig_r.copy_from_slice(
             sig.r()
                 .to_vec_padded((group.order_bits() / 8).try_into().unwrap())
