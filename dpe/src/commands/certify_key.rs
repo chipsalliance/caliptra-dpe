@@ -39,25 +39,8 @@ impl<C: Crypto> CommandExecution<C> for CertifyKeyCmd {
             return Err(DpeErrorCode::InvalidHandle);
         }
 
-        // Get TCI Nodes
-        const INITIALIZER: TciNodeData = TciNodeData::new();
-        let mut nodes = [INITIALIZER; MAX_HANDLES];
-        let tcb_count = dpe.get_tcb_nodes(&dpe.contexts[idx], &mut nodes)?;
-
-        // Hash TCI Nodes
-        let mut tci_bytes = [0u8; MAX_HANDLES * size_of::<TciNodeData>()];
-        let mut tci_offset = 0;
-        for n in &nodes[..tcb_count] {
-            tci_offset += n.serialize(&mut tci_bytes[tci_offset..])?;
-        }
-
-        let mut digest = [0; DPE_PROFILE.get_hash_size()];
-        C::hash(DPE_PROFILE.alg_len(), &tci_bytes[..tci_offset], &mut digest)
-            .map_err(|_| DpeErrorCode::InternalError)?;
-
         // Derive CDI and public key
-        let cdi = C::derive_cdi(DPE_PROFILE.alg_len(), &digest, b"DPE")
-            .map_err(|_| DpeErrorCode::InternalError)?;
+        let cdi = dpe.derive_cdi(idx)?;
         let mut pub_key = EcdsaPub::default();
         C::derive_ecdsa_pub(
             DPE_PROFILE.alg_len(),
@@ -87,6 +70,11 @@ impl<C: Crypto> CommandExecution<C> for CertifyKeyCmd {
             &mut subject_name.serial,
         )
         .map_err(|_| DpeErrorCode::InternalError)?;
+
+        // Get TCI Nodes
+        const INITIALIZER: TciNodeData = TciNodeData::new();
+        let mut nodes = [INITIALIZER; MAX_HANDLES];
+        let tcb_count = dpe.get_tcb_nodes(idx, &mut nodes)?;
 
         let measurements = MeasurementData {
             _label: &self.label,
