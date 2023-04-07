@@ -1,7 +1,8 @@
 // Licensed under the Apache-2.0 license.
 use super::CommandExecution;
 use crate::{
-    dpe_instance::{ContextHandle, DpeInstance},
+    context::ContextHandle,
+    dpe_instance::DpeInstance,
     response::{DpeErrorCode, Response},
     DPE_PROFILE,
 };

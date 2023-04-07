@@ -1,7 +1,8 @@
 // Licensed under the Apache-2.0 license.
 use super::CommandExecution;
 use crate::{
-    dpe_instance::{ActiveContextArgs, Context, ContextHandle, ContextType, DpeInstance},
+    context::{ActiveContextArgs, Context, ContextHandle, ContextType},
+    dpe_instance::DpeInstance,
     response::{DpeErrorCode, NewHandleResp, Response},
 };
 use core::mem::size_of;
@@ -96,7 +97,9 @@ mod tests {
     use super::*;
     use crate::{
         commands::{Command, CommandHdr},
-        dpe_instance::{tests::TEST_LOCALITIES, ContextState, Support},
+        context::ContextState,
+        dpe_instance::tests::TEST_LOCALITIES,
+        support::Support,
     };
     use crypto::OpensslCrypto;
     use zerocopy::{AsBytes, FromBytes};

@@ -1,8 +1,10 @@
 // Licensed under the Apache-2.0 license.
 use super::CommandExecution;
 use crate::{
-    dpe_instance::{ContextHandle, DpeInstance, TciNodeData},
+    context::ContextHandle,
+    dpe_instance::DpeInstance,
     response::{CertifyKeyResp, DpeErrorCode, Response},
+    tci::TciNodeData,
     x509::{EcdsaPub, EcdsaSignature, MeasurementData, Name, X509CertWriter},
     DPE_PROFILE, MAX_CERT_SIZE, MAX_HANDLES,
 };
@@ -151,10 +153,8 @@ mod tests {
     use super::*;
     use crate::{
         commands::{Command, CommandHdr, InitCtxCmd},
-        dpe_instance::{
-            tests::{SIMULATION_HANDLE, TEST_LOCALITIES},
-            Support,
-        },
+        dpe_instance::tests::{SIMULATION_HANDLE, TEST_LOCALITIES},
+        support::Support,
     };
     use crypto::OpensslCrypto;
     use x509_parser::nom::Parser;
