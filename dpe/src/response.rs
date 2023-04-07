@@ -5,7 +5,7 @@ Abstract:
     DPE reponses and serialization.
 --*/
 use crate::{
-    dpe_instance::ContextHandle, CURRENT_PROFILE_VERSION, DPE_PROFILE, MAX_CERT_SIZE, MAX_HANDLES,
+    context::ContextHandle, CURRENT_PROFILE_VERSION, DPE_PROFILE, MAX_CERT_SIZE, MAX_HANDLES,
 };
 use core::mem::size_of;
 

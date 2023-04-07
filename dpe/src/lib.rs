@@ -6,11 +6,18 @@ Abstract:
 --*/
 #![cfg_attr(not(test), no_std)]
 
-use crypto::Crypto;
-use response::{DpeErrorCode, ResponseHdr};
+pub use dpe_instance::DpeInstance;
+pub use support::Support;
+
 pub mod commands;
 pub mod dpe_instance;
 pub mod response;
+pub mod support;
+
+use crypto::Crypto;
+use response::{DpeErrorCode, ResponseHdr};
+mod context;
+mod tci;
 mod x509;
 
 const MAX_CERT_SIZE: usize = 2048;

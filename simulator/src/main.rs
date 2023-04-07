@@ -7,11 +7,7 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
 use std::process;
 
-use dpe::{
-    commands::Command,
-    dpe_instance::{DpeInstance, Support},
-    execute_command,
-};
+use dpe::{commands::Command, execute_command, DpeInstance, Support};
 
 const SOCKET_PATH: &str = "/tmp/dpe-sim.socket";
 

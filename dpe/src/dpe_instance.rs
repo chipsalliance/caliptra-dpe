@@ -5,13 +5,14 @@ Abstract:
     Defines an instance of DPE and all of its contexts.
 --*/
 use crate::{
-    _set_flag,
     commands::{Command, CommandExecution, InitCtxCmd},
+    context::{ChildToRootIter, Context, ContextHandle, ContextState},
     response::{DpeErrorCode, GetProfileResp, Response},
+    support::Support,
+    tci::{TciMeasurement, TciNodeData},
     DPE_PROFILE, MAX_HANDLES,
 };
-use core::marker::PhantomData;
-use core::mem::size_of;
+use core::{marker::PhantomData, mem::size_of};
 use crypto::{Crypto, Hasher};
 
 pub struct DpeInstance<'a, C: Crypto> {
@@ -266,224 +267,6 @@ impl<C: Crypto> DpeInstance<'_, C> {
     }
 }
 
-#[repr(transparent)]
-#[derive(Copy, Clone)]
-pub struct TciMeasurement(pub [u8; DPE_PROFILE.get_tci_size()]);
-
-impl Default for TciMeasurement {
-    fn default() -> Self {
-        Self([0; DPE_PROFILE.get_tci_size()])
-    }
-}
-
-#[derive(Default)]
-pub struct Support {
-    pub simulation: bool,
-    pub extend_tci: bool,
-    pub auto_init: bool,
-    pub tagging: bool,
-    pub rotate_context: bool,
-    pub certify_key: bool,
-    pub certify_csr: bool,
-    pub internal_info: bool,
-    pub internal_dice: bool,
-}
-
-impl Support {
-    /// Returns all the flags bit-wise OR'ed together in the same configuration as the `GetProfile`
-    /// command.
-    pub fn get_flags(&self) -> u32 {
-        self.get_simulation_flag()
-            | self.get_extend_tci_flag()
-            | self.get_auto_init_flag()
-            | self.get_tagging_flag()
-            | self.get_rotate_context_flag()
-            | self.get_certify_key_flag()
-            | self.get_certify_csr_flag()
-            | self.get_internal_info_flag()
-            | self.get_internal_dice_flag()
-    }
-    fn get_simulation_flag(&self) -> u32 {
-        u32::from(self.simulation) << 31
-    }
-    fn get_extend_tci_flag(&self) -> u32 {
-        u32::from(self.extend_tci) << 30
-    }
-    fn get_auto_init_flag(&self) -> u32 {
-        u32::from(self.auto_init) << 29
-    }
-    fn get_tagging_flag(&self) -> u32 {
-        u32::from(self.tagging) << 28
-    }
-    fn get_rotate_context_flag(&self) -> u32 {
-        u32::from(self.rotate_context) << 27
-    }
-    fn get_certify_key_flag(&self) -> u32 {
-        u32::from(self.certify_key) << 26
-    }
-    fn get_certify_csr_flag(&self) -> u32 {
-        u32::from(self.certify_csr) << 25
-    }
-    fn get_internal_info_flag(&self) -> u32 {
-        u32::from(self.internal_info) << 24
-    }
-    fn get_internal_dice_flag(&self) -> u32 {
-        u32::from(self.internal_dice) << 23
-    }
-}
-
-#[repr(C, align(4))]
-#[derive(Default, Copy, Clone)]
-pub(crate) struct TciNodeData {
-    pub tci_type: u32,
-
-    // Bits
-    // 31: INTERNAL
-    // 30-0: Reserved. Must be zero
-    flags: u32,
-    pub tci_cumulative: TciMeasurement,
-    pub tci_current: TciMeasurement,
-}
-
-impl TciNodeData {
-    const INTERNAL_FLAG_MASK: u32 = 1 << 31;
-
-    pub const fn flag_is_internal(&self) -> bool {
-        self.flags & Self::INTERNAL_FLAG_MASK != 0
-    }
-
-    fn _set_flag_is_internal(&mut self, value: bool) {
-        _set_flag(&mut self.flags, Self::INTERNAL_FLAG_MASK, value);
-    }
-
-    pub const fn new() -> TciNodeData {
-        TciNodeData {
-            tci_type: 0,
-            flags: 0,
-            tci_cumulative: TciMeasurement([0; DPE_PROFILE.get_tci_size()]),
-            tci_current: TciMeasurement([0; DPE_PROFILE.get_tci_size()]),
-        }
-    }
-
-    pub fn serialize(&self, dst: &mut [u8]) -> Result<usize, DpeErrorCode> {
-        if dst.len() < size_of::<Self>() {
-            return Err(DpeErrorCode::InternalError);
-        }
-
-        let mut offset: usize = 0;
-        dst[offset..offset + size_of::<u32>()].copy_from_slice(&self.tci_type.to_le_bytes());
-        offset += size_of::<u32>();
-        dst[offset..offset + self.tci_cumulative.0.len()].copy_from_slice(&self.tci_cumulative.0);
-        offset += self.tci_cumulative.0.len();
-        dst[offset..offset + self.tci_current.0.len()].copy_from_slice(&self.tci_current.0);
-        offset += self.tci_current.0.len();
-
-        Ok(offset)
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub(crate) enum ContextState {
-    /// Inactive or uninitialized.
-    Inactive,
-    /// Context is initialized and ready to be used.
-    Active,
-    /// A child was derived from this context, but it was not retained. This will need to be
-    /// destroyed automatically if all of it's children have been destroyed. It is preserved for its
-    /// TCI data, but the handle is no longer valid. Because the handle is no longer valid, a client
-    /// cannot command it to be destroyed.
-    Retired,
-}
-
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub(crate) enum ContextType {
-    /// Typical context.
-    Normal,
-    /// Has limitations on what operations can be done.
-    Simulation,
-}
-
-#[repr(C, align(4))]
-pub(crate) struct Context {
-    pub handle: ContextHandle,
-    pub tci: TciNodeData,
-    /// Bitmap of the node indices that are children of this node
-    pub children: u32,
-    /// Index in DPE instance of the parent context. 0xFF if this node is the root
-    pub parent_idx: u8,
-    pub context_type: ContextType,
-    pub state: ContextState,
-    /// Which hardware locality owns the context.
-    pub locality: u32,
-    /// Whether a tag has been assigned to the context.
-    pub has_tag: bool,
-    /// Optional tag assigned to the context.
-    pub tag: u32,
-}
-
-impl Context {
-    pub const ROOT_INDEX: u8 = 0xff;
-
-    const fn new() -> Context {
-        Context {
-            handle: ContextHandle::default(),
-            tci: TciNodeData::new(),
-            children: 0,
-            parent_idx: Self::ROOT_INDEX,
-            context_type: ContextType::Normal,
-            state: ContextState::Inactive,
-            locality: 0,
-            has_tag: false,
-            tag: 0,
-        }
-    }
-
-    /// Resets all values to a freshly initialized state.
-    ///
-    /// # Arguments
-    ///
-    /// * `context_type` - Context type this will become.
-    /// * `locality` - Which hardware locality owns the context.
-    /// * `handle` - Value that will be used to refer to the context. Random value for simulation
-    ///   contexts and 0x0 for the default context.
-    pub fn activate(&mut self, args: &ActiveContextArgs) {
-        self.handle = *args.handle;
-        self.tci = TciNodeData::new();
-        self.tci.tci_type = args.tci_type;
-        self.children = 0;
-        self.parent_idx = args.parent_idx;
-        self.context_type = args.context_type;
-        self.state = ContextState::Active;
-        self.locality = args.locality;
-    }
-
-    /// Destroy this context so it can no longer be used until it is re-initialized. The default
-    /// context cannot be re-initialized.
-    pub fn destroy(&mut self) {
-        self.tci = TciNodeData::new();
-        self.has_tag = false;
-        self.tag = 0;
-        self.state = ContextState::Inactive;
-    }
-
-    /// Add a child to list of children in the context.
-    pub fn add_child(&mut self, idx: usize) -> Result<(), DpeErrorCode> {
-        if idx >= MAX_HANDLES {
-            return Err(DpeErrorCode::InternalError);
-        }
-        self.children |= 1 << idx;
-        Ok(())
-    }
-}
-
-pub(crate) struct ActiveContextArgs<'a> {
-    pub context_type: ContextType,
-    pub locality: u32,
-    pub handle: &'a ContextHandle,
-    pub tci_type: u32,
-    pub parent_idx: u8,
-}
-
 /// Iterate over all of the bits set to 1 in a u32. Each iteration returns the bit index 0 being the
 /// least significant.
 ///
@@ -515,102 +298,16 @@ impl Iterator for FlagsIter {
     }
 }
 
-pub(crate) struct ChildToRootIter<'a> {
-    idx: usize,
-    contexts: &'a [Context],
-    done: bool,
-}
-
-impl ChildToRootIter<'_> {
-    /// Create a new iterator that will start at the leaf and go to the root node.
-    pub fn new(leaf_idx: usize, contexts: &[Context]) -> Result<ChildToRootIter, DpeErrorCode> {
-        Ok(ChildToRootIter {
-            idx: leaf_idx,
-            contexts,
-            done: false,
-        })
-    }
-}
-
-impl<'a> Iterator for ChildToRootIter<'a> {
-    type Item = &'a Context;
-
-    fn next(&mut self) -> Option<&'a Context> {
-        if self.done {
-            return None;
-        }
-
-        let context = &self.contexts[self.idx];
-        if context.parent_idx == Context::ROOT_INDEX {
-            self.done = true;
-        }
-        self.idx = context.parent_idx as usize;
-        Some(context)
-    }
-}
-
-#[repr(C)]
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-#[cfg_attr(test, derive(zerocopy::AsBytes, zerocopy::FromBytes))]
-pub struct ContextHandle(pub [u8; ContextHandle::SIZE]);
-
-impl ContextHandle {
-    pub const SIZE: usize = 16;
-    const DEFAULT: [u8; Self::SIZE] = [0; Self::SIZE];
-
-    /// Returns the default context handle.
-    pub const fn default() -> ContextHandle {
-        ContextHandle(Self::DEFAULT)
-    }
-
-    /// Whether the handle is the default context handle.
-    pub fn is_default(&self) -> bool {
-        self.0 == Self::DEFAULT
-    }
-
-    /// Serializes a handle to the given destination and returns the length copied.
-    pub fn serialize(&self, dst: &mut [u8]) -> Result<usize, DpeErrorCode> {
-        if dst.len() < size_of::<Self>() {
-            return Err(DpeErrorCode::InternalError);
-        }
-
-        dst[..ContextHandle::SIZE].copy_from_slice(&self.0);
-        Ok(ContextHandle::SIZE)
-    }
-}
-
-impl TryFrom<&[u8]> for ContextHandle {
-    type Error = DpeErrorCode;
-
-    fn try_from(raw: &[u8]) -> Result<Self, Self::Error> {
-        if raw.len() < size_of::<ContextHandle>() {
-            return Err(DpeErrorCode::InvalidArgument);
-        }
-
-        Ok(ContextHandle(raw[0..Self::SIZE].try_into().unwrap()))
-    }
-}
-
 #[cfg(test)]
 pub mod tests {
     use super::*;
     use crate::commands::DestroyCtxCmd;
     use crate::response::NewHandleResp;
+    use crate::support::test::SUPPORT;
     use crate::{commands::CommandHdr, CURRENT_PROFILE_VERSION};
     use crypto::OpensslCrypto;
     use zerocopy::AsBytes;
 
-    const SUPPORT: Support = Support {
-        simulation: true,
-        extend_tci: false,
-        auto_init: true,
-        tagging: true,
-        rotate_context: true,
-        certify_key: true,
-        certify_csr: false,
-        internal_info: false,
-        internal_dice: false,
-    };
     pub const TEST_HANDLE: ContextHandle =
         ContextHandle([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
     pub const SIMULATION_HANDLE: ContextHandle =
@@ -726,121 +423,6 @@ pub mod tests {
         let profile = dpe.get_profile().unwrap();
         assert_eq!(profile.version, CURRENT_PROFILE_VERSION);
         assert_eq!(profile.flags, SUPPORT.get_flags());
-    }
-
-    #[test]
-    fn test_get_support_flags() {
-        // Supports simulation flag.
-        let flags = Support {
-            simulation: true,
-            ..Support::default()
-        }
-        .get_flags();
-        assert_eq!(flags, 1 << 31);
-        // Supports extended TCI flag.
-        let flags = Support {
-            extend_tci: true,
-            ..Support::default()
-        }
-        .get_flags();
-        assert_eq!(flags, 1 << 30);
-        // Supports auto-init.
-        let flags = Support {
-            auto_init: true,
-            ..Support::default()
-        }
-        .get_flags();
-        assert_eq!(flags, 1 << 29);
-        // Supports tagging.
-        let flags = Support {
-            tagging: true,
-            ..Support::default()
-        }
-        .get_flags();
-        assert_eq!(flags, 1 << 28);
-        // Supports rotate context.
-        let flags = Support {
-            rotate_context: true,
-            ..Support::default()
-        }
-        .get_flags();
-        assert_eq!(flags, 1 << 27);
-        // Supports certify key.
-        let flags = Support {
-            certify_key: true,
-            ..Support::default()
-        }
-        .get_flags();
-        assert_eq!(flags, 1 << 26);
-        // Supports certify csr.
-        let flags = Support {
-            certify_csr: true,
-            ..Support::default()
-        }
-        .get_flags();
-        assert_eq!(flags, 1 << 25);
-        // Supports internal info.
-        let flags = Support {
-            internal_info: true,
-            ..Support::default()
-        }
-        .get_flags();
-        assert_eq!(flags, 1 << 24);
-        // Supports internal DICE.
-        let flags = Support {
-            internal_dice: true,
-            ..Support::default()
-        }
-        .get_flags();
-        assert_eq!(flags, 1 << 23);
-        // Supports a couple combos.
-        let flags = Support {
-            simulation: true,
-            auto_init: true,
-            rotate_context: true,
-            certify_csr: true,
-            internal_dice: true,
-            ..Support::default()
-        }
-        .get_flags();
-        assert_eq!(
-            flags,
-            (1 << 31) | (1 << 29) | (1 << 27) | (1 << 25) | (1 << 23)
-        );
-        let flags = Support {
-            extend_tci: true,
-            tagging: true,
-            certify_key: true,
-            internal_info: true,
-            ..Support::default()
-        }
-        .get_flags();
-        assert_eq!(flags, (1 << 30) | (1 << 28) | (1 << 26) | (1 << 24));
-        // Supports everything.
-        let flags = Support {
-            simulation: true,
-            extend_tci: true,
-            auto_init: true,
-            tagging: true,
-            rotate_context: true,
-            certify_key: true,
-            certify_csr: true,
-            internal_info: true,
-            internal_dice: true,
-        }
-        .get_flags();
-        assert_eq!(
-            flags,
-            (1 << 31)
-                | (1 << 30)
-                | (1 << 29)
-                | (1 << 28)
-                | (1 << 27)
-                | (1 << 26)
-                | (1 << 25)
-                | (1 << 24)
-                | (1 << 23)
-        );
     }
 
     #[test]
@@ -979,38 +561,5 @@ pub mod tests {
             dpe.get_descendants(&dpe.contexts[child_1_2]).unwrap()
         );
         assert_eq!(children, dpe.get_descendants(&dpe.contexts[root]).unwrap());
-    }
-
-    #[test]
-    fn test_child_to_root_iter() {
-        const INITIALIZER_CONTEXT: Context = Context::new();
-        let mut contexts = [INITIALIZER_CONTEXT; MAX_HANDLES];
-        let chain_indeces = [2, 4, 1, 13, MAX_HANDLES - 1, 3, 0, 9];
-        let root_index = chain_indeces[0];
-
-        // Lets put the context's index in the tag to make it easy to find later.
-        contexts[root_index].tag = root_index as u32;
-
-        // Assign all of the childrens' parents and put their index in the tag.
-        for (parent_chain_idx, child_idx) in chain_indeces.iter().skip(1).enumerate() {
-            let parent_idx = chain_indeces[parent_chain_idx];
-            contexts[*child_idx].parent_idx = parent_idx as u8;
-            contexts[*child_idx].tag = *child_idx as u32;
-        }
-
-        let mut count = 0;
-        let leaf_index = chain_indeces[chain_indeces.len() - 1];
-
-        for (answer, context) in chain_indeces
-            .iter()
-            .rev()
-            .zip(ChildToRootIter::new(leaf_index, &contexts).unwrap())
-        {
-            assert_eq!(*answer, context.tag as usize);
-            count += 1;
-        }
-
-        // Check we didn't accidentally skip any.
-        assert_eq!(chain_indeces.len(), count);
     }
 }

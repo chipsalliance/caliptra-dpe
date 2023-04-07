@@ -6,8 +6,8 @@
 //! this functionality for a no_std environment.
 
 use crate::{
-    dpe_instance::{TciMeasurement, TciNodeData},
     response::DpeErrorCode,
+    tci::{TciMeasurement, TciNodeData},
     DpeProfile, DPE_PROFILE,
 };
 
@@ -842,8 +842,9 @@ impl X509CertWriter<'_> {
 
 #[cfg(test)]
 mod tests {
+    use crate::tci::{TciMeasurement, TciNodeData};
     use crate::x509::{EcdsaPub, EcdsaSignature, MeasurementData, Name, X509CertWriter};
-    use crate::{dpe_instance::TciMeasurement, dpe_instance::TciNodeData, DPE_PROFILE};
+    use crate::DPE_PROFILE;
     use asn1;
     use std::str;
     use x509_parser::certificate::X509CertificateParser;
