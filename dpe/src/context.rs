@@ -150,70 +150,181 @@ pub(crate) struct ChildToRootIter<'a> {
     idx: usize,
     contexts: &'a [Context],
     done: bool,
+    count: usize,
 }
 
 impl ChildToRootIter<'_> {
     /// Create a new iterator that will start at the leaf and go to the root node.
-    pub fn new(leaf_idx: usize, contexts: &[Context]) -> Result<ChildToRootIter, DpeErrorCode> {
-        Ok(ChildToRootIter {
+    pub fn new(leaf_idx: usize, contexts: &[Context]) -> ChildToRootIter {
+        ChildToRootIter {
             idx: leaf_idx,
             contexts,
             done: false,
-        })
+            count: 0,
+        }
     }
 }
 
 impl<'a> Iterator for ChildToRootIter<'a> {
-    type Item = &'a Context;
+    type Item = Result<&'a Context, DpeErrorCode>;
 
-    fn next(&mut self) -> Option<&'a Context> {
+    fn next(&mut self) -> Option<Result<&'a Context, DpeErrorCode>> {
         if self.done {
             return None;
         }
+        if self.count >= MAX_HANDLES {
+            self.done = true;
+            return Some(Err(DpeErrorCode::MaxTcis));
+        }
 
         let context = &self.contexts[self.idx];
+
+        // Check if context is valid.
+        const MAX_IDX: u8 = (MAX_HANDLES - 1) as u8;
+        let valid_parent_idx = matches!(context.parent_idx, 0..=MAX_IDX | Context::ROOT_INDEX);
+        if !valid_parent_idx || context.state == ContextState::Inactive {
+            self.done = true;
+            return Some(Err(DpeErrorCode::InternalError));
+        }
+
         if context.parent_idx == Context::ROOT_INDEX {
             self.done = true;
         }
         self.idx = context.parent_idx as usize;
-        Some(context)
+        self.count += 1;
+        Some(Ok(context))
     }
 }
 
 #[cfg(test)]
-pub mod tests {
+mod tests {
     use super::*;
 
     #[test]
     fn test_child_to_root_iter() {
         const INITIALIZER_CONTEXT: Context = Context::new();
         let mut contexts = [INITIALIZER_CONTEXT; MAX_HANDLES];
-        let chain_indeces = [2, 4, 1, 13, MAX_HANDLES - 1, 3, 0, 9];
-        let root_index = chain_indeces[0];
+        let root_index = CHAIN_INDICES[0];
+        assert_eq!(MAX_HANDLES, CHAIN_INDICES.len());
 
         // Lets put the context's index in the tag to make it easy to find later.
         contexts[root_index].tag = root_index as u32;
+        contexts[root_index].state = ContextState::Retired;
 
-        // Assign all of the childrens' parents and put their index in the tag.
-        for (parent_chain_idx, child_idx) in chain_indeces.iter().skip(1).enumerate() {
-            let parent_idx = chain_indeces[parent_chain_idx];
-            contexts[*child_idx].parent_idx = parent_idx as u8;
-            contexts[*child_idx].tag = *child_idx as u32;
+        // Assign all of the children's parents and put their index in the tag.
+        for (parent_chain_idx, child_idx) in CHAIN_INDICES.iter().skip(1).enumerate() {
+            let parent_idx = CHAIN_INDICES[parent_chain_idx];
+            let context = &mut contexts[*child_idx];
+            context.parent_idx = parent_idx as u8;
+            context.tag = *child_idx as u32;
+            context.state = ContextState::Active;
         }
 
         let mut count = 0;
-        let leaf_index = chain_indeces[chain_indeces.len() - 1];
+        let leaf_index = CHAIN_INDICES[CHAIN_INDICES.len() - 1];
 
-        for (answer, context) in chain_indeces
+        for (answer, status) in CHAIN_INDICES
             .iter()
             .rev()
-            .zip(ChildToRootIter::new(leaf_index, &contexts).unwrap())
+            .zip(ChildToRootIter::new(leaf_index, &contexts))
         {
-            assert_eq!(*answer, context.tag as usize);
+            assert_eq!(*answer, status.unwrap().tag as usize);
             count += 1;
         }
 
         // Check we didn't accidentally skip any.
-        assert_eq!(chain_indeces.len(), count);
+        assert_eq!(CHAIN_INDICES.len(), count);
     }
+
+    #[test]
+    fn test_child_to_root_overflow() {
+        const INITIALIZER_CONTEXT: Context = Context::new();
+        let mut contexts = [INITIALIZER_CONTEXT; 2];
+
+        // Create circular relationship.
+        contexts[0].parent_idx = 1;
+        contexts[0].state = ContextState::Active;
+        contexts[1].parent_idx = 0;
+        contexts[1].state = ContextState::Active;
+
+        let mut iter = ChildToRootIter::new(0, &contexts);
+        for _ in 0..MAX_HANDLES {
+            iter.next().unwrap().unwrap();
+        }
+
+        assert_eq!(DpeErrorCode::MaxTcis, iter.next().unwrap().err().unwrap());
+    }
+
+    #[test]
+    fn test_child_to_root_check_parent_and_state() {
+        const INITIALIZER_CONTEXT: Context = Context::new();
+        let mut contexts = [INITIALIZER_CONTEXT];
+        contexts[0].state = ContextState::Retired;
+        contexts[0].parent_idx = MAX_HANDLES as u8;
+
+        // Above upper bound of handles.
+        let mut iter = ChildToRootIter::new(0, &contexts);
+        assert_eq!(
+            DpeErrorCode::InternalError,
+            iter.next().unwrap().err().unwrap()
+        );
+
+        // Inactive.
+        contexts[0].state = ContextState::Inactive;
+        contexts[0].parent_idx = 0;
+        let mut iter = ChildToRootIter::new(0, &contexts);
+        assert_eq!(
+            DpeErrorCode::InternalError,
+            iter.next().unwrap().err().unwrap()
+        );
+
+        // Retired.
+        contexts[0].state = ContextState::Retired;
+        let mut iter = ChildToRootIter::new(0, &contexts);
+        assert!(iter.next().unwrap().is_ok());
+
+        // Active and upper bound of handles.
+        contexts[0].state = ContextState::Active;
+        contexts[0].parent_idx = (MAX_HANDLES - 1) as u8;
+        let mut iter = ChildToRootIter::new(0, &contexts);
+        assert!(iter.next().unwrap().is_ok());
+
+        // Root index.
+        contexts[0].parent_idx = Context::ROOT_INDEX as u8;
+        let mut iter = ChildToRootIter::new(0, &contexts);
+        assert!(iter.next().unwrap().is_ok());
+    }
+
+    /// This is intended for testing a list of parent to children relationships. These are indices of contexts within a DPE instance.
+    ///
+    /// The context's parent context index is the previous value.
+    ///
+    /// So `dpe.contexts[2]` is the parent of `dpe.contexts[4]` which is the parent of
+    /// `dpe.contexts[1]` etc.
+    const CHAIN_INDICES: [usize; MAX_HANDLES] = [
+        2,
+        4,
+        1,
+        13,
+        MAX_HANDLES - 1,
+        3,
+        0,
+        9,
+        5,
+        6,
+        7,
+        8,
+        10,
+        11,
+        12,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+    ];
 }

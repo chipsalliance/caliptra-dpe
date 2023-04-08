@@ -183,8 +183,9 @@ impl<C: Crypto> DpeInstance<'_, C> {
     ) -> Result<usize, DpeErrorCode> {
         let mut out_idx = 0;
 
-        for curr in ChildToRootIter::new(start_idx, &self.contexts)? {
-            if out_idx >= nodes.len() || curr.state != ContextState::Active {
+        for status in ChildToRootIter::new(start_idx, &self.contexts) {
+            let curr = status?;
+            if out_idx >= nodes.len() {
                 return Err(DpeErrorCode::InternalError);
             }
 
@@ -246,10 +247,8 @@ impl<C: Crypto> DpeInstance<'_, C> {
             C::hash_initialize(DPE_PROFILE.alg_len()).map_err(|_| DpeErrorCode::InternalError)?;
 
         // Hash each node.
-        for context in ChildToRootIter::new(start_idx, &self.contexts)? {
-            if context.state != ContextState::Active {
-                return Err(DpeErrorCode::InternalError);
-            }
+        for status in ChildToRootIter::new(start_idx, &self.contexts) {
+            let context = status?;
 
             let mut tci_bytes = [0u8; size_of::<TciNodeData>()];
             let len = context.tci.serialize(&mut tci_bytes)?;
