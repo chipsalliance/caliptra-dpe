@@ -53,7 +53,8 @@ impl TciNodeData {
 }
 
 #[repr(transparent)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
+#[cfg_attr(test, derive(PartialEq, Eq))]
 pub struct TciMeasurement(pub [u8; DPE_PROFILE.get_tci_size()]);
 
 impl Default for TciMeasurement {
