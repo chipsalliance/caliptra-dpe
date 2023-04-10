@@ -14,19 +14,19 @@ use crypto::Crypto;
 #[derive(Debug, PartialEq, Eq)]
 #[cfg_attr(test, derive(zerocopy::AsBytes, zerocopy::FromBytes))]
 pub struct DeriveChildCmd {
-    handle: ContextHandle,
-    data: [u8; DPE_PROFILE.get_hash_size()],
-    flags: u32,
-    tci_type: u32,
-    target_locality: u32,
+    pub handle: ContextHandle,
+    pub data: [u8; DPE_PROFILE.get_hash_size()],
+    pub flags: u32,
+    pub tci_type: u32,
+    pub target_locality: u32,
 }
 
 impl DeriveChildCmd {
-    const INTERNAL_INPUT_INFO: u32 = 1 << 31;
-    const INTERNAL_INPUT_DICE: u32 = 1 << 30;
-    const RETAIN_PARENT: u32 = 1 << 29;
-    const MAKE_DEFAULT: u32 = 1 << 28;
-    const CHANGE_LOCALITY: u32 = 1 << 27;
+    pub const INTERNAL_INPUT_INFO: u32 = 1 << 31;
+    pub const INTERNAL_INPUT_DICE: u32 = 1 << 30;
+    pub const RETAIN_PARENT: u32 = 1 << 29;
+    pub const MAKE_DEFAULT: u32 = 1 << 28;
+    pub const CHANGE_LOCALITY: u32 = 1 << 27;
 
     const fn uses_internal_info_input(&self) -> bool {
         self.flags & Self::INTERNAL_INPUT_INFO != 0

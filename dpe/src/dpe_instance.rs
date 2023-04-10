@@ -301,7 +301,7 @@ impl Iterator for FlagsIter {
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::commands::DestroyCtxCmd;
+    use crate::commands::{DeriveChildCmd, DestroyCtxCmd};
     use crate::response::NewHandleResp;
     use crate::support::test::SUPPORT;
     use crate::{commands::CommandHdr, CURRENT_PROFILE_VERSION};
@@ -561,5 +561,49 @@ pub mod tests {
             dpe.get_descendants(&dpe.contexts[child_1_2]).unwrap()
         );
         assert_eq!(children, dpe.get_descendants(&dpe.contexts[root]).unwrap());
+    }
+
+    #[test]
+    fn test_derive_cdi() {
+        let mut dpe =
+            DpeInstance::<OpensslCrypto>::new_for_test(SUPPORT, &TEST_LOCALITIES).unwrap();
+
+        let mut last_cdi = vec![];
+
+        for i in 0..3 {
+            DeriveChildCmd {
+                handle: ContextHandle::default(),
+                data: [i; DPE_PROFILE.get_hash_size()],
+                flags: DeriveChildCmd::MAKE_DEFAULT,
+                tci_type: i as u32,
+                target_locality: 0,
+            }
+            .execute(&mut dpe, TEST_LOCALITIES[0])
+            .unwrap();
+
+            // Check the CDI changes each time.
+            let leaf_context_idx = dpe
+                .get_active_context_pos(&ContextHandle::default(), TEST_LOCALITIES[0])
+                .unwrap();
+            let curr_cdi = dpe.derive_cdi(leaf_context_idx).unwrap();
+            assert_ne!(last_cdi, curr_cdi);
+            last_cdi = curr_cdi;
+        }
+
+        let mut hasher = OpensslCrypto::hash_initialize(DPE_PROFILE.alg_len()).unwrap();
+        let leaf_idx = dpe
+            .get_active_context_pos(&ContextHandle::default(), TEST_LOCALITIES[0])
+            .unwrap();
+
+        for result in ChildToRootIter::new(leaf_idx, &dpe.contexts) {
+            let context = result.unwrap();
+            hasher.update(context.tci.as_bytes()).unwrap();
+        }
+
+        let mut digest = [0; DPE_PROFILE.get_hash_size()];
+        hasher.finish(&mut digest).unwrap();
+
+        let answer = OpensslCrypto::derive_cdi(DPE_PROFILE.alg_len(), &digest, b"DPE").unwrap();
+        assert_eq!(answer, last_cdi);
     }
 }
