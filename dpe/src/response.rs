@@ -5,7 +5,8 @@ Abstract:
     DPE reponses and serialization.
 --*/
 use crate::{
-    context::ContextHandle, CURRENT_PROFILE_VERSION, DPE_PROFILE, MAX_CERT_SIZE, MAX_HANDLES,
+    context::ContextHandle, tci::TciMeasurement, CURRENT_PROFILE_VERSION, DPE_PROFILE,
+    MAX_CERT_SIZE, MAX_HANDLES,
 };
 use core::mem::size_of;
 
@@ -219,8 +220,8 @@ impl SignResp {
 }
 
 #[repr(C)]
-#[derive(Debug, PartialEq, Eq)]
-#[cfg_attr(test, derive(zerocopy::AsBytes, zerocopy::FromBytes))]
+#[derive(Debug)]
+#[cfg_attr(test, derive(PartialEq, Eq))]
 pub struct GetTaggedTciResp {
     pub tci_cumulative: TciMeasurement,
     pub tci_current: TciMeasurement,
