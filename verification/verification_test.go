@@ -36,8 +36,14 @@ type TestDPEInstance interface {
 	GetLocality() uint32
 	// Returns the Maximum number of the TCIs instance can have.
 	GetMaxTciNodes() uint32
-	// Returns the version of the profile the instance implements.
-	GetProfileVersion() uint32
+	// Returns the major version of the profile the instance implements.
+	GetProfileMajorVersion() uint16
+	// Returns the minor version of the profile the instance implements.
+	GetProfileMinorVersion() uint16
+	// Returns the Vendor ID of the profile.
+	GetProfileVendorId() uint32
+	// Returns the vendor's product SKU.
+	GetProfileVendorSku() uint32
 }
 
 func TestGetProfile(t *testing.T) {
@@ -93,8 +99,17 @@ func testGetProfile(d TestDPEInstance, t *testing.T) {
 		if rsp.Profile != d.GetProfile() {
 			t.Fatalf("Incorrect profile. 0x%08x != 0x%08x", d.GetProfile(), rsp.Profile)
 		}
-		if rsp.Version != d.GetProfileVersion() {
-			t.Fatalf("Incorrect version. 0x%08x != 0x%08x", d.GetProfileVersion(), rsp.Version)
+		if rsp.MajorVersion != d.GetProfileMajorVersion() {
+			t.Fatalf("Incorrect version. 0x%08x != 0x%08x", d.GetProfileMajorVersion(), rsp.MajorVersion)
+		}
+		if rsp.MinorVersion != d.GetProfileMinorVersion() {
+			t.Fatalf("Incorrect version. 0x%08x != 0x%08x", d.GetProfileMinorVersion(), rsp.MinorVersion)
+		}
+		if rsp.VendorId != d.GetProfileVendorId() {
+			t.Fatalf("Incorrect version. 0x%08x != 0x%08x", d.GetProfileVendorId(), rsp.VendorId)
+		}
+		if rsp.VendorSku != d.GetProfileVendorSku() {
+			t.Fatalf("Incorrect version. 0x%08x != 0x%08x", d.GetProfileVendorSku(), rsp.VendorSku)
 		}
 		if rsp.MaxTciNodes != d.GetMaxTciNodes() {
 			t.Fatalf("Incorrect max TCI nodes. 0x%08x != 0x%08x", d.GetMaxTciNodes(), rsp.MaxTciNodes)

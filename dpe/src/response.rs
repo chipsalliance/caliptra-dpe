@@ -5,8 +5,8 @@ Abstract:
     DPE reponses and serialization.
 --*/
 use crate::{
-    context::ContextHandle, tci::TciMeasurement, CURRENT_PROFILE_VERSION, DPE_PROFILE,
-    MAX_CERT_SIZE, MAX_HANDLES,
+    context::ContextHandle, tci::TciMeasurement, CURRENT_PROFILE_MAJOR_VERSION,
+    CURRENT_PROFILE_MINOR_VERSION, DPE_PROFILE, MAX_CERT_SIZE, MAX_HANDLES, VENDOR_ID, VENDOR_SKU,
 };
 use core::mem::size_of;
 
@@ -87,15 +87,21 @@ impl ResponseHdr {
 #[derive(Debug, PartialEq, Eq)]
 #[cfg_attr(test, derive(zerocopy::AsBytes, zerocopy::FromBytes))]
 pub struct GetProfileResp {
-    pub version: u32,
+    pub major_version: u16,
+    pub minor_version: u16,
+    pub vendor_id: u32,
+    pub vendor_sku: u32,
     pub max_tci_nodes: u32,
     pub flags: u32,
 }
 
 impl GetProfileResp {
-    pub fn new(flags: u32) -> GetProfileResp {
+    pub const fn new(flags: u32) -> GetProfileResp {
         GetProfileResp {
-            version: CURRENT_PROFILE_VERSION,
+            major_version: CURRENT_PROFILE_MAJOR_VERSION,
+            minor_version: CURRENT_PROFILE_MINOR_VERSION,
+            vendor_id: VENDOR_ID,
+            vendor_sku: VENDOR_SKU,
             max_tci_nodes: MAX_HANDLES as u32,
             flags,
         }
@@ -106,10 +112,27 @@ impl GetProfileResp {
             return Err(DpeErrorCode::InternalError);
         }
 
-        dst[0..4].copy_from_slice(&self.version.to_le_bytes());
-        dst[4..8].copy_from_slice(&self.max_tci_nodes.to_le_bytes());
-        dst[8..12].copy_from_slice(&self.flags.to_le_bytes());
-        Ok(size_of::<GetProfileResp>())
+        let mut offset = 0;
+
+        dst[offset..offset + size_of::<u16>()].copy_from_slice(&self.major_version.to_le_bytes());
+        offset += size_of::<u16>();
+
+        dst[offset..offset + size_of::<u16>()].copy_from_slice(&self.minor_version.to_le_bytes());
+        offset += size_of::<u16>();
+
+        dst[offset..offset + size_of::<u32>()].copy_from_slice(&self.vendor_id.to_le_bytes());
+        offset += size_of::<u32>();
+
+        dst[offset..offset + size_of::<u32>()].copy_from_slice(&self.vendor_sku.to_le_bytes());
+        offset += size_of::<u32>();
+
+        dst[offset..offset + size_of::<u32>()].copy_from_slice(&self.max_tci_nodes.to_le_bytes());
+        offset += size_of::<u32>();
+
+        dst[offset..offset + size_of::<u32>()].copy_from_slice(&self.flags.to_le_bytes());
+        offset += size_of::<u32>();
+
+        Ok(offset)
     }
 }
 
@@ -265,11 +288,7 @@ mod tests {
     use zerocopy::AsBytes;
 
     const TEST_FLAGS: u32 = 0x7E57_B175;
-    const DEFAULT_GET_PROFILE_RESPONSE: GetProfileResp = GetProfileResp {
-        version: CURRENT_PROFILE_VERSION,
-        max_tci_nodes: MAX_HANDLES as u32,
-        flags: TEST_FLAGS,
-    };
+    const DEFAULT_GET_PROFILE_RESPONSE: GetProfileResp = GetProfileResp::new(TEST_FLAGS);
     const TEST_NEW_HANDLE_RESP: NewHandleResp = NewHandleResp {
         handle: TEST_HANDLE,
     };
@@ -337,7 +356,7 @@ mod tests {
         let mut response_buffer = [0; size_of::<GetProfileResp>()];
 
         assert_eq!(
-            12,
+            20,
             DEFAULT_GET_PROFILE_RESPONSE
                 .serialize(response_buffer.as_mut_slice())
                 .unwrap()

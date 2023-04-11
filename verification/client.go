@@ -24,11 +24,14 @@ type Transport interface {
 
 // Client is a connection to a DPE instance, parameterized by hash algorithm and ECC curve.
 type Client[CurveParameter Curve, Digest DigestAlgorithm] struct {
-	transport   Transport
-	Profile     Profile
-	Version     uint32
-	MaxTciNodes uint32
-	Flags       uint32
+	transport    Transport
+	Profile      Profile
+	MajorVersion uint16
+	MinorVersion uint16
+	VendorId     uint32
+	VendorSku    uint32
+	MaxTciNodes  uint32
+	Flags        uint32
 }
 
 // Client256 is a client that implements DPE_PROFILE_IROT_P256_SHA256
@@ -77,11 +80,13 @@ func NewClient[C Curve, D DigestAlgorithm](t Transport) (*Client[C, D], error) {
 	}
 
 	return &Client[C, D]{
-		transport:   t,
-		Profile:     rsp.Profile,
-		Version:     rsp.Version,
-		MaxTciNodes: rsp.MaxTciNodes,
-		Flags:       rsp.Flags,
+		transport:    t,
+		Profile:      rsp.Profile,
+		MajorVersion: rsp.MajorVersion,
+		MinorVersion: rsp.MinorVersion,
+		VendorId:     rsp.VendorId,
+		VendorSku:    rsp.VendorSku,
+		Flags:        rsp.Flags,
 	}, nil
 }
 
@@ -113,9 +118,12 @@ func getProfile(t Transport) (*GetProfileResp, error) {
 	// Define an anonymous struct for the actual wire-format members of GetProfile,
 	// since GetProfileResp includes the actual profile copied from the response header.
 	respStruct := struct {
-		Version     uint32
-		MaxTciNodes uint32
-		Flags       uint32
+		MajorVersion uint16
+		MinorVersion uint16
+		VendorId     uint32
+		VendorSku    uint32
+		MaxTciNodes  uint32
+		Flags        uint32
 	}{}
 
 	respHdr, err := execCommand(t, CommandGetProfile, 0, cmd, &respStruct)
@@ -125,10 +133,13 @@ func getProfile(t Transport) (*GetProfileResp, error) {
 
 	return &GetProfileResp{
 		// Special case for GetProfile: copy the profile from the inner packet header into the response structure.
-		Profile:     respHdr.Profile,
-		Version:     respStruct.Version,
-		MaxTciNodes: respStruct.MaxTciNodes,
-		Flags:       respStruct.Flags,
+		Profile:      respHdr.Profile,
+		MajorVersion: respStruct.MajorVersion,
+		MinorVersion: respStruct.MinorVersion,
+		VendorId:     respStruct.VendorId,
+		VendorSku:    respStruct.VendorSku,
+		MaxTciNodes:  respStruct.MaxTciNodes,
+		Flags:        respStruct.Flags,
 	}, nil
 }
 

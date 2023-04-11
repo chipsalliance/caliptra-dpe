@@ -4,7 +4,8 @@ const (
 	CmdMagic  uint32 = 0x44504543
 	RespMagic uint32 = 0x44504552
 
-	CURRENT_PROFILE_VERSION uint32 = 0
+	CURRENT_PROFILE_MAJOR_VERSION uint16 = 0
+	CURRENT_PROFILE_MINOR_VERSION uint16 = 8
 )
 
 type CommandCode uint32
@@ -62,10 +63,13 @@ type InitCtxResp struct {
 }
 
 type GetProfileResp struct {
-	Profile     Profile
-	Version     uint32
-	MaxTciNodes uint32
-	Flags       uint32
+	Profile      Profile
+	MajorVersion uint16
+	MinorVersion uint16
+	VendorId     uint32
+	VendorSku    uint32
+	MaxTciNodes  uint32
+	Flags        uint32
 }
 
 type CertifyKeyFlags uint32

@@ -22,7 +22,10 @@ mod x509;
 
 const MAX_CERT_SIZE: usize = 2048;
 const MAX_HANDLES: usize = 24;
-const CURRENT_PROFILE_VERSION: u32 = 0;
+const CURRENT_PROFILE_MAJOR_VERSION: u16 = 0;
+const CURRENT_PROFILE_MINOR_VERSION: u16 = 8;
+const VENDOR_ID: u32 = 0;
+const VENDOR_SKU: u32 = 0;
 
 pub enum DpeProfile {
     P256Sha256 = 1,

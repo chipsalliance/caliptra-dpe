@@ -15,11 +15,14 @@ import (
 const (
 	socketPath = "/tmp/dpe-sim.socket"
 
-	DPE_SIMULATOR_AUTO_INIT_LOCALITY uint32  = 0
-	DPE_SIMULATOR_OTHER_LOCALITY     uint32  = 0x4f544852
-	DPE_SIMULATOR_PROFILE            Profile = ProfileP256SHA256
-	DPE_SIMULATOR_MAX_TCI_NODES      uint32  = 24
-	DPE_SIMULATOR_PROFILE_VERSION    uint32  = CURRENT_PROFILE_VERSION
+	DPE_SIMULATOR_AUTO_INIT_LOCALITY    uint32  = 0
+	DPE_SIMULATOR_OTHER_LOCALITY        uint32  = 0x4f544852
+	DPE_SIMULATOR_PROFILE               Profile = ProfileP256SHA256
+	DPE_SIMULATOR_MAX_TCI_NODES         uint32  = 24
+	DPE_SIMULATOR_MAJOR_PROFILE_VERSION uint16  = CURRENT_PROFILE_MAJOR_VERSION
+	DPE_SIMULATOR_MINOR_PROFILE_VERSION uint16  = CURRENT_PROFILE_MINOR_VERSION
+	DPE_SIMULATOR_VENDOR_ID             uint32  = 0
+	DPE_SIMULATOR_VENDOR_SKU            uint32  = 0
 )
 
 type DpeSimulator struct {
@@ -168,6 +171,18 @@ func (s *DpeSimulator) GetMaxTciNodes() uint32 {
 	return DPE_SIMULATOR_MAX_TCI_NODES
 }
 
-func (s *DpeSimulator) GetProfileVersion() uint32 {
-	return DPE_SIMULATOR_PROFILE_VERSION
+func (s *DpeSimulator) GetProfileMajorVersion() uint16 {
+	return DPE_SIMULATOR_MAJOR_PROFILE_VERSION
+}
+
+func (s *DpeSimulator) GetProfileMinorVersion() uint16 {
+	return DPE_SIMULATOR_MINOR_PROFILE_VERSION
+}
+
+func (s *DpeSimulator) GetProfileVendorId() uint32 {
+	return DPE_SIMULATOR_VENDOR_ID
+}
+
+func (s *DpeSimulator) GetProfileVendorSku() uint32 {
+	return DPE_SIMULATOR_VENDOR_SKU
 }

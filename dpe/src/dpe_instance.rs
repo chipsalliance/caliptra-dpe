@@ -304,7 +304,7 @@ pub mod tests {
     use crate::commands::DestroyCtxCmd;
     use crate::response::NewHandleResp;
     use crate::support::test::SUPPORT;
-    use crate::{commands::CommandHdr, CURRENT_PROFILE_VERSION};
+    use crate::{commands::CommandHdr, CURRENT_PROFILE_MAJOR_VERSION};
     use crypto::OpensslCrypto;
     use zerocopy::AsBytes;
 
@@ -421,7 +421,7 @@ pub mod tests {
     fn test_get_profile() {
         let dpe = DpeInstance::<OpensslCrypto>::new_for_test(SUPPORT, &TEST_LOCALITIES).unwrap();
         let profile = dpe.get_profile().unwrap();
-        assert_eq!(profile.version, CURRENT_PROFILE_VERSION);
+        assert_eq!(profile.major_version, CURRENT_PROFILE_MAJOR_VERSION);
         assert_eq!(profile.flags, SUPPORT.get_flags());
     }
 
