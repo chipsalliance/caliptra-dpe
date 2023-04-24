@@ -23,6 +23,7 @@ use crate::{
 };
 use core::mem::size_of;
 use crypto::Crypto;
+use zerocopy::FromBytes;
 
 mod certify_key;
 mod derive_child;
@@ -67,25 +68,32 @@ impl Command {
     ///
     /// * `bytes` - serialized command
     pub fn deserialize(bytes: &[u8]) -> Result<Command, DpeErrorCode> {
-        let cmd_header = CommandHdr::try_from(bytes)?;
+        let header = CommandHdr::try_from(bytes)?;
         let bytes = &bytes[size_of::<CommandHdr>()..];
 
-        match cmd_header.cmd_id {
+        match header.cmd_id {
             Command::GET_PROFILE => Ok(Command::GetProfile),
-            Command::INITIALIZE_CONTEXT => Ok(Command::InitCtx(InitCtxCmd::try_from(bytes)?)),
-            Command::DERIVE_CHILD => Err(DpeErrorCode::InvalidCommand),
-            Command::CERTIFY_KEY => Ok(Command::CertifyKey(CertifyKeyCmd::try_from(bytes)?)),
-            Command::SIGN => Ok(Command::Sign(SignCmd::try_from(bytes)?)),
-            Command::ROTATE_CONTEXT_HANDLE => {
-                Ok(Command::RotateCtx(RotateCtxCmd::try_from(bytes)?))
-            }
-            Command::DESTROY_CONTEXT => Ok(Command::DestroyCtx(DestroyCtxCmd::try_from(bytes)?)),
+            Command::INITIALIZE_CONTEXT => Self::parse_command(Command::InitCtx, bytes),
+            Command::DERIVE_CHILD => Self::parse_command(Command::DeriveChild, bytes),
+            Command::CERTIFY_KEY => Self::parse_command(Command::CertifyKey, bytes),
+            Command::SIGN => Self::parse_command(Command::Sign, bytes),
+            Command::ROTATE_CONTEXT_HANDLE => Self::parse_command(Command::RotateCtx, bytes),
+            Command::DESTROY_CONTEXT => Self::parse_command(Command::DestroyCtx, bytes),
             Command::GET_CERTIFICATE_CHAIN => Err(DpeErrorCode::InvalidCommand),
-            Command::EXTEND_TCI => Ok(Command::ExtendTci(ExtendTciCmd::try_from(bytes)?)),
-            Command::TAG_TCI => Ok(Command::TagTci(TagTciCmd::try_from(bytes)?)),
-            Command::GET_TAGGED_TCI => Ok(Command::GetTaggedTci(GetTaggedTciCmd::try_from(bytes)?)),
+            Command::EXTEND_TCI => Self::parse_command(Command::ExtendTci, bytes),
+            Command::TAG_TCI => Self::parse_command(Command::TagTci, bytes),
+            Command::GET_TAGGED_TCI => Self::parse_command(Command::GetTaggedTci, bytes),
             _ => Err(DpeErrorCode::InvalidCommand),
         }
+    }
+
+    fn parse_command<T: FromBytes>(
+        build: impl FnOnce(T) -> Command,
+        bytes: &[u8],
+    ) -> Result<Command, DpeErrorCode> {
+        Ok(build(
+            T::read_from_prefix(bytes).ok_or(DpeErrorCode::InvalidArgument)?,
+        ))
     }
 }
 
@@ -96,8 +104,8 @@ pub trait CommandExecution<C: Crypto> {
 // ABI Command structures
 
 #[repr(C)]
-#[derive(Debug, PartialEq, Eq)]
-#[cfg_attr(test, derive(zerocopy::AsBytes, zerocopy::FromBytes))]
+#[derive(Debug, PartialEq, Eq, zerocopy::FromBytes)]
+#[cfg_attr(test, derive(zerocopy::AsBytes))]
 pub struct CommandHdr {
     pub magic: u32,
     pub cmd_id: u32,
@@ -112,15 +120,7 @@ impl TryFrom<&[u8]> for CommandHdr {
     type Error = DpeErrorCode;
 
     fn try_from(raw: &[u8]) -> Result<Self, Self::Error> {
-        if raw.len() < size_of::<CommandHdr>() {
-            return Err(DpeErrorCode::InvalidCommand);
-        }
-
-        let header = CommandHdr {
-            magic: u32::from_le_bytes(raw[0..4].try_into().unwrap()),
-            cmd_id: u32::from_le_bytes(raw[4..8].try_into().unwrap()),
-            profile: u32::from_le_bytes(raw[8..12].try_into().unwrap()),
-        };
+        let header = CommandHdr::read_from_prefix(raw).ok_or(DpeErrorCode::InvalidCommand)?;
         if header.magic != Self::DPE_COMMAND_MAGIC {
             return Err(DpeErrorCode::InvalidCommand);
         }
@@ -137,7 +137,7 @@ impl TryFrom<&[u8]> for CommandHdr {
 pub mod tests {
     use super::*;
     use crate::{DpeProfile, DPE_PROFILE};
-    use zerocopy::{AsBytes, FromBytes};
+    use zerocopy::AsBytes;
 
     #[cfg(feature = "dpe_profile_p256_sha256")]
     pub const TEST_DIGEST: [u8; DPE_PROFILE.get_hash_size()] = [
@@ -157,15 +157,6 @@ pub mod tests {
     };
 
     #[test]
-    fn try_from_cmd_hdr() {
-        let command_bytes = DEFAULT_COMMAND.as_bytes();
-        assert_eq!(
-            CommandHdr::read_from_prefix(command_bytes).unwrap(),
-            CommandHdr::try_from(command_bytes).unwrap(),
-        );
-    }
-
-    #[test]
     fn test_deserialize_get_profile() {
         // Commands that can be deserialized.
         assert_eq!(
@@ -178,16 +169,6 @@ pub mod tests {
     fn test_deserialize_unsupported_commands() {
         // Commands that are not implemented.
         let invalid_command = Err(DpeErrorCode::InvalidCommand);
-        assert_eq!(
-            invalid_command,
-            Command::deserialize(
-                CommandHdr {
-                    cmd_id: Command::DERIVE_CHILD,
-                    ..DEFAULT_COMMAND
-                }
-                .as_bytes()
-            )
-        );
         assert_eq!(
             invalid_command,
             Command::deserialize(

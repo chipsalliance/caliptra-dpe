@@ -76,8 +76,7 @@ impl Context {
 }
 
 #[repr(C)]
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-#[cfg_attr(test, derive(zerocopy::AsBytes, zerocopy::FromBytes))]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, zerocopy::AsBytes, zerocopy::FromBytes)]
 pub struct ContextHandle(pub [u8; ContextHandle::SIZE]);
 
 impl ContextHandle {

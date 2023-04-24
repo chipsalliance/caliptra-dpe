@@ -7,12 +7,11 @@ use crate::{
     tci::TciMeasurement,
     DPE_PROFILE,
 };
-use core::mem::size_of;
 use crypto::Crypto;
 
 #[repr(C)]
-#[derive(Debug, PartialEq, Eq)]
-#[cfg_attr(test, derive(zerocopy::AsBytes, zerocopy::FromBytes))]
+#[derive(Debug, PartialEq, Eq, zerocopy::FromBytes)]
+#[cfg_attr(test, derive(zerocopy::AsBytes))]
 pub struct DeriveChildCmd {
     pub handle: ContextHandle,
     pub data: [u8; DPE_PROFILE.get_hash_size()],
@@ -137,54 +136,17 @@ impl<C: Crypto> CommandExecution<C> for DeriveChildCmd {
     }
 }
 
-impl TryFrom<&[u8]> for DeriveChildCmd {
-    type Error = DpeErrorCode;
-
-    fn try_from(raw: &[u8]) -> Result<Self, Self::Error> {
-        if raw.len() < size_of::<DeriveChildCmd>() {
-            return Err(DpeErrorCode::InvalidArgument);
-        }
-
-        let mut offset: usize = 0;
-
-        let handle = ContextHandle::try_from(raw)?;
-        offset += ContextHandle::SIZE;
-
-        let mut data = [0; DPE_PROFILE.get_hash_size()];
-        data.copy_from_slice(&raw[offset..offset + DPE_PROFILE.get_hash_size()]);
-        offset += DPE_PROFILE.get_hash_size();
-
-        let flags = u32::from_le_bytes(raw[offset..offset + size_of::<u32>()].try_into().unwrap());
-        offset += size_of::<u32>();
-
-        let tci_type =
-            u32::from_le_bytes(raw[offset..offset + size_of::<u32>()].try_into().unwrap());
-        offset += size_of::<u32>();
-
-        let target_locality =
-            u32::from_le_bytes(raw[offset..offset + size_of::<u32>()].try_into().unwrap());
-
-        Ok(DeriveChildCmd {
-            handle,
-            data,
-            flags,
-            tci_type,
-            target_locality,
-        })
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{
-        commands::{tests::TEST_DIGEST, InitCtxCmd},
+        commands::{tests::TEST_DIGEST, Command, CommandHdr, InitCtxCmd},
         dpe_instance::tests::{SIMULATION_HANDLE, TEST_LOCALITIES},
         support::Support,
         MAX_HANDLES,
     };
     use crypto::OpensslCrypto;
-    use zerocopy::{AsBytes, FromBytes};
+    use zerocopy::AsBytes;
 
     const TEST_DERIVE_CHILD_CMD: DeriveChildCmd = DeriveChildCmd {
         handle: SIMULATION_HANDLE,
@@ -195,28 +157,14 @@ mod tests {
     };
 
     #[test]
-    fn try_from_derive_child() {
-        let command_bytes = TEST_DERIVE_CHILD_CMD.as_bytes();
+    fn test_deserialize_derive_child() {
+        let mut command = CommandHdr::new(Command::DeriveChild(TEST_DERIVE_CHILD_CMD))
+            .as_bytes()
+            .to_vec();
+        command.extend(TEST_DERIVE_CHILD_CMD.as_bytes());
         assert_eq!(
-            DeriveChildCmd::read_from_prefix(command_bytes).unwrap(),
-            DeriveChildCmd::try_from(command_bytes).unwrap(),
-        );
-    }
-
-    #[test]
-    fn test_slice_to_derive_child() {
-        let invalid_argument: Result<DeriveChildCmd, DpeErrorCode> =
-            Err(DpeErrorCode::InvalidArgument);
-
-        // Test if too small.
-        assert_eq!(
-            invalid_argument,
-            DeriveChildCmd::try_from([0u8; size_of::<DeriveChildCmd>() - 1].as_slice())
-        );
-
-        assert_eq!(
-            TEST_DERIVE_CHILD_CMD,
-            DeriveChildCmd::try_from(TEST_DERIVE_CHILD_CMD.as_bytes()).unwrap()
+            Ok(Command::DeriveChild(TEST_DERIVE_CHILD_CMD)),
+            Command::deserialize(&command)
         );
     }
 

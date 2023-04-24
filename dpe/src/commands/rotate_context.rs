@@ -5,12 +5,11 @@ use crate::{
     dpe_instance::DpeInstance,
     response::{DpeErrorCode, NewHandleResp, Response},
 };
-use core::mem::size_of;
 use crypto::Crypto;
 
 #[repr(C)]
-#[derive(Debug, PartialEq, Eq)]
-#[cfg_attr(test, derive(zerocopy::AsBytes, zerocopy::FromBytes))]
+#[derive(Debug, PartialEq, Eq, zerocopy::FromBytes)]
+#[cfg_attr(test, derive(zerocopy::AsBytes))]
 pub struct RotateCtxCmd {
     handle: ContextHandle,
     flags: u32,
@@ -22,25 +21,6 @@ impl RotateCtxCmd {
 
     const fn uses_target_is_default(&self) -> bool {
         self.flags & Self::TARGET_IS_DEFAULT != 0
-    }
-}
-
-impl TryFrom<&[u8]> for RotateCtxCmd {
-    type Error = DpeErrorCode;
-
-    fn try_from(raw: &[u8]) -> Result<Self, Self::Error> {
-        if raw.len() < size_of::<RotateCtxCmd>() {
-            return Err(DpeErrorCode::InvalidArgument);
-        }
-
-        let handle = ContextHandle::try_from(raw)?;
-
-        let raw = &raw[ContextHandle::SIZE..];
-        Ok(RotateCtxCmd {
-            handle,
-            flags: u32::from_le_bytes(raw[0..4].try_into().unwrap()),
-            target_locality: u32::from_le_bytes(raw[4..8].try_into().unwrap()),
-        })
     }
 }
 
@@ -86,22 +66,13 @@ mod tests {
         support::Support,
     };
     use crypto::OpensslCrypto;
-    use zerocopy::{AsBytes, FromBytes};
+    use zerocopy::AsBytes;
 
     const TEST_ROTATE_CTX_CMD: RotateCtxCmd = RotateCtxCmd {
         flags: 0x1234_5678,
         handle: TEST_HANDLE,
         target_locality: 0x9876_5432,
     };
-
-    #[test]
-    fn try_from_rotate_ctx() {
-        let command_bytes = TEST_ROTATE_CTX_CMD.as_bytes();
-        assert_eq!(
-            RotateCtxCmd::read_from_prefix(command_bytes).unwrap(),
-            RotateCtxCmd::try_from(command_bytes).unwrap(),
-        );
-    }
 
     #[test]
     fn test_deserialize_rotate_context() {
@@ -112,23 +83,6 @@ mod tests {
         assert_eq!(
             Ok(Command::RotateCtx(TEST_ROTATE_CTX_CMD)),
             Command::deserialize(&command)
-        );
-    }
-
-    #[test]
-    fn test_slice_to_rotate_ctx() {
-        let invalid_argument: Result<RotateCtxCmd, DpeErrorCode> =
-            Err(DpeErrorCode::InvalidArgument);
-
-        // Test if too small.
-        assert_eq!(
-            invalid_argument,
-            RotateCtxCmd::try_from([0u8; size_of::<RotateCtxCmd>() - 1].as_slice())
-        );
-
-        assert_eq!(
-            TEST_ROTATE_CTX_CMD,
-            RotateCtxCmd::try_from(TEST_ROTATE_CTX_CMD.as_bytes()).unwrap()
         );
     }
 
