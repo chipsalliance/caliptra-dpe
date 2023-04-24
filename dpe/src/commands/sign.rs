@@ -6,12 +6,11 @@ use crate::{
     response::{DpeErrorCode, Response, SignResp},
     DPE_PROFILE,
 };
-use core::mem::size_of;
 use crypto::{Crypto, Digest, EcdsaSig};
 
 #[repr(C)]
-#[derive(Debug, PartialEq, Eq)]
-#[cfg_attr(test, derive(zerocopy::AsBytes, zerocopy::FromBytes))]
+#[derive(Debug, PartialEq, Eq, zerocopy::FromBytes)]
+#[cfg_attr(test, derive(zerocopy::AsBytes))]
 pub struct SignCmd {
     handle: ContextHandle,
     label: [u8; DPE_PROFILE.get_hash_size()],
@@ -30,38 +29,6 @@ impl SignCmd {
     /// Uses non-deterministic derivation. If symmetric algorithms are used, this flag is ignored.
     const fn _uses_nd_derivation(&self) -> bool {
         !self._uses_symmetric() && self.flags & Self::_ND_DERIVATION != 0
-    }
-}
-
-impl TryFrom<&[u8]> for SignCmd {
-    type Error = DpeErrorCode;
-
-    fn try_from(raw: &[u8]) -> Result<Self, Self::Error> {
-        if raw.len() < size_of::<SignCmd>() {
-            return Err(DpeErrorCode::InvalidArgument);
-        }
-
-        let mut offset = 0;
-
-        let handle = ContextHandle::try_from(raw)?;
-        offset += ContextHandle::SIZE;
-
-        let label = raw[offset..offset + DPE_PROFILE.get_hash_size()]
-            .try_into()
-            .unwrap();
-        offset += DPE_PROFILE.get_hash_size();
-        let flags = u32::from_le_bytes(raw[offset..offset + 4].try_into().unwrap());
-        offset += size_of::<u32>();
-        let digest = raw[offset..offset + DPE_PROFILE.get_hash_size()]
-            .try_into()
-            .unwrap();
-
-        Ok(SignCmd {
-            handle,
-            label,
-            flags,
-            digest,
-        })
     }
 }
 
@@ -110,7 +77,7 @@ mod tests {
     use crypto::OpensslCrypto;
     use openssl::x509::X509;
     use openssl::{bn::BigNum, ecdsa::EcdsaSig};
-    use zerocopy::{AsBytes, FromBytes};
+    use zerocopy::AsBytes;
 
     #[cfg(feature = "dpe_profile_p256_sha256")]
     const TEST_LABEL: [u8; DPE_PROFILE.get_hash_size()] = [
@@ -131,15 +98,6 @@ mod tests {
     };
 
     #[test]
-    fn try_from_sign() {
-        let command_bytes = TEST_SIGN_CMD.as_bytes();
-        assert_eq!(
-            SignCmd::read_from_prefix(command_bytes).unwrap(),
-            SignCmd::try_from(command_bytes).unwrap(),
-        );
-    }
-
-    #[test]
     fn test_deserialize_sign() {
         let mut command = CommandHdr::new(Command::Sign(TEST_SIGN_CMD))
             .as_bytes()
@@ -148,20 +106,6 @@ mod tests {
         assert_eq!(
             Ok(Command::Sign(TEST_SIGN_CMD)),
             Command::deserialize(&command)
-        );
-    }
-
-    #[test]
-    fn test_slice_to_sign() {
-        // Test if too small.
-        assert_eq!(
-            Err(DpeErrorCode::InvalidArgument),
-            SignCmd::try_from([0u8; size_of::<SignCmd>() - 1].as_slice())
-        );
-
-        assert_eq!(
-            TEST_SIGN_CMD,
-            SignCmd::try_from(TEST_SIGN_CMD.as_bytes()).unwrap()
         );
     }
 

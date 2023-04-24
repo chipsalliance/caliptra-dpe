@@ -8,26 +8,15 @@ use crate::{
     x509::{MeasurementData, Name, X509CertWriter},
     DPE_PROFILE, MAX_CERT_SIZE, MAX_HANDLES,
 };
-use core::mem::size_of;
 use crypto::Crypto;
 
 #[repr(C)]
-#[derive(Debug, PartialEq, Eq)]
-#[cfg_attr(test, derive(zerocopy::AsBytes, zerocopy::FromBytes))]
+#[derive(Debug, PartialEq, Eq, zerocopy::FromBytes)]
+#[cfg_attr(test, derive(zerocopy::AsBytes))]
 pub struct CertifyKeyCmd {
     pub handle: ContextHandle,
     pub flags: u32,
     pub label: [u8; DPE_PROFILE.get_hash_size()],
-}
-
-impl CertifyKeyCmd {
-    const fn new() -> CertifyKeyCmd {
-        CertifyKeyCmd {
-            handle: ContextHandle::default(),
-            flags: 0,
-            label: [0; DPE_PROFILE.get_hash_size()],
-        }
-    }
 }
 
 impl<C: Crypto> CommandExecution<C> for CertifyKeyCmd {
@@ -105,30 +94,6 @@ impl<C: Crypto> CommandExecution<C> for CertifyKeyCmd {
     }
 }
 
-impl TryFrom<&[u8]> for CertifyKeyCmd {
-    type Error = DpeErrorCode;
-
-    fn try_from(raw: &[u8]) -> Result<Self, Self::Error> {
-        if raw.len() < size_of::<CertifyKeyCmd>() {
-            return Err(DpeErrorCode::InvalidArgument);
-        }
-
-        let mut cmd = CertifyKeyCmd::new();
-        let mut offset: usize = 0;
-
-        cmd.handle = ContextHandle::try_from(raw)?;
-        offset += ContextHandle::SIZE;
-
-        cmd.flags = u32::from_le_bytes(raw[offset..offset + size_of::<u32>()].try_into().unwrap());
-        offset += size_of::<u32>();
-
-        cmd.label
-            .copy_from_slice(&raw[offset..offset + DPE_PROFILE.get_hash_size()]);
-
-        Ok(cmd)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -158,23 +123,6 @@ mod tests {
         assert_eq!(
             Ok(Command::CertifyKey(TEST_CERTIFY_KEY_CMD)),
             Command::deserialize(&command)
-        );
-    }
-
-    #[test]
-    fn test_slice_to_certify_key() {
-        let invalid_argument: Result<CertifyKeyCmd, DpeErrorCode> =
-            Err(DpeErrorCode::InvalidArgument);
-
-        // Test if too small.
-        assert_eq!(
-            invalid_argument,
-            CertifyKeyCmd::try_from([0u8; size_of::<CertifyKeyCmd>() - 1].as_slice())
-        );
-
-        assert_eq!(
-            TEST_CERTIFY_KEY_CMD,
-            CertifyKeyCmd::try_from(TEST_CERTIFY_KEY_CMD.as_bytes()).unwrap()
         );
     }
 

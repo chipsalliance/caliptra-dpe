@@ -10,10 +10,10 @@ dpe_profile_p384_sha384 = []
 
 [dependencies]
 crypto = {path = "../crypto"}
+zerocopy = "0.6.1"
 
 [dev-dependencies]
 asn1 = "0.13.0"
-zerocopy = "0.6.1"
 openssl = "0.10"
 x509-parser = "0.14.0"
 crypto = {path = "../crypto", features = ["deterministic_rand"]}

@@ -5,34 +5,14 @@ use crate::{
     dpe_instance::DpeInstance,
     response::{DpeErrorCode, NewHandleResp, Response},
 };
-use core::mem::size_of;
 use crypto::Crypto;
 
 #[repr(C)]
-#[derive(Debug, PartialEq, Eq)]
-#[cfg_attr(test, derive(zerocopy::AsBytes, zerocopy::FromBytes))]
+#[derive(Debug, PartialEq, Eq, zerocopy::FromBytes)]
+#[cfg_attr(test, derive(zerocopy::AsBytes))]
 pub struct TagTciCmd {
     handle: ContextHandle,
     tag: u32,
-}
-
-impl TryFrom<&[u8]> for TagTciCmd {
-    type Error = DpeErrorCode;
-
-    fn try_from(raw: &[u8]) -> Result<Self, Self::Error> {
-        if raw.len() < size_of::<TagTciCmd>() {
-            return Err(DpeErrorCode::InvalidArgument);
-        }
-
-        Ok(TagTciCmd {
-            handle: ContextHandle::try_from(raw)?,
-            tag: u32::from_le_bytes(
-                raw[ContextHandle::SIZE..ContextHandle::SIZE + 4]
-                    .try_into()
-                    .unwrap(),
-            ),
-        })
-    }
 }
 
 impl<C: Crypto> CommandExecution<C> for TagTciCmd {
@@ -79,21 +59,12 @@ mod tests {
         support::Support,
     };
     use crypto::OpensslCrypto;
-    use zerocopy::{AsBytes, FromBytes};
+    use zerocopy::AsBytes;
 
     const TEST_TAG_TCI_CMD: TagTciCmd = TagTciCmd {
         handle: SIMULATION_HANDLE,
         tag: 0x1234_5678,
     };
-
-    #[test]
-    fn try_from_tag_tci() {
-        let command_bytes = TEST_TAG_TCI_CMD.as_bytes();
-        assert_eq!(
-            TagTciCmd::read_from_prefix(command_bytes).unwrap(),
-            TagTciCmd::try_from(command_bytes).unwrap(),
-        );
-    }
 
     #[test]
     fn test_deserialize_tag_tci() {
@@ -104,20 +75,6 @@ mod tests {
         assert_eq!(
             Ok(Command::TagTci(TEST_TAG_TCI_CMD)),
             Command::deserialize(&command)
-        );
-    }
-
-    #[test]
-    fn test_slice_to_tag_tci() {
-        // Test if too small.
-        assert_eq!(
-            Err(DpeErrorCode::InvalidArgument),
-            TagTciCmd::try_from([0u8; size_of::<TagTciCmd>() - 1].as_slice())
-        );
-
-        assert_eq!(
-            TEST_TAG_TCI_CMD,
-            TagTciCmd::try_from(TEST_TAG_TCI_CMD.as_bytes()).unwrap()
         );
     }
 
