@@ -37,6 +37,12 @@ impl TryFrom<&[u8]> for RotateCtxCmd {
 }
 
 impl<C: Crypto> CommandExecution<C> for RotateCtxCmd {
+    pub const TARGET_IS_DEFAULT: u32 = 1 << 31;
+    
+    const fn uses_target_is_default(&self) -> bool {
+        self.flags & Self::TARGET_IS_DEFAULT != 0
+    }
+    
     fn execute(&self, dpe: &mut DpeInstance<C>, locality: u32) -> Result<Response, DpeErrorCode> {
         if !dpe.support.rotate_context {
             return Err(DpeErrorCode::InvalidCommand);
@@ -51,10 +57,12 @@ impl<C: Crypto> CommandExecution<C> for RotateCtxCmd {
         }
         
         // Make sure caller's locality does not already have a default context.
-        let default_context_idx =
+        if self.uses_target_is_default() {
+            let default_context_idx =
                 dpe.get_active_context_pos(&ContextHandle::default(), locality);
-        if default_context_idx.is_some() {
-            return Err(DpeErrorCode::InvalidArgument);   
+            if default_context_idx.is_some() {
+                return Err(DpeErrorCode::InvalidArgument);   
+            }
         }
 
         let new_handle = dpe.generate_new_handle()?;
