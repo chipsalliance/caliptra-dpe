@@ -17,6 +17,14 @@ pub struct RotateCtxCmd {
     target_locality: u32,
 }
 
+impl RotateCtxCmd {
+    pub const TARGET_IS_DEFAULT: u32 = 1 << 31;
+    
+    const fn uses_target_is_default(&self) -> bool {
+        self.flags & Self::TARGET_IS_DEFAULT != 0
+    }
+}
+
 impl TryFrom<&[u8]> for RotateCtxCmd {
     type Error = DpeErrorCode;
 
@@ -37,12 +45,6 @@ impl TryFrom<&[u8]> for RotateCtxCmd {
 }
 
 impl<C: Crypto> CommandExecution<C> for RotateCtxCmd {
-    pub const TARGET_IS_DEFAULT: u32 = 1 << 31;
-    
-    const fn uses_target_is_default(&self) -> bool {
-        self.flags & Self::TARGET_IS_DEFAULT != 0
-    }
-    
     fn execute(&self, dpe: &mut DpeInstance<C>, locality: u32) -> Result<Response, DpeErrorCode> {
         if !dpe.support.rotate_context {
             return Err(DpeErrorCode::InvalidCommand);
@@ -182,7 +184,7 @@ mod tests {
             Err(DpeErrorCode::InvalidArgument),
             RotateCtxCmd {
                 handle: ContextHandle::default(),
-                flags: 0,
+                flags: RotateCtxCmd::TARGET_IS_DEFAULT,
                 target_locality: 0
             }
             .execute(&mut dpe, TEST_LOCALITIES[0])
