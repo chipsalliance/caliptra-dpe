@@ -67,7 +67,11 @@ impl<C: Crypto> CommandExecution<C> for RotateCtxCmd {
             }
         }
 
-        let new_handle = dpe.generate_new_handle()?;
+        let new_handle = if self.uses_target_is_default() {
+            ContextHandle::default()
+        } else {
+            dpe.generate_new_handle()?
+        };
         dpe.contexts[idx].handle = new_handle;
         Ok(Response::RotateCtx(NewHandleResp { handle: new_handle }))
     }
@@ -198,6 +202,19 @@ mod tests {
             RotateCtxCmd {
                 handle: ContextHandle::default(),
                 flags: 0,
+                target_locality: 0
+            }
+            .execute(&mut dpe, TEST_LOCALITIES[0])
+        );
+        
+        // New handle is all 0s if caller requests default handle
+        assert_eq!(
+            Ok(Response::RotateCtx(NewHandleResp {
+                handle: ContextHandle::default()
+            })),
+            RotateCtxCmd {
+                handle: ContextHandle::default(),
+                flags: RotateCtxCmd::TARGET_IS_DEFAULT,
                 target_locality: 0
             }
             .execute(&mut dpe, TEST_LOCALITIES[0])
