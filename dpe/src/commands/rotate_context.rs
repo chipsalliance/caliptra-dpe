@@ -213,7 +213,7 @@ mod tests {
                 handle: ContextHandle::default()
             })),
             RotateCtxCmd {
-                handle: ContextHandle::default(),
+                handle: SIMULATION_HANDLE,
                 flags: RotateCtxCmd::TARGET_IS_DEFAULT,
                 target_locality: 0
             }
