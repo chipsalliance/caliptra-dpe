@@ -19,7 +19,7 @@ pub struct RotateCtxCmd {
 
 impl RotateCtxCmd {
     pub const TARGET_IS_DEFAULT: u32 = 1 << 31;
-    
+
     const fn uses_target_is_default(&self) -> bool {
         self.flags & Self::TARGET_IS_DEFAULT != 0
     }
@@ -57,13 +57,13 @@ impl<C: Crypto> CommandExecution<C> for RotateCtxCmd {
         if dpe.contexts[idx].locality != locality {
             return Err(DpeErrorCode::InvalidHandle);
         }
-        
+
         // Make sure caller's locality does not already have a default context.
         if self.uses_target_is_default() {
             let default_context_idx =
                 dpe.get_active_context_pos(&ContextHandle::default(), locality);
             if default_context_idx.is_some() {
-                return Err(DpeErrorCode::InvalidArgument);   
+                return Err(DpeErrorCode::InvalidArgument);
             }
         }
 
@@ -178,7 +178,7 @@ mod tests {
             }
             .execute(&mut dpe, TEST_LOCALITIES[1])
         );
-        
+
         // Caller's locality already has default context.
         assert_eq!(
             Err(DpeErrorCode::InvalidArgument),
