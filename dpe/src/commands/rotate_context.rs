@@ -206,7 +206,7 @@ mod tests {
             }
             .execute(&mut dpe, TEST_LOCALITIES[0])
         );
-        
+
         // New handle is all 0s if caller requests default handle
         assert_eq!(
             Ok(Response::RotateCtx(NewHandleResp {
