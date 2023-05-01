@@ -67,6 +67,7 @@ impl<C: Crypto> CommandExecution<C> for RotateCtxCmd {
             }
         }
 
+        let new_handle = dpe.generate_new_handle()?;
         dpe.contexts[idx].handle = new_handle;
         Ok(Response::RotateCtx(NewHandleResp { handle: new_handle }))
     }
