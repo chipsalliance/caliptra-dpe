@@ -5,7 +5,7 @@ use crate::{
     dpe_instance::DpeInstance,
     response::{CertifyKeyResp, DpeErrorCode, Response},
     tci::TciNodeData,
-    x509::{EcdsaPub, EcdsaSignature, MeasurementData, Name, X509CertWriter},
+    x509::{MeasurementData, Name, X509CertWriter},
     DPE_PROFILE, MAX_CERT_SIZE, MAX_HANDLES,
 };
 use core::mem::size_of;
@@ -43,16 +43,8 @@ impl<C: Crypto> CommandExecution<C> for CertifyKeyCmd {
 
         // Derive CDI and public key
         let cdi = dpe.derive_cdi(idx)?;
-        let mut pub_key = EcdsaPub::default();
-        C::derive_ecdsa_pub(
-            DPE_PROFILE.alg_len(),
-            &cdi,
-            &self.label,
-            b"ECC",
-            &mut pub_key.x,
-            &mut pub_key.y,
-        )
-        .map_err(|_| DpeErrorCode::InternalError)?;
+        let pub_key = C::derive_ecdsa_pub(DPE_PROFILE.alg_len(), &cdi, &self.label, b"ECC")
+            .map_err(|_| DpeErrorCode::InternalError)?;
 
         let mut issuer_name = Name {
             cn: dpe.issuer_cn,
@@ -65,13 +57,8 @@ impl<C: Crypto> CommandExecution<C> for CertifyKeyCmd {
             cn: b"DPE Leaf",
             serial: [0u8; DPE_PROFILE.get_hash_size() * 2],
         };
-        C::get_pubkey_serial(
-            DPE_PROFILE.alg_len(),
-            &pub_key.x,
-            &pub_key.y,
-            &mut subject_name.serial,
-        )
-        .map_err(|_| DpeErrorCode::InternalError)?;
+        C::get_pubkey_serial(DPE_PROFILE.alg_len(), &pub_key, &mut subject_name.serial)
+            .map_err(|_| DpeErrorCode::InternalError)?;
 
         // Get TCI Nodes
         const INITIALIZER: TciNodeData = TciNodeData::new();
@@ -95,15 +82,9 @@ impl<C: Crypto> CommandExecution<C> for CertifyKeyCmd {
             &measurements,
         )?;
 
-        let mut tbs_digest = [0u8; DPE_PROFILE.get_hash_size()];
-        C::hash(
-            DPE_PROFILE.alg_len(),
-            &tbs_buffer[..bytes_written],
-            &mut tbs_digest,
-        )
-        .map_err(|_| DpeErrorCode::InternalError)?;
-        let mut sig = EcdsaSignature::default();
-        C::ecdsa_sign_with_alias(DPE_PROFILE.alg_len(), &tbs_digest, &mut sig.r, &mut sig.s)
+        let tbs_digest = C::hash(DPE_PROFILE.alg_len(), &tbs_buffer[..bytes_written])
+            .map_err(|_| DpeErrorCode::InternalError)?;
+        let sig = C::ecdsa_sign_with_alias(DPE_PROFILE.alg_len(), &tbs_digest)
             .map_err(|_| DpeErrorCode::InternalError)?;
 
         let mut cert = [0u8; MAX_CERT_SIZE];
@@ -116,8 +97,8 @@ impl<C: Crypto> CommandExecution<C> for CertifyKeyCmd {
 
         Ok(Response::CertifyKey(CertifyKeyResp {
             new_context_handle: dpe.contexts[idx].handle,
-            derived_pubkey_x: pub_key.x,
-            derived_pubkey_y: pub_key.y,
+            derived_pubkey_x: pub_key.x.bytes().try_into().unwrap(),
+            derived_pubkey_y: pub_key.y.bytes().try_into().unwrap(),
             cert_size,
             cert,
         }))

@@ -7,7 +7,7 @@ use crate::{
     DPE_PROFILE,
 };
 use core::mem::size_of;
-use crypto::Crypto;
+use crypto::{Crypto, Digest, EcdsaSig};
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq)]
@@ -80,27 +80,18 @@ impl<C: Crypto> CommandExecution<C> for SignCmd {
         }
 
         let cdi = dpe.derive_cdi(idx)?;
-        let (mut r, mut s) = (
-            [0; DPE_PROFILE.get_ecc_int_size()],
-            [0; DPE_PROFILE.get_ecc_int_size()],
-        );
-        C::ecdsa_sign_with_derived(
-            DPE_PROFILE.alg_len(),
-            &cdi,
-            &self.label,
-            b"ECC",
-            &self.digest,
-            &mut r,
-            &mut s,
-        )
-        .map_err(|_| DpeErrorCode::InternalError)?;
+        let digest = Digest::new(&self.digest, DPE_PROFILE.alg_len())
+            .map_err(|_| DpeErrorCode::InternalError)?;
+        let EcdsaSig { r, s } =
+            C::ecdsa_sign_with_derived(DPE_PROFILE.alg_len(), &cdi, &self.label, b"ECC", &digest)
+                .map_err(|_| DpeErrorCode::InternalError)?;
 
         dpe.roll_onetime_use_handle(idx)?;
 
         Ok(Response::Sign(SignResp {
             new_context_handle: dpe.contexts[idx].handle,
-            sig_r_or_hmac: r,
-            sig_s: s,
+            sig_r_or_hmac: r.bytes().try_into().unwrap(),
+            sig_s: s.bytes().try_into().unwrap(),
         }))
     }
 }

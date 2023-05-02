@@ -10,6 +10,7 @@ use crate::{
     tci::{TciMeasurement, TciNodeData},
     DpeProfile, DPE_PROFILE,
 };
+use crypto::{EcdsaPub, EcdsaSig};
 
 /// Type for specifying an X.509 RelativeDistinguisedName
 ///
@@ -27,36 +28,6 @@ pub struct MeasurementData<'a> {
 pub struct X509CertWriter<'a> {
     certificate: &'a mut [u8],
     offset: usize,
-}
-
-// An ECDSA signature
-pub struct EcdsaSignature {
-    pub(crate) r: [u8; DPE_PROFILE.get_ecc_int_size()],
-    pub(crate) s: [u8; DPE_PROFILE.get_ecc_int_size()],
-}
-
-impl Default for EcdsaSignature {
-    fn default() -> EcdsaSignature {
-        EcdsaSignature {
-            r: [0; DPE_PROFILE.get_ecc_int_size()],
-            s: [0; DPE_PROFILE.get_ecc_int_size()],
-        }
-    }
-}
-
-// An ECDSA public key
-pub struct EcdsaPub {
-    pub x: [u8; DPE_PROFILE.get_ecc_int_size()],
-    pub y: [u8; DPE_PROFILE.get_ecc_int_size()],
-}
-
-impl Default for EcdsaPub {
-    fn default() -> EcdsaPub {
-        EcdsaPub {
-            x: [0; DPE_PROFILE.get_ecc_int_size()],
-            y: [0; DPE_PROFILE.get_ecc_int_size()],
-        }
-    }
 }
 
 impl X509CertWriter<'_> {
@@ -231,10 +202,10 @@ impl X509CertWriter<'_> {
     }
 
     /// If `tagged`, include the tag and size fields
-    fn get_ecdsa_signature_size(sig: &EcdsaSignature, tagged: bool) -> Result<usize, DpeErrorCode> {
+    fn get_ecdsa_signature_size(sig: &EcdsaSig, tagged: bool) -> Result<usize, DpeErrorCode> {
         let seq_size = Self::get_structure_size(
-            Self::get_integer_bytes_size(&sig.r, /*tagged=*/ true)?
-                + Self::get_integer_bytes_size(&sig.s, /*tagged=*/ true)?,
+            Self::get_integer_bytes_size(sig.r.bytes(), /*tagged=*/ true)?
+                + Self::get_integer_bytes_size(sig.s.bytes(), /*tagged=*/ true)?,
             /*tagged=*/ true,
         )?;
 
@@ -570,8 +541,8 @@ impl X509CertWriter<'_> {
         bytes_written += self.encode_byte(0)?;
 
         bytes_written += self.encode_byte(0x4)?;
-        bytes_written += self.encode_bytes(&pubkey.x)?;
-        bytes_written += self.encode_bytes(&pubkey.y)?;
+        bytes_written += self.encode_bytes(pubkey.x.bytes())?;
+        bytes_written += self.encode_bytes(pubkey.y.bytes())?;
 
         Ok(bytes_written)
     }
@@ -582,9 +553,9 @@ impl X509CertWriter<'_> {
     ///     r  INTEGER,
     ///     s  INTEGER
     ///   }
-    fn encode_ecdsa_signature(&mut self, sig: &EcdsaSignature) -> Result<usize, DpeErrorCode> {
-        let seq_size = Self::get_integer_bytes_size(&sig.r, /*tagged=*/ true)?
-            + Self::get_integer_bytes_size(&sig.s, /*tagged=*/ true)?;
+    fn encode_ecdsa_signature(&mut self, sig: &EcdsaSig) -> Result<usize, DpeErrorCode> {
+        let seq_size = Self::get_integer_bytes_size(sig.r.bytes(), /*tagged=*/ true)?
+            + Self::get_integer_bytes_size(sig.s.bytes(), /*tagged=*/ true)?;
 
         // Encode BIT STRING
         let mut bytes_written = self.encode_tag_field(Self::BIT_STRING_TAG)?;
@@ -598,8 +569,8 @@ impl X509CertWriter<'_> {
         // Encode SEQUENCE
         bytes_written += self.encode_tag_field(Self::SEQUENCE_TAG)?;
         bytes_written += self.encode_size_field(seq_size)?;
-        bytes_written += self.encode_integer_bytes(&sig.r)?;
-        bytes_written += self.encode_integer_bytes(&sig.s)?;
+        bytes_written += self.encode_integer_bytes(sig.r.bytes())?;
+        bytes_written += self.encode_integer_bytes(sig.s.bytes())?;
 
         Ok(bytes_written)
     }
@@ -817,7 +788,7 @@ impl X509CertWriter<'_> {
     pub fn encode_ecdsa_certificate(
         &mut self,
         tbs: &[u8],
-        sig: &EcdsaSignature,
+        sig: &EcdsaSig,
     ) -> Result<usize, DpeErrorCode> {
         let cert_size = tbs.len()
             + Self::get_ecdsa_sig_alg_id_size(/*tagged=*/ true)?
@@ -843,9 +814,10 @@ impl X509CertWriter<'_> {
 #[cfg(test)]
 mod tests {
     use crate::tci::{TciMeasurement, TciNodeData};
-    use crate::x509::{EcdsaPub, EcdsaSignature, MeasurementData, Name, X509CertWriter};
+    use crate::x509::{MeasurementData, Name, X509CertWriter};
     use crate::DPE_PROFILE;
     use asn1;
+    use crypto::{AlgLen, CryptoBuf, EcdsaPub, EcdsaSig};
     use std::str;
     use x509_parser::certificate::X509CertificateParser;
     use x509_parser::nom::Parser;
@@ -951,10 +923,7 @@ mod tests {
     #[test]
     fn test_subject_pubkey() {
         let mut cert = [0u8; 256];
-        let test_key = EcdsaPub {
-            x: [0; DPE_PROFILE.get_ecc_int_size()],
-            y: [0; DPE_PROFILE.get_ecc_int_size()],
-        };
+        let test_key = EcdsaPub::default(DPE_PROFILE.alg_len());
 
         let mut w = X509CertWriter::new(&mut cert);
         let bytes_written = w.encode_ecdsa_subject_pubkey_info(&test_key).unwrap();
@@ -1016,9 +985,11 @@ mod tests {
             serial: [0x00; DPE_PROFILE.get_hash_size() * 2],
         };
 
+        const ECC_INT_SIZE: usize = DPE_PROFILE.get_ecc_int_size();
+        const ALG_LEN: AlgLen = DPE_PROFILE.alg_len();
         let test_pub = EcdsaPub {
-            x: [0xAA; DPE_PROFILE.get_ecc_int_size()],
-            y: [0xBB; DPE_PROFILE.get_ecc_int_size()],
+            x: CryptoBuf::new(&[0xAA; ECC_INT_SIZE], ALG_LEN).unwrap(),
+            y: CryptoBuf::new(&[0xBB; ECC_INT_SIZE], ALG_LEN).unwrap(),
         };
 
         let node = TciNodeData::new();
@@ -1061,13 +1032,15 @@ mod tests {
             serial: [0x00; DPE_PROFILE.get_hash_size() * 2],
         };
 
+        const ECC_INT_SIZE: usize = DPE_PROFILE.get_ecc_int_size();
+        const ALG_LEN: AlgLen = DPE_PROFILE.alg_len();
         let test_pub = EcdsaPub {
-            x: [0xAA; DPE_PROFILE.get_ecc_int_size()],
-            y: [0xBB; DPE_PROFILE.get_ecc_int_size()],
+            x: CryptoBuf::new(&[0xAA; ECC_INT_SIZE], ALG_LEN).unwrap(),
+            y: CryptoBuf::new(&[0xBB; ECC_INT_SIZE], ALG_LEN).unwrap(),
         };
-        let test_sig = EcdsaSignature {
-            r: [0xCC; DPE_PROFILE.get_ecc_int_size()],
-            s: [0xDD; DPE_PROFILE.get_ecc_int_size()],
+        let test_sig = EcdsaSig {
+            r: CryptoBuf::new(&[0xCC; ECC_INT_SIZE], ALG_LEN).unwrap(),
+            s: CryptoBuf::new(&[0xDD; ECC_INT_SIZE], ALG_LEN).unwrap(),
         };
 
         let node = TciNodeData::new();
