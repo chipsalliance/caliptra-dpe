@@ -1,6 +1,6 @@
 // Licensed under the Apache-2.0 license
 
-use crate::{AlgLen, Crypto, CryptoError, Hasher};
+use crate::{AlgLen, Crypto, CryptoBuf, CryptoError, Digest, EcdsaPub, Hasher};
 use openssl::{
     bn::{BigNum, BigNumContext},
     ec::{EcGroup, EcKey, EcPoint},
@@ -11,7 +11,7 @@ use openssl::{
 };
 use openssl_kdf::{perform_kdf, KdfArgument, KdfKbMode, KdfMacType, KdfType};
 
-pub struct OpensslHasher(openssl::hash::Hasher);
+pub struct OpensslHasher(openssl::hash::Hasher, AlgLen);
 
 impl Hasher for OpensslHasher {
     fn update(&mut self, bytes: &[u8]) -> Result<(), CryptoError> {
@@ -20,9 +20,11 @@ impl Hasher for OpensslHasher {
             .map_err(|_| CryptoError::CryptoLibError)
     }
 
-    fn finish(mut self, digest: &mut [u8]) -> Result<(), CryptoError> {
-        digest.copy_from_slice(&self.0.finish().map_err(|_| CryptoError::CryptoLibError)?);
-        Ok(())
+    fn finish(mut self) -> Result<Digest, CryptoError> {
+        Ok(Digest::new(
+            &self.0.finish().map_err(|_| CryptoError::CryptoLibError)?,
+            self.1,
+        )?)
     }
 }
 
@@ -45,14 +47,13 @@ impl OpensslCrypto {
 
     fn get_priv_byes(algs: AlgLen) -> Result<Vec<u8>, CryptoError> {
         let priv_bytes = vec![0u8; algs.size()];
-        let mut priv_digest = vec![0u8; algs.size()];
-        Self::hash(algs, &priv_bytes, &mut priv_digest)?;
-        Ok(priv_digest)
+        let priv_digest = Self::hash(algs, &priv_bytes)?;
+        Ok(priv_digest.bytes().to_vec())
     }
 
     pub fn derive_ecdsa_key(
         algs: AlgLen,
-        cdi: &<OpensslCrypto as Crypto>::Cdi,
+        cdi: &OpensslCdi,
         label: &[u8],
         info: &[u8],
     ) -> EcKey<Private> {
@@ -84,8 +85,10 @@ impl OpensslCrypto {
     }
 }
 
+type OpensslCdi = Vec<u8>;
+
 impl Crypto for OpensslCrypto {
-    type Cdi = Vec<u8>;
+    type Cdi = OpensslCdi;
     type Hasher = OpensslHasher;
 
     #[cfg(feature = "deterministic_rand")]
@@ -105,21 +108,22 @@ impl Crypto for OpensslCrypto {
         let md = Self::get_digest(algs);
         Ok(OpensslHasher(
             openssl::hash::Hasher::new(md).map_err(|_| CryptoError::CryptoLibError)?,
+            algs,
         ))
     }
 
     fn derive_cdi(
         algs: AlgLen,
-        measurement_digest: &[u8],
+        measurement: &Digest,
         info: &[u8],
     ) -> Result<Self::Cdi, CryptoError> {
         let md = Self::get_digest(algs);
         let args = [
             &KdfArgument::KbMode(KdfKbMode::Counter),
             &KdfArgument::Mac(KdfMacType::Hmac(md)),
-            &KdfArgument::KbInfo(measurement_digest),
+            &KdfArgument::KbInfo(measurement.bytes()),
             &KdfArgument::Salt(info),
-            &KdfArgument::Key(&measurement_digest),
+            &KdfArgument::Key(&measurement.bytes()),
         ];
 
         perform_kdf(KdfType::KeyBased, &args, md.size()).map_err(|_| CryptoError::CryptoLibError)
@@ -130,13 +134,11 @@ impl Crypto for OpensslCrypto {
         cdi: &Self::Cdi,
         label: &[u8],
         info: &[u8],
-        pub_x: &mut [u8],
-        pub_y: &mut [u8],
-    ) -> Result<(), CryptoError> {
-        let nid = Self::get_curve(algs);
+    ) -> Result<EcdsaPub, CryptoError> {
+        let nid = OpensslCrypto::get_curve(algs);
 
         // Generate public key
-        let priv_key = Self::derive_ecdsa_key(algs, cdi, label, info);
+        let priv_key = OpensslCrypto::derive_ecdsa_key(algs, cdi, label, info);
 
         let group = EcGroup::from_curve_name(nid).unwrap();
         let mut bn_ctx = BigNumContext::new().unwrap();
@@ -149,23 +151,16 @@ impl Crypto for OpensslCrypto {
             .affine_coordinates(&group, &mut x, &mut y, &mut bn_ctx)
             .unwrap();
 
-        pub_x.copy_from_slice(
-            &x.to_vec_padded((group.order_bits() / 8).try_into().unwrap())
-                .unwrap(),
-        );
-        pub_y.copy_from_slice(
-            &y.to_vec_padded((group.order_bits() / 8).try_into().unwrap())
-                .unwrap(),
-        );
-        Ok(())
+        let x = CryptoBuf::new(&x.to_vec_padded(algs.size() as i32).unwrap(), algs).unwrap();
+        let y = CryptoBuf::new(&y.to_vec_padded(algs.size() as i32).unwrap(), algs).unwrap();
+
+        Ok(EcdsaPub { x, y })
     }
 
     fn ecdsa_sign_with_alias(
         algs: AlgLen,
-        digest: &[u8],
-        sig_r: &mut [u8],
-        sig_s: &mut [u8],
-    ) -> Result<(), CryptoError> {
+        digest: &Digest,
+    ) -> Result<super::EcdsaSig, CryptoError> {
         let nid = Self::get_curve(algs);
         let priv_bytes = Self::get_priv_byes(algs)?;
         let group = EcGroup::from_curve_name(nid).map_err(|_| CryptoError::CryptoLibError)?;
@@ -179,21 +174,13 @@ impl Crypto for OpensslCrypto {
         let ec_priv = EcKey::from_private_components(&group, &priv_bn, &pub_point)
             .map_err(|_| CryptoError::CryptoLibError)?;
 
-        let sig =
-            EcdsaSig::sign::<Private>(digest, &ec_priv).map_err(|_| CryptoError::CryptoLibError)?;
-        sig_r.copy_from_slice(
-            sig.r()
-                .to_vec_padded((group.order_bits() / 8).try_into().unwrap())
-                .unwrap()
-                .as_slice(),
-        );
-        sig_s.copy_from_slice(
-            sig.s()
-                .to_vec_padded((group.order_bits() / 8).try_into().unwrap())
-                .unwrap()
-                .as_slice(),
-        );
-        Ok(())
+        let sig = EcdsaSig::sign::<Private>(digest.bytes(), &ec_priv)
+            .map_err(|_| CryptoError::CryptoLibError)?;
+
+        let r = CryptoBuf::new(&sig.r().to_vec_padded(algs.size() as i32).unwrap(), algs).unwrap();
+        let s = CryptoBuf::new(&sig.s().to_vec_padded(algs.size() as i32).unwrap(), algs).unwrap();
+
+        Ok(super::EcdsaSig { r, s })
     }
 
     fn ecdsa_sign_with_derived(
@@ -201,28 +188,16 @@ impl Crypto for OpensslCrypto {
         cdi: &Self::Cdi,
         label: &[u8],
         info: &[u8],
-        digest: &[u8],
-        sig_r: &mut [u8],
-        sig_s: &mut [u8],
-    ) -> Result<(), CryptoError> {
-        let nid = Self::get_curve(algs);
-        let priv_key = Self::derive_ecdsa_key(algs, cdi, label, info);
-        let group = EcGroup::from_curve_name(nid).unwrap();
+        digest: &Digest,
+    ) -> Result<super::EcdsaSig, CryptoError> {
+        let priv_key = OpensslCrypto::derive_ecdsa_key(algs, cdi, label, info);
 
-        let sig = EcdsaSig::sign::<Private>(digest, &priv_key).unwrap();
-        sig_r.copy_from_slice(
-            sig.r()
-                .to_vec_padded((group.order_bits() / 8).try_into().unwrap())
-                .unwrap()
-                .as_slice(),
-        );
-        sig_s.copy_from_slice(
-            sig.s()
-                .to_vec_padded((group.order_bits() / 8).try_into().unwrap())
-                .unwrap()
-                .as_slice(),
-        );
-        Ok(())
+        let sig = EcdsaSig::sign::<Private>(digest.bytes(), &priv_key).unwrap();
+
+        let r = CryptoBuf::new(&sig.r().to_vec_padded(algs.size() as i32).unwrap(), algs).unwrap();
+        let s = CryptoBuf::new(&sig.s().to_vec_padded(algs.size() as i32).unwrap(), algs).unwrap();
+
+        Ok(super::EcdsaSig { r, s })
     }
 
     fn get_ecdsa_alias_serial(algs: AlgLen, serial: &mut [u8]) -> Result<(), CryptoError> {
@@ -243,15 +218,9 @@ impl Crypto for OpensslCrypto {
             .affine_coordinates(&group, &mut x, &mut y, &mut bn_ctx)
             .map_err(|_| CryptoError::CryptoLibError)?;
 
-        Self::get_pubkey_serial(
-            algs,
-            x.to_vec_padded((group.order_bits() / 8).try_into().unwrap())
-                .unwrap()
-                .as_slice(),
-            y.to_vec_padded((group.order_bits() / 8).try_into().unwrap())
-                .unwrap()
-                .as_slice(),
-            serial,
-        )
+        let x = CryptoBuf::new(&x.to_vec_padded(algs.size() as i32).unwrap(), algs).unwrap();
+        let y = CryptoBuf::new(&y.to_vec_padded(algs.size() as i32).unwrap(), algs).unwrap();
+
+        Self::get_pubkey_serial(algs, &EcdsaPub { x, y }, serial)
     }
 }

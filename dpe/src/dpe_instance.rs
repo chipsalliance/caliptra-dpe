@@ -227,10 +227,9 @@ impl<C: Crypto> DpeInstance<'_, C> {
         hasher
             .update(&measurement.0)
             .map_err(|_| DpeErrorCode::InternalError)?;
-        hasher
-            .finish(&mut context.tci.tci_cumulative.0)
-            .map_err(|_| DpeErrorCode::InternalError)?;
+        let digest = hasher.finish().map_err(|_| DpeErrorCode::InternalError)?;
 
+        context.tci.tci_cumulative.0.copy_from_slice(digest.bytes());
         context.tci.tci_current = *measurement;
         Ok(())
     }
@@ -257,10 +256,7 @@ impl<C: Crypto> DpeInstance<'_, C> {
                 .map_err(|_| DpeErrorCode::InternalError)?;
         }
 
-        let mut digest = [0; DPE_PROFILE.get_hash_size()];
-        hasher
-            .finish(&mut digest)
-            .map_err(|_| DpeErrorCode::InternalError)?;
+        let digest = hasher.finish().map_err(|_| DpeErrorCode::InternalError)?;
 
         C::derive_cdi(DPE_PROFILE.alg_len(), &digest, b"DPE")
             .map_err(|_| DpeErrorCode::InternalError)
@@ -487,11 +483,10 @@ pub mod tests {
         let mut hasher = OpensslCrypto::hash_initialize(DPE_PROFILE.alg_len()).unwrap();
         hasher.update(&[0; DPE_PROFILE.get_hash_size()]).unwrap();
         hasher.update(&data).unwrap();
-        let mut first_cumulative = [0; DPE_PROFILE.get_hash_size()];
-        hasher.finish(&mut first_cumulative).unwrap();
+        let first_cumulative = hasher.finish().unwrap();
 
         // Make sure the cumulative was computed correctly.
-        assert_eq!(first_cumulative.as_ref(), context.tci.tci_cumulative.0);
+        assert_eq!(first_cumulative.bytes(), context.tci.tci_cumulative.0);
 
         let data = [2; DPE_PROFILE.get_hash_size()];
         dpe.add_tci_measurement(0, &TciMeasurement(data), TEST_LOCALITIES[0])
@@ -501,13 +496,12 @@ pub mod tests {
         assert_eq!(data, context.tci.tci_current.0);
 
         let mut hasher = OpensslCrypto::hash_initialize(DPE_PROFILE.alg_len()).unwrap();
-        hasher.update(&first_cumulative).unwrap();
+        hasher.update(first_cumulative.bytes()).unwrap();
         hasher.update(&data).unwrap();
-        let mut second_cumulative = [0; DPE_PROFILE.get_hash_size()];
-        hasher.finish(&mut second_cumulative).unwrap();
+        let second_cumulative = hasher.finish().unwrap();
 
         // Make sure the cumulative was computed correctly.
-        assert_eq!(second_cumulative.as_ref(), context.tci.tci_cumulative.0);
+        assert_eq!(second_cumulative.bytes(), context.tci.tci_cumulative.0);
     }
 
     #[test]
@@ -600,8 +594,7 @@ pub mod tests {
             hasher.update(context.tci.as_bytes()).unwrap();
         }
 
-        let mut digest = [0; DPE_PROFILE.get_hash_size()];
-        hasher.finish(&mut digest).unwrap();
+        let digest = hasher.finish().unwrap();
 
         let answer = OpensslCrypto::derive_cdi(DPE_PROFILE.alg_len(), &digest, b"DPE").unwrap();
         assert_eq!(answer, last_cdi);
