@@ -32,6 +32,8 @@ impl EcdsaPub {
     }
 }
 
+pub type EcdsaPriv = CryptoBuf;
+
 /// An HMAC Signature
 pub type HmacSig = CryptoBuf;
 
@@ -39,6 +41,7 @@ pub type HmacSig = CryptoBuf;
 pub type HmacKey = CryptoBuf;
 
 /// A common base struct that can be used for all digests, signatures, and keys.
+#[derive(Debug, PartialEq)]
 pub struct CryptoBuf {
     pub(crate) bytes: [u8; Self::MAX_SIZE],
     pub(crate) len: usize,

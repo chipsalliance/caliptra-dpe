@@ -79,6 +79,14 @@ struct Args {
     #[arg(long)]
     supports_certify_csr: bool,
 
+    /// Supports symmetric derivation.
+    #[arg(long)]
+    supports_is_symmetric: bool,
+
+    /// Supports non-deterministic key derivation.
+    #[arg(long)]
+    supports_nd_derivation: bool,
+
     /// Supports the INTERNAL_INPUT_INFO extension to DeriveChild
     #[arg(long)]
     supports_internal_info: bool,
@@ -118,6 +126,8 @@ fn main() -> std::io::Result<()> {
         rotate_context: args.supports_rotate_context,
         certify_key: args.supports_certify_key,
         certify_csr: args.supports_certify_csr,
+        is_symmetric: args.supports_is_symmetric,
+        nd_derivation: args.supports_nd_derivation,
         internal_info: args.supports_internal_info,
         internal_dice: args.supports_internal_dice,
     };

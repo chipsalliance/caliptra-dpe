@@ -12,6 +12,8 @@ type Support struct {
 	RotateContext bool
 	CertifyKey    bool
 	CertifyCsr    bool
+	IsSymmetric   bool
+	NDDerivation  bool
 	InternalInfo  bool
 	InternalDice  bool
 }
@@ -235,11 +237,17 @@ func (s *Support) ToFlags() uint32 {
 	if s.CertifyCsr {
 		flags |= (1 << 25)
 	}
-	if s.InternalInfo {
+	if s.IsSymmetric {
 		flags |= (1 << 24)
 	}
-	if s.InternalDice {
+	if s.NDDerivation {
 		flags |= (1 << 23)
+	}
+	if s.InternalInfo {
+		flags |= (1 << 22)
+	}
+	if s.InternalDice {
+		flags |= (1 << 21)
 	}
 	return flags
 }

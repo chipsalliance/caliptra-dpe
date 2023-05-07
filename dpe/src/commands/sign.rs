@@ -20,20 +20,25 @@ pub struct SignCmd {
 
 impl SignCmd {
     const _IS_SYMMETRIC: u32 = 1 << 31;
-    const _ND_DERIVATION: u32 = 1 << 30;
+    const ND_DERIVATION: u32 = 1 << 30;
 
     const fn _uses_symmetric(&self) -> bool {
         self.flags & Self::_IS_SYMMETRIC != 0
     }
 
     /// Uses non-deterministic derivation. If symmetric algorithms are used, this flag is ignored.
-    const fn _uses_nd_derivation(&self) -> bool {
-        !self._uses_symmetric() && self.flags & Self::_ND_DERIVATION != 0
+    const fn uses_nd_derivation(&self) -> bool {
+        !self._uses_symmetric() && self.flags & Self::ND_DERIVATION != 0
     }
 }
 
 impl<C: Crypto> CommandExecution<C> for SignCmd {
     fn execute(&self, dpe: &mut DpeInstance<C>, locality: u32) -> Result<Response, DpeErrorCode> {
+        // Make sure the operation is supported.
+        if !dpe.support.nd_derivation && self.uses_nd_derivation() {
+            return Err(DpeErrorCode::InvalidArgument);
+        }
+
         let idx = dpe
             .get_active_context_pos(&self.handle, locality)
             .ok_or(DpeErrorCode::InvalidHandle)?;
@@ -46,12 +51,31 @@ impl<C: Crypto> CommandExecution<C> for SignCmd {
             return Err(DpeErrorCode::InvalidArgument);
         }
 
-        let cdi = dpe.derive_cdi(idx)?;
         let digest = Digest::new(&self.digest, DPE_PROFILE.alg_len())
             .map_err(|_| DpeErrorCode::InternalError)?;
-        let EcdsaSig { r, s } =
-            C::ecdsa_sign_with_derived(DPE_PROFILE.alg_len(), &cdi, &self.label, b"ECC", &digest)
-                .map_err(|_| DpeErrorCode::InternalError)?;
+        let algs = DPE_PROFILE.alg_len();
+        let priv_key = if self.uses_nd_derivation() {
+            dpe.contexts[idx].cached_priv_key.take().unwrap_or_else({
+                || {
+                    C::derive_ecdsa_key(
+                        algs,
+                        &dpe.derive_cdi(idx, true).unwrap(),
+                        &self.label,
+                        b"ECC",
+                    )
+                }
+            })
+        } else {
+            let cdi = dpe.derive_cdi(idx, false)?;
+            C::derive_ecdsa_key(algs, &cdi, &self.label, b"ECC")
+        };
+
+        let EcdsaSig { r, s } = C::ecdsa_sign_with_derived(algs, &digest, &priv_key)
+            .map_err(|_| DpeErrorCode::InternalError)?;
+        // cache private key
+        if self.uses_nd_derivation() {
+            dpe.contexts[idx].cached_priv_key.replace(priv_key);
+        }
 
         dpe.roll_onetime_use_handle(idx)?;
 
@@ -72,7 +96,7 @@ mod tests {
             InitCtxCmd,
         },
         dpe_instance::tests::{SIMULATION_HANDLE, TEST_LOCALITIES},
-        support::test::SUPPORT,
+        support::{test::SUPPORT, Support},
     };
     use crypto::OpensslCrypto;
     use openssl::x509::X509;
@@ -116,34 +140,46 @@ mod tests {
             flags: 0,
             ..TEST_SIGN_CMD
         }
-        ._uses_nd_derivation());
+        .uses_nd_derivation());
 
         // Other flag set.
         assert!(!SignCmd {
             flags: SignCmd::_IS_SYMMETRIC,
             ..TEST_SIGN_CMD
         }
-        ._uses_nd_derivation());
+        .uses_nd_derivation());
 
         // Just non-deterministic flag set.
         assert!(SignCmd {
-            flags: SignCmd::_ND_DERIVATION,
+            flags: SignCmd::ND_DERIVATION,
             ..TEST_SIGN_CMD
         }
-        ._uses_nd_derivation());
+        .uses_nd_derivation());
 
         // If both are set, it ignores non-deterministic derivation.
         assert!(!SignCmd {
-            flags: SignCmd::_IS_SYMMETRIC | SignCmd::_ND_DERIVATION,
+            flags: SignCmd::_IS_SYMMETRIC | SignCmd::ND_DERIVATION,
             ..TEST_SIGN_CMD
         }
-        ._uses_nd_derivation());
+        .uses_nd_derivation());
     }
 
     #[test]
     fn test_bad_command_inputs() {
         let mut dpe =
             DpeInstance::<OpensslCrypto>::new_for_test(SUPPORT, &TEST_LOCALITIES).unwrap();
+
+        // Bad argument
+        assert_eq!(
+            Err(DpeErrorCode::InvalidArgument),
+            SignCmd {
+                handle: ContextHandle([0xff; ContextHandle::SIZE]),
+                label: TEST_LABEL,
+                flags: SignCmd::ND_DERIVATION,
+                digest: TEST_DIGEST
+            }
+            .execute(&mut dpe, TEST_LOCALITIES[0])
+        );
 
         // Bad handle.
         assert_eq!(
@@ -242,6 +278,90 @@ mod tests {
                     .unwrap();
             x509.public_key().unwrap().ec_key().unwrap()
         };
+
+        assert!(sig.verify(&TEST_DIGEST, &ec_pub_key).unwrap());
+    }
+
+    #[test]
+    fn test_asymmetric_non_deterministic() {
+        let mut dpe = DpeInstance::<OpensslCrypto>::new_for_test(
+            Support {
+                auto_init: true,
+                nd_derivation: true,
+                ..Support::default()
+            },
+            &TEST_LOCALITIES,
+        )
+        .unwrap();
+
+        for i in 0..3 {
+            DeriveChildCmd {
+                handle: ContextHandle::default(),
+                data: [i; DPE_PROFILE.get_hash_size()],
+                flags: DeriveChildCmd::MAKE_DEFAULT,
+                tci_type: i as u32,
+                target_locality: 0,
+            }
+            .execute(&mut dpe, TEST_LOCALITIES[0])
+            .unwrap();
+        }
+
+        let idx = dpe
+            .get_active_context_pos(&ContextHandle::default(), TEST_LOCALITIES[0])
+            .unwrap();
+
+        let sig = {
+            // Check that private key is not cached and hence must be generated by sign
+            let context = &dpe.contexts[idx];
+            assert!(context.cached_priv_key.is_none());
+
+            let cmd = SignCmd {
+                handle: ContextHandle::default(),
+                label: TEST_LABEL,
+                flags: SignCmd::ND_DERIVATION,
+                digest: TEST_DIGEST,
+            };
+            let resp = match cmd.execute(&mut dpe, TEST_LOCALITIES[0]).unwrap() {
+                Response::Sign(resp) => resp,
+                _ => panic!("Incorrect response type"),
+            };
+
+            EcdsaSig::from_private_components(
+                BigNum::from_slice(&resp.sig_r_or_hmac).unwrap(),
+                BigNum::from_slice(&resp.sig_s).unwrap(),
+            )
+            .unwrap()
+        };
+
+        // Check that private key is cached after executing sign
+        let context = &dpe.contexts[idx];
+        assert!(context.cached_priv_key.is_some());
+        let mut cached_priv_key = [0; DPE_PROFILE.alg_len().size()];
+        cached_priv_key.copy_from_slice(context.cached_priv_key.as_ref().unwrap().bytes());
+
+        let ec_pub_key = {
+            let cmd = CertifyKeyCmd {
+                handle: ContextHandle::default(),
+                flags: CertifyKeyCmd::ND_DERIVATION,
+                label: TEST_LABEL,
+            };
+            let certify_resp = match cmd.execute(&mut dpe, TEST_LOCALITIES[0]).unwrap() {
+                Response::CertifyKey(resp) => resp,
+                _ => panic!("Incorrect response type"),
+            };
+            let x509 =
+                X509::from_der(&certify_resp.cert[..certify_resp.cert_size.try_into().unwrap()])
+                    .unwrap();
+            x509.public_key().unwrap().ec_key().unwrap()
+        };
+
+        // Check that certify key used the cached private key
+        let context = &dpe.contexts[idx];
+        assert!(context.cached_priv_key.is_some());
+        assert_eq!(
+            &cached_priv_key,
+            &context.cached_priv_key.as_ref().unwrap().bytes()
+        );
 
         assert!(sig.verify(&TEST_DIGEST, &ec_pub_key).unwrap());
     }

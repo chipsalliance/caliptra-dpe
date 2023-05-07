@@ -241,7 +241,11 @@ impl<C: Crypto> DpeInstance<'_, C> {
     /// # Arguments
     ///
     /// * `start_idx` - index of the leaf context
-    pub(crate) fn derive_cdi(&self, start_idx: usize) -> Result<C::Cdi, DpeErrorCode> {
+    pub(crate) fn derive_cdi(
+        &self,
+        start_idx: usize,
+        mix_random_value: bool,
+    ) -> Result<C::Cdi, DpeErrorCode> {
         let mut hasher =
             C::hash_initialize(DPE_PROFILE.alg_len()).map_err(|_| DpeErrorCode::InternalError)?;
 
@@ -257,8 +261,15 @@ impl<C: Crypto> DpeInstance<'_, C> {
         }
 
         let digest = hasher.finish().map_err(|_| DpeErrorCode::InternalError)?;
+        let mut seed = [0; DPE_PROFILE.alg_len().size()];
+        let random_seed = if mix_random_value {
+            C::rand_bytes(&mut seed).map_err(|_| DpeErrorCode::InternalError)?;
+            Some(seed.as_ref())
+        } else {
+            None
+        };
 
-        C::derive_cdi(DPE_PROFILE.alg_len(), &digest, b"DPE")
+        C::derive_cdi(DPE_PROFILE.alg_len(), &digest, b"DPE", random_seed)
             .map_err(|_| DpeErrorCode::InternalError)
     }
 }
@@ -579,8 +590,13 @@ pub mod tests {
             let leaf_context_idx = dpe
                 .get_active_context_pos(&ContextHandle::default(), TEST_LOCALITIES[0])
                 .unwrap();
-            let curr_cdi = dpe.derive_cdi(leaf_context_idx).unwrap();
+            let curr_cdi = dpe.derive_cdi(leaf_context_idx, false).unwrap();
             assert_ne!(last_cdi, curr_cdi);
+
+            // Ensure the CDI changes when mixing random seed
+            let cdi_with_rand_seed = dpe.derive_cdi(leaf_context_idx, true).unwrap();
+            assert_ne!(curr_cdi, cdi_with_rand_seed);
+
             last_cdi = curr_cdi;
         }
 
@@ -595,8 +611,8 @@ pub mod tests {
         }
 
         let digest = hasher.finish().unwrap();
-
-        let answer = OpensslCrypto::derive_cdi(DPE_PROFILE.alg_len(), &digest, b"DPE").unwrap();
+        let answer =
+            OpensslCrypto::derive_cdi(DPE_PROFILE.alg_len(), &digest, b"DPE", None).unwrap();
         assert_eq!(answer, last_cdi);
     }
 }

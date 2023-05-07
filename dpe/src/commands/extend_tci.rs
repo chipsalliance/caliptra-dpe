@@ -28,6 +28,9 @@ impl<C: Crypto> CommandExecution<C> for ExtendTciCmd {
             .ok_or(DpeErrorCode::InvalidHandle)?;
         let context = &mut dpe.contexts[idx];
 
+        // invalidate cached private key
+        context.cached_priv_key = None;
+
         // Make sure the command is coming from the right locality.
         if context.locality != locality {
             return Err(DpeErrorCode::InvalidHandle);
@@ -123,6 +126,8 @@ mod tests {
         assert_eq!(handle, default_context.handle);
         // Make sure the current TCI was updated correctly.
         assert_eq!(data, default_context.tci.tci_current.0);
+        // Make sure cached private key is invalidated
+        assert_eq!(None, default_context.cached_priv_key);
 
         let sim_local = TEST_LOCALITIES[1];
         dpe.support.simulation = true;
