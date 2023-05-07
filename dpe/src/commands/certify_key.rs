@@ -19,21 +19,55 @@ pub struct CertifyKeyCmd {
     pub label: [u8; DPE_PROFILE.get_hash_size()],
 }
 
+impl CertifyKeyCmd {
+    pub const ND_DERIVATION: u32 = 1 << 31;
+
+    // Uses non-deterministic derivation.
+    const fn uses_nd_derivation(&self) -> bool {
+        self.flags & Self::ND_DERIVATION != 0
+    }
+}
+
 impl<C: Crypto> CommandExecution<C> for CertifyKeyCmd {
     fn execute(&self, dpe: &mut DpeInstance<C>, locality: u32) -> Result<Response, DpeErrorCode> {
+        // Make sure the operation is supported.
+        if !dpe.support.nd_derivation && self.uses_nd_derivation() {
+            return Err(DpeErrorCode::InvalidArgument);
+        }
+
         let idx = dpe
             .get_active_context_pos(&self.handle, locality)
             .ok_or(DpeErrorCode::InvalidHandle)?;
+        let context = &dpe.contexts[idx];
 
         // Make sure the command is coming from the right locality.
-        if dpe.contexts[idx].locality != locality {
+        if context.locality != locality {
             return Err(DpeErrorCode::InvalidHandle);
         }
 
-        // Derive CDI and public key
-        let cdi = dpe.derive_cdi(idx)?;
-        let pub_key = C::derive_ecdsa_pub(DPE_PROFILE.alg_len(), &cdi, &self.label, b"ECC")
+        let algs = DPE_PROFILE.alg_len();
+        let priv_key = if self.uses_nd_derivation() {
+            dpe.contexts[idx].cached_priv_key.take().unwrap_or_else({
+                || {
+                    C::derive_ecdsa_key(
+                        algs,
+                        &dpe.derive_cdi(idx, true).unwrap(),
+                        &self.label,
+                        b"ECC",
+                    )
+                }
+            })
+        } else {
+            let cdi = dpe.derive_cdi(idx, false)?;
+            C::derive_ecdsa_key(algs, &cdi, &self.label, b"ECC")
+        };
+
+        let pub_key = C::derive_ecdsa_pub(DPE_PROFILE.alg_len(), &priv_key)
             .map_err(|_| DpeErrorCode::InternalError)?;
+        // cache private key
+        if self.uses_nd_derivation() {
+            dpe.contexts[idx].cached_priv_key.replace(priv_key);
+        }
 
         let mut issuer_name = Name {
             cn: dpe.issuer_cn,

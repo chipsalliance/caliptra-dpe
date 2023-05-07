@@ -121,35 +121,38 @@ pub trait Crypto {
     /// * `algs` - Which length of algorithm to use.
     fn hash_initialize(algs: AlgLen) -> Result<Self::Hasher, CryptoError>;
 
-    /// Derive a CDI based on the current base CDI and measurements.
+    /// Derive a CDI based on the current base CDI and measurements as well as an optional random seed value.
     ///
     /// # Arguments
     ///
     /// * `algs` - Which length of algorithms to use.
     /// * `measurement` - A digest of the measurements which should be used for CDI derivation
     /// * `info` - Caller-supplied info string to use in CDI derivation
+    /// * `rand_seed` - Caller-supplied optional random seed to use in CDI derivation
     fn derive_cdi(
         algs: AlgLen,
         measurement: &Digest,
         info: &[u8],
+        rand_seed: Option<&[u8]>,
     ) -> Result<Self::Cdi, CryptoError>;
 
-    /// Derives an ECDSA keypair from `cdi` and returns the public key
+    /// Derives a private key using the cdi
     ///
     /// # Arguments
     ///
     /// * `algs` - Which length of algorithms to use.
-    /// * `cdi` - CDI from which to derive the signing key
-    /// * `label` - Caller-supplied label to use in asymmetric key derivation
-    /// * `info` - Caller-supplied info string to use in asymmetric key derivation
+    /// * `cdi` - Caller-supplied private key to use in public key derivation
     ///
+    fn derive_ecdsa_key(algs: AlgLen, cdi: &Self::Cdi, label: &[u8], info: &[u8]) -> EcdsaPriv;
+
+    /// Derives and returns an ECDSA public key using the caller-supplied private key
+    ///
+    /// # Arguments
+    ///
+    /// * `algs` - Which length of algorithms to use.
+    /// * `priv_key` - Caller-supplied private key to use in public key derivation
     /// Returns a derived public key
-    fn derive_ecdsa_pub(
-        algs: AlgLen,
-        cdi: &Self::Cdi,
-        label: &[u8],
-        info: &[u8],
-    ) -> Result<EcdsaPub, CryptoError>;
+    fn derive_ecdsa_pub(algs: AlgLen, priv_key: &EcdsaPriv) -> Result<EcdsaPub, CryptoError>;
 
     /// Sign `digest` with the platform Alias Key
     ///
@@ -159,21 +162,17 @@ pub trait Crypto {
     /// * `digest` - Digest of data to be signed.
     fn ecdsa_sign_with_alias(algs: AlgLen, digest: &Digest) -> Result<EcdsaSig, CryptoError>;
 
-    /// Sign `digest` with a derived key from the CDI.
+    /// Sign `digest` with a derived key-pair from the CDI and caller-supplied private key
     ///
     /// # Arguments
     ///
     /// * `algs` - Which length of algorithms to use.
-    /// * `cdi` - CDI from which to derive the signing key
-    /// * `label` - Caller-supplied label to use in asymmetric key derivation
-    /// * `info` - Caller-supplied info string to use in asymmetric key derivation
     /// * `digest` - Digest of data to be signed.
+    /// * `priv_key` - Caller-supplied private key to use in public key derivation
     fn ecdsa_sign_with_derived(
         algs: AlgLen,
-        cdi: &Self::Cdi,
-        label: &[u8],
-        info: &[u8],
         digest: &Digest,
+        priv_key: &EcdsaPriv,
     ) -> Result<EcdsaSig, CryptoError>;
 
     /// Compute the serial number string for the alias public key

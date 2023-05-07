@@ -1,6 +1,7 @@
 // Licensed under the Apache-2.0 license.
 use crate::{response::DpeErrorCode, tci::TciNodeData, MAX_HANDLES};
 use core::mem::size_of;
+use crypto::EcdsaPriv;
 
 #[repr(C, align(4))]
 pub(crate) struct Context {
@@ -18,6 +19,8 @@ pub(crate) struct Context {
     pub has_tag: bool,
     /// Optional tag assigned to the context.
     pub tag: u32,
+    /// Private key which is cached only in non-deterministic key derivation mode
+    pub cached_priv_key: Option<EcdsaPriv>,
 }
 
 impl Context {
@@ -34,6 +37,7 @@ impl Context {
             locality: 0,
             has_tag: false,
             tag: 0,
+            cached_priv_key: None,
         }
     }
 
@@ -63,6 +67,7 @@ impl Context {
         self.has_tag = false;
         self.tag = 0;
         self.state = ContextState::Inactive;
+        self.cached_priv_key = None;
     }
 
     /// Add a child to list of children in the context.
