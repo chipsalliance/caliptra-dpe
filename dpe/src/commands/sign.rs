@@ -6,7 +6,7 @@ use crate::{
     response::{DpeErrorCode, Response, SignResp},
     DPE_PROFILE,
 };
-use crypto::{Crypto, Digest, EcdsaSig};
+use crypto::{Crypto, Digest, Signature};
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, zerocopy::FromBytes)]
@@ -19,23 +19,25 @@ pub struct SignCmd {
 }
 
 impl SignCmd {
-    const _IS_SYMMETRIC: u32 = 1 << 31;
+    const IS_SYMMETRIC: u32 = 1 << 31;
     const ND_DERIVATION: u32 = 1 << 30;
 
-    const fn _uses_symmetric(&self) -> bool {
-        self.flags & Self::_IS_SYMMETRIC != 0
+    const fn uses_symmetric(&self) -> bool {
+        self.flags & Self::IS_SYMMETRIC != 0
     }
 
     /// Uses non-deterministic derivation. If symmetric algorithms are used, this flag is ignored.
     const fn uses_nd_derivation(&self) -> bool {
-        !self._uses_symmetric() && self.flags & Self::ND_DERIVATION != 0
+        !self.uses_symmetric() && self.flags & Self::ND_DERIVATION != 0
     }
 }
 
 impl<C: Crypto> CommandExecution<C> for SignCmd {
     fn execute(&self, dpe: &mut DpeInstance<C>, locality: u32) -> Result<Response, DpeErrorCode> {
         // Make sure the operation is supported.
-        if !dpe.support.nd_derivation && self.uses_nd_derivation() {
+        if !dpe.support.nd_derivation && self.uses_nd_derivation()
+            || !dpe.support.is_symmetric && self.uses_symmetric()
+        {
             return Err(DpeErrorCode::InvalidArgument);
         }
 
@@ -54,28 +56,37 @@ impl<C: Crypto> CommandExecution<C> for SignCmd {
         let digest = Digest::new(&self.digest, DPE_PROFILE.alg_len())
             .map_err(|_| DpeErrorCode::InternalError)?;
         let algs = DPE_PROFILE.alg_len();
-        let priv_key = if self.uses_nd_derivation() {
-            dpe.contexts[idx].cached_priv_key.take().unwrap_or_else({
-                || {
-                    C::derive_ecdsa_key(
-                        algs,
-                        &dpe.derive_cdi(idx, true).unwrap(),
-                        &self.label,
-                        b"ECC",
-                    )
-                }
-            })
-        } else {
+        let Signature { r, s } = if self.uses_symmetric() {
             let cdi = dpe.derive_cdi(idx, false)?;
-            C::derive_ecdsa_key(algs, &cdi, &self.label, b"ECC")
-        };
+            C::symmetric_sign_with_derived(algs, &cdi, &self.label, b"HMAC", &digest)
+                .map_err(|_| DpeErrorCode::InternalError)?
+        } else {
+            let priv_key = if self.uses_nd_derivation() {
+                dpe.contexts[idx].cached_priv_key.take().unwrap_or_else({
+                    || {
+                        C::derive_private_key(
+                            algs,
+                            &dpe.derive_cdi(idx, true).unwrap(),
+                            &self.label,
+                            b"ECC",
+                        )
+                    }
+                })
+            } else {
+                let cdi = dpe.derive_cdi(idx, false)?;
+                C::derive_private_key(algs, &cdi, &self.label, b"ECC")
+            };
 
-        let EcdsaSig { r, s } = C::ecdsa_sign_with_derived(algs, &digest, &priv_key)
-            .map_err(|_| DpeErrorCode::InternalError)?;
-        // cache private key
-        if self.uses_nd_derivation() {
-            dpe.contexts[idx].cached_priv_key.replace(priv_key);
-        }
+            let sig = C::ecdsa_sign_with_derived(algs, &digest, &priv_key)
+                .map_err(|_| DpeErrorCode::InternalError)?;
+
+            // cache private key
+            if self.uses_nd_derivation() {
+                dpe.contexts[idx].cached_priv_key.replace(priv_key);
+            };
+
+            sig
+        };
 
         dpe.roll_onetime_use_handle(idx)?;
 
@@ -144,7 +155,7 @@ mod tests {
 
         // Other flag set.
         assert!(!SignCmd {
-            flags: SignCmd::_IS_SYMMETRIC,
+            flags: SignCmd::IS_SYMMETRIC,
             ..TEST_SIGN_CMD
         }
         .uses_nd_derivation());
@@ -158,10 +169,34 @@ mod tests {
 
         // If both are set, it ignores non-deterministic derivation.
         assert!(!SignCmd {
-            flags: SignCmd::_IS_SYMMETRIC | SignCmd::ND_DERIVATION,
+            flags: SignCmd::IS_SYMMETRIC | SignCmd::ND_DERIVATION,
             ..TEST_SIGN_CMD
         }
         .uses_nd_derivation());
+    }
+
+    #[test]
+    fn test_uses_symmetric() {
+        // No flags set.
+        assert!(!SignCmd {
+            flags: 0,
+            ..TEST_SIGN_CMD
+        }
+        .uses_symmetric());
+
+        // Other flag set.
+        assert!(!SignCmd {
+            flags: SignCmd::ND_DERIVATION,
+            ..TEST_SIGN_CMD
+        }
+        .uses_symmetric());
+
+        // Just non-deterministic flag set.
+        assert!(SignCmd {
+            flags: SignCmd::IS_SYMMETRIC,
+            ..TEST_SIGN_CMD
+        }
+        .uses_symmetric());
     }
 
     #[test]
@@ -280,6 +315,45 @@ mod tests {
         };
 
         assert!(sig.verify(&TEST_DIGEST, &ec_pub_key).unwrap());
+    }
+
+    #[test]
+    fn test_symmetric() {
+        let mut dpe = DpeInstance::<OpensslCrypto>::new_for_test(
+            Support {
+                auto_init: true,
+                is_symmetric: true,
+                ..Support::default()
+            },
+            &TEST_LOCALITIES,
+        )
+        .unwrap();
+
+        for i in 0..3 {
+            DeriveChildCmd {
+                handle: ContextHandle::default(),
+                data: [i; DPE_PROFILE.get_hash_size()],
+                flags: DeriveChildCmd::MAKE_DEFAULT,
+                tci_type: i as u32,
+                target_locality: 0,
+            }
+            .execute(&mut dpe, TEST_LOCALITIES[0])
+            .unwrap();
+        }
+
+        let cmd = SignCmd {
+            handle: ContextHandle::default(),
+            label: TEST_LABEL,
+            flags: SignCmd::IS_SYMMETRIC,
+            digest: TEST_DIGEST,
+        };
+        let resp = match cmd.execute(&mut dpe, TEST_LOCALITIES[0]).unwrap() {
+            Response::Sign(resp) => resp,
+            _ => panic!("Incorrect response type"),
+        };
+
+        // Check that we are using HMAC, i.e. s must be a buffer of all 0s
+        assert!(&resp.sig_s.iter().all(|&b| b == 0x0));
     }
 
     #[test]

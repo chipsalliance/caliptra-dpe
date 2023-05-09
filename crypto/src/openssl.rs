@@ -1,6 +1,6 @@
 // Licensed under the Apache-2.0 license
 
-use crate::{AlgLen, Crypto, CryptoBuf, CryptoError, Digest, EcdsaPriv, EcdsaPub, Hasher};
+use crate::{AlgLen, Crypto, CryptoBuf, CryptoError, Digest, EcdsaPub, Hasher, PrivKey, Signature};
 use openssl::{
     bn::{BigNum, BigNumContext},
     ec::{EcGroup, EcKey, EcPoint},
@@ -8,7 +8,8 @@ use openssl::{
     error::ErrorStack,
     hash::MessageDigest,
     nid::Nid,
-    pkey::Private,
+    pkey::{PKey, Private},
+    sign::Signer,
 };
 use openssl_kdf::{perform_kdf, KdfArgument, KdfKbMode, KdfMacType, KdfType};
 
@@ -54,7 +55,7 @@ impl OpensslCrypto {
 
     fn ec_key_from_priv_key(
         algs: AlgLen,
-        priv_key: &EcdsaPriv,
+        priv_key: &PrivKey,
     ) -> Result<EcKey<Private>, ErrorStack> {
         let nid = Self::get_curve(algs);
         let group = EcGroup::from_curve_name(nid).unwrap();
@@ -132,7 +133,7 @@ impl Crypto for OpensslCrypto {
         }
     }
 
-    fn derive_ecdsa_key(algs: AlgLen, cdi: &Self::Cdi, label: &[u8], info: &[u8]) -> EcdsaPriv {
+    fn derive_private_key(algs: AlgLen, cdi: &Self::Cdi, label: &[u8], info: &[u8]) -> PrivKey {
         let md = Self::get_digest(algs);
         let args = [
             &KdfArgument::KbMode(KdfKbMode::Counter),
@@ -153,7 +154,7 @@ impl Crypto for OpensslCrypto {
         CryptoBuf::new(&priv_bn.to_vec_padded(algs.size() as i32).unwrap(), algs).unwrap()
     }
 
-    fn derive_ecdsa_pub(algs: AlgLen, priv_key: &EcdsaPriv) -> Result<EcdsaPub, CryptoError> {
+    fn derive_ecdsa_pub(algs: AlgLen, priv_key: &PrivKey) -> Result<EcdsaPub, CryptoError> {
         let ec_priv_key = OpensslCrypto::ec_key_from_priv_key(algs, priv_key)
             .map_err(|_| CryptoError::CryptoLibError)?;
         let nid = OpensslCrypto::get_curve(algs);
@@ -178,7 +179,7 @@ impl Crypto for OpensslCrypto {
     fn ecdsa_sign_with_alias(
         algs: AlgLen,
         digest: &Digest,
-    ) -> Result<super::EcdsaSig, CryptoError> {
+    ) -> Result<super::Signature, CryptoError> {
         let nid = Self::get_curve(algs);
         let priv_bytes = Self::get_priv_byes(algs)?;
         let group = EcGroup::from_curve_name(nid).map_err(|_| CryptoError::CryptoLibError)?;
@@ -198,14 +199,14 @@ impl Crypto for OpensslCrypto {
         let r = CryptoBuf::new(&sig.r().to_vec_padded(algs.size() as i32).unwrap(), algs).unwrap();
         let s = CryptoBuf::new(&sig.s().to_vec_padded(algs.size() as i32).unwrap(), algs).unwrap();
 
-        Ok(super::EcdsaSig { r, s })
+        Ok(super::Signature { r, s })
     }
 
     fn ecdsa_sign_with_derived(
         algs: AlgLen,
         digest: &Digest,
-        priv_key: &EcdsaPriv,
-    ) -> Result<super::EcdsaSig, CryptoError> {
+        priv_key: &PrivKey,
+    ) -> Result<super::Signature, CryptoError> {
         let ec_priv_key = OpensslCrypto::ec_key_from_priv_key(algs, priv_key)
             .map_err(|_| CryptoError::CryptoLibError)?;
         let sig = EcdsaSig::sign::<Private>(digest.bytes(), &ec_priv_key).unwrap();
@@ -213,7 +214,7 @@ impl Crypto for OpensslCrypto {
         let r = CryptoBuf::new(&sig.r().to_vec_padded(algs.size() as i32).unwrap(), algs).unwrap();
         let s = CryptoBuf::new(&sig.s().to_vec_padded(algs.size() as i32).unwrap(), algs).unwrap();
 
-        Ok(super::EcdsaSig { r, s })
+        Ok(super::Signature { r, s })
     }
 
     fn get_ecdsa_alias_serial(algs: AlgLen, serial: &mut [u8]) -> Result<(), CryptoError> {
@@ -238,5 +239,29 @@ impl Crypto for OpensslCrypto {
         let y = CryptoBuf::new(&y.to_vec_padded(algs.size() as i32).unwrap(), algs).unwrap();
 
         Self::get_pubkey_serial(algs, &EcdsaPub { x, y }, serial)
+    }
+
+    fn symmetric_sign_with_derived(
+        algs: AlgLen,
+        cdi: &Self::Cdi,
+        label: &[u8],
+        info: &[u8],
+        digest: &Digest,
+    ) -> Result<Signature, CryptoError> {
+        let symmetric_key = Self::derive_private_key(algs, cdi, label, info);
+        let hmac_key = PKey::hmac(symmetric_key.bytes()).unwrap();
+
+        let sha_size = match algs {
+            AlgLen::Bit256 => MessageDigest::sha256(),
+            AlgLen::Bit384 => MessageDigest::sha384(),
+        };
+        let mut signer = Signer::new(sha_size, &hmac_key).unwrap();
+        signer.update(digest.bytes()).unwrap();
+        let hmac = signer.sign_to_vec().unwrap();
+
+        let r = CryptoBuf::new(&hmac, algs).unwrap();
+        let s = CryptoBuf::default(algs);
+
+        Ok(super::Signature { r, s })
     }
 }

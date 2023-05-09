@@ -49,7 +49,7 @@ impl<C: Crypto> CommandExecution<C> for CertifyKeyCmd {
         let priv_key = if self.uses_nd_derivation() {
             dpe.contexts[idx].cached_priv_key.take().unwrap_or_else({
                 || {
-                    C::derive_ecdsa_key(
+                    C::derive_private_key(
                         algs,
                         &dpe.derive_cdi(idx, true).unwrap(),
                         &self.label,
@@ -59,7 +59,7 @@ impl<C: Crypto> CommandExecution<C> for CertifyKeyCmd {
             })
         } else {
             let cdi = dpe.derive_cdi(idx, false)?;
-            C::derive_ecdsa_key(algs, &cdi, &self.label, b"ECC")
+            C::derive_private_key(algs, &cdi, &self.label, b"ECC")
         };
 
         let pub_key = C::derive_ecdsa_pub(DPE_PROFILE.alg_len(), &priv_key)

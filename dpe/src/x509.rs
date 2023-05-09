@@ -10,7 +10,7 @@ use crate::{
     tci::{TciMeasurement, TciNodeData},
     DpeProfile, DPE_PROFILE,
 };
-use crypto::{EcdsaPub, EcdsaSig};
+use crypto::{EcdsaPub, Signature};
 
 /// Type for specifying an X.509 RelativeDistinguisedName
 ///
@@ -202,7 +202,7 @@ impl X509CertWriter<'_> {
     }
 
     /// If `tagged`, include the tag and size fields
-    fn get_ecdsa_signature_size(sig: &EcdsaSig, tagged: bool) -> Result<usize, DpeErrorCode> {
+    fn get_ecdsa_signature_size(sig: &Signature, tagged: bool) -> Result<usize, DpeErrorCode> {
         let seq_size = Self::get_structure_size(
             Self::get_integer_bytes_size(sig.r.bytes(), /*tagged=*/ true)?
                 + Self::get_integer_bytes_size(sig.s.bytes(), /*tagged=*/ true)?,
@@ -553,7 +553,7 @@ impl X509CertWriter<'_> {
     ///     r  INTEGER,
     ///     s  INTEGER
     ///   }
-    fn encode_ecdsa_signature(&mut self, sig: &EcdsaSig) -> Result<usize, DpeErrorCode> {
+    fn encode_ecdsa_signature(&mut self, sig: &Signature) -> Result<usize, DpeErrorCode> {
         let seq_size = Self::get_integer_bytes_size(sig.r.bytes(), /*tagged=*/ true)?
             + Self::get_integer_bytes_size(sig.s.bytes(), /*tagged=*/ true)?;
 
@@ -788,7 +788,7 @@ impl X509CertWriter<'_> {
     pub fn encode_ecdsa_certificate(
         &mut self,
         tbs: &[u8],
-        sig: &EcdsaSig,
+        sig: &Signature,
     ) -> Result<usize, DpeErrorCode> {
         let cert_size = tbs.len()
             + Self::get_ecdsa_sig_alg_id_size(/*tagged=*/ true)?
@@ -817,7 +817,7 @@ mod tests {
     use crate::x509::{MeasurementData, Name, X509CertWriter};
     use crate::DPE_PROFILE;
     use asn1;
-    use crypto::{AlgLen, CryptoBuf, EcdsaPub, EcdsaSig};
+    use crypto::{AlgLen, CryptoBuf, EcdsaPub, Signature};
     use std::str;
     use x509_parser::certificate::X509CertificateParser;
     use x509_parser::nom::Parser;
@@ -1038,7 +1038,7 @@ mod tests {
             x: CryptoBuf::new(&[0xAA; ECC_INT_SIZE], ALG_LEN).unwrap(),
             y: CryptoBuf::new(&[0xBB; ECC_INT_SIZE], ALG_LEN).unwrap(),
         };
-        let test_sig = EcdsaSig {
+        let test_sig = Signature {
             r: CryptoBuf::new(&[0xCC; ECC_INT_SIZE], ALG_LEN).unwrap(),
             s: CryptoBuf::new(&[0xDD; ECC_INT_SIZE], ALG_LEN).unwrap(),
         };

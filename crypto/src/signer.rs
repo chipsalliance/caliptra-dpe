@@ -2,15 +2,16 @@
 
 use crate::{AlgLen, CryptoError};
 
-/// An ECDSA signature
-pub struct EcdsaSig {
+/// A cryptographic signature representing either an ECDSA signature or an HMAC.
+/// In the HMAC case, r contains the HMAC and s is a buffer of 0s.
+pub struct Signature {
     pub r: CryptoBuf,
     pub s: CryptoBuf,
 }
 
-impl EcdsaSig {
-    pub fn default(alg: AlgLen) -> EcdsaSig {
-        EcdsaSig {
+impl Signature {
+    pub fn default(alg: AlgLen) -> Signature {
+        Signature {
             r: CryptoBuf::default(alg),
             s: CryptoBuf::default(alg),
         }
@@ -32,10 +33,7 @@ impl EcdsaPub {
     }
 }
 
-pub type EcdsaPriv = CryptoBuf;
-
-/// An HMAC Signature
-pub type HmacSig = CryptoBuf;
+pub type PrivKey = CryptoBuf;
 
 /// An HMAC Key
 pub type HmacKey = CryptoBuf;
