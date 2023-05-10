@@ -10,6 +10,7 @@ pub(crate) use self::initialize_context::InitCtxCmd;
 
 pub(in crate::commands) use self::certify_key::CertifyKeyCmd;
 
+use self::certify_csr::CertifyCsrCmd;
 use self::extend_tci::ExtendTciCmd;
 use self::get_tagged_tci::GetTaggedTciCmd;
 use self::rotate_context::RotateCtxCmd;
@@ -25,6 +26,7 @@ use core::mem::size_of;
 use crypto::Crypto;
 use zerocopy::FromBytes;
 
+mod certify_csr;
 mod certify_key;
 mod derive_child;
 mod destroy_context;
@@ -47,6 +49,7 @@ pub enum Command {
     ExtendTci(ExtendTciCmd),
     TagTci(TagTciCmd),
     GetTaggedTci(GetTaggedTciCmd),
+    CertifyCsr(CertifyCsrCmd),
 }
 
 impl Command {
@@ -61,6 +64,7 @@ impl Command {
     const EXTEND_TCI: u32 = 0x1001;
     const TAG_TCI: u32 = 0x1002;
     const GET_TAGGED_TCI: u32 = 0x1003;
+    const CERTIFY_CSR: u32 = 0x1004;
 
     /// Returns the command with its parameters given a slice of bytes.
     ///
@@ -83,6 +87,7 @@ impl Command {
             Command::EXTEND_TCI => Self::parse_command(Command::ExtendTci, bytes),
             Command::TAG_TCI => Self::parse_command(Command::TagTci, bytes),
             Command::GET_TAGGED_TCI => Self::parse_command(Command::GetTaggedTci, bytes),
+            Command::CERTIFY_CSR => Self::parse_command(Command::CertifyCsr, bytes),
             _ => Err(DpeErrorCode::InvalidCommand),
         }
     }
@@ -256,6 +261,7 @@ pub mod tests {
                 Command::ExtendTci(_) => Command::EXTEND_TCI,
                 Command::TagTci(_) => Command::TAG_TCI,
                 Command::GetTaggedTci(_) => Command::GET_TAGGED_TCI,
+                Command::CertifyCsr(_) => Command::CERTIFY_CSR,
             };
             CommandHdr {
                 magic: Self::DPE_COMMAND_MAGIC,

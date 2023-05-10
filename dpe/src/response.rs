@@ -24,6 +24,7 @@ pub enum Response {
     ExtendTci(NewHandleResp),
     TagTci(NewHandleResp),
     GetTaggedTci(GetTaggedTciResp),
+    CertifyCsr(CertifyCsrResp),
 }
 
 impl Response {
@@ -45,6 +46,7 @@ impl Response {
             Response::ExtendTci(response) => response.serialize(dst),
             Response::TagTci(response) => response.serialize(dst),
             Response::GetTaggedTci(response) => response.serialize(dst),
+            Response::CertifyCsr(response) => response.serialize(dst),
         }
     }
 }
@@ -267,6 +269,52 @@ impl GetTaggedTciResp {
     }
 }
 
+#[repr(C)]
+#[derive(Debug, PartialEq, Eq)]
+#[cfg_attr(test, derive(zerocopy::AsBytes, zerocopy::FromBytes))]
+pub struct CertifyCsrResp {
+    pub new_context_handle: ContextHandle,
+    pub derived_pubkey_x: [u8; DPE_PROFILE.get_ecc_int_size()],
+    pub derived_pubkey_y: [u8; DPE_PROFILE.get_ecc_int_size()],
+    pub csr_size: u32,
+    pub csr: [u8; MAX_CERT_SIZE],
+}
+
+impl CertifyCsrResp {
+    pub fn serialize(&self, dst: &mut [u8]) -> Result<usize, DpeErrorCode> {
+        if dst.len() < size_of::<Self>() {
+            return Err(DpeErrorCode::InternalError);
+        }
+
+        let mut offset: usize = 0;
+        offset += self.new_context_handle.serialize(&mut dst[offset..])?;
+        dst[offset..offset + DPE_PROFILE.get_ecc_int_size()]
+            .copy_from_slice(&self.derived_pubkey_x);
+        offset += self.derived_pubkey_x.len();
+        dst[offset..offset + DPE_PROFILE.get_ecc_int_size()]
+            .copy_from_slice(&self.derived_pubkey_y);
+        offset += self.derived_pubkey_y.len();
+        dst[offset..offset + size_of::<u32>()].copy_from_slice(&self.csr_size.to_le_bytes());
+        offset += size_of::<u32>();
+        dst[offset..offset + self.csr.len()].copy_from_slice(&self.csr);
+        offset += self.csr.len();
+
+        Ok(offset)
+    }
+}
+
+impl Default for CertifyCsrResp {
+    fn default() -> Self {
+        Self {
+            new_context_handle: ContextHandle::default(),
+            derived_pubkey_x: [0; DPE_PROFILE.get_ecc_int_size()],
+            derived_pubkey_y: [0; DPE_PROFILE.get_ecc_int_size()],
+            csr_size: 0,
+            csr: [0; MAX_CERT_SIZE],
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum DpeErrorCode {
     NoError = 0,
@@ -284,7 +332,7 @@ pub enum DpeErrorCode {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dpe_instance::tests::TEST_HANDLE;
+    use crate::dpe_instance::tests::{SIMULATION_HANDLE, TEST_HANDLE};
     use zerocopy::AsBytes;
 
     const TEST_FLAGS: u32 = 0x7E57_B175;
@@ -302,6 +350,13 @@ mod tests {
     const TEST_GET_TAGGED_TCI_RESP: GetTaggedTciResp = GetTaggedTciResp {
         tci_cumulative: TciMeasurement([0x5C; DPE_PROFILE.get_tci_size()]),
         tci_current: TciMeasurement([0x36; DPE_PROFILE.get_tci_size()]),
+    };
+    const TEST_CERTIFY_CSR_RESP: CertifyCsrResp = CertifyCsrResp {
+        new_context_handle: SIMULATION_HANDLE,
+        derived_pubkey_x: [0xAA; DPE_PROFILE.get_ecc_int_size()],
+        derived_pubkey_y: [0x55; DPE_PROFILE.get_ecc_int_size()],
+        csr_size: MAX_CERT_SIZE as u32,
+        csr: [0xFF; MAX_CERT_SIZE],
     };
 
     #[test]
@@ -452,6 +507,28 @@ mod tests {
             .iter()
             .skip(DPE_PROFILE.get_tci_size())
             .all(|&b| b == 0x36));
+    }
+
+    #[test]
+    fn test_serialize_certify_csr_response() {
+        // Test too small slice.
+        let mut response_buffer = [0; size_of::<CertifyCsrResp>() - 1];
+        assert_eq!(
+            Err(DpeErrorCode::InternalError),
+            TEST_CERTIFY_CSR_RESP.serialize(response_buffer.as_mut_slice())
+        );
+        let mut response_buffer = [0; size_of::<CertifyCsrResp>()];
+
+        assert_eq!(
+            ContextHandle::SIZE
+                + 2 * DPE_PROFILE.get_ecc_int_size()
+                + size_of::<u32>()
+                + MAX_CERT_SIZE,
+            TEST_CERTIFY_CSR_RESP
+                .serialize(response_buffer.as_mut_slice())
+                .unwrap()
+        );
+        assert_eq!(TEST_CERTIFY_CSR_RESP.as_bytes(), response_buffer);
     }
 
     fn test_error_code_serialize(error_code: DpeErrorCode) {
