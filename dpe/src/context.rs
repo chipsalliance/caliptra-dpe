@@ -1,7 +1,7 @@
 // Licensed under the Apache-2.0 license.
 use crate::{response::DpeErrorCode, tci::TciNodeData, MAX_HANDLES};
 use core::mem::size_of;
-use crypto::EcdsaPriv;
+use crypto::PrivKey;
 
 #[repr(C, align(4))]
 pub(crate) struct Context {
@@ -20,7 +20,7 @@ pub(crate) struct Context {
     /// Optional tag assigned to the context.
     pub tag: u32,
     /// Private key which is cached only in non-deterministic key derivation mode
-    pub cached_priv_key: Option<EcdsaPriv>,
+    pub cached_priv_key: Option<PrivKey>,
 }
 
 impl Context {
