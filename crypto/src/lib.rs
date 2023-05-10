@@ -136,14 +136,16 @@ pub trait Crypto {
         rand_seed: Option<&[u8]>,
     ) -> Result<Self::Cdi, CryptoError>;
 
-    /// Derives a private key using the cdi
+    /// Derives a private key using a cryptographically secure KDF
     ///
     /// # Arguments
     ///
     /// * `algs` - Which length of algorithms to use.
     /// * `cdi` - Caller-supplied private key to use in public key derivation
+    /// * `label` - Caller-supplied label to use in asymmetric key derivation
+    /// * `info` - Caller-supplied info string to use in asymmetric key derivation
     ///
-    fn derive_ecdsa_key(algs: AlgLen, cdi: &Self::Cdi, label: &[u8], info: &[u8]) -> EcdsaPriv;
+    fn derive_private_key(algs: AlgLen, cdi: &Self::Cdi, label: &[u8], info: &[u8]) -> PrivKey;
 
     /// Derives and returns an ECDSA public key using the caller-supplied private key
     ///
@@ -152,7 +154,7 @@ pub trait Crypto {
     /// * `algs` - Which length of algorithms to use.
     /// * `priv_key` - Caller-supplied private key to use in public key derivation
     /// Returns a derived public key
-    fn derive_ecdsa_pub(algs: AlgLen, priv_key: &EcdsaPriv) -> Result<EcdsaPub, CryptoError>;
+    fn derive_ecdsa_pub(algs: AlgLen, priv_key: &PrivKey) -> Result<EcdsaPub, CryptoError>;
 
     /// Sign `digest` with the platform Alias Key
     ///
@@ -172,7 +174,7 @@ pub trait Crypto {
     fn ecdsa_sign_with_derived(
         algs: AlgLen,
         digest: &Digest,
-        priv_key: &EcdsaPriv,
+        priv_key: &PrivKey,
     ) -> Result<EcdsaSig, CryptoError>;
 
     /// Compute the serial number string for the alias public key
@@ -182,6 +184,23 @@ pub trait Crypto {
     /// * `algs` - Length of algorithm to use.
     /// * `serial` - Output buffer to write serial number
     fn get_ecdsa_alias_serial(algs: AlgLen, serial: &mut [u8]) -> Result<(), CryptoError>;
+
+    /// Sign `digest` with a derived HMAC key from the CDI.
+    ///
+    /// # Arguments
+    ///
+    /// * `algs` - Which length of algorithms to use.
+    /// * `cdi` - CDI from which to derive the signing key
+    /// * `label` - Caller-supplied label to use in symmetric key derivation
+    /// * `info` - Caller-supplied info string to use in symmetric key derivation
+    /// * `digest` - Digest of data to be signed.
+    fn hmac_sign_with_derived(
+        algs: AlgLen,
+        cdi: &Self::Cdi,
+        label: &[u8],
+        info: &[u8],
+        digest: &Digest,
+    ) -> Result<HmacSig, CryptoError>;
 }
 
 /// Writer for a static buffer

@@ -1,6 +1,6 @@
 // Licensed under the Apache-2.0 license
 
-use crate::{AlgLen, Crypto, CryptoBuf, CryptoError, Digest, EcdsaPriv, EcdsaPub, Hasher};
+use crate::{AlgLen, Crypto, CryptoBuf, CryptoError, Digest, EcdsaPub, Hasher, HmacSig, PrivKey};
 use openssl::{
     bn::{BigNum, BigNumContext},
     ec::{EcGroup, EcKey, EcPoint},
@@ -8,7 +8,8 @@ use openssl::{
     error::ErrorStack,
     hash::MessageDigest,
     nid::Nid,
-    pkey::Private,
+    pkey::{PKey, Private},
+    sign::Signer,
 };
 use openssl_kdf::{perform_kdf, KdfArgument, KdfKbMode, KdfMacType, KdfType};
 
@@ -54,7 +55,7 @@ impl OpensslCrypto {
 
     fn ec_key_from_priv_key(
         algs: AlgLen,
-        priv_key: &EcdsaPriv,
+        priv_key: &PrivKey,
     ) -> Result<EcKey<Private>, ErrorStack> {
         let nid = Self::get_curve(algs);
         let group = EcGroup::from_curve_name(nid).unwrap();
@@ -132,7 +133,7 @@ impl Crypto for OpensslCrypto {
         }
     }
 
-    fn derive_ecdsa_key(algs: AlgLen, cdi: &Self::Cdi, label: &[u8], info: &[u8]) -> EcdsaPriv {
+    fn derive_private_key(algs: AlgLen, cdi: &Self::Cdi, label: &[u8], info: &[u8]) -> PrivKey {
         let md = Self::get_digest(algs);
         let args = [
             &KdfArgument::KbMode(KdfKbMode::Counter),
@@ -153,7 +154,7 @@ impl Crypto for OpensslCrypto {
         CryptoBuf::new(&priv_bn.to_vec_padded(algs.size() as i32).unwrap(), algs).unwrap()
     }
 
-    fn derive_ecdsa_pub(algs: AlgLen, priv_key: &EcdsaPriv) -> Result<EcdsaPub, CryptoError> {
+    fn derive_ecdsa_pub(algs: AlgLen, priv_key: &PrivKey) -> Result<EcdsaPub, CryptoError> {
         let ec_priv_key = OpensslCrypto::ec_key_from_priv_key(algs, priv_key)
             .map_err(|_| CryptoError::CryptoLibError)?;
         let nid = OpensslCrypto::get_curve(algs);
@@ -204,7 +205,7 @@ impl Crypto for OpensslCrypto {
     fn ecdsa_sign_with_derived(
         algs: AlgLen,
         digest: &Digest,
-        priv_key: &EcdsaPriv,
+        priv_key: &PrivKey,
     ) -> Result<super::EcdsaSig, CryptoError> {
         let ec_priv_key = OpensslCrypto::ec_key_from_priv_key(algs, priv_key)
             .map_err(|_| CryptoError::CryptoLibError)?;
@@ -238,5 +239,23 @@ impl Crypto for OpensslCrypto {
         let y = CryptoBuf::new(&y.to_vec_padded(algs.size() as i32).unwrap(), algs).unwrap();
 
         Self::get_pubkey_serial(algs, &EcdsaPub { x, y }, serial)
+    }
+
+    fn hmac_sign_with_derived(
+        algs: AlgLen,
+        cdi: &Self::Cdi,
+        label: &[u8],
+        info: &[u8],
+        digest: &Digest,
+    ) -> Result<HmacSig, CryptoError> {
+        let symmetric_key = Self::derive_private_key(algs, cdi, label, info);
+        let hmac_key = PKey::hmac(symmetric_key.bytes()).unwrap();
+
+        let sha_size = Self::get_digest(algs);
+        let mut signer = Signer::new(sha_size, &hmac_key).unwrap();
+        signer.update(digest.bytes()).unwrap();
+        let hmac = signer.sign_to_vec().unwrap();
+
+        Ok(HmacSig::new(&hmac, algs).unwrap())
     }
 }

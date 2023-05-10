@@ -32,13 +32,10 @@ impl EcdsaPub {
     }
 }
 
-pub type EcdsaPriv = CryptoBuf;
+pub type PrivKey = CryptoBuf;
 
 /// An HMAC Signature
 pub type HmacSig = CryptoBuf;
-
-/// An HMAC Key
-pub type HmacKey = CryptoBuf;
 
 /// A common base struct that can be used for all digests, signatures, and keys.
 #[derive(Debug, PartialEq)]
