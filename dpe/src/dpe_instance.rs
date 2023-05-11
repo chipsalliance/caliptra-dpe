@@ -16,7 +16,7 @@ use core::{marker::PhantomData, mem::size_of};
 use crypto::{Crypto, Hasher};
 
 pub struct DpeInstance<'a, C: Crypto> {
-    pub(crate) contexts: [Context; MAX_HANDLES],
+    pub(crate) contexts: [Context<C>; MAX_HANDLES],
     pub(crate) support: Support,
     pub(crate) localities: &'a [u32],
 
@@ -37,6 +37,10 @@ impl<C: Crypto> DpeInstance<'_, C> {
     const MAX_NEW_HANDLE_ATTEMPTS: usize = 8;
     pub const AUTO_INIT_LOCALITY: u32 = 0;
 
+    pub(crate) fn new_context_handles() -> [Context<C>; MAX_HANDLES] {
+        core::array::from_fn(|_| Context::new())
+    }
+
     /// Create a new DPE instance.
     ///
     /// # Arguments
@@ -51,9 +55,9 @@ impl<C: Crypto> DpeInstance<'_, C> {
         if localities.is_empty() {
             return Err(DpeErrorCode::InvalidLocality);
         }
-        const CONTEXT_INITIALIZER: Context = Context::new();
+
         let mut dpe = DpeInstance {
-            contexts: [CONTEXT_INITIALIZER; MAX_HANDLES],
+            contexts: Self::new_context_handles(),
             support,
             localities,
             has_initialized: false,
@@ -134,7 +138,7 @@ impl<C: Crypto> DpeInstance<'_, C> {
 
     /// Recursive function that will return all of a context's descendants. Returns a u32 that is
     /// a bitmap of the node indices.
-    pub(crate) fn get_descendants(&self, context: &Context) -> Result<u32, DpeErrorCode> {
+    pub(crate) fn get_descendants(&self, context: &Context<C>) -> Result<u32, DpeErrorCode> {
         if matches!(context.state, ContextState::Inactive) {
             return Err(DpeErrorCode::InvalidHandle);
         }

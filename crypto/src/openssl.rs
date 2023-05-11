@@ -1,6 +1,6 @@
 // Licensed under the Apache-2.0 license
 
-use crate::{AlgLen, Crypto, CryptoBuf, CryptoError, Digest, EcdsaPub, Hasher, HmacSig, PrivKey};
+use crate::{AlgLen, Crypto, CryptoBuf, CryptoError, Digest, EcdsaPub, Hasher, HmacSig};
 use openssl::{
     bn::{BigNum, BigNumContext},
     ec::{EcGroup, EcKey, EcPoint},
@@ -55,7 +55,7 @@ impl OpensslCrypto {
 
     fn ec_key_from_priv_key(
         algs: AlgLen,
-        priv_key: &PrivKey,
+        priv_key: &OpensslPrivKey,
     ) -> Result<EcKey<Private>, ErrorStack> {
         let nid = Self::get_curve(algs);
         let group = EcGroup::from_curve_name(nid).unwrap();
@@ -73,9 +73,12 @@ impl OpensslCrypto {
 
 type OpensslCdi = Vec<u8>;
 
+type OpensslPrivKey = CryptoBuf;
+
 impl Crypto for OpensslCrypto {
     type Cdi = OpensslCdi;
     type Hasher = OpensslHasher;
+    type PrivKey = OpensslPrivKey;
 
     #[cfg(feature = "deterministic_rand")]
     fn rand_bytes(dst: &mut [u8]) -> Result<(), CryptoError> {
@@ -133,7 +136,12 @@ impl Crypto for OpensslCrypto {
         }
     }
 
-    fn derive_private_key(algs: AlgLen, cdi: &Self::Cdi, label: &[u8], info: &[u8]) -> PrivKey {
+    fn derive_private_key(
+        algs: AlgLen,
+        cdi: &Self::Cdi,
+        label: &[u8],
+        info: &[u8],
+    ) -> Self::PrivKey {
         let md = Self::get_digest(algs);
         let args = [
             &KdfArgument::KbMode(KdfKbMode::Counter),
@@ -154,7 +162,7 @@ impl Crypto for OpensslCrypto {
         CryptoBuf::new(&priv_bn.to_vec_padded(algs.size() as i32).unwrap(), algs).unwrap()
     }
 
-    fn derive_ecdsa_pub(algs: AlgLen, priv_key: &PrivKey) -> Result<EcdsaPub, CryptoError> {
+    fn derive_ecdsa_pub(algs: AlgLen, priv_key: &Self::PrivKey) -> Result<EcdsaPub, CryptoError> {
         let ec_priv_key = OpensslCrypto::ec_key_from_priv_key(algs, priv_key)
             .map_err(|_| CryptoError::CryptoLibError)?;
         let nid = OpensslCrypto::get_curve(algs);
@@ -205,7 +213,7 @@ impl Crypto for OpensslCrypto {
     fn ecdsa_sign_with_derived(
         algs: AlgLen,
         digest: &Digest,
-        priv_key: &PrivKey,
+        priv_key: &Self::PrivKey,
     ) -> Result<super::EcdsaSig, CryptoError> {
         let ec_priv_key = OpensslCrypto::ec_key_from_priv_key(algs, priv_key)
             .map_err(|_| CryptoError::CryptoLibError)?;
