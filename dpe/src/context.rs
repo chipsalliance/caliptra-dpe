@@ -1,10 +1,10 @@
 // Licensed under the Apache-2.0 license.
 use crate::{response::DpeErrorCode, tci::TciNodeData, MAX_HANDLES};
 use core::mem::size_of;
-use crypto::PrivKey;
+use crypto::Crypto;
 
 #[repr(C, align(4))]
-pub(crate) struct Context {
+pub(crate) struct Context<C: Crypto> {
     pub handle: ContextHandle,
     pub tci: TciNodeData,
     /// Bitmap of the node indices that are children of this node
@@ -20,13 +20,13 @@ pub(crate) struct Context {
     /// Optional tag assigned to the context.
     pub tag: u32,
     /// Private key which is cached only in non-deterministic key derivation mode
-    pub cached_priv_key: Option<PrivKey>,
+    pub cached_priv_key: Option<C::PrivKey>,
 }
 
-impl Context {
+impl<C: Crypto> Context<C> {
     pub const ROOT_INDEX: u8 = 0xff;
 
-    pub const fn new() -> Context {
+    pub const fn new() -> Context<C> {
         Context {
             handle: ContextHandle::default(),
             tci: TciNodeData::new(),
@@ -150,16 +150,16 @@ pub(crate) struct ActiveContextArgs<'a> {
     pub parent_idx: u8,
 }
 
-pub(crate) struct ChildToRootIter<'a> {
+pub(crate) struct ChildToRootIter<'a, C: Crypto> {
     idx: usize,
-    contexts: &'a [Context],
+    contexts: &'a [Context<C>],
     done: bool,
     count: usize,
 }
 
-impl ChildToRootIter<'_> {
+impl<C: Crypto> ChildToRootIter<'_, C> {
     /// Create a new iterator that will start at the leaf and go to the root node.
-    pub fn new(leaf_idx: usize, contexts: &[Context]) -> ChildToRootIter {
+    pub fn new(leaf_idx: usize, contexts: &[Context<C>]) -> ChildToRootIter<C> {
         ChildToRootIter {
             idx: leaf_idx,
             contexts,
@@ -169,10 +169,10 @@ impl ChildToRootIter<'_> {
     }
 }
 
-impl<'a> Iterator for ChildToRootIter<'a> {
-    type Item = Result<&'a Context, DpeErrorCode>;
+impl<'a, C: Crypto> Iterator for ChildToRootIter<'a, C> {
+    type Item = Result<&'a Context<C>, DpeErrorCode>;
 
-    fn next(&mut self) -> Option<Result<&'a Context, DpeErrorCode>> {
+    fn next(&mut self) -> Option<Result<&'a Context<C>, DpeErrorCode>> {
         if self.done {
             return None;
         }
@@ -185,13 +185,13 @@ impl<'a> Iterator for ChildToRootIter<'a> {
 
         // Check if context is valid.
         const MAX_IDX: u8 = (MAX_HANDLES - 1) as u8;
-        let valid_parent_idx = matches!(context.parent_idx, 0..=MAX_IDX | Context::ROOT_INDEX);
+        let valid_parent_idx = matches!(context.parent_idx, 0..=MAX_IDX | Context::<C>::ROOT_INDEX);
         if !valid_parent_idx || context.state == ContextState::Inactive {
             self.done = true;
             return Some(Err(DpeErrorCode::InternalError));
         }
 
-        if context.parent_idx == Context::ROOT_INDEX {
+        if context.parent_idx == Context::<C>::ROOT_INDEX {
             self.done = true;
         }
         self.idx = context.parent_idx as usize;
@@ -203,11 +203,12 @@ impl<'a> Iterator for ChildToRootIter<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::DpeInstance;
+    use crypto::OpensslCrypto;
 
     #[test]
     fn test_child_to_root_iter() {
-        const INITIALIZER_CONTEXT: Context = Context::new();
-        let mut contexts = [INITIALIZER_CONTEXT; MAX_HANDLES];
+        let mut contexts = DpeInstance::<OpensslCrypto>::new_context_handles();
         let root_index = CHAIN_INDICES[0];
         assert_eq!(MAX_HANDLES, CHAIN_INDICES.len());
 
@@ -242,8 +243,7 @@ mod tests {
 
     #[test]
     fn test_child_to_root_overflow() {
-        const INITIALIZER_CONTEXT: Context = Context::new();
-        let mut contexts = [INITIALIZER_CONTEXT; 2];
+        let mut contexts = DpeInstance::<OpensslCrypto>::new_context_handles();
 
         // Create circular relationship.
         contexts[0].parent_idx = 1;
@@ -261,8 +261,7 @@ mod tests {
 
     #[test]
     fn test_child_to_root_check_parent_and_state() {
-        const INITIALIZER_CONTEXT: Context = Context::new();
-        let mut contexts = [INITIALIZER_CONTEXT];
+        let mut contexts = DpeInstance::<OpensslCrypto>::new_context_handles();
         contexts[0].state = ContextState::Retired;
         contexts[0].parent_idx = MAX_HANDLES as u8;
 
@@ -294,7 +293,7 @@ mod tests {
         assert!(iter.next().unwrap().is_ok());
 
         // Root index.
-        contexts[0].parent_idx = Context::ROOT_INDEX as u8;
+        contexts[0].parent_idx = Context::<OpensslCrypto>::ROOT_INDEX as u8;
         let mut iter = ChildToRootIter::new(0, &contexts);
         assert!(iter.next().unwrap().is_ok());
     }

@@ -72,7 +72,7 @@ impl<C: Crypto> CommandExecution<C> for InitCtxCmd {
             locality,
             handle: &handle,
             tci_type: 0,
-            parent_idx: Context::ROOT_INDEX,
+            parent_idx: Context::<C>::ROOT_INDEX,
         });
         Ok(Response::InitCtx(NewHandleResp { handle }))
     }

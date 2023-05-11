@@ -60,6 +60,7 @@ pub type Digest = CryptoBuf;
 pub trait Crypto {
     type Cdi;
     type Hasher: Hasher;
+    type PrivKey;
 
     /// Fills the buffer with random values.
     ///
@@ -145,7 +146,12 @@ pub trait Crypto {
     /// * `label` - Caller-supplied label to use in asymmetric key derivation
     /// * `info` - Caller-supplied info string to use in asymmetric key derivation
     ///
-    fn derive_private_key(algs: AlgLen, cdi: &Self::Cdi, label: &[u8], info: &[u8]) -> PrivKey;
+    fn derive_private_key(
+        algs: AlgLen,
+        cdi: &Self::Cdi,
+        label: &[u8],
+        info: &[u8],
+    ) -> Self::PrivKey;
 
     /// Derives and returns an ECDSA public key using the caller-supplied private key
     ///
@@ -154,7 +160,7 @@ pub trait Crypto {
     /// * `algs` - Which length of algorithms to use.
     /// * `priv_key` - Caller-supplied private key to use in public key derivation
     /// Returns a derived public key
-    fn derive_ecdsa_pub(algs: AlgLen, priv_key: &PrivKey) -> Result<EcdsaPub, CryptoError>;
+    fn derive_ecdsa_pub(algs: AlgLen, priv_key: &Self::PrivKey) -> Result<EcdsaPub, CryptoError>;
 
     /// Sign `digest` with the platform Alias Key
     ///
@@ -174,7 +180,7 @@ pub trait Crypto {
     fn ecdsa_sign_with_derived(
         algs: AlgLen,
         digest: &Digest,
-        priv_key: &PrivKey,
+        priv_key: &Self::PrivKey,
     ) -> Result<EcdsaSig, CryptoError>;
 
     /// Compute the serial number string for the alias public key

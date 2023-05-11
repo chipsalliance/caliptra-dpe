@@ -32,8 +32,6 @@ impl EcdsaPub {
     }
 }
 
-pub type PrivKey = CryptoBuf;
-
 /// An HMAC Signature
 pub type HmacSig = CryptoBuf;
 
