@@ -10,7 +10,7 @@ use crate::{
     response::{DpeErrorCode, GetProfileResp, Response},
     support::Support,
     tci::{TciMeasurement, TciNodeData},
-    DPE_PROFILE, MAX_HANDLES,
+    DPE_PROFILE, INTERNAL_DPE_INFO_SIZE, MAX_HANDLES,
 };
 use core::{marker::PhantomData, mem::size_of};
 use crypto::{Crypto, Hasher};
@@ -239,6 +239,16 @@ impl<C: Crypto> DpeInstance<'_, C> {
         Ok(())
     }
 
+    fn serialize_internal_dpe_info(&self, internal_dpe_info: &mut [u8; INTERNAL_DPE_INFO_SIZE]) {
+        // Internal DPE Info contains get profile response fields as well as the DPE_PROFILE
+        let profile_size = self
+            .get_profile()
+            .unwrap()
+            .serialize(internal_dpe_info)
+            .unwrap();
+        internal_dpe_info[profile_size..].copy_from_slice(&(DPE_PROFILE as u32).to_le_bytes());
+    }
+
     /// Derive the CDI for a child node.
     ///
     /// Goes up the TciNodeData chain hashing each along the way until it gets to the root node.
@@ -263,6 +273,15 @@ impl<C: Crypto> DpeInstance<'_, C> {
             hasher
                 .update(&tci_bytes[..len])
                 .map_err(|_| DpeErrorCode::InternalError)?;
+
+            // Hash internal DPE info
+            if context.uses_internal_dpe_info {
+                let mut internal_dpe_info = [0u8; INTERNAL_DPE_INFO_SIZE];
+                self.serialize_internal_dpe_info(&mut internal_dpe_info);
+                hasher
+                    .update(&internal_dpe_info[..INTERNAL_DPE_INFO_SIZE])
+                    .map_err(|_| DpeErrorCode::InternalError)?;
+            }
         }
 
         let digest = hasher.finish().map_err(|_| DpeErrorCode::InternalError)?;
@@ -619,5 +638,48 @@ pub mod tests {
         let answer =
             OpensslCrypto::derive_cdi(DPE_PROFILE.alg_len(), &digest, b"DPE", None).unwrap();
         assert_eq!(answer, last_cdi);
+    }
+
+    #[test]
+    fn test_hash_internal_dpe_info() {
+        let mut dpe = DpeInstance::<OpensslCrypto>::new_for_test(
+            Support {
+                internal_info: true,
+                ..SUPPORT
+            },
+            &TEST_LOCALITIES,
+        )
+        .unwrap();
+
+        let parent_context_idx = dpe
+            .get_active_context_pos(&ContextHandle::default(), TEST_LOCALITIES[0])
+            .unwrap();
+        DeriveChildCmd {
+            handle: ContextHandle::default(),
+            data: [0; DPE_PROFILE.get_hash_size()],
+            flags: DeriveChildCmd::MAKE_DEFAULT | DeriveChildCmd::INTERNAL_INPUT_INFO,
+            tci_type: 0u32,
+            target_locality: 0,
+        }
+        .execute(&mut dpe, TEST_LOCALITIES[0])
+        .unwrap();
+
+        let context = &dpe.contexts[parent_context_idx];
+        assert!(context.uses_internal_dpe_info);
+        let cdi_with_internal_dpe_info = dpe.derive_cdi(parent_context_idx, false).unwrap();
+
+        let mut hasher = OpensslCrypto::hash_initialize(DPE_PROFILE.alg_len()).unwrap();
+
+        hasher.update(context.tci.as_bytes()).unwrap();
+        let mut internal_dpe_info = [0u8; INTERNAL_DPE_INFO_SIZE];
+        dpe.serialize_internal_dpe_info(&mut internal_dpe_info);
+        hasher
+            .update(&internal_dpe_info[..INTERNAL_DPE_INFO_SIZE])
+            .unwrap();
+
+        let digest = hasher.finish().unwrap();
+        let answer =
+            OpensslCrypto::derive_cdi(DPE_PROFILE.alg_len(), &digest, b"DPE", None).unwrap();
+        assert_eq!(answer, cdi_with_internal_dpe_info);
     }
 }

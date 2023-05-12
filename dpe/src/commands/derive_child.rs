@@ -83,6 +83,10 @@ impl<C: Crypto> CommandExecution<C> for DeriveChildCmd {
             .get_next_inactive_context_pos()
             .ok_or(DpeErrorCode::MaxTcis)?;
 
+        if self.uses_internal_info_input() {
+            dpe.contexts[parent_idx].uses_internal_dpe_info = true;
+        }
+
         let target_locality = if !self.changes_locality() {
             locality
         } else {
