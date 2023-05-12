@@ -21,6 +21,8 @@ pub(crate) struct Context<C: Crypto> {
     pub tag: u32,
     /// Private key which is cached only in non-deterministic key derivation mode
     pub cached_priv_key: Option<C::PrivKey>,
+    /// Whether we should hash internal dpe info consisting of major_version, minor_version, vendor_id, vendor_sku, max_tci_nodes, flags, and DPE_PROFILE when deriving cdi
+    pub uses_internal_dpe_info: bool,
 }
 
 impl<C: Crypto> Context<C> {
@@ -38,6 +40,7 @@ impl<C: Crypto> Context<C> {
             has_tag: false,
             tag: 0,
             cached_priv_key: None,
+            uses_internal_dpe_info: false,
         }
     }
 
@@ -68,6 +71,7 @@ impl<C: Crypto> Context<C> {
         self.tag = 0;
         self.state = ContextState::Inactive;
         self.cached_priv_key = None;
+        self.uses_internal_dpe_info = false;
     }
 
     /// Add a child to list of children in the context.

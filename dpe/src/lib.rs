@@ -14,8 +14,9 @@ pub mod dpe_instance;
 pub mod response;
 pub mod support;
 
+use core::mem::size_of;
 use crypto::Crypto;
-use response::{DpeErrorCode, ResponseHdr};
+use response::{DpeErrorCode, GetProfileResp, ResponseHdr};
 mod context;
 mod tci;
 mod x509;
@@ -26,6 +27,8 @@ const CURRENT_PROFILE_MAJOR_VERSION: u16 = 0;
 const CURRENT_PROFILE_MINOR_VERSION: u16 = 8;
 const VENDOR_ID: u32 = 0;
 const VENDOR_SKU: u32 = 0;
+
+const INTERNAL_DPE_INFO_SIZE: usize = size_of::<GetProfileResp>() + size_of::<u32>();
 
 pub enum DpeProfile {
     P256Sha256 = 1,
