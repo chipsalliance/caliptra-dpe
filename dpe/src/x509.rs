@@ -21,13 +21,14 @@ pub struct Name<'a> {
 }
 
 pub struct MeasurementData<'a> {
-    pub(crate) _label: &'a [u8],
+    pub(crate) label: &'a [u8],
     pub(crate) tci_nodes: &'a [TciNodeData],
 }
 
 pub struct X509CertWriter<'a> {
     certificate: &'a mut [u8],
     offset: usize,
+    crit_dice: bool,
 }
 
 impl X509CertWriter<'_> {
@@ -77,15 +78,23 @@ impl X509CertWriter<'_> {
     // tcg-dice-MultiTcbInfo 2.23.133.5.4.5
     const MULTI_TCBINFO_OID: &[u8] = &[0x67, 0x81, 0x05, 0x05, 0x04, 0x05];
 
+    // tcg-dice-Ueid 2.23.133.5.4.1
+    const UEID_OID: &[u8] = &[0x67, 0x81, 0x05, 0x05, 0x04, 0x01];
+
     // All DPE certs are valid from January 1st, 2023 00:00:00 until
     // December 31st, 9999 23:59:59
     const NOT_BEFORE: &str = "20230227000000Z";
     const NOT_AFTER: &str = "99991231235959Z";
 
-    pub fn new(cert: &mut [u8]) -> X509CertWriter {
+    /// Build new X509CertWriter that writes output to `cert`
+    ///
+    /// If `crit_dice`, all tcg-dice-* extensions will be marked as critical.
+    /// Else they will be marked as non-critical.
+    pub fn new(cert: &mut [u8], crit_dice: bool) -> X509CertWriter {
         X509CertWriter {
             certificate: cert,
             offset: 0,
+            crit_dice,
         }
     }
 
@@ -268,16 +277,33 @@ impl X509CertWriter<'_> {
         Self::get_structure_size(size, tagged)
     }
 
+    /// Get the size of a tcg-dice-Ueid extension, including the extension
+    /// OID and critical bits.
+    fn get_ueid_size(measurements: &MeasurementData, tagged: bool) -> Result<usize, DpeErrorCode> {
+        // Extension data is sequence -> octet string. To compute size, wrap
+        // in tagging twice.
+        let ext_size = Self::get_structure_size(
+            Self::get_structure_size(measurements.label.len(), /*tagged=*/ true)?,
+            /*tagged=*/ true,
+        )?;
+        let size = Self::get_structure_size(Self::UEID_OID.len(), /*tagged=*/true)? // Extension OID
+            + Self::get_structure_size(1, /*tagged=*/true)? // Critical bool
+            + Self::get_structure_size(ext_size, /*tagged=*/true)?; // OCTET STRING
+
+        Self::get_structure_size(size, tagged)
+    }
+
     /// Get the size of the TBS Extensions field.
     fn get_extensions_size(
         measurements: &MeasurementData,
         tagged: bool,
+        explicit: bool,
     ) -> Result<usize, DpeErrorCode> {
-        let mut size = Self::get_multi_tcb_info_size(measurements, /*tagged=*/ true)?;
+        let mut size = Self::get_multi_tcb_info_size(measurements, /*tagged=*/ true)?
+            + Self::get_ueid_size(measurements, /*tagged=*/ true)?;
 
-        // Extensions fields has an explicit encoding, so always include the
-        // actual tag
-        size = Self::get_structure_size(size, /*tagged=*/ true)?;
+        // Determine whether to include the explicit tag wrapping in the size calculation
+        size = Self::get_structure_size(size, /*tagged=*/ explicit)?;
 
         Self::get_structure_size(size, tagged)
     }
@@ -299,7 +325,11 @@ impl X509CertWriter<'_> {
             + Self::get_validity_size(/*tagged=*/ true)?
             + Self::get_rdn_size(subject_name, /*tagged=*/ true)?
             + Self::get_ecdsa_subject_pubkey_info_size(pubkey, /*tagged=*/ true)?
-            + Self::get_extensions_size(measurements, /*tagged=*/ true)?;
+            + Self::get_extensions_size(
+                measurements,
+                /*tagged=*/ true,
+                /*explicit=*/ true,
+            )?;
 
         Self::get_structure_size(tbs_size, tagged)
     }
@@ -670,9 +700,10 @@ impl X509CertWriter<'_> {
         bytes_written += self.encode_size_field(multi_tcb_info_size)?;
         bytes_written += self.encode_oid(Self::MULTI_TCBINFO_OID)?;
 
+        let crit = if self.crit_dice { 0xFF } else { 0x00 };
         bytes_written += self.encode_byte(Self::BOOL_TAG)?;
         bytes_written += self.encode_size_field(1)?;
-        bytes_written += self.encode_byte(0xFF)?; // Mark extension as critical
+        bytes_written += self.encode_byte(crit)?;
 
         let tcb_infos_size =
             Self::get_tcb_info_size(&measurements.tci_nodes[0], /*tagged=*/ true)?
@@ -695,21 +726,67 @@ impl X509CertWriter<'_> {
         Ok(bytes_written)
     }
 
+    /// Encode a tcg-dice-Ueid extension
+    ///
+    /// https://trustedcomputinggroup.org/wp-content/uploads/TCG_DICE_Attestation_Architecture_r22_02dec2020.pdf
+    fn encode_ueid(&mut self, measurements: &MeasurementData) -> Result<usize, DpeErrorCode> {
+        let ueid_size = Self::get_ueid_size(measurements, /*tagged=*/ false)?;
+
+        // Encode Extension
+        let mut bytes_written = self.encode_byte(Self::SEQUENCE_TAG)?;
+        bytes_written += self.encode_size_field(ueid_size)?;
+        bytes_written += self.encode_oid(Self::UEID_OID)?;
+
+        let crit = if self.crit_dice { 0xFF } else { 0x00 };
+        bytes_written += self.encode_byte(Self::BOOL_TAG)?;
+        bytes_written += self.encode_size_field(1)?;
+        bytes_written += self.encode_byte(crit)?;
+
+        // Extension data is sequence -> octet string. To compute size, wrap
+        // in tagging twice.
+        bytes_written += self.encode_byte(Self::OCTET_STRING_TAG)?;
+        bytes_written += self.encode_size_field(Self::get_structure_size(
+            Self::get_structure_size(measurements.label.len(), /*tagged=*/ true)?,
+            /*tagged=*/ true,
+        )?)?;
+
+        // Sequence size to just a tagged OCTET_STRING
+        bytes_written += self.encode_byte(Self::SEQUENCE_TAG)?;
+        bytes_written += self.encode_size_field(Self::get_structure_size(
+            measurements.label.len(),
+            /*tagged=*/ true,
+        )?)?;
+
+        bytes_written += self.encode_byte(Self::OCTET_STRING_TAG)?;
+        bytes_written += self.encode_size_field(Self::get_structure_size(
+            measurements.label.len(),
+            /*tagged=*/ false,
+        )?)?;
+
+        bytes_written += self.encode_bytes(measurements.label)?;
+
+        Ok(bytes_written)
+    }
+
     fn encode_extensions(&mut self, measurements: &MeasurementData) -> Result<usize, DpeErrorCode> {
         // Extensions is EXPLICIT field number 3
         let mut bytes_written = self.encode_byte(Self::PRIVATE | Self::CONSTRUCTED | 0x03)?;
         bytes_written += self.encode_size_field(Self::get_extensions_size(
             measurements,
-            /*tagged=*/ false,
+            /*tagged=*/ true,
+            /*explicit=*/ false,
         )?)?;
 
         // SEQUENCE OF Extension
         bytes_written += self.encode_byte(Self::SEQUENCE_OF_TAG)?;
-        bytes_written += self.encode_size_field(Self::get_multi_tcb_info_size(
+        bytes_written += self.encode_size_field(Self::get_extensions_size(
             measurements,
-            /*tagged=*/ true,
+            /*tagged=*/ false,
+            /*explicit=*/ false,
         )?)?;
+
         bytes_written += self.encode_multi_tcb_info(measurements)?;
+        bytes_written += self.encode_ueid(measurements)?;
 
         Ok(bytes_written)
     }
@@ -821,6 +898,7 @@ mod tests {
     use std::str;
     use x509_parser::certificate::X509CertificateParser;
     use x509_parser::nom::Parser;
+    use x509_parser::oid_registry::asn1_rs::oid;
     use x509_parser::prelude::*;
 
     #[derive(asn1::Asn1Read)]
@@ -853,6 +931,11 @@ mod tests {
         tci_type: Option<&'a [u8]>,
     }
 
+    #[derive(asn1::Asn1Read)]
+    struct Ueid<'a> {
+        pub(crate) ueid: &'a [u8],
+    }
+
     #[test]
     fn test_integers() {
         let buffer_cases = [
@@ -865,7 +948,7 @@ mod tests {
 
         for c in buffer_cases {
             let mut cert = [0u8; 128];
-            let mut w = X509CertWriter::new(&mut cert);
+            let mut w = X509CertWriter::new(&mut cert, true);
             let byte_count = w.encode_integer_bytes(&c).unwrap();
             let n = asn1::parse_single::<u64>(&cert[..byte_count]).unwrap();
             assert_eq!(n, u64::from_be_bytes(c));
@@ -879,7 +962,7 @@ mod tests {
 
         for c in integer_cases {
             let mut cert = [0; 128];
-            let mut w = X509CertWriter::new(&mut cert);
+            let mut w = X509CertWriter::new(&mut cert, true);
             let byte_count = w.encode_integer(c).unwrap();
             let n = asn1::parse_single::<u64>(&cert[..byte_count]).unwrap();
             assert_eq!(n, c);
@@ -898,7 +981,7 @@ mod tests {
             serial: [0x0u8; DPE_PROFILE.get_hash_size() * 2],
         };
 
-        let mut w = X509CertWriter::new(&mut cert);
+        let mut w = X509CertWriter::new(&mut cert, true);
         let bytes_written = w.encode_rdn(&test_name).unwrap();
 
         let name = match X509Name::from_der(&cert[..bytes_written]) {
@@ -925,7 +1008,7 @@ mod tests {
         let mut cert = [0u8; 256];
         let test_key = EcdsaPub::default(DPE_PROFILE.alg_len());
 
-        let mut w = X509CertWriter::new(&mut cert);
+        let mut w = X509CertWriter::new(&mut cert, true);
         let bytes_written = w.encode_ecdsa_subject_pubkey_info(&test_key).unwrap();
 
         SubjectPublicKeyInfo::from_der(&cert[..bytes_written]).unwrap();
@@ -945,7 +1028,7 @@ mod tests {
         node.tci_current = TciMeasurement([0xbbu8; DPE_PROFILE.get_hash_size()]);
 
         let mut cert = [0u8; 256];
-        let mut w = X509CertWriter::new(&mut cert);
+        let mut w = X509CertWriter::new(&mut cert, true);
         let bytes_written = w.encode_tcb_info(&node).unwrap();
 
         let parsed_tcb_info = asn1::parse_single::<TcbInfo>(&cert[..bytes_written]).unwrap();
@@ -972,7 +1055,7 @@ mod tests {
     #[test]
     fn test_tbs() {
         let mut cert = [0u8; 4096];
-        let mut w = X509CertWriter::new(&mut cert);
+        let mut w = X509CertWriter::new(&mut cert, true);
 
         let test_serial = [0x1F; 20];
         let test_issuer_name = Name {
@@ -995,7 +1078,7 @@ mod tests {
         let node = TciNodeData::new();
 
         let measurements = MeasurementData {
-            _label: &[0; DPE_PROFILE.get_hash_size()],
+            label: &[0xCC; DPE_PROFILE.get_hash_size()],
             tci_nodes: &[node],
         };
 
@@ -1010,13 +1093,22 @@ mod tests {
             .unwrap();
 
         let mut parser = TbsCertificateParser::new().with_deep_parse_extensions(false);
-        match parser.parse(&cert) {
+        let cert = match parser.parse(&cert) {
             Ok((rem, parsed_cert)) => {
                 assert_eq!(parsed_cert.version(), X509Version::V3);
                 assert_eq!(rem.len(), cert.len() - bytes_written);
+                parsed_cert
             }
             Err(e) => panic!("x509 parsing failed: {:?}", e),
         };
+
+        let ueid = cert
+            .get_extension_unique(&oid!(2.23.133 .5 .4 .1))
+            .unwrap()
+            .unwrap();
+        assert!(ueid.critical);
+        let parsed_ueid = asn1::parse_single::<Ueid>(ueid.value).unwrap();
+        assert_eq!(parsed_ueid.ueid, measurements.label);
     }
 
     #[test]
@@ -1046,12 +1138,12 @@ mod tests {
         let node = TciNodeData::new();
 
         let measurements = MeasurementData {
-            _label: &[0; DPE_PROFILE.get_hash_size()],
+            label: &[0; DPE_PROFILE.get_hash_size()],
             tci_nodes: &[node],
         };
 
         let mut tbs = [0u8; 1024];
-        let mut tbs_writer = X509CertWriter::new(&mut tbs);
+        let mut tbs_writer = X509CertWriter::new(&mut tbs, true);
         let mut bytes_written = tbs_writer
             .encode_ecdsa_tbs(
                 &test_serial,
@@ -1063,7 +1155,7 @@ mod tests {
             .unwrap();
 
         let mut cert = [0u8; 1024];
-        let mut w = X509CertWriter::new(&mut cert);
+        let mut w = X509CertWriter::new(&mut cert, true);
         bytes_written = w
             .encode_ecdsa_certificate(&tbs[..bytes_written], &test_sig)
             .unwrap();
