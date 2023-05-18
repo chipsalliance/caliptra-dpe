@@ -23,10 +23,10 @@ impl Hasher for OpensslHasher {
     }
 
     fn finish(mut self) -> Result<Digest, CryptoError> {
-        Ok(Digest::new(
+        Digest::new(
             &self.0.finish().map_err(|_| CryptoError::CryptoLibError)?,
             self.1,
-        )?)
+        )
     }
 }
 
@@ -117,7 +117,7 @@ impl Crypto for OpensslCrypto {
                     &KdfArgument::KbSeed(seed),
                     &KdfArgument::KbInfo(measurement.bytes()),
                     &KdfArgument::Salt(info),
-                    &KdfArgument::Key(&measurement.bytes()),
+                    &KdfArgument::Key(measurement.bytes()),
                 ];
                 perform_kdf(KdfType::KeyBased, &args, md.size())
                     .map_err(|_| CryptoError::CryptoLibError)
@@ -128,7 +128,7 @@ impl Crypto for OpensslCrypto {
                     &KdfArgument::Mac(KdfMacType::Hmac(md)),
                     &KdfArgument::KbInfo(measurement.bytes()),
                     &KdfArgument::Salt(info),
-                    &KdfArgument::Key(&measurement.bytes()),
+                    &KdfArgument::Key(measurement.bytes()),
                 ];
                 perform_kdf(KdfType::KeyBased, &args, md.size())
                     .map_err(|_| CryptoError::CryptoLibError)
@@ -141,7 +141,7 @@ impl Crypto for OpensslCrypto {
         cdi: &Self::Cdi,
         label: &[u8],
         info: &[u8],
-    ) -> Self::PrivKey {
+    ) -> Result<Self::PrivKey, CryptoError> {
         let md = Self::get_digest(algs);
         let args = [
             &KdfArgument::KbMode(KdfKbMode::Counter),
@@ -159,7 +159,7 @@ impl Crypto for OpensslCrypto {
         )
         .unwrap();
 
-        CryptoBuf::new(&priv_bn.to_vec_padded(algs.size() as i32).unwrap(), algs).unwrap()
+        Ok(CryptoBuf::new(&priv_bn.to_vec_padded(algs.size() as i32).unwrap(), algs).unwrap())
     }
 
     fn derive_ecdsa_pub(algs: AlgLen, priv_key: &Self::PrivKey) -> Result<EcdsaPub, CryptoError> {
@@ -256,7 +256,7 @@ impl Crypto for OpensslCrypto {
         info: &[u8],
         digest: &Digest,
     ) -> Result<HmacSig, CryptoError> {
-        let symmetric_key = Self::derive_private_key(algs, cdi, label, info);
+        let symmetric_key = Self::derive_private_key(algs, cdi, label, info)?;
         let hmac_key = PKey::hmac(symmetric_key.bytes()).unwrap();
 
         let sha_size = Self::get_digest(algs);

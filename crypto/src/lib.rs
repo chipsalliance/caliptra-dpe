@@ -38,6 +38,7 @@ pub enum CryptoError {
     AbstractionLayer,
     CryptoLibError,
     Size,
+    NotImplemented,
 }
 
 pub trait Hasher: Sized {
@@ -151,7 +152,7 @@ pub trait Crypto {
         cdi: &Self::Cdi,
         label: &[u8],
         info: &[u8],
-    ) -> Self::PrivKey;
+    ) -> Result<Self::PrivKey, CryptoError>;
 
     /// Derives and returns an ECDSA public key using the caller-supplied private key
     ///
