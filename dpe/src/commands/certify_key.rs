@@ -79,13 +79,13 @@ impl<C: Crypto> CommandExecution<C> for CertifyKeyCmd {
         let tcb_count = dpe.get_tcb_nodes(idx, &mut nodes)?;
 
         let measurements = MeasurementData {
-            _label: &self.label,
+            label: &self.label,
             tci_nodes: &nodes[..tcb_count],
         };
 
         // Get certificate
         let mut tbs_buffer = [0u8; MAX_CERT_SIZE];
-        let mut tbs_writer = X509CertWriter::new(&mut tbs_buffer);
+        let mut tbs_writer = X509CertWriter::new(&mut tbs_buffer, true);
         let mut bytes_written = tbs_writer.encode_ecdsa_tbs(
             /*serial=*/
             &subject_name.serial[..20], // Serial number must be truncated to 20 bytes
@@ -107,7 +107,7 @@ impl<C: Crypto> CommandExecution<C> for CertifyKeyCmd {
             .map_err(|_| DpeErrorCode::InternalError)?;
 
         let mut cert = [0u8; MAX_CERT_SIZE];
-        let mut cert_writer = X509CertWriter::new(&mut cert);
+        let mut cert_writer = X509CertWriter::new(&mut cert, true);
         bytes_written = cert_writer.encode_ecdsa_certificate(&tbs_buffer[..bytes_written], &sig)?;
         let cert_size = u32::try_from(bytes_written).map_err(|_| DpeErrorCode::InternalError)?;
 
