@@ -39,20 +39,17 @@ impl SignCmd {
     ) -> Result<EcdsaSig, DpeErrorCode> {
         let algs = DPE_PROFILE.alg_len();
         let priv_key = if self.uses_nd_derivation() {
-            dpe.contexts[idx].cached_priv_key.take().unwrap_or_else({
-                || {
-                    C::derive_private_key(
-                        algs,
-                        &dpe.derive_cdi(idx, true).unwrap(),
-                        &self.label,
-                        b"ECC",
-                    )
-                }
-            })
+            if let Some(cached) = dpe.contexts[idx].cached_priv_key.take() {
+                Ok(cached)
+            } else {
+                C::derive_private_key(algs, &dpe.derive_cdi(idx, true)?, &self.label, b"ECC")
+                    .map_err(|_| DpeErrorCode::InternalError)
+            }
         } else {
             let cdi = dpe.derive_cdi(idx, false)?;
             C::derive_private_key(algs, &cdi, &self.label, b"ECC")
-        };
+                .map_err(|_| DpeErrorCode::InternalError)
+        }?;
 
         let sig = C::ecdsa_sign_with_derived(algs, digest, &priv_key)
             .map_err(|_| DpeErrorCode::InternalError)?;
