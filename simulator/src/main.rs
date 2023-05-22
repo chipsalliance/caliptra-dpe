@@ -1,3 +1,5 @@
+// Licensed under the Apache-2.0 license
+
 use clap::Parser;
 use crypto::OpensslCrypto;
 use log::{error, info, trace, warn};
