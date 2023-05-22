@@ -25,6 +25,7 @@ pub enum Response {
     TagTci(NewHandleResp),
     GetTaggedTci(GetTaggedTciResp),
     CertifyCsr(CertifyCsrResp),
+    GetCertificateChain(GetCertificateChainResp),
 }
 
 impl Response {
@@ -47,6 +48,7 @@ impl Response {
             Response::TagTci(response) => response.serialize(dst),
             Response::GetTaggedTci(response) => response.serialize(dst),
             Response::CertifyCsr(response) => response.serialize(dst),
+            Response::GetCertificateChain(response) => response.serialize(dst),
         }
     }
 }
@@ -315,6 +317,40 @@ impl Default for CertifyCsrResp {
     }
 }
 
+#[repr(C)]
+#[derive(Debug, PartialEq, Eq)]
+#[cfg_attr(test, derive(zerocopy::AsBytes, zerocopy::FromBytes))]
+pub struct GetCertificateChainResp {
+    pub certificate_size: u32,
+    pub certificate_chain: [u8; MAX_CERT_SIZE],
+}
+
+impl GetCertificateChainResp {
+    pub fn serialize(&self, dst: &mut [u8]) -> Result<usize, DpeErrorCode> {
+        if dst.len() < size_of::<Self>() {
+            return Err(DpeErrorCode::InternalError);
+        }
+
+        let mut offset: usize = 0;
+        dst[offset..offset + size_of::<u32>()]
+            .copy_from_slice(&self.certificate_size.to_le_bytes());
+        offset += size_of::<u32>();
+        dst[offset..offset + self.certificate_chain.len()].copy_from_slice(&self.certificate_chain);
+        offset += self.certificate_chain.len();
+
+        Ok(offset)
+    }
+}
+
+impl Default for GetCertificateChainResp {
+    fn default() -> Self {
+        Self {
+            certificate_size: 0,
+            certificate_chain: [0; MAX_CERT_SIZE],
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum DpeErrorCode {
     NoError = 0,
@@ -357,6 +393,10 @@ mod tests {
         derived_pubkey_y: [0x55; DPE_PROFILE.get_ecc_int_size()],
         csr_size: MAX_CERT_SIZE as u32,
         csr: [0xFF; MAX_CERT_SIZE],
+    };
+    const TEST_GET_CERTIFICATE_CHAIN_RESP: GetCertificateChainResp = GetCertificateChainResp {
+        certificate_size: MAX_CERT_SIZE as u32,
+        certificate_chain: [0xFF; MAX_CERT_SIZE],
     };
 
     #[test]
@@ -529,6 +569,25 @@ mod tests {
                 .unwrap()
         );
         assert_eq!(TEST_CERTIFY_CSR_RESP.as_bytes(), response_buffer);
+    }
+
+    #[test]
+    fn test_serialize_get_certificate_chain_response() {
+        // Test too small slice.
+        let mut response_buffer = [0; size_of::<GetCertificateChainResp>() - 1];
+        assert_eq!(
+            Err(DpeErrorCode::InternalError),
+            TEST_GET_CERTIFICATE_CHAIN_RESP.serialize(response_buffer.as_mut_slice())
+        );
+        let mut response_buffer = [0; size_of::<GetCertificateChainResp>()];
+
+        assert_eq!(
+            size_of::<u32>() + MAX_CERT_SIZE,
+            TEST_GET_CERTIFICATE_CHAIN_RESP
+                .serialize(response_buffer.as_mut_slice())
+                .unwrap()
+        );
+        assert_eq!(TEST_GET_CERTIFICATE_CHAIN_RESP.as_bytes(), response_buffer);
     }
 
     fn test_error_code_serialize(error_code: DpeErrorCode) {

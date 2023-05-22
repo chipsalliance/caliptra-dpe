@@ -12,6 +12,7 @@ pub(in crate::commands) use self::certify_key::CertifyKeyCmd;
 
 use self::certify_csr::CertifyCsrCmd;
 use self::extend_tci::ExtendTciCmd;
+use self::get_certificate_chain::GetCertificateChainCmd;
 use self::get_tagged_tci::GetTaggedTciCmd;
 use self::rotate_context::RotateCtxCmd;
 use self::sign::SignCmd;
@@ -31,6 +32,7 @@ mod certify_key;
 mod derive_child;
 mod destroy_context;
 mod extend_tci;
+mod get_certificate_chain;
 mod get_tagged_tci;
 mod initialize_context;
 mod rotate_context;
@@ -50,6 +52,7 @@ pub enum Command {
     TagTci(TagTciCmd),
     GetTaggedTci(GetTaggedTciCmd),
     CertifyCsr(CertifyCsrCmd),
+    GetCertificateChain(GetCertificateChainCmd),
 }
 
 impl Command {
@@ -83,7 +86,9 @@ impl Command {
             Command::SIGN => Self::parse_command(Command::Sign, bytes),
             Command::ROTATE_CONTEXT_HANDLE => Self::parse_command(Command::RotateCtx, bytes),
             Command::DESTROY_CONTEXT => Self::parse_command(Command::DestroyCtx, bytes),
-            Command::GET_CERTIFICATE_CHAIN => Err(DpeErrorCode::InvalidCommand),
+            Command::GET_CERTIFICATE_CHAIN => {
+                Self::parse_command(Command::GetCertificateChain, bytes)
+            }
             Command::EXTEND_TCI => Self::parse_command(Command::ExtendTci, bytes),
             Command::TAG_TCI => Self::parse_command(Command::TagTci, bytes),
             Command::GET_TAGGED_TCI => Self::parse_command(Command::GetTaggedTci, bytes),
@@ -171,22 +176,6 @@ pub mod tests {
     }
 
     #[test]
-    fn test_deserialize_unsupported_commands() {
-        // Commands that are not implemented.
-        let invalid_command = Err(DpeErrorCode::InvalidCommand);
-        assert_eq!(
-            invalid_command,
-            Command::deserialize(
-                CommandHdr {
-                    cmd_id: Command::GET_CERTIFICATE_CHAIN,
-                    ..DEFAULT_COMMAND
-                }
-                .as_bytes()
-            )
-        );
-    }
-
-    #[test]
     fn test_slice_to_command_hdr() {
         let invalid_command: Result<CommandHdr, DpeErrorCode> = Err(DpeErrorCode::InvalidCommand);
 
@@ -262,6 +251,7 @@ pub mod tests {
                 Command::TagTci(_) => Command::TAG_TCI,
                 Command::GetTaggedTci(_) => Command::GET_TAGGED_TCI,
                 Command::CertifyCsr(_) => Command::CERTIFY_CSR,
+                Command::GetCertificateChain(_) => Command::GET_CERTIFICATE_CHAIN,
             };
             CommandHdr {
                 magic: Self::DPE_COMMAND_MAGIC,
