@@ -1,6 +1,7 @@
 // Licensed under the Apache-2.0 license
 
 use crate::{AlgLen, Crypto, CryptoBuf, CryptoError, Digest, EcdsaPub, Hasher, HmacSig};
+use hkdf::Hkdf;
 use openssl::{
     bn::{BigNum, BigNumContext},
     ec::{EcGroup, EcKey, EcPoint},
@@ -11,7 +12,7 @@ use openssl::{
     pkey::{PKey, Private},
     sign::Signer,
 };
-use openssl_kdf::{perform_kdf, KdfArgument, KdfKbMode, KdfMacType, KdfType};
+use sha2::{Sha256, Sha384};
 
 pub struct OpensslHasher(openssl::hash::Hasher, AlgLen);
 
@@ -47,7 +48,7 @@ impl OpensslCrypto {
         }
     }
 
-    fn get_priv_byes(algs: AlgLen) -> Result<Vec<u8>, CryptoError> {
+    fn get_priv_bytes(algs: AlgLen) -> Result<Vec<u8>, CryptoError> {
         let priv_bytes = vec![0u8; algs.size()];
         let priv_digest = Self::hash(algs, &priv_bytes)?;
         Ok(priv_digest.bytes().to_vec())
@@ -107,31 +108,30 @@ impl Crypto for OpensslCrypto {
         info: &[u8],
         rand_seed: Option<&[u8]>,
     ) -> Result<Self::Cdi, CryptoError> {
-        let md = Self::get_digest(algs);
+        match algs {
+            AlgLen::Bit256 => {
+                let hk = Hkdf::<Sha256>::new(Some(info), measurement.bytes());
+                let mut cdi = [0u8; AlgLen::Bit256.size()];
+                hk.expand(measurement.bytes(), &mut cdi)
+                    .map_err(|_| CryptoError::CryptoLibError)?;
+                if let Some(seed) = rand_seed {
+                    hk.expand(seed, &mut cdi)
+                        .map_err(|_| CryptoError::CryptoLibError)?;
+                }
 
-        match rand_seed {
-            Some(seed) => {
-                let args = [
-                    &KdfArgument::KbMode(KdfKbMode::Feedback),
-                    &KdfArgument::Mac(KdfMacType::Hmac(md)),
-                    &KdfArgument::KbSeed(seed),
-                    &KdfArgument::KbInfo(measurement.bytes()),
-                    &KdfArgument::Salt(info),
-                    &KdfArgument::Key(measurement.bytes()),
-                ];
-                perform_kdf(KdfType::KeyBased, &args, md.size())
-                    .map_err(|_| CryptoError::CryptoLibError)
+                Ok(cdi.to_vec())
             }
-            None => {
-                let args = [
-                    &KdfArgument::KbMode(KdfKbMode::Counter),
-                    &KdfArgument::Mac(KdfMacType::Hmac(md)),
-                    &KdfArgument::KbInfo(measurement.bytes()),
-                    &KdfArgument::Salt(info),
-                    &KdfArgument::Key(measurement.bytes()),
-                ];
-                perform_kdf(KdfType::KeyBased, &args, md.size())
-                    .map_err(|_| CryptoError::CryptoLibError)
+            AlgLen::Bit384 => {
+                let hk = Hkdf::<Sha384>::new(Some(info), measurement.bytes());
+                let mut cdi = [0u8; AlgLen::Bit384.size()];
+                hk.expand(measurement.bytes(), &mut cdi)
+                    .map_err(|_| CryptoError::CryptoLibError)?;
+                if let Some(seed) = rand_seed {
+                    hk.expand(seed, &mut cdi)
+                        .map_err(|_| CryptoError::CryptoLibError)?;
+                }
+
+                Ok(cdi.to_vec())
             }
         }
     }
@@ -142,24 +142,24 @@ impl Crypto for OpensslCrypto {
         label: &[u8],
         info: &[u8],
     ) -> Result<Self::PrivKey, CryptoError> {
-        let md = Self::get_digest(algs);
-        let args = [
-            &KdfArgument::KbMode(KdfKbMode::Counter),
-            &KdfArgument::Mac(KdfMacType::Hmac(md)),
-            &KdfArgument::KbInfo(label),
-            &KdfArgument::Salt(info),
-            &KdfArgument::Key(cdi),
-        ];
+        match algs {
+            AlgLen::Bit256 => {
+                let hk = Hkdf::<Sha256>::new(Some(info), cdi);
+                let mut priv_key = [0u8; AlgLen::Bit256.size()];
+                hk.expand(label, &mut priv_key)
+                    .map_err(|_| CryptoError::CryptoLibError)?;
 
-        // Generate key
-        let priv_bn = BigNum::from_slice(
-            perform_kdf(KdfType::KeyBased, &args, md.size())
-                .unwrap()
-                .as_slice(),
-        )
-        .unwrap();
+                Ok(CryptoBuf::new(&priv_key, algs).unwrap())
+            }
+            AlgLen::Bit384 => {
+                let hk = Hkdf::<Sha384>::new(Some(info), cdi);
+                let mut priv_key = [0u8; AlgLen::Bit384.size()];
+                hk.expand(label, &mut priv_key)
+                    .map_err(|_| CryptoError::CryptoLibError)?;
 
-        Ok(CryptoBuf::new(&priv_bn.to_vec_padded(algs.size() as i32).unwrap(), algs).unwrap())
+                Ok(CryptoBuf::new(&priv_key, algs).unwrap())
+            }
+        }
     }
 
     fn derive_ecdsa_pub(algs: AlgLen, priv_key: &Self::PrivKey) -> Result<EcdsaPub, CryptoError> {
@@ -189,7 +189,7 @@ impl Crypto for OpensslCrypto {
         digest: &Digest,
     ) -> Result<super::EcdsaSig, CryptoError> {
         let nid = Self::get_curve(algs);
-        let priv_bytes = Self::get_priv_byes(algs)?;
+        let priv_bytes = Self::get_priv_bytes(algs)?;
         let group = EcGroup::from_curve_name(nid).map_err(|_| CryptoError::CryptoLibError)?;
         let priv_bn =
             BigNum::from_slice(priv_bytes.as_slice()).map_err(|_| CryptoError::CryptoLibError)?;
@@ -227,7 +227,7 @@ impl Crypto for OpensslCrypto {
 
     fn get_ecdsa_alias_serial(algs: AlgLen, serial: &mut [u8]) -> Result<(), CryptoError> {
         let nid = Self::get_curve(algs);
-        let priv_bytes = Self::get_priv_byes(algs)?;
+        let priv_bytes = Self::get_priv_bytes(algs)?;
 
         let group = EcGroup::from_curve_name(nid).map_err(|_| CryptoError::CryptoLibError)?;
         let priv_bn =
