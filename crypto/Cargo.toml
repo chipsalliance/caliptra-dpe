@@ -4,12 +4,13 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-openssl = ["dep:openssl", "dep:openssl-kdf"]
+openssl = ["dep:openssl", "dep:hkdf", "dep:sha2"]
 deterministic_rand = ["openssl"]
 
 [dependencies]
+hkdf = {version = "0.12.3", optional = true}
 openssl = {version = "0.10", optional = true}
-openssl-kdf = {version = "0.4.1", optional = true}
+sha2 = {version = "0.10.6", optional = true}
 
 [dev-dependencies]
 strum = "0.24"
