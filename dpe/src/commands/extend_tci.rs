@@ -8,6 +8,7 @@ use crate::{
     DPE_PROFILE,
 };
 use crypto::Crypto;
+use platform::Platform;
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, zerocopy::FromBytes)]
@@ -17,8 +18,12 @@ pub struct ExtendTciCmd {
     data: [u8; DPE_PROFILE.get_hash_size()],
 }
 
-impl<C: Crypto> CommandExecution<C> for ExtendTciCmd {
-    fn execute(&self, dpe: &mut DpeInstance<C>, locality: u32) -> Result<Response, DpeErrorCode> {
+impl<C: Crypto, P: Platform> CommandExecution<C, P> for ExtendTciCmd {
+    fn execute(
+        &self,
+        dpe: &mut DpeInstance<C, P>,
+        locality: u32,
+    ) -> Result<Response, DpeErrorCode> {
         // Make sure this command is supported.
         if !dpe.support.extend_tci {
             return Err(DpeErrorCode::InvalidCommand);
@@ -55,6 +60,7 @@ mod tests {
         support::Support,
     };
     use crypto::OpensslCrypto;
+    use platform::DefaultPlatform;
     use zerocopy::AsBytes;
 
     const TEST_EXTEND_TCI_CMD: ExtendTciCmd = ExtendTciCmd {
@@ -76,9 +82,11 @@ mod tests {
 
     #[test]
     fn test_extend_tci() {
-        let mut dpe =
-            DpeInstance::<OpensslCrypto>::new_for_test(Support::default(), &TEST_LOCALITIES)
-                .unwrap();
+        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(
+            Support::default(),
+            &TEST_LOCALITIES,
+        )
+        .unwrap();
         // Make sure it returns an error if the command is marked unsupported.
         assert_eq!(
             Err(DpeErrorCode::InvalidCommand),
@@ -105,7 +113,7 @@ mod tests {
             .execute(&mut dpe, TEST_LOCALITIES[1])
         );
 
-        let locality = DpeInstance::<OpensslCrypto>::AUTO_INIT_LOCALITY;
+        let locality = DpeInstance::<OpensslCrypto, DefaultPlatform>::AUTO_INIT_LOCALITY;
         let default_handle = ContextHandle::default();
         let handle = dpe.contexts[dpe
             .get_active_context_pos(&default_handle, locality)

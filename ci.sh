@@ -28,6 +28,13 @@ set -ex
   cargo fmt -- --check
   cargo clippy -- --deny=warnings
 )
+( cd platform
+  cargo build
+  cargo build --release
+  cargo test
+  cargo fmt -- --check
+  cargo clippy -- --deny=warnings
+)
 ( cd verification
   test -z "$(gofmt -l .)"
   go test

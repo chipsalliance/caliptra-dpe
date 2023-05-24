@@ -7,6 +7,7 @@ use crate::{
     DPE_PROFILE,
 };
 use crypto::Crypto;
+use platform::Platform;
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, zerocopy::FromBytes)]
@@ -26,8 +27,12 @@ impl CertifyCsrCmd {
     }
 }
 
-impl<C: Crypto> CommandExecution<C> for CertifyCsrCmd {
-    fn execute(&self, dpe: &mut DpeInstance<C>, locality: u32) -> Result<Response, DpeErrorCode> {
+impl<C: Crypto, P: Platform> CommandExecution<C, P> for CertifyCsrCmd {
+    fn execute(
+        &self,
+        dpe: &mut DpeInstance<C, P>,
+        locality: u32,
+    ) -> Result<Response, DpeErrorCode> {
         // Make sure the operation is supported.
         if !dpe.support.nd_derivation && self.uses_nd_derivation() {
             return Err(DpeErrorCode::InvalidArgument);
@@ -56,6 +61,7 @@ mod tests {
         support::test::SUPPORT,
     };
     use crypto::OpensslCrypto;
+    use platform::DefaultPlatform;
     use zerocopy::AsBytes;
 
     const TEST_CERTIFY_CSR_CMD: CertifyCsrCmd = CertifyCsrCmd {
@@ -96,7 +102,8 @@ mod tests {
     #[test]
     fn test_bad_command_inputs() {
         let mut dpe =
-            DpeInstance::<OpensslCrypto>::new_for_test(SUPPORT, &TEST_LOCALITIES).unwrap();
+            DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(SUPPORT, &TEST_LOCALITIES)
+                .unwrap();
 
         // Bad argument
         assert_eq!(

@@ -12,6 +12,7 @@ dpe_profile_p384_sha384 = []
 
 [dependencies]
 crypto = {path = "../crypto"}
+platform = {path = "../platform"}
 zerocopy = "0.6.1"
 
 [dev-dependencies]

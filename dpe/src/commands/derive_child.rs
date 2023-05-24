@@ -8,6 +8,7 @@ use crate::{
     DPE_PROFILE,
 };
 use crypto::Crypto;
+use platform::Platform;
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, zerocopy::FromBytes)]
@@ -67,8 +68,12 @@ impl DeriveChildCmd {
     }
 }
 
-impl<C: Crypto> CommandExecution<C> for DeriveChildCmd {
-    fn execute(&self, dpe: &mut DpeInstance<C>, locality: u32) -> Result<Response, DpeErrorCode> {
+impl<C: Crypto, P: Platform> CommandExecution<C, P> for DeriveChildCmd {
+    fn execute(
+        &self,
+        dpe: &mut DpeInstance<C, P>,
+        locality: u32,
+    ) -> Result<Response, DpeErrorCode> {
         // Make sure the operation is supported.
         if !dpe.support.internal_info && self.uses_internal_info_input()
             || !dpe.support.internal_dice && self.uses_internal_dice_input()
@@ -83,9 +88,8 @@ impl<C: Crypto> CommandExecution<C> for DeriveChildCmd {
             .get_next_inactive_context_pos()
             .ok_or(DpeErrorCode::MaxTcis)?;
 
-        if self.uses_internal_info_input() {
-            dpe.contexts[parent_idx].uses_internal_dpe_info = true;
-        }
+        dpe.contexts[parent_idx].uses_internal_input_info = self.uses_internal_info_input();
+        dpe.contexts[parent_idx].uses_internal_input_dice = self.uses_internal_dice_input();
 
         let target_locality = if !self.changes_locality() {
             locality
@@ -150,6 +154,7 @@ mod tests {
         MAX_HANDLES,
     };
     use crypto::OpensslCrypto;
+    use platform::DefaultPlatform;
     use zerocopy::AsBytes;
 
     const TEST_DERIVE_CHILD_CMD: DeriveChildCmd = DeriveChildCmd {
@@ -174,9 +179,11 @@ mod tests {
 
     #[test]
     fn test_initial_conditions() {
-        let mut dpe =
-            DpeInstance::<OpensslCrypto>::new_for_test(Support::default(), &TEST_LOCALITIES)
-                .unwrap();
+        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(
+            Support::default(),
+            &TEST_LOCALITIES,
+        )
+        .unwrap();
 
         // Right now this command doesn't support INTERNAL_INPUT_INFO, make sure it errors.
         assert_eq!(
@@ -235,7 +242,7 @@ mod tests {
 
     #[test]
     fn test_max_tcis() {
-        let mut dpe = DpeInstance::<OpensslCrypto>::new_for_test(
+        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(
             Support {
                 auto_init: true,
                 ..Support::default()
@@ -273,7 +280,7 @@ mod tests {
 
     #[test]
     fn test_set_child_parent_relationship() {
-        let mut dpe = DpeInstance::<OpensslCrypto>::new_for_test(
+        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(
             Support {
                 auto_init: true,
                 ..Support::default()
@@ -310,7 +317,7 @@ mod tests {
 
     #[test]
     fn test_set_other_values() {
-        let mut dpe = DpeInstance::<OpensslCrypto>::new_for_test(
+        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(
             Support {
                 auto_init: true,
                 ..Support::default()
@@ -340,7 +347,7 @@ mod tests {
 
     #[test]
     fn test_correct_child_handle() {
-        let mut dpe = DpeInstance::<OpensslCrypto>::new_for_test(
+        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(
             Support {
                 auto_init: true,
                 ..Support::default()
@@ -384,7 +391,7 @@ mod tests {
 
     #[test]
     fn test_correct_parent_handle() {
-        let mut dpe = DpeInstance::<OpensslCrypto>::new_for_test(
+        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(
             Support {
                 auto_init: true,
                 ..Support::default()

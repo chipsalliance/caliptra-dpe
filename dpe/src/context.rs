@@ -21,8 +21,10 @@ pub(crate) struct Context<C: Crypto> {
     pub tag: u32,
     /// Private key which is cached only in non-deterministic key derivation mode
     pub cached_priv_key: Option<C::PrivKey>,
-    /// Whether we should hash internal dpe info consisting of major_version, minor_version, vendor_id, vendor_sku, max_tci_nodes, flags, and DPE_PROFILE when deriving cdi
-    pub uses_internal_dpe_info: bool,
+    /// Whether we should hash internal input info consisting of major_version, minor_version, vendor_id, vendor_sku, max_tci_nodes, flags, and DPE_PROFILE when deriving the CDI
+    pub uses_internal_input_info: bool,
+    /// Whether we should hash internal dice info consisting of the certificate chain when deriving the CDI
+    pub uses_internal_input_dice: bool,
 }
 
 impl<C: Crypto> Context<C> {
@@ -40,7 +42,8 @@ impl<C: Crypto> Context<C> {
             has_tag: false,
             tag: 0,
             cached_priv_key: None,
-            uses_internal_dpe_info: false,
+            uses_internal_input_info: false,
+            uses_internal_input_dice: false,
         }
     }
 
@@ -71,7 +74,8 @@ impl<C: Crypto> Context<C> {
         self.tag = 0;
         self.state = ContextState::Inactive;
         self.cached_priv_key = None;
-        self.uses_internal_dpe_info = false;
+        self.uses_internal_input_info = false;
+        self.uses_internal_input_dice = false;
     }
 
     /// Add a child to list of children in the context.
@@ -209,10 +213,11 @@ mod tests {
     use super::*;
     use crate::DpeInstance;
     use crypto::OpensslCrypto;
+    use platform::DefaultPlatform;
 
     #[test]
     fn test_child_to_root_iter() {
-        let mut contexts = DpeInstance::<OpensslCrypto>::new_context_handles();
+        let mut contexts = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_context_handles();
         let root_index = CHAIN_INDICES[0];
         assert_eq!(MAX_HANDLES, CHAIN_INDICES.len());
 
@@ -247,7 +252,7 @@ mod tests {
 
     #[test]
     fn test_child_to_root_overflow() {
-        let mut contexts = DpeInstance::<OpensslCrypto>::new_context_handles();
+        let mut contexts = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_context_handles();
 
         // Create circular relationship.
         contexts[0].parent_idx = 1;
@@ -265,7 +270,7 @@ mod tests {
 
     #[test]
     fn test_child_to_root_check_parent_and_state() {
-        let mut contexts = DpeInstance::<OpensslCrypto>::new_context_handles();
+        let mut contexts = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_context_handles();
         contexts[0].state = ContextState::Retired;
         contexts[0].parent_idx = MAX_HANDLES as u8;
 
