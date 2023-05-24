@@ -16,6 +16,7 @@ pub mod support;
 
 use core::mem::size_of;
 use crypto::Crypto;
+use platform::Platform;
 use response::{DpeErrorCode, GetProfileResp, ResponseHdr};
 mod context;
 mod tci;
@@ -28,7 +29,7 @@ const CURRENT_PROFILE_MINOR_VERSION: u16 = 8;
 const VENDOR_ID: u32 = 0;
 const VENDOR_SKU: u32 = 0;
 
-const INTERNAL_DPE_INFO_SIZE: usize = size_of::<GetProfileResp>() + size_of::<u32>();
+const INTERNAL_INPUT_INFO_SIZE: usize = size_of::<GetProfileResp>() + size_of::<u32>();
 
 pub enum DpeProfile {
     P256Sha256 = 1,
@@ -67,8 +68,8 @@ pub const DPE_PROFILE: DpeProfile = DpeProfile::P384Sha384;
 
 /// Execute a DPE command.
 /// Returns the number of bytes written to `response`.
-pub fn execute_command<C: Crypto>(
-    dpe: &mut dpe_instance::DpeInstance<C>,
+pub fn execute_command<C: Crypto, P: Platform>(
+    dpe: &mut dpe_instance::DpeInstance<C, P>,
     locality: u32,
     cmd: &[u8],
     response: &mut [u8],

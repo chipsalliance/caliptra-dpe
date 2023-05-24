@@ -7,6 +7,7 @@ use crate::{
     MAX_HANDLES,
 };
 use crypto::Crypto;
+use platform::Platform;
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, zerocopy::FromBytes)]
@@ -24,8 +25,12 @@ impl DestroyCtxCmd {
     }
 }
 
-impl<C: Crypto> CommandExecution<C> for DestroyCtxCmd {
-    fn execute(&self, dpe: &mut DpeInstance<C>, locality: u32) -> Result<Response, DpeErrorCode> {
+impl<C: Crypto, P: Platform> CommandExecution<C, P> for DestroyCtxCmd {
+    fn execute(
+        &self,
+        dpe: &mut DpeInstance<C, P>,
+        locality: u32,
+    ) -> Result<Response, DpeErrorCode> {
         let idx = dpe
             .get_active_context_pos(&self.handle, locality)
             .ok_or(DpeErrorCode::InvalidHandle)?;

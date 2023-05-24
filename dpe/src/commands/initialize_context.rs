@@ -6,6 +6,7 @@ use crate::{
     response::{DpeErrorCode, NewHandleResp, Response},
 };
 use crypto::Crypto;
+use platform::Platform;
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, zerocopy::FromBytes)]
@@ -40,8 +41,12 @@ impl InitCtxCmd {
     }
 }
 
-impl<C: Crypto> CommandExecution<C> for InitCtxCmd {
-    fn execute(&self, dpe: &mut DpeInstance<C>, locality: u32) -> Result<Response, DpeErrorCode> {
+impl<C: Crypto, P: Platform> CommandExecution<C, P> for InitCtxCmd {
+    fn execute(
+        &self,
+        dpe: &mut DpeInstance<C, P>,
+        locality: u32,
+    ) -> Result<Response, DpeErrorCode> {
         // This function can only be called once for non-simulation contexts.
         if (self.flag_is_default() && dpe.has_initialized)
             || (self.flag_is_simulation() && !dpe.support.simulation)
@@ -88,6 +93,7 @@ mod tests {
         support::Support,
     };
     use crypto::OpensslCrypto;
+    use platform::DefaultPlatform;
     use zerocopy::AsBytes;
 
     const TEST_INIT_CTX_CMD: InitCtxCmd = InitCtxCmd { flags: 0x1234_5678 };
@@ -106,9 +112,11 @@ mod tests {
 
     #[test]
     fn test_initialize_context() {
-        let mut dpe =
-            DpeInstance::<OpensslCrypto>::new_for_test(Support::default(), &TEST_LOCALITIES)
-                .unwrap();
+        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(
+            Support::default(),
+            &TEST_LOCALITIES,
+        )
+        .unwrap();
 
         let handle = match InitCtxCmd::new_use_default()
             .execute(&mut dpe, TEST_LOCALITIES[0])
@@ -139,7 +147,7 @@ mod tests {
         );
 
         // Change to support simulation.
-        let mut dpe = DpeInstance::<OpensslCrypto>::new_for_test(
+        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(
             Support {
                 simulation: true,
                 ..Support::default()

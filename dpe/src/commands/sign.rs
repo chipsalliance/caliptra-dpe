@@ -7,6 +7,7 @@ use crate::{
     DPE_PROFILE,
 };
 use crypto::{Crypto, CryptoBuf, Digest, EcdsaSig, HmacSig};
+use platform::Platform;
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, zerocopy::FromBytes)]
@@ -31,9 +32,9 @@ impl SignCmd {
         !self.uses_symmetric() && self.flags & Self::ND_DERIVATION != 0
     }
 
-    fn ecdsa_sign<C: Crypto>(
+    fn ecdsa_sign<C: Crypto, P: Platform>(
         &self,
-        dpe: &mut DpeInstance<C>,
+        dpe: &mut DpeInstance<C, P>,
         idx: usize,
         digest: &Digest,
     ) -> Result<EcdsaSig, DpeErrorCode> {
@@ -62,9 +63,9 @@ impl SignCmd {
         Ok(sig)
     }
 
-    fn hmac_sign<C: Crypto>(
+    fn hmac_sign<C: Crypto, P: Platform>(
         &self,
-        dpe: &mut DpeInstance<C>,
+        dpe: &mut DpeInstance<C, P>,
         idx: usize,
         digest: &Digest,
     ) -> Result<HmacSig, DpeErrorCode> {
@@ -75,8 +76,12 @@ impl SignCmd {
     }
 }
 
-impl<C: Crypto> CommandExecution<C> for SignCmd {
-    fn execute(&self, dpe: &mut DpeInstance<C>, locality: u32) -> Result<Response, DpeErrorCode> {
+impl<C: Crypto, P: Platform> CommandExecution<C, P> for SignCmd {
+    fn execute(
+        &self,
+        dpe: &mut DpeInstance<C, P>,
+        locality: u32,
+    ) -> Result<Response, DpeErrorCode> {
         // Make sure the operation is supported.
         if !dpe.support.nd_derivation && self.uses_nd_derivation()
             || !dpe.support.is_symmetric && self.uses_symmetric()
@@ -131,6 +136,7 @@ mod tests {
     use crypto::OpensslCrypto;
     use openssl::x509::X509;
     use openssl::{bn::BigNum, ecdsa::EcdsaSig};
+    use platform::DefaultPlatform;
     use zerocopy::AsBytes;
 
     #[cfg(feature = "dpe_profile_p256_sha256")]
@@ -221,7 +227,8 @@ mod tests {
     #[test]
     fn test_bad_command_inputs() {
         let mut dpe =
-            DpeInstance::<OpensslCrypto>::new_for_test(SUPPORT, &TEST_LOCALITIES).unwrap();
+            DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(SUPPORT, &TEST_LOCALITIES)
+                .unwrap();
 
         // Bad argument
         assert_eq!(
@@ -296,7 +303,8 @@ mod tests {
     #[test]
     fn test_asymmetric_deterministic() {
         let mut dpe =
-            DpeInstance::<OpensslCrypto>::new_for_test(SUPPORT, &TEST_LOCALITIES).unwrap();
+            DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(SUPPORT, &TEST_LOCALITIES)
+                .unwrap();
 
         for i in 0..3 {
             DeriveChildCmd {
@@ -350,7 +358,7 @@ mod tests {
 
     #[test]
     fn test_symmetric() {
-        let mut dpe = DpeInstance::<OpensslCrypto>::new_for_test(
+        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(
             Support {
                 auto_init: true,
                 is_symmetric: true,
@@ -392,7 +400,7 @@ mod tests {
 
     #[test]
     fn test_asymmetric_non_deterministic() {
-        let mut dpe = DpeInstance::<OpensslCrypto>::new_for_test(
+        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(
             Support {
                 auto_init: true,
                 nd_derivation: true,

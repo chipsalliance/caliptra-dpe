@@ -9,6 +9,7 @@ use crate::{
     DPE_PROFILE, MAX_CERT_SIZE, MAX_HANDLES,
 };
 use crypto::Crypto;
+use platform::Platform;
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, zerocopy::FromBytes)]
@@ -28,8 +29,12 @@ impl CertifyKeyCmd {
     }
 }
 
-impl<C: Crypto> CommandExecution<C> for CertifyKeyCmd {
-    fn execute(&self, dpe: &mut DpeInstance<C>, locality: u32) -> Result<Response, DpeErrorCode> {
+impl<C: Crypto, P: Platform> CommandExecution<C, P> for CertifyKeyCmd {
+    fn execute(
+        &self,
+        dpe: &mut DpeInstance<C, P>,
+        locality: u32,
+    ) -> Result<Response, DpeErrorCode> {
         // Make sure the operation is supported.
         if !dpe.support.nd_derivation && self.uses_nd_derivation() {
             return Err(DpeErrorCode::InvalidArgument);
@@ -134,6 +139,7 @@ mod tests {
         support::Support,
     };
     use crypto::OpensslCrypto;
+    use platform::DefaultPlatform;
     use x509_parser::nom::Parser;
     use x509_parser::prelude::X509CertificateParser;
     use x509_parser::prelude::*;
@@ -159,9 +165,11 @@ mod tests {
 
     #[test]
     fn test_certify_key() {
-        let mut dpe =
-            DpeInstance::<OpensslCrypto>::new_for_test(Support::default(), &TEST_LOCALITIES)
-                .unwrap();
+        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(
+            Support::default(),
+            &TEST_LOCALITIES,
+        )
+        .unwrap();
 
         let init_resp = match InitCtxCmd::new_use_default()
             .execute(&mut dpe, TEST_LOCALITIES[0])

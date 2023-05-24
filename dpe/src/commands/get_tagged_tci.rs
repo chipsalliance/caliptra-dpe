@@ -5,6 +5,7 @@ use crate::{
     response::{DpeErrorCode, GetTaggedTciResp, Response},
 };
 use crypto::Crypto;
+use platform::Platform;
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, zerocopy::FromBytes)]
@@ -13,8 +14,8 @@ pub struct GetTaggedTciCmd {
     tag: u32,
 }
 
-impl<C: Crypto> CommandExecution<C> for GetTaggedTciCmd {
-    fn execute(&self, dpe: &mut DpeInstance<C>, _: u32) -> Result<Response, DpeErrorCode> {
+impl<C: Crypto, P: Platform> CommandExecution<C, P> for GetTaggedTciCmd {
+    fn execute(&self, dpe: &mut DpeInstance<C, P>, _: u32) -> Result<Response, DpeErrorCode> {
         // Make sure this command is supported.
         if !dpe.support.tagging {
             return Err(DpeErrorCode::InvalidCommand);

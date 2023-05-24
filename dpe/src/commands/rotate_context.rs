@@ -6,6 +6,7 @@ use crate::{
     response::{DpeErrorCode, NewHandleResp, Response},
 };
 use crypto::Crypto;
+use platform::Platform;
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, zerocopy::FromBytes)]
@@ -24,8 +25,12 @@ impl RotateCtxCmd {
     }
 }
 
-impl<C: Crypto> CommandExecution<C> for RotateCtxCmd {
-    fn execute(&self, dpe: &mut DpeInstance<C>, locality: u32) -> Result<Response, DpeErrorCode> {
+impl<C: Crypto, P: Platform> CommandExecution<C, P> for RotateCtxCmd {
+    fn execute(
+        &self,
+        dpe: &mut DpeInstance<C, P>,
+        locality: u32,
+    ) -> Result<Response, DpeErrorCode> {
         if !dpe.support.rotate_context {
             return Err(DpeErrorCode::InvalidCommand);
         }
@@ -66,6 +71,7 @@ mod tests {
         support::Support,
     };
     use crypto::OpensslCrypto;
+    use platform::DefaultPlatform;
     use zerocopy::AsBytes;
 
     const TEST_ROTATE_CTX_CMD: RotateCtxCmd = RotateCtxCmd {
@@ -88,9 +94,11 @@ mod tests {
 
     #[test]
     fn test_rotate_context() {
-        let mut dpe =
-            DpeInstance::<OpensslCrypto>::new_for_test(Support::default(), &TEST_LOCALITIES)
-                .unwrap();
+        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(
+            Support::default(),
+            &TEST_LOCALITIES,
+        )
+        .unwrap();
         // Make sure it returns an error if the command is marked unsupported.
         assert_eq!(
             Err(DpeErrorCode::InvalidCommand),
@@ -103,7 +111,7 @@ mod tests {
         );
 
         // Make a new instance that supports RotateContext.
-        let mut dpe = DpeInstance::<OpensslCrypto>::new_for_test(
+        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(
             Support {
                 rotate_context: true,
                 ..Support::default()

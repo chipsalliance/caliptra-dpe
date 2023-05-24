@@ -6,13 +6,13 @@ Abstract:
 --*/
 pub(crate) use self::derive_child::DeriveChildCmd;
 pub(crate) use self::destroy_context::DestroyCtxCmd;
+pub(crate) use self::get_certificate_chain::GetCertificateChainCmd;
 pub(crate) use self::initialize_context::InitCtxCmd;
 
 pub(in crate::commands) use self::certify_key::CertifyKeyCmd;
 
 use self::certify_csr::CertifyCsrCmd;
 use self::extend_tci::ExtendTciCmd;
-use self::get_certificate_chain::GetCertificateChainCmd;
 use self::get_tagged_tci::GetTaggedTciCmd;
 use self::rotate_context::RotateCtxCmd;
 use self::sign::SignCmd;
@@ -25,6 +25,7 @@ use crate::{
 };
 use core::mem::size_of;
 use crypto::Crypto;
+use platform::Platform;
 use zerocopy::FromBytes;
 
 mod certify_csr;
@@ -107,8 +108,9 @@ impl Command {
     }
 }
 
-pub trait CommandExecution<C: Crypto> {
-    fn execute(&self, dpe: &mut DpeInstance<C>, locality: u32) -> Result<Response, DpeErrorCode>;
+pub trait CommandExecution<C: Crypto, P: Platform> {
+    fn execute(&self, dpe: &mut DpeInstance<C, P>, locality: u32)
+        -> Result<Response, DpeErrorCode>;
 }
 
 // ABI Command structures

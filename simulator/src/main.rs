@@ -3,6 +3,7 @@
 use clap::Parser;
 use crypto::OpensslCrypto;
 use log::{error, info, trace, warn};
+use platform::DefaultPlatform;
 use std::fs;
 use std::io::{Error, ErrorKind, Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -13,7 +14,7 @@ use dpe::{commands::Command, execute_command, DpeInstance, Support};
 
 const SOCKET_PATH: &str = "/tmp/dpe-sim.socket";
 
-fn handle_request(dpe: &mut DpeInstance<OpensslCrypto>, stream: &mut UnixStream) {
+fn handle_request(dpe: &mut DpeInstance<OpensslCrypto, DefaultPlatform>, stream: &mut UnixStream) {
     let mut buf = [0u8; 4096];
     let (locality, cmd) = {
         let len = stream.read(&mut buf).unwrap();
@@ -101,7 +102,7 @@ struct Args {
 fn main() -> std::io::Result<()> {
     env_logger::init();
     const LOCALITIES: [u32; 2] = [
-        DpeInstance::<OpensslCrypto>::AUTO_INIT_LOCALITY,
+        DpeInstance::<OpensslCrypto, DefaultPlatform>::AUTO_INIT_LOCALITY,
         u32::from_be_bytes(*b"OTHR"),
     ];
     let args = Args::parse();
@@ -133,8 +134,8 @@ fn main() -> std::io::Result<()> {
         internal_info: args.supports_internal_info,
         internal_dice: args.supports_internal_dice,
     };
-    let mut dpe =
-        DpeInstance::<OpensslCrypto>::new_for_test(support, &LOCALITIES).map_err(|err| {
+    let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(support, &LOCALITIES)
+        .map_err(|err| {
             Error::new(
                 ErrorKind::Other,
                 format!("{err:?} while creating new DPE instance"),

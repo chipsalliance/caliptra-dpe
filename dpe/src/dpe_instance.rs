@@ -10,12 +10,13 @@ use crate::{
     response::{DpeErrorCode, GetProfileResp, Response},
     support::Support,
     tci::{TciMeasurement, TciNodeData},
-    DPE_PROFILE, INTERNAL_DPE_INFO_SIZE, MAX_HANDLES,
+    DPE_PROFILE, INTERNAL_INPUT_INFO_SIZE, MAX_HANDLES,
 };
 use core::{marker::PhantomData, mem::size_of};
 use crypto::{Crypto, Hasher};
+use platform::{Platform, MAX_CHUNK_SIZE};
 
-pub struct DpeInstance<'a, C: Crypto> {
+pub struct DpeInstance<'a, C: Crypto, P: Platform> {
     pub(crate) contexts: [Context<C>; MAX_HANDLES],
     pub(crate) support: Support,
     pub(crate) localities: &'a [u32],
@@ -27,13 +28,14 @@ pub struct DpeInstance<'a, C: Crypto> {
     // Issuer Common Name to use in DPE leaf certs
     pub(crate) issuer_cn: &'a [u8],
 
-    // All functions/data in C are static and global. For this reason
+    // All functions/data in C and P are static and global. For this reason
     // DpeInstance doesn't actually need to hold an instance. The PhantomData
-    // is just to make the Crypto trait work.
-    phantom: PhantomData<C>,
+    // is just to make the Crypto and Platform traits work.
+    phantom_crypto: PhantomData<C>,
+    phantom_platform: PhantomData<P>,
 }
 
-impl<C: Crypto> DpeInstance<'_, C> {
+impl<C: Crypto, P: Platform> DpeInstance<'_, C, P> {
     const MAX_NEW_HANDLE_ATTEMPTS: usize = 8;
     pub const AUTO_INIT_LOCALITY: u32 = 0;
 
@@ -51,7 +53,7 @@ impl<C: Crypto> DpeInstance<'_, C> {
         support: Support,
         localities: &'a [u32],
         issuer_cn: &'a [u8],
-    ) -> Result<DpeInstance<'a, C>, DpeErrorCode> {
+    ) -> Result<DpeInstance<'a, C, P>, DpeErrorCode> {
         if localities.is_empty() {
             return Err(DpeErrorCode::InvalidLocality);
         }
@@ -62,7 +64,8 @@ impl<C: Crypto> DpeInstance<'_, C> {
             localities,
             has_initialized: false,
             issuer_cn,
-            phantom: PhantomData,
+            phantom_crypto: PhantomData,
+            phantom_platform: PhantomData,
         };
 
         if dpe.support.auto_init {
@@ -78,7 +81,7 @@ impl<C: Crypto> DpeInstance<'_, C> {
     pub fn new_for_test(
         support: Support,
         localities: &[u32],
-    ) -> Result<DpeInstance<C>, DpeErrorCode> {
+    ) -> Result<DpeInstance<C, P>, DpeErrorCode> {
         const TEST_ISSUER: &[u8] = b"Test Issuer";
         Self::new(support, localities, TEST_ISSUER)
     }
@@ -240,14 +243,17 @@ impl<C: Crypto> DpeInstance<'_, C> {
         Ok(())
     }
 
-    fn serialize_internal_dpe_info(&self, internal_dpe_info: &mut [u8; INTERNAL_DPE_INFO_SIZE]) {
+    fn serialize_internal_input_info(
+        &self,
+        internal_input_info: &mut [u8; INTERNAL_INPUT_INFO_SIZE],
+    ) {
         // Internal DPE Info contains get profile response fields as well as the DPE_PROFILE
         let profile_size = self
             .get_profile()
             .unwrap()
-            .serialize(internal_dpe_info)
+            .serialize(internal_input_info)
             .unwrap();
-        internal_dpe_info[profile_size..].copy_from_slice(&(DPE_PROFILE as u32).to_le_bytes());
+        internal_input_info[profile_size..].copy_from_slice(&(DPE_PROFILE as u32).to_le_bytes());
     }
 
     /// Derive the CDI for a child node.
@@ -258,12 +264,15 @@ impl<C: Crypto> DpeInstance<'_, C> {
     ///
     /// * `start_idx` - index of the leaf context
     pub(crate) fn derive_cdi(
-        &self,
+        &mut self,
         start_idx: usize,
         mix_random_value: bool,
     ) -> Result<C::Cdi, DpeErrorCode> {
         let mut hasher =
             C::hash_initialize(DPE_PROFILE.alg_len()).map_err(|_| DpeErrorCode::InternalError)?;
+
+        let mut uses_internal_input_info = false;
+        let mut uses_internal_input_dice = false;
 
         // Hash each node.
         for status in ChildToRootIter::new(start_idx, &self.contexts) {
@@ -275,13 +284,31 @@ impl<C: Crypto> DpeInstance<'_, C> {
                 .update(&tci_bytes[..len])
                 .map_err(|_| DpeErrorCode::InternalError)?;
 
-            // Hash internal DPE info
-            if context.uses_internal_dpe_info {
-                let mut internal_dpe_info = [0u8; INTERNAL_DPE_INFO_SIZE];
-                self.serialize_internal_dpe_info(&mut internal_dpe_info);
+            // Check if any context uses internal inputs
+            uses_internal_input_info = uses_internal_input_info || context.uses_internal_input_info;
+            uses_internal_input_dice = uses_internal_input_dice || context.uses_internal_input_dice;
+        }
+
+        // Add internal input info to hash
+        if uses_internal_input_info {
+            let mut internal_input_info = [0u8; INTERNAL_INPUT_INFO_SIZE];
+            self.serialize_internal_input_info(&mut internal_input_info);
+            hasher
+                .update(&internal_input_info[..INTERNAL_INPUT_INFO_SIZE])
+                .map_err(|_| DpeErrorCode::InternalError)?;
+        }
+
+        // Add internal input dice to hash
+        if uses_internal_input_dice {
+            let mut offset = 0;
+            let mut cert_chunk = [0u8; MAX_CHUNK_SIZE];
+            while let Ok(len) =
+                P::get_certificate_chain(offset, MAX_CHUNK_SIZE as u32, &mut cert_chunk)
+            {
                 hasher
-                    .update(&internal_dpe_info[..INTERNAL_DPE_INFO_SIZE])
+                    .update(&cert_chunk[..len as usize])
                     .map_err(|_| DpeErrorCode::InternalError)?;
+                offset += len;
             }
         }
 
@@ -338,6 +365,7 @@ pub mod tests {
     use crate::support::test::SUPPORT;
     use crate::{commands::CommandHdr, CURRENT_PROFILE_MAJOR_VERSION};
     use crypto::OpensslCrypto;
+    use platform::{DefaultPlatform, MAX_CHUNK_SIZE, TEST_CERT_CHAIN};
     use zerocopy::AsBytes;
 
     pub const TEST_HANDLE: ContextHandle =
@@ -346,7 +374,7 @@ pub mod tests {
         ContextHandle([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
 
     pub const TEST_LOCALITIES: [u32; 2] = [
-        DpeInstance::<OpensslCrypto>::AUTO_INIT_LOCALITY,
+        DpeInstance::<OpensslCrypto, DefaultPlatform>::AUTO_INIT_LOCALITY,
         u32::from_be_bytes(*b"OTHR"),
     ];
 
@@ -355,7 +383,7 @@ pub mod tests {
         // Empty list of localities.
         assert_eq!(
             DpeErrorCode::InvalidLocality,
-            DpeInstance::<OpensslCrypto>::new_for_test(SUPPORT, &[])
+            DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(SUPPORT, &[])
                 .err()
                 .unwrap()
         );
@@ -363,13 +391,17 @@ pub mod tests {
         // Auto-init without the auto-init locality.
         assert_eq!(
             DpeErrorCode::InvalidLocality,
-            DpeInstance::<OpensslCrypto>::new_for_test(SUPPORT, &TEST_LOCALITIES[1..])
-                .err()
-                .unwrap()
+            DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(
+                SUPPORT,
+                &TEST_LOCALITIES[1..]
+            )
+            .err()
+            .unwrap()
         );
 
         let mut dpe =
-            DpeInstance::<OpensslCrypto>::new_for_test(SUPPORT, &TEST_LOCALITIES).unwrap();
+            DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(SUPPORT, &TEST_LOCALITIES)
+                .unwrap();
         assert_eq!(
             Err(DpeErrorCode::InvalidLocality),
             dpe.execute_serialized_command(
@@ -423,7 +455,8 @@ pub mod tests {
     #[test]
     fn test_execute_serialized_command() {
         let mut dpe =
-            DpeInstance::<OpensslCrypto>::new_for_test(SUPPORT, &TEST_LOCALITIES).unwrap();
+            DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(SUPPORT, &TEST_LOCALITIES)
+                .unwrap();
 
         assert_eq!(
             Response::GetProfile(GetProfileResp::new(SUPPORT.get_flags())),
@@ -451,7 +484,9 @@ pub mod tests {
 
     #[test]
     fn test_get_profile() {
-        let dpe = DpeInstance::<OpensslCrypto>::new_for_test(SUPPORT, &TEST_LOCALITIES).unwrap();
+        let dpe =
+            DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(SUPPORT, &TEST_LOCALITIES)
+                .unwrap();
         let profile = dpe.get_profile().unwrap();
         assert_eq!(profile.major_version, CURRENT_PROFILE_MAJOR_VERSION);
         assert_eq!(profile.flags, SUPPORT.get_flags());
@@ -459,13 +494,15 @@ pub mod tests {
 
     #[test]
     fn test_get_active_context_index() {
-        let mut dpe =
-            DpeInstance::<OpensslCrypto>::new_for_test(Support::default(), &TEST_LOCALITIES)
-                .unwrap();
+        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(
+            Support::default(),
+            &TEST_LOCALITIES,
+        )
+        .unwrap();
         let expected_index = 7;
         dpe.contexts[expected_index].handle = SIMULATION_HANDLE;
 
-        let locality = DpeInstance::<OpensslCrypto>::AUTO_INIT_LOCALITY;
+        let locality = DpeInstance::<OpensslCrypto, DefaultPlatform>::AUTO_INIT_LOCALITY;
         // Has not been activated.
         assert!(dpe
             .get_active_context_pos(&SIMULATION_HANDLE, locality)
@@ -494,7 +531,7 @@ pub mod tests {
 
     #[test]
     fn test_add_tci_measurement() {
-        let mut dpe = DpeInstance::<OpensslCrypto>::new_for_test(
+        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(
             Support {
                 auto_init: true,
                 ..Default::default()
@@ -542,9 +579,11 @@ pub mod tests {
 
     #[test]
     fn test_get_descendants() {
-        let mut dpe =
-            DpeInstance::<OpensslCrypto>::new_for_test(Support::default(), &TEST_LOCALITIES)
-                .unwrap();
+        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(
+            Support::default(),
+            &TEST_LOCALITIES,
+        )
+        .unwrap();
         let root = 7;
         let child_1 = 3;
         let child_1_1 = 0;
@@ -596,7 +635,8 @@ pub mod tests {
     #[test]
     fn test_derive_cdi() {
         let mut dpe =
-            DpeInstance::<OpensslCrypto>::new_for_test(SUPPORT, &TEST_LOCALITIES).unwrap();
+            DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(SUPPORT, &TEST_LOCALITIES)
+                .unwrap();
 
         let mut last_cdi = vec![];
 
@@ -642,8 +682,8 @@ pub mod tests {
     }
 
     #[test]
-    fn test_hash_internal_dpe_info() {
-        let mut dpe = DpeInstance::<OpensslCrypto>::new_for_test(
+    fn test_hash_internal_input_info() {
+        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(
             Support {
                 internal_info: true,
                 ..SUPPORT
@@ -665,22 +705,61 @@ pub mod tests {
         .execute(&mut dpe, TEST_LOCALITIES[0])
         .unwrap();
 
+        let cdi_with_internal_input_info = dpe.derive_cdi(parent_context_idx, false).unwrap();
         let context = &dpe.contexts[parent_context_idx];
-        assert!(context.uses_internal_dpe_info);
-        let cdi_with_internal_dpe_info = dpe.derive_cdi(parent_context_idx, false).unwrap();
+        assert!(context.uses_internal_input_info);
 
         let mut hasher = OpensslCrypto::hash_initialize(DPE_PROFILE.alg_len()).unwrap();
 
         hasher.update(context.tci.as_bytes()).unwrap();
-        let mut internal_dpe_info = [0u8; INTERNAL_DPE_INFO_SIZE];
-        dpe.serialize_internal_dpe_info(&mut internal_dpe_info);
+        let mut internal_input_info = [0u8; INTERNAL_INPUT_INFO_SIZE];
+        dpe.serialize_internal_input_info(&mut internal_input_info);
         hasher
-            .update(&internal_dpe_info[..INTERNAL_DPE_INFO_SIZE])
+            .update(&internal_input_info[..INTERNAL_INPUT_INFO_SIZE])
             .unwrap();
 
         let digest = hasher.finish().unwrap();
         let answer =
             OpensslCrypto::derive_cdi(DPE_PROFILE.alg_len(), &digest, b"DPE", None).unwrap();
-        assert_eq!(answer, cdi_with_internal_dpe_info);
+        assert_eq!(answer, cdi_with_internal_input_info);
+    }
+
+    #[test]
+    fn test_hash_internal_input_dice() {
+        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(
+            Support {
+                internal_dice: true,
+                ..SUPPORT
+            },
+            &TEST_LOCALITIES,
+        )
+        .unwrap();
+
+        let parent_context_idx = dpe
+            .get_active_context_pos(&ContextHandle::default(), TEST_LOCALITIES[0])
+            .unwrap();
+        DeriveChildCmd {
+            handle: ContextHandle::default(),
+            data: [0; DPE_PROFILE.get_hash_size()],
+            flags: DeriveChildCmd::MAKE_DEFAULT | DeriveChildCmd::INTERNAL_INPUT_DICE,
+            tci_type: 0u32,
+            target_locality: 0,
+        }
+        .execute(&mut dpe, TEST_LOCALITIES[0])
+        .unwrap();
+
+        let cdi_with_internal_input_dice = dpe.derive_cdi(parent_context_idx, false).unwrap();
+        let context = &dpe.contexts[parent_context_idx];
+        assert!(context.uses_internal_input_dice);
+
+        let mut hasher = OpensslCrypto::hash_initialize(DPE_PROFILE.alg_len()).unwrap();
+
+        hasher.update(context.tci.as_bytes()).unwrap();
+        hasher.update(&TEST_CERT_CHAIN[..MAX_CHUNK_SIZE]).unwrap();
+
+        let digest = hasher.finish().unwrap();
+        let answer =
+            OpensslCrypto::derive_cdi(DPE_PROFILE.alg_len(), &digest, b"DPE", None).unwrap();
+        assert_eq!(answer, cdi_with_internal_input_dice)
     }
 }

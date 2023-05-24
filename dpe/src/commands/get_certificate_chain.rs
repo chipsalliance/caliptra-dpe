@@ -2,10 +2,11 @@
 use super::CommandExecution;
 use crate::{
     dpe_instance::DpeInstance,
-    response::{DpeErrorCode, Response},
+    response::{DpeErrorCode, GetCertificateChainResp, Response},
     MAX_CERT_SIZE,
 };
 use crypto::Crypto;
+use platform::{Platform, MAX_CHUNK_SIZE};
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, zerocopy::FromBytes)]
@@ -15,14 +16,24 @@ pub struct GetCertificateChainCmd {
     pub size: u32,
 }
 
-impl<C: Crypto> CommandExecution<C> for GetCertificateChainCmd {
-    fn execute(&self, _dpe: &mut DpeInstance<C>, _locality: u32) -> Result<Response, DpeErrorCode> {
+impl<C: Crypto, P: Platform> CommandExecution<C, P> for GetCertificateChainCmd {
+    fn execute(
+        &self,
+        _dpe: &mut DpeInstance<C, P>,
+        _locality: u32,
+    ) -> Result<Response, DpeErrorCode> {
         // Make sure the operation is supported.
-        if self.size > MAX_CERT_SIZE.try_into().unwrap() {
+        if self.size > MAX_CERT_SIZE as u32 {
             return Err(DpeErrorCode::InvalidArgument);
         }
 
-        Err(DpeErrorCode::InvalidCommand)
+        let mut cert_chunk = [0u8; MAX_CHUNK_SIZE];
+        let len = P::get_certificate_chain(self.offset, self.size, &mut cert_chunk)
+            .map_err(|_| DpeErrorCode::InvalidArgument)?;
+        Ok(Response::GetCertificateChain(GetCertificateChainResp {
+            certificate_chain: cert_chunk,
+            certificate_size: len,
+        }))
     }
 }
 
@@ -35,6 +46,7 @@ mod tests {
         support::test::SUPPORT,
     };
     use crypto::OpensslCrypto;
+    use platform::DefaultPlatform;
     use zerocopy::AsBytes;
 
     const TEST_GET_CERTIFICATE_CHAIN_CMD: GetCertificateChainCmd = GetCertificateChainCmd {
@@ -58,7 +70,8 @@ mod tests {
     #[test]
     fn test_fails_if_size_greater_than_max_cert_size() {
         let mut dpe =
-            DpeInstance::<OpensslCrypto>::new_for_test(SUPPORT, &TEST_LOCALITIES).unwrap();
+            DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(SUPPORT, &TEST_LOCALITIES)
+                .unwrap();
 
         assert_eq!(
             Err(DpeErrorCode::InvalidArgument),
