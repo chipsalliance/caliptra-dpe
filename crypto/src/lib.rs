@@ -3,6 +3,7 @@ Licensed under the Apache-2.0 license.
 Abstract:
     Generic trait definition of Cryptographic functions.
 --*/
+#![cfg_attr(not(any(feature = "openssl", test)), no_std)]
 
 #[cfg(feature = "openssl")]
 pub use crate::openssl::*;

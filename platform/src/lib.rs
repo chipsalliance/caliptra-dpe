@@ -1,4 +1,9 @@
-// Licensed under the Apache-2.0 license
+/*++
+Licensed under the Apache-2.0 license.
+Abstract:
+    Generic trait definition of platform.
+--*/
+#![cfg_attr(not(test), no_std)]
 
 pub use default::*;
 mod default;
