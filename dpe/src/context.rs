@@ -302,7 +302,7 @@ mod tests {
         assert!(iter.next().unwrap().is_ok());
 
         // Root index.
-        contexts[0].parent_idx = Context::<OpensslCrypto>::ROOT_INDEX as u8;
+        contexts[0].parent_idx = Context::<OpensslCrypto>::ROOT_INDEX;
         let mut iter = ChildToRootIter::new(0, &contexts);
         assert!(iter.next().unwrap().is_ok());
     }
