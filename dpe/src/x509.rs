@@ -893,7 +893,6 @@ mod tests {
     use crate::tci::{TciMeasurement, TciNodeData};
     use crate::x509::{MeasurementData, Name, X509CertWriter};
     use crate::DPE_PROFILE;
-    use asn1;
     use crypto::{AlgLen, CryptoBuf, EcdsaPub, EcdsaSig};
     use std::str;
     use x509_parser::certificate::X509CertificateParser;

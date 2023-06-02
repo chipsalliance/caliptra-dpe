@@ -12,6 +12,7 @@ pub const MAX_CHUNK_SIZE: usize = 2048;
 
 pub enum PlatformError {
     CertificateChainError,
+    NotImplemented,
 }
 
 pub trait Platform {
