@@ -19,7 +19,6 @@ use platform::{Platform, MAX_CHUNK_SIZE};
 pub struct DpeInstance<'a, C: Crypto, P: Platform> {
     pub(crate) contexts: [Context<C>; MAX_HANDLES],
     pub(crate) support: Support,
-    pub(crate) localities: &'a [u32],
 
     /// Can only successfully execute the initialize context command for non-simulation (i.e.
     /// `InitializeContext(simulation=false)`) once per reset cycle.
@@ -37,7 +36,6 @@ pub struct DpeInstance<'a, C: Crypto, P: Platform> {
 
 impl<C: Crypto, P: Platform> DpeInstance<'_, C, P> {
     const MAX_NEW_HANDLE_ATTEMPTS: usize = 8;
-    pub const AUTO_INIT_LOCALITY: u32 = 0;
 
     pub(crate) fn new_context_handles() -> [Context<C>; MAX_HANDLES] {
         core::array::from_fn(|_| Context::new())
@@ -48,20 +46,11 @@ impl<C: Crypto, P: Platform> DpeInstance<'_, C, P> {
     /// # Arguments
     ///
     /// * `support` - optional functionality the instance supports
-    /// * `localities` - all possible valid localities for the system
-    pub fn new<'a>(
-        support: Support,
-        localities: &'a [u32],
-        issuer_cn: &'a [u8],
-    ) -> Result<DpeInstance<'a, C, P>, DpeErrorCode> {
-        if localities.is_empty() {
-            return Err(DpeErrorCode::InvalidLocality);
-        }
-
+    /// * `issuer_cn` - issuer Common Name to use in DPE leaf certs
+    pub fn new(support: Support, issuer_cn: &[u8]) -> Result<DpeInstance<'_, C, P>, DpeErrorCode> {
         let mut dpe = DpeInstance {
             contexts: Self::new_context_handles(),
             support,
-            localities,
             has_initialized: false,
             issuer_cn,
             phantom_crypto: PhantomData,
@@ -69,25 +58,25 @@ impl<C: Crypto, P: Platform> DpeInstance<'_, C, P> {
         };
 
         if dpe.support.auto_init {
-            // Make sure the auto-initialized locality is listed.
-            if !localities.iter().any(|&l| l == Self::AUTO_INIT_LOCALITY) {
-                return Err(DpeErrorCode::InvalidLocality);
-            }
-            InitCtxCmd::new_use_default().execute(&mut dpe, Self::AUTO_INIT_LOCALITY)?;
+            InitCtxCmd::new_use_default().execute(
+                &mut dpe,
+                P::get_auto_init_locality().map_err(|_| DpeErrorCode::InvalidLocality)?,
+            )?;
         }
         Ok(dpe)
     }
 
-    pub fn new_for_test(
-        support: Support,
-        localities: &[u32],
-    ) -> Result<DpeInstance<C, P>, DpeErrorCode> {
+    pub fn new_for_test<'a>(support: Support) -> Result<DpeInstance<'a, C, P>, DpeErrorCode> {
         const TEST_ISSUER: &[u8] = b"Test Issuer";
-        Self::new(support, localities, TEST_ISSUER)
+        Self::new(support, TEST_ISSUER)
     }
 
     pub fn get_profile(&self) -> Result<GetProfileResp, DpeErrorCode> {
-        Ok(GetProfileResp::new(self.support.get_flags()))
+        Ok(GetProfileResp::new(
+            self.support.get_flags(),
+            P::get_vendor_id().map_err(|_| DpeErrorCode::InternalError)?,
+            P::get_vendor_sku().map_err(|_| DpeErrorCode::InternalError)?,
+        ))
     }
 
     /// Deserializes the command and executes it.
@@ -101,10 +90,6 @@ impl<C: Crypto, P: Platform> DpeInstance<'_, C, P> {
         locality: u32,
         cmd: &[u8],
     ) -> Result<Response, DpeErrorCode> {
-        // Make sure the command is coming from a valid locality.
-        if !self.localities.iter().any(|&l| l == locality) {
-            return Err(DpeErrorCode::InvalidLocality);
-        }
         let command = Command::deserialize(cmd)?;
         match command {
             Command::GetProfile => Ok(Response::GetProfile(self.get_profile()?)),
@@ -360,12 +345,12 @@ impl Iterator for FlagsIter {
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::commands::{DeriveChildCmd, DestroyCtxCmd};
+    use crate::commands::DeriveChildCmd;
     use crate::response::NewHandleResp;
     use crate::support::test::SUPPORT;
     use crate::{commands::CommandHdr, CURRENT_PROFILE_MAJOR_VERSION};
     use crypto::OpensslCrypto;
-    use platform::{DefaultPlatform, MAX_CHUNK_SIZE, TEST_CERT_CHAIN};
+    use platform::{DefaultPlatform, AUTO_INIT_LOCALITY, MAX_CHUNK_SIZE, TEST_CERT_CHAIN};
     use zerocopy::AsBytes;
 
     pub const TEST_HANDLE: ContextHandle =
@@ -373,93 +358,18 @@ pub mod tests {
     pub const SIMULATION_HANDLE: ContextHandle =
         ContextHandle([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
 
-    pub const TEST_LOCALITIES: [u32; 2] = [
-        DpeInstance::<OpensslCrypto, DefaultPlatform>::AUTO_INIT_LOCALITY,
-        u32::from_be_bytes(*b"OTHR"),
-    ];
-
-    #[test]
-    fn test_localities() {
-        // Empty list of localities.
-        assert_eq!(
-            DpeErrorCode::InvalidLocality,
-            DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(SUPPORT, &[])
-                .err()
-                .unwrap()
-        );
-
-        // Auto-init without the auto-init locality.
-        assert_eq!(
-            DpeErrorCode::InvalidLocality,
-            DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(
-                SUPPORT,
-                &TEST_LOCALITIES[1..]
-            )
-            .err()
-            .unwrap()
-        );
-
-        let mut dpe =
-            DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(SUPPORT, &TEST_LOCALITIES)
-                .unwrap();
-        assert_eq!(
-            Err(DpeErrorCode::InvalidLocality),
-            dpe.execute_serialized_command(
-                0x1234_5678, // test value that is not part of the localities
-                CommandHdr::new(Command::GetProfile).as_bytes(),
-            )
-        );
-
-        // Make sure requests work for all localities.
-        for l in TEST_LOCALITIES {
-            assert_eq!(
-                Response::GetProfile(GetProfileResp::new(SUPPORT.get_flags())),
-                dpe.execute_serialized_command(l, CommandHdr::new(Command::GetProfile).as_bytes())
-                    .unwrap()
-            );
-        }
-
-        // Initialize a context to run some tests against.
-        InitCtxCmd::new_simulation()
-            .execute(&mut dpe, TEST_LOCALITIES[1])
-            .unwrap();
-
-        // Make sure the locality was recorded correctly.
-        assert_eq!(
-            dpe.contexts[dpe
-                .get_active_context_pos(&SIMULATION_HANDLE, TEST_LOCALITIES[1])
-                .unwrap()]
-            .locality,
-            TEST_LOCALITIES[1]
-        );
-
-        // Make sure the other locality can't destroy it.
-        assert_eq!(
-            Err(DpeErrorCode::InvalidHandle),
-            DestroyCtxCmd {
-                handle: SIMULATION_HANDLE,
-                flags: 0
-            }
-            .execute(&mut dpe, TEST_LOCALITIES[0])
-        );
-
-        // Make sure right locality can destroy it.
-        assert!(DestroyCtxCmd {
-            handle: SIMULATION_HANDLE,
-            flags: 0,
-        }
-        .execute(&mut dpe, TEST_LOCALITIES[1])
-        .is_ok());
-    }
+    pub const TEST_LOCALITIES: [u32; 2] = [AUTO_INIT_LOCALITY, u32::from_be_bytes(*b"OTHR")];
 
     #[test]
     fn test_execute_serialized_command() {
-        let mut dpe =
-            DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(SUPPORT, &TEST_LOCALITIES)
-                .unwrap();
+        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(SUPPORT).unwrap();
 
         assert_eq!(
-            Response::GetProfile(GetProfileResp::new(SUPPORT.get_flags())),
+            Response::GetProfile(GetProfileResp::new(
+                SUPPORT.get_flags(),
+                DefaultPlatform::get_vendor_id().unwrap(),
+                DefaultPlatform::get_vendor_sku().unwrap()
+            )),
             dpe.execute_serialized_command(
                 TEST_LOCALITIES[0],
                 CommandHdr::new(Command::GetProfile).as_bytes(),
@@ -484,9 +394,7 @@ pub mod tests {
 
     #[test]
     fn test_get_profile() {
-        let dpe =
-            DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(SUPPORT, &TEST_LOCALITIES)
-                .unwrap();
+        let dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(SUPPORT).unwrap();
         let profile = dpe.get_profile().unwrap();
         assert_eq!(profile.major_version, CURRENT_PROFILE_MAJOR_VERSION);
         assert_eq!(profile.flags, SUPPORT.get_flags());
@@ -494,15 +402,13 @@ pub mod tests {
 
     #[test]
     fn test_get_active_context_index() {
-        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(
-            Support::default(),
-            &TEST_LOCALITIES,
-        )
-        .unwrap();
+        let mut dpe =
+            DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(Support::default())
+                .unwrap();
         let expected_index = 7;
         dpe.contexts[expected_index].handle = SIMULATION_HANDLE;
 
-        let locality = DpeInstance::<OpensslCrypto, DefaultPlatform>::AUTO_INIT_LOCALITY;
+        let locality = AUTO_INIT_LOCALITY;
         // Has not been activated.
         assert!(dpe
             .get_active_context_pos(&SIMULATION_HANDLE, locality)
@@ -531,13 +437,10 @@ pub mod tests {
 
     #[test]
     fn test_add_tci_measurement() {
-        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(
-            Support {
-                auto_init: true,
-                ..Default::default()
-            },
-            &TEST_LOCALITIES,
-        )
+        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(Support {
+            auto_init: true,
+            ..Default::default()
+        })
         .unwrap();
 
         // Verify bounds checking.
@@ -579,11 +482,9 @@ pub mod tests {
 
     #[test]
     fn test_get_descendants() {
-        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(
-            Support::default(),
-            &TEST_LOCALITIES,
-        )
-        .unwrap();
+        let mut dpe =
+            DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(Support::default())
+                .unwrap();
         let root = 7;
         let child_1 = 3;
         let child_1_1 = 0;
@@ -634,9 +535,7 @@ pub mod tests {
 
     #[test]
     fn test_derive_cdi() {
-        let mut dpe =
-            DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(SUPPORT, &TEST_LOCALITIES)
-                .unwrap();
+        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(SUPPORT).unwrap();
 
         let mut last_cdi = vec![];
 
@@ -683,13 +582,10 @@ pub mod tests {
 
     #[test]
     fn test_hash_internal_input_info() {
-        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(
-            Support {
-                internal_info: true,
-                ..SUPPORT
-            },
-            &TEST_LOCALITIES,
-        )
+        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(Support {
+            internal_info: true,
+            ..SUPPORT
+        })
         .unwrap();
 
         let parent_context_idx = dpe
@@ -726,13 +622,10 @@ pub mod tests {
 
     #[test]
     fn test_hash_internal_input_dice() {
-        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(
-            Support {
-                internal_dice: true,
-                ..SUPPORT
-            },
-            &TEST_LOCALITIES,
-        )
+        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(Support {
+            internal_dice: true,
+            ..SUPPORT
+        })
         .unwrap();
 
         let parent_context_idx = dpe

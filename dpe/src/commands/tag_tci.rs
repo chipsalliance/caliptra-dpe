@@ -86,11 +86,9 @@ mod tests {
 
     #[test]
     fn test_tag_tci() {
-        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(
-            Support::default(),
-            &TEST_LOCALITIES,
-        )
-        .unwrap();
+        let mut dpe =
+            DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(Support::default())
+                .unwrap();
         // Make sure it returns an error if the command is marked unsupported.
         assert_eq!(
             Err(DpeErrorCode::InvalidCommand),
@@ -102,14 +100,11 @@ mod tests {
         );
 
         // Make a new instance that supports tagging.
-        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(
-            Support {
-                tagging: true,
-                simulation: true,
-                ..Support::default()
-            },
-            &TEST_LOCALITIES,
-        )
+        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(Support {
+            tagging: true,
+            simulation: true,
+            ..Support::default()
+        })
         .unwrap();
         InitCtxCmd::new_use_default()
             .execute(&mut dpe, TEST_LOCALITIES[0])

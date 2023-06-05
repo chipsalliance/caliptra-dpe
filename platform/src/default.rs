@@ -5,6 +5,10 @@ use core::cmp::min;
 
 pub struct DefaultPlatform;
 
+pub const AUTO_INIT_LOCALITY: u32 = 0;
+pub const VENDOR_ID: u32 = 0;
+pub const VENDOR_SKU: u32 = 0;
+
 // Generated with openssl using the command openssl req -new -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -x509 -nodes -days 365 -out cert.pem -keyout cert.pem
 // Used https://onlinestringtools.com/convert-string-to-bytes to convert the certificate string to bytes
 // Used a haskell script to format the bytes into an array, and pad until max cert cize with 0 bytes
@@ -152,5 +156,17 @@ impl Platform for DefaultPlatform {
         let cert_chunk_range_end = min(offset + size, len);
         out.copy_from_slice(&TEST_CERT_CHAIN[offset as usize..cert_chunk_range_end as usize]);
         Ok(cert_chunk_range_end - offset)
+    }
+
+    fn get_vendor_id() -> Result<u32, PlatformError> {
+        Ok(VENDOR_ID)
+    }
+
+    fn get_vendor_sku() -> Result<u32, PlatformError> {
+        Ok(VENDOR_SKU)
+    }
+
+    fn get_auto_init_locality() -> Result<u32, PlatformError> {
+        Ok(AUTO_INIT_LOCALITY)
     }
 }

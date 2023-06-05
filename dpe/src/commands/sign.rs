@@ -226,9 +226,7 @@ mod tests {
 
     #[test]
     fn test_bad_command_inputs() {
-        let mut dpe =
-            DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(SUPPORT, &TEST_LOCALITIES)
-                .unwrap();
+        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(SUPPORT).unwrap();
 
         // Bad argument
         assert_eq!(
@@ -302,9 +300,7 @@ mod tests {
 
     #[test]
     fn test_asymmetric_deterministic() {
-        let mut dpe =
-            DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(SUPPORT, &TEST_LOCALITIES)
-                .unwrap();
+        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(SUPPORT).unwrap();
 
         for i in 0..3 {
             DeriveChildCmd {
@@ -358,14 +354,11 @@ mod tests {
 
     #[test]
     fn test_symmetric() {
-        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(
-            Support {
-                auto_init: true,
-                is_symmetric: true,
-                ..Support::default()
-            },
-            &TEST_LOCALITIES,
-        )
+        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(Support {
+            auto_init: true,
+            is_symmetric: true,
+            ..Support::default()
+        })
         .unwrap();
 
         let cmd = SignCmd {
@@ -400,14 +393,11 @@ mod tests {
 
     #[test]
     fn test_asymmetric_non_deterministic() {
-        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(
-            Support {
-                auto_init: true,
-                nd_derivation: true,
-                ..Support::default()
-            },
-            &TEST_LOCALITIES,
-        )
+        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(Support {
+            auto_init: true,
+            nd_derivation: true,
+            ..Support::default()
+        })
         .unwrap();
 
         for i in 0..3 {

@@ -94,10 +94,6 @@ impl<C: Crypto, P: Platform> CommandExecution<C, P> for DeriveChildCmd {
         let target_locality = if !self.changes_locality() {
             locality
         } else {
-            // Make sure the target locality is valid.
-            if !dpe.localities.iter().any(|&l| l == self.target_locality) {
-                return Err(DpeErrorCode::InvalidLocality);
-            }
             self.target_locality
         };
 
@@ -179,37 +175,9 @@ mod tests {
 
     #[test]
     fn test_initial_conditions() {
-        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(
-            Support::default(),
-            &TEST_LOCALITIES,
-        )
-        .unwrap();
-
-        // Right now this command doesn't support INTERNAL_INPUT_INFO, make sure it errors.
-        assert_eq!(
-            Err(DpeErrorCode::InvalidArgument),
-            DeriveChildCmd {
-                handle: ContextHandle::default(),
-                data: [0; DPE_PROFILE.get_tci_size()],
-                flags: DeriveChildCmd::INTERNAL_INPUT_INFO,
-                tci_type: 0,
-                target_locality: 0
-            }
-            .execute(&mut dpe, 0)
-        );
-
-        // Right now this command doesn't support INTERNAL_INPUT_DICE, make sure it errors.
-        assert_eq!(
-            Err(DpeErrorCode::InvalidArgument),
-            DeriveChildCmd {
-                handle: ContextHandle::default(),
-                data: [0; DPE_PROFILE.get_tci_size()],
-                flags: DeriveChildCmd::INTERNAL_INPUT_DICE,
-                tci_type: 0,
-                target_locality: 0
-            }
-            .execute(&mut dpe, 0)
-        );
+        let mut dpe =
+            DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(Support::default())
+                .unwrap();
 
         InitCtxCmd::new_use_default().execute(&mut dpe, 0).unwrap();
 
@@ -225,30 +193,14 @@ mod tests {
             }
             .execute(&mut dpe, 1)
         );
-
-        // Make sure it can detect an invalid locality.
-        assert_eq!(
-            Err(DpeErrorCode::InvalidLocality),
-            DeriveChildCmd {
-                handle: ContextHandle::default(),
-                data: [0; DPE_PROFILE.get_tci_size()],
-                flags: DeriveChildCmd::CHANGE_LOCALITY,
-                tci_type: 0,
-                target_locality: 2
-            }
-            .execute(&mut dpe, 0)
-        );
     }
 
     #[test]
     fn test_max_tcis() {
-        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(
-            Support {
-                auto_init: true,
-                ..Support::default()
-            },
-            &TEST_LOCALITIES,
-        )
+        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(Support {
+            auto_init: true,
+            ..Support::default()
+        })
         .unwrap();
 
         // Fill all contexts with children (minus the auto-init context).
@@ -280,13 +232,10 @@ mod tests {
 
     #[test]
     fn test_set_child_parent_relationship() {
-        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(
-            Support {
-                auto_init: true,
-                ..Support::default()
-            },
-            &TEST_LOCALITIES,
-        )
+        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(Support {
+            auto_init: true,
+            ..Support::default()
+        })
         .unwrap();
 
         let parent_idx = dpe
@@ -317,13 +266,10 @@ mod tests {
 
     #[test]
     fn test_set_other_values() {
-        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(
-            Support {
-                auto_init: true,
-                ..Support::default()
-            },
-            &TEST_LOCALITIES,
-        )
+        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(Support {
+            auto_init: true,
+            ..Support::default()
+        })
         .unwrap();
 
         DeriveChildCmd {
@@ -347,13 +293,10 @@ mod tests {
 
     #[test]
     fn test_correct_child_handle() {
-        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(
-            Support {
-                auto_init: true,
-                ..Support::default()
-            },
-            &TEST_LOCALITIES,
-        )
+        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(Support {
+            auto_init: true,
+            ..Support::default()
+        })
         .unwrap();
 
         // Make sure child handle is default when creating default child.
@@ -391,13 +334,10 @@ mod tests {
 
     #[test]
     fn test_correct_parent_handle() {
-        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(
-            Support {
-                auto_init: true,
-                ..Support::default()
-            },
-            &TEST_LOCALITIES,
-        )
+        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(Support {
+            auto_init: true,
+            ..Support::default()
+        })
         .unwrap();
 
         // Make sure the parent handle is non-sense when not retaining.

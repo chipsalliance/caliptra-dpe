@@ -6,7 +6,7 @@ Abstract:
 --*/
 use crate::{
     context::ContextHandle, tci::TciMeasurement, CURRENT_PROFILE_MAJOR_VERSION,
-    CURRENT_PROFILE_MINOR_VERSION, DPE_PROFILE, MAX_CERT_SIZE, MAX_HANDLES, VENDOR_ID, VENDOR_SKU,
+    CURRENT_PROFILE_MINOR_VERSION, DPE_PROFILE, MAX_CERT_SIZE, MAX_HANDLES,
 };
 use core::mem::size_of;
 
@@ -100,12 +100,12 @@ pub struct GetProfileResp {
 }
 
 impl GetProfileResp {
-    pub const fn new(flags: u32) -> GetProfileResp {
+    pub const fn new(flags: u32, vendor_id: u32, vendor_sku: u32) -> GetProfileResp {
         GetProfileResp {
             major_version: CURRENT_PROFILE_MAJOR_VERSION,
             minor_version: CURRENT_PROFILE_MINOR_VERSION,
-            vendor_id: VENDOR_ID,
-            vendor_sku: VENDOR_SKU,
+            vendor_id,
+            vendor_sku,
             max_tci_nodes: MAX_HANDLES as u32,
             flags,
         }
@@ -369,10 +369,12 @@ pub enum DpeErrorCode {
 mod tests {
     use super::*;
     use crate::dpe_instance::tests::{SIMULATION_HANDLE, TEST_HANDLE};
+    use platform::{VENDOR_ID, VENDOR_SKU};
     use zerocopy::AsBytes;
 
     const TEST_FLAGS: u32 = 0x7E57_B175;
-    const DEFAULT_GET_PROFILE_RESPONSE: GetProfileResp = GetProfileResp::new(TEST_FLAGS);
+    const DEFAULT_GET_PROFILE_RESPONSE: GetProfileResp =
+        GetProfileResp::new(TEST_FLAGS, VENDOR_ID, VENDOR_SKU);
     const TEST_NEW_HANDLE_RESP: NewHandleResp = NewHandleResp {
         handle: TEST_HANDLE,
     };

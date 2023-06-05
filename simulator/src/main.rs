@@ -101,10 +101,6 @@ struct Args {
 
 fn main() -> std::io::Result<()> {
     env_logger::init();
-    const LOCALITIES: [u32; 2] = [
-        DpeInstance::<OpensslCrypto, DefaultPlatform>::AUTO_INIT_LOCALITY,
-        u32::from_be_bytes(*b"OTHR"),
-    ];
     let args = Args::parse();
 
     let socket = Path::new(SOCKET_PATH);
@@ -134,8 +130,8 @@ fn main() -> std::io::Result<()> {
         internal_info: args.supports_internal_info,
         internal_dice: args.supports_internal_dice,
     };
-    let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(support, &LOCALITIES)
-        .map_err(|err| {
+    let mut dpe =
+        DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(support).map_err(|err| {
             Error::new(
                 ErrorKind::Other,
                 format!("{err:?} while creating new DPE instance"),

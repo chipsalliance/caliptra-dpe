@@ -60,7 +60,7 @@ mod tests {
         support::Support,
     };
     use crypto::OpensslCrypto;
-    use platform::DefaultPlatform;
+    use platform::{DefaultPlatform, AUTO_INIT_LOCALITY};
     use zerocopy::AsBytes;
 
     const TEST_EXTEND_TCI_CMD: ExtendTciCmd = ExtendTciCmd {
@@ -82,11 +82,9 @@ mod tests {
 
     #[test]
     fn test_extend_tci() {
-        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(
-            Support::default(),
-            &TEST_LOCALITIES,
-        )
-        .unwrap();
+        let mut dpe =
+            DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(Support::default())
+                .unwrap();
         // Make sure it returns an error if the command is marked unsupported.
         assert_eq!(
             Err(DpeErrorCode::InvalidCommand),
@@ -113,7 +111,7 @@ mod tests {
             .execute(&mut dpe, TEST_LOCALITIES[1])
         );
 
-        let locality = DpeInstance::<OpensslCrypto, DefaultPlatform>::AUTO_INIT_LOCALITY;
+        let locality = AUTO_INIT_LOCALITY;
         let default_handle = ContextHandle::default();
         let handle = dpe.contexts[dpe
             .get_active_context_pos(&default_handle, locality)

@@ -165,11 +165,9 @@ mod tests {
 
     #[test]
     fn test_certify_key() {
-        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(
-            Support::default(),
-            &TEST_LOCALITIES,
-        )
-        .unwrap();
+        let mut dpe =
+            DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(Support::default())
+                .unwrap();
 
         let init_resp = match InitCtxCmd::new_use_default()
             .execute(&mut dpe, TEST_LOCALITIES[0])
