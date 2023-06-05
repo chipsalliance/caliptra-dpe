@@ -73,9 +73,7 @@ mod tests {
 
     #[test]
     fn test_fails_if_size_greater_than_max_cert_size() {
-        let mut dpe =
-            DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(SUPPORT, &TEST_LOCALITIES)
-                .unwrap();
+        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(SUPPORT).unwrap();
 
         assert_eq!(
             Err(DpeErrorCode::InvalidArgument),

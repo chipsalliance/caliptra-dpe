@@ -10,6 +10,7 @@ mod default;
 
 pub const MAX_CHUNK_SIZE: usize = 2048;
 
+#[derive(Debug)]
 pub enum PlatformError {
     CertificateChainError,
     NotImplemented,
@@ -28,4 +29,10 @@ pub trait Platform {
         size: u32,
         out: &mut [u8; MAX_CHUNK_SIZE],
     ) -> Result<u32, PlatformError>;
+
+    fn get_vendor_id() -> Result<u32, PlatformError>;
+
+    fn get_vendor_sku() -> Result<u32, PlatformError>;
+
+    fn get_auto_init_locality() -> Result<u32, PlatformError>;
 }

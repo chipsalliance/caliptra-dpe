@@ -101,9 +101,7 @@ mod tests {
 
     #[test]
     fn test_bad_command_inputs() {
-        let mut dpe =
-            DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(SUPPORT, &TEST_LOCALITIES)
-                .unwrap();
+        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(SUPPORT).unwrap();
 
         // Bad argument
         assert_eq!(
