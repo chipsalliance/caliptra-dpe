@@ -1,10 +1,11 @@
 // Licensed under the Apache-2.0 license.
 use crate::{_set_flag, response::DpeErrorCode, DPE_PROFILE};
 use core::mem::size_of;
+use zerocopy::AsBytes;
 
 #[repr(C, align(4))]
-#[derive(Default, Copy, Clone)]
-#[cfg_attr(test, derive(zerocopy::AsBytes, zerocopy::FromBytes))]
+#[derive(Default, Copy, Clone, AsBytes)]
+#[cfg_attr(test, derive(zerocopy::FromBytes))]
 pub(crate) struct TciNodeData {
     pub tci_type: u32,
 
@@ -60,8 +61,8 @@ impl TciNodeData {
 }
 
 #[repr(transparent)]
-#[derive(Copy, Clone, Debug)]
-#[cfg_attr(test, derive(PartialEq, Eq, zerocopy::AsBytes, zerocopy::FromBytes))]
+#[derive(Copy, Clone, Debug, AsBytes)]
+#[cfg_attr(test, derive(PartialEq, Eq, zerocopy::FromBytes))]
 pub struct TciMeasurement(pub [u8; DPE_PROFILE.get_tci_size()]);
 
 impl Default for TciMeasurement {
