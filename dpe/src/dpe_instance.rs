@@ -15,6 +15,7 @@ use crate::{
 use core::{marker::PhantomData, mem::size_of};
 use crypto::{Crypto, Hasher};
 use platform::{Platform, MAX_CHUNK_SIZE};
+use zerocopy::AsBytes;
 
 pub struct DpeInstance<'a, C: Crypto, P: Platform> {
     pub(crate) contexts: [Context<C>; MAX_HANDLES],
@@ -231,14 +232,21 @@ impl<C: Crypto, P: Platform> DpeInstance<'_, C, P> {
     fn serialize_internal_input_info(
         &self,
         internal_input_info: &mut [u8; INTERNAL_INPUT_INFO_SIZE],
-    ) {
+    ) -> Result<(), DpeErrorCode> {
         // Internal DPE Info contains get profile response fields as well as the DPE_PROFILE
-        let profile_size = self
-            .get_profile()
-            .unwrap()
-            .serialize(internal_input_info)
-            .unwrap();
-        internal_input_info[profile_size..].copy_from_slice(&(DPE_PROFILE as u32).to_le_bytes());
+        let profile = self.get_profile()?;
+        let profile_bytes = profile.as_bytes();
+        internal_input_info
+            .get_mut(..profile_bytes.len())
+            .ok_or(DpeErrorCode::InternalError)?
+            .copy_from_slice(profile_bytes);
+
+        internal_input_info
+            .get_mut(profile_bytes.len()..)
+            .ok_or(DpeErrorCode::InternalError)?
+            .copy_from_slice(&(DPE_PROFILE as u32).to_le_bytes());
+
+        Ok(())
     }
 
     /// Derive the CDI for a child node.
@@ -277,7 +285,7 @@ impl<C: Crypto, P: Platform> DpeInstance<'_, C, P> {
         // Add internal input info to hash
         if uses_internal_input_info {
             let mut internal_input_info = [0u8; INTERNAL_INPUT_INFO_SIZE];
-            self.serialize_internal_input_info(&mut internal_input_info);
+            self.serialize_internal_input_info(&mut internal_input_info)?;
             hasher
                 .update(&internal_input_info[..INTERNAL_INPUT_INFO_SIZE])
                 .map_err(|_| DpeErrorCode::InternalError)?;
@@ -609,7 +617,9 @@ pub mod tests {
 
         hasher.update(context.tci.as_bytes()).unwrap();
         let mut internal_input_info = [0u8; INTERNAL_INPUT_INFO_SIZE];
-        dpe.serialize_internal_input_info(&mut internal_input_info);
+        dpe.serialize_internal_input_info(&mut internal_input_info)
+            .unwrap();
+
         hasher
             .update(&internal_input_info[..INTERNAL_INPUT_INFO_SIZE])
             .unwrap();
