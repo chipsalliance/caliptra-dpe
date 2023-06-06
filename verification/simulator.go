@@ -56,11 +56,14 @@ func (s *DpeSimulator) PowerOn() error {
 	if s.supports.RotateContext {
 		args = append(args, "--supports-rotate-context")
 	}
-	if s.supports.CertifyKey {
-		args = append(args, "--supports-certify-key")
+	if s.supports.X509 {
+		args = append(args, "--supports-x509")
 	}
-	if s.supports.CertifyCsr {
-		args = append(args, "--supports-certify-csr")
+	if s.supports.Csr {
+		args = append(args, "--supports-csr")
+	}
+	if s.supports.IsCA {
+		args = append(args, "--supports-is-ca")
 	}
 	if s.supports.IsSymmetric {
 		args = append(args, "--supports-is-symmetric")

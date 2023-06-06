@@ -25,6 +25,10 @@ pub(crate) struct Context<C: Crypto> {
     pub uses_internal_input_info: bool,
     /// Whether we should hash internal dice info consisting of the certificate chain when deriving the CDI
     pub uses_internal_input_dice: bool,
+    /// Whether this context can emit certificates with IsCA = True
+    pub allow_ca: bool,
+    /// Whether this context can emit certificates in X.509 format
+    pub allow_x509: bool,
 }
 
 impl<C: Crypto> Context<C> {
@@ -44,6 +48,8 @@ impl<C: Crypto> Context<C> {
             cached_priv_key: None,
             uses_internal_input_info: false,
             uses_internal_input_dice: false,
+            allow_ca: false,
+            allow_x509: false,
         }
     }
 

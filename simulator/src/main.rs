@@ -74,13 +74,17 @@ struct Args {
     #[arg(long)]
     supports_rotate_context: bool,
 
-    /// Supports the CertifyKey command.
+    /// Supports the X509 CertifyKey format.
     #[arg(long)]
-    supports_certify_key: bool,
+    supports_x509: bool,
 
-    /// Supports the CertifyCsr command.
+    /// Supports the CSR CertifyKey format.
     #[arg(long)]
-    supports_certify_csr: bool,
+    supports_csr: bool,
+
+    // Supports the CertifyKey IS_CA flag
+    #[arg(long)]
+    supports_is_ca: bool,
 
     /// Supports symmetric derivation.
     #[arg(long)]
@@ -123,8 +127,9 @@ fn main() -> std::io::Result<()> {
         auto_init: args.supports_auto_init,
         tagging: args.supports_tagging,
         rotate_context: args.supports_rotate_context,
-        certify_key: args.supports_certify_key,
-        certify_csr: args.supports_certify_csr,
+        x509: args.supports_x509,
+        csr: args.supports_csr,
+        is_ca: args.supports_is_ca,
         is_symmetric: args.supports_is_symmetric,
         nd_derivation: args.supports_nd_derivation,
         internal_info: args.supports_internal_info,
