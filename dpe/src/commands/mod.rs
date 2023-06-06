@@ -4,7 +4,7 @@ Licensed under the Apache-2.0 license.
 Abstract:
     DPE Commands and deserialization.
 --*/
-pub(crate) use self::derive_child::DeriveChildCmd;
+pub use self::derive_child::DeriveChildCmd;
 pub(crate) use self::destroy_context::DestroyCtxCmd;
 pub(crate) use self::get_certificate_chain::GetCertificateChainCmd;
 pub(crate) use self::initialize_context::InitCtxCmd;

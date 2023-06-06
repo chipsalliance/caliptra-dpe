@@ -10,6 +10,7 @@ pub use dpe_instance::DpeInstance;
 pub use support::Support;
 
 pub mod commands;
+pub mod context;
 pub mod dpe_instance;
 pub mod response;
 pub mod support;
@@ -19,7 +20,6 @@ use crypto::Crypto;
 use platform::Platform;
 use response::{DpeErrorCode, GetProfileResp, ResponseHdr};
 use zerocopy::AsBytes;
-mod context;
 mod tci;
 mod x509;
 
