@@ -10,12 +10,13 @@ type Support struct {
 	AutoInit      bool
 	Tagging       bool
 	RotateContext bool
-	CertifyKey    bool
-	CertifyCsr    bool
+	X509          bool
+	Csr           bool
 	IsSymmetric   bool
 	NDDerivation  bool
 	InternalInfo  bool
 	InternalDice  bool
+	IsCA          bool
 }
 
 // Transport is an interface to define how to test and send messages to a DPE instance.
@@ -231,10 +232,10 @@ func (s *Support) ToFlags() uint32 {
 	if s.RotateContext {
 		flags |= (1 << 27)
 	}
-	if s.CertifyKey {
+	if s.X509 {
 		flags |= (1 << 26)
 	}
-	if s.CertifyCsr {
+	if s.Csr {
 		flags |= (1 << 25)
 	}
 	if s.IsSymmetric {
@@ -248,6 +249,9 @@ func (s *Support) ToFlags() uint32 {
 	}
 	if s.InternalDice {
 		flags |= (1 << 21)
+	}
+	if s.IsCA {
+		flags |= (1 << 20)
 	}
 	return flags
 }

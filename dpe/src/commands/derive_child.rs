@@ -27,6 +27,8 @@ impl DeriveChildCmd {
     pub const RETAIN_PARENT: u32 = 1 << 29;
     pub const MAKE_DEFAULT: u32 = 1 << 28;
     pub const CHANGE_LOCALITY: u32 = 1 << 27;
+    pub const INPUT_ALLOW_CA: u32 = 1 << 26;
+    pub const INPUT_ALLOW_X509: u32 = 1 << 25;
 
     const fn uses_internal_info_input(&self) -> bool {
         self.flags & Self::INTERNAL_INPUT_INFO != 0
@@ -46,6 +48,17 @@ impl DeriveChildCmd {
 
     const fn changes_locality(&self) -> bool {
         self.flags & Self::CHANGE_LOCALITY != 0
+    }
+
+    //
+    // TODO: Implement ALLOW_CA and ALLOW_X509
+    //
+    const fn _allows_ca(&self) -> bool {
+        self.flags & Self::INPUT_ALLOW_CA != 0
+    }
+
+    const fn _allows_x509(&self) -> bool {
+        self.flags & Self::INPUT_ALLOW_X509 != 0
     }
 
     /// Check if this will result in two default contexts in the same locality.

@@ -12,11 +12,11 @@ type CommandCode uint32
 
 const (
 	CommandGetProfile        CommandCode = 0x1
-	CommandInitializeContext CommandCode = 0x5
-	CommandCertifyKey        CommandCode = 0x7
+	CommandInitializeContext CommandCode = 0x7
+	CommandCertifyKey        CommandCode = 0x9
 	CommandDestroyContext    CommandCode = 0xf
-	CommandTagTCI            CommandCode = 0x1002
-	CommandGetTaggedTCI      CommandCode = 0x1003
+	CommandTagTCI            CommandCode = 0x82
+	CommandGetTaggedTCI      CommandCode = 0x83
 )
 
 type CommandHdr struct {
@@ -78,10 +78,18 @@ const (
 	CertifyKeyNDDerivation CertifyKeyFlags = 0x800000
 )
 
+type CertifyKeyFormat uint32
+
+const (
+	CertifyKeyX509 CertifyKeyFormat = 0
+	CertifyKeyCsr  CertifyKeyFormat = 1
+)
+
 type CertifyKeyReq[Digest DigestAlgorithm] struct {
 	ContextHandle ContextHandle
 	Flags         CertifyKeyFlags
 	Label         Digest
+	Format        CertifyKeyFormat
 }
 
 type CertifyKeyResp[CurveParameter Curve, Digest DigestAlgorithm] struct {

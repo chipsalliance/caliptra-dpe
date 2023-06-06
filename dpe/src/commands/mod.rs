@@ -11,7 +11,6 @@ pub(crate) use self::initialize_context::InitCtxCmd;
 
 pub(in crate::commands) use self::certify_key::CertifyKeyCmd;
 
-use self::certify_csr::CertifyCsrCmd;
 use self::extend_tci::ExtendTciCmd;
 use self::get_tagged_tci::GetTaggedTciCmd;
 use self::rotate_context::RotateCtxCmd;
@@ -28,7 +27,6 @@ use crypto::Crypto;
 use platform::Platform;
 use zerocopy::FromBytes;
 
-mod certify_csr;
 mod certify_key;
 mod derive_child;
 mod destroy_context;
@@ -52,23 +50,21 @@ pub enum Command {
     ExtendTci(ExtendTciCmd),
     TagTci(TagTciCmd),
     GetTaggedTci(GetTaggedTciCmd),
-    CertifyCsr(CertifyCsrCmd),
     GetCertificateChain(GetCertificateChainCmd),
 }
 
 impl Command {
     const GET_PROFILE: u32 = 0x01;
-    const INITIALIZE_CONTEXT: u32 = 0x05;
-    const DERIVE_CHILD: u32 = 0x06;
-    const CERTIFY_KEY: u32 = 0x07;
-    const SIGN: u32 = 0x08;
+    const INITIALIZE_CONTEXT: u32 = 0x07;
+    const DERIVE_CHILD: u32 = 0x08;
+    const CERTIFY_KEY: u32 = 0x09;
+    const SIGN: u32 = 0x0A;
     const ROTATE_CONTEXT_HANDLE: u32 = 0x0e;
     const DESTROY_CONTEXT: u32 = 0x0f;
-    const GET_CERTIFICATE_CHAIN: u32 = 0x1000;
-    const EXTEND_TCI: u32 = 0x1001;
-    const TAG_TCI: u32 = 0x1002;
-    const GET_TAGGED_TCI: u32 = 0x1003;
-    const CERTIFY_CSR: u32 = 0x1004;
+    const GET_CERTIFICATE_CHAIN: u32 = 0x80;
+    const EXTEND_TCI: u32 = 0x81;
+    const TAG_TCI: u32 = 0x82;
+    const GET_TAGGED_TCI: u32 = 0x83;
 
     /// Returns the command with its parameters given a slice of bytes.
     ///
@@ -93,7 +89,6 @@ impl Command {
             Command::EXTEND_TCI => Self::parse_command(Command::ExtendTci, bytes),
             Command::TAG_TCI => Self::parse_command(Command::TagTci, bytes),
             Command::GET_TAGGED_TCI => Self::parse_command(Command::GetTaggedTci, bytes),
-            Command::CERTIFY_CSR => Self::parse_command(Command::CertifyCsr, bytes),
             _ => Err(DpeErrorCode::InvalidCommand),
         }
     }
@@ -252,7 +247,6 @@ pub mod tests {
                 Command::ExtendTci(_) => Command::EXTEND_TCI,
                 Command::TagTci(_) => Command::TAG_TCI,
                 Command::GetTaggedTci(_) => Command::GET_TAGGED_TCI,
-                Command::CertifyCsr(_) => Command::CERTIFY_CSR,
                 Command::GetCertificateChain(_) => Command::GET_CERTIFICATE_CHAIN,
             };
             CommandHdr {

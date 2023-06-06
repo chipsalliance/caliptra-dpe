@@ -7,12 +7,13 @@ pub struct Support {
     pub auto_init: bool,
     pub tagging: bool,
     pub rotate_context: bool,
-    pub certify_key: bool,
-    pub certify_csr: bool,
+    pub x509: bool,
+    pub csr: bool,
     pub is_symmetric: bool,
     pub nd_derivation: bool,
     pub internal_info: bool,
     pub internal_dice: bool,
+    pub is_ca: bool,
 }
 
 impl Support {
@@ -24,12 +25,13 @@ impl Support {
             | self.get_auto_init_flag()
             | self.get_tagging_flag()
             | self.get_rotate_context_flag()
-            | self.get_certify_key_flag()
-            | self.get_certify_csr_flag()
+            | self.get_x509_flag()
+            | self.get_csr_flag()
             | self.get_is_symmetric_flag()
             | self.get_nd_derivation_flag()
             | self.get_internal_info_flag()
             | self.get_internal_dice_flag()
+            | self.get_is_ca_flag()
     }
     fn get_simulation_flag(&self) -> u32 {
         u32::from(self.simulation) << 31
@@ -46,11 +48,11 @@ impl Support {
     fn get_rotate_context_flag(&self) -> u32 {
         u32::from(self.rotate_context) << 27
     }
-    fn get_certify_key_flag(&self) -> u32 {
-        u32::from(self.certify_key) << 26
+    fn get_x509_flag(&self) -> u32 {
+        u32::from(self.x509) << 26
     }
-    fn get_certify_csr_flag(&self) -> u32 {
-        u32::from(self.certify_csr) << 25
+    fn get_csr_flag(&self) -> u32 {
+        u32::from(self.csr) << 25
     }
     fn get_is_symmetric_flag(&self) -> u32 {
         u32::from(self.is_symmetric) << 24
@@ -64,6 +66,9 @@ impl Support {
     fn get_internal_dice_flag(&self) -> u32 {
         u32::from(self.internal_dice) << 21
     }
+    fn get_is_ca_flag(&self) -> u32 {
+        u32::from(self.is_ca) << 20
+    }
 }
 
 #[cfg(test)]
@@ -76,12 +81,13 @@ pub mod test {
         auto_init: true,
         tagging: true,
         rotate_context: true,
-        certify_key: true,
-        certify_csr: false,
+        x509: true,
+        csr: false,
         is_symmetric: false,
         nd_derivation: false,
         internal_info: false,
         internal_dice: false,
+        is_ca: false,
     };
 
     #[test]
@@ -123,14 +129,14 @@ pub mod test {
         assert_eq!(flags, 1 << 27);
         // Supports certify key.
         let flags = Support {
-            certify_key: true,
+            x509: true,
             ..Support::default()
         }
         .get_flags();
         assert_eq!(flags, 1 << 26);
         // Supports certify csr.
         let flags = Support {
-            certify_csr: true,
+            csr: true,
             ..Support::default()
         }
         .get_flags();
@@ -168,7 +174,7 @@ pub mod test {
             simulation: true,
             auto_init: true,
             rotate_context: true,
-            certify_csr: true,
+            csr: true,
             nd_derivation: true,
             internal_dice: true,
             ..Support::default()
@@ -181,7 +187,7 @@ pub mod test {
         let flags = Support {
             extend_tci: true,
             tagging: true,
-            certify_key: true,
+            x509: true,
             is_symmetric: true,
             internal_info: true,
             ..Support::default()
@@ -198,12 +204,13 @@ pub mod test {
             auto_init: true,
             tagging: true,
             rotate_context: true,
-            certify_key: true,
-            certify_csr: true,
+            x509: true,
+            csr: true,
             is_symmetric: true,
             nd_derivation: true,
             internal_info: true,
             internal_dice: true,
+            is_ca: true,
         }
         .get_flags();
         assert_eq!(
@@ -219,6 +226,7 @@ pub mod test {
                 | (1 << 23)
                 | (1 << 22)
                 | (1 << 21)
+                | (1 << 20)
         );
     }
 }

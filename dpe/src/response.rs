@@ -23,7 +23,6 @@ pub enum Response {
     ExtendTci(NewHandleResp),
     TagTci(NewHandleResp),
     GetTaggedTci(GetTaggedTciResp),
-    CertifyCsr(CertifyCsrResp),
     GetCertificateChain(GetCertificateChainResp),
 }
 
@@ -40,7 +39,6 @@ impl Response {
             Response::ExtendTci(res) => res.as_bytes(),
             Response::TagTci(res) => res.as_bytes(),
             Response::GetTaggedTci(res) => res.as_bytes(),
-            Response::CertifyCsr(res) => res.as_bytes(),
             Response::GetCertificateChain(res) => res.as_bytes(),
         }
     }
@@ -146,29 +144,6 @@ pub struct SignResp {
 pub struct GetTaggedTciResp {
     pub tci_cumulative: TciMeasurement,
     pub tci_current: TciMeasurement,
-}
-
-#[repr(C)]
-#[derive(Debug, PartialEq, Eq, zerocopy::AsBytes)]
-#[cfg_attr(test, derive(zerocopy::FromBytes))]
-pub struct CertifyCsrResp {
-    pub new_context_handle: ContextHandle,
-    pub derived_pubkey_x: [u8; DPE_PROFILE.get_ecc_int_size()],
-    pub derived_pubkey_y: [u8; DPE_PROFILE.get_ecc_int_size()],
-    pub csr_size: u32,
-    pub csr: [u8; MAX_CERT_SIZE],
-}
-
-impl Default for CertifyCsrResp {
-    fn default() -> Self {
-        Self {
-            new_context_handle: ContextHandle::default(),
-            derived_pubkey_x: [0; DPE_PROFILE.get_ecc_int_size()],
-            derived_pubkey_y: [0; DPE_PROFILE.get_ecc_int_size()],
-            csr_size: 0,
-            csr: [0; MAX_CERT_SIZE],
-        }
-    }
 }
 
 #[repr(C)]

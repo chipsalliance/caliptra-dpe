@@ -103,7 +103,6 @@ impl<C: Crypto, P: Platform> DpeInstance<'_, C, P> {
             Command::ExtendTci(cmd) => cmd.execute(self, locality),
             Command::TagTci(cmd) => cmd.execute(self, locality),
             Command::GetTaggedTci(cmd) => cmd.execute(self, locality),
-            Command::CertifyCsr(cmd) => cmd.execute(self, locality),
             Command::GetCertificateChain(cmd) => cmd.execute(self, locality),
         }
     }

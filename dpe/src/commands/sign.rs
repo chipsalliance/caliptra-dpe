@@ -338,6 +338,7 @@ mod tests {
                 handle: ContextHandle::default(),
                 flags: 0,
                 label: TEST_LABEL,
+                format: CertifyKeyCmd::FORMAT_X509,
             };
             let certify_resp = match cmd.execute(&mut dpe, TEST_LOCALITIES[0]).unwrap() {
                 Response::CertifyKey(resp) => resp,
@@ -450,6 +451,7 @@ mod tests {
                 handle: ContextHandle::default(),
                 flags: CertifyKeyCmd::ND_DERIVATION,
                 label: TEST_LABEL,
+                format: CertifyKeyCmd::FORMAT_X509,
             };
             let certify_resp = match cmd.execute(&mut dpe, TEST_LOCALITIES[0]).unwrap() {
                 Response::CertifyKey(resp) => resp,

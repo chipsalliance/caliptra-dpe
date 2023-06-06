@@ -18,14 +18,23 @@ pub struct CertifyKeyCmd {
     pub handle: ContextHandle,
     pub flags: u32,
     pub label: [u8; DPE_PROFILE.get_hash_size()],
+    pub format: u32,
 }
 
 impl CertifyKeyCmd {
     pub const ND_DERIVATION: u32 = 1 << 31;
+    pub const IS_CA: u32 = 1 << 30;
+
+    pub const FORMAT_X509: u32 = 0;
+    pub const FORMAT_CSR: u32 = 1;
 
     // Uses non-deterministic derivation.
     const fn uses_nd_derivation(&self) -> bool {
         self.flags & Self::ND_DERIVATION != 0
+    }
+
+    const fn _uses_is_ca(&self) -> bool {
+        self.flags & Self::IS_CA != 0
     }
 }
 
@@ -95,27 +104,35 @@ impl<C: Crypto, P: Platform> CommandExecution<C, P> for CertifyKeyCmd {
             tci_nodes: &nodes[..tcb_count],
         };
 
-        // Get certificate
-        let mut tbs_buffer = [0u8; MAX_CERT_SIZE];
-        let mut tbs_writer = X509CertWriter::new(&mut tbs_buffer, true);
-        let mut bytes_written = tbs_writer.encode_ecdsa_tbs(
-            /*serial=*/
-            &subject_name.serial[..20], // Serial number must be truncated to 20 bytes
-            &issuer_name,
-            &subject_name,
-            &pub_key,
-            &measurements,
-        )?;
-
-        let tbs_digest = C::hash(DPE_PROFILE.alg_len(), &tbs_buffer[..bytes_written])
-            .map_err(|_| DpeErrorCode::InternalError)?;
-        let sig = C::ecdsa_sign_with_alias(DPE_PROFILE.alg_len(), &tbs_digest)
-            .map_err(|_| DpeErrorCode::InternalError)?;
-
         let mut cert = [0u8; MAX_CERT_SIZE];
-        let mut cert_writer = X509CertWriter::new(&mut cert, true);
-        bytes_written = cert_writer.encode_ecdsa_certificate(&tbs_buffer[..bytes_written], &sig)?;
-        let cert_size = u32::try_from(bytes_written).map_err(|_| DpeErrorCode::InternalError)?;
+        let cert_size = match self.format {
+            Self::FORMAT_X509 => {
+                let mut tbs_buffer = [0u8; MAX_CERT_SIZE];
+                let mut tbs_writer = X509CertWriter::new(&mut tbs_buffer, true);
+                let mut bytes_written = tbs_writer.encode_ecdsa_tbs(
+                    /*serial=*/
+                    &subject_name.serial[..20], // Serial number must be truncated to 20 bytes
+                    &issuer_name,
+                    &subject_name,
+                    &pub_key,
+                    &measurements,
+                )?;
+
+                let tbs_digest = C::hash(DPE_PROFILE.alg_len(), &tbs_buffer[..bytes_written])
+                    .map_err(|_| DpeErrorCode::InternalError)?;
+                let sig = C::ecdsa_sign_with_alias(DPE_PROFILE.alg_len(), &tbs_digest)
+                    .map_err(|_| DpeErrorCode::InternalError)?;
+
+                let mut cert_writer = X509CertWriter::new(&mut cert, true);
+                bytes_written =
+                    cert_writer.encode_ecdsa_certificate(&tbs_buffer[..bytes_written], &sig)?;
+                u32::try_from(bytes_written).map_err(|_| DpeErrorCode::InternalError)?
+            }
+            Self::FORMAT_CSR => {
+                return Err(DpeErrorCode::ArgumentNotSupported);
+            }
+            _ => return Err(DpeErrorCode::InvalidArgument),
+        };
 
         // Rotate handle if it isn't the default
         dpe.roll_onetime_use_handle(idx)?;
@@ -149,6 +166,7 @@ mod tests {
         handle: SIMULATION_HANDLE,
         flags: 0x1234_5678,
         label: [0xaa; DPE_PROFILE.get_hash_size()],
+        format: CertifyKeyCmd::FORMAT_X509,
     };
 
     #[test]
@@ -180,6 +198,7 @@ mod tests {
             handle: init_resp.handle,
             flags: 0,
             label: [0; DPE_PROFILE.get_hash_size()],
+            format: CertifyKeyCmd::FORMAT_X509,
         };
 
         let certify_resp = match certify_cmd.execute(&mut dpe, TEST_LOCALITIES[0]).unwrap() {
