@@ -70,7 +70,7 @@ mod tests {
 
     #[test]
     fn test_deserialize_extend_tci() {
-        let mut command = CommandHdr::new(Command::ExtendTci(TEST_EXTEND_TCI_CMD))
+        let mut command = CommandHdr::new_for_test(Command::ExtendTci(TEST_EXTEND_TCI_CMD))
             .as_bytes()
             .to_vec();
         command.extend(TEST_EXTEND_TCI_CMD.as_bytes());

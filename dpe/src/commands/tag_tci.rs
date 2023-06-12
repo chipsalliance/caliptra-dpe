@@ -74,7 +74,7 @@ mod tests {
 
     #[test]
     fn test_deserialize_tag_tci() {
-        let mut command = CommandHdr::new(Command::TagTci(TEST_TAG_TCI_CMD))
+        let mut command = CommandHdr::new_for_test(Command::TagTci(TEST_TAG_TCI_CMD))
             .as_bytes()
             .to_vec();
         command.extend(TEST_TAG_TCI_CMD.as_bytes());

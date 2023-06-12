@@ -379,14 +379,14 @@ pub mod tests {
             )),
             dpe.execute_serialized_command(
                 TEST_LOCALITIES[0],
-                CommandHdr::new(Command::GetProfile).as_bytes(),
+                CommandHdr::new_for_test(Command::GetProfile).as_bytes(),
             )
             .unwrap()
         );
 
         // The default context was initialized while creating the instance. Now lets create a
         // simulation context.
-        let mut command = CommandHdr::new(Command::InitCtx(InitCtxCmd::new_simulation()))
+        let mut command = CommandHdr::new_for_test(Command::InitCtx(InitCtxCmd::new_simulation()))
             .as_bytes()
             .to_vec();
         command.extend(InitCtxCmd::new_simulation().as_bytes());

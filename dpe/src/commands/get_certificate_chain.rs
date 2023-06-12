@@ -61,7 +61,7 @@ mod tests {
     #[test]
     fn test_deserialize_get_certificate_chain() {
         let mut command =
-            CommandHdr::new(Command::GetCertificateChain(TEST_GET_CERTIFICATE_CHAIN_CMD))
+            CommandHdr::new_for_test(Command::GetCertificateChain(TEST_GET_CERTIFICATE_CHAIN_CMD))
                 .as_bytes()
                 .to_vec();
         command.extend(TEST_GET_CERTIFICATE_CHAIN_CMD.as_bytes());

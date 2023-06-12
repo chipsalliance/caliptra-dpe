@@ -171,7 +171,7 @@ mod tests {
 
     #[test]
     fn test_deserialize_certify_key() {
-        let mut command = CommandHdr::new(Command::CertifyKey(TEST_CERTIFY_KEY_CMD))
+        let mut command = CommandHdr::new_for_test(Command::CertifyKey(TEST_CERTIFY_KEY_CMD))
             .as_bytes()
             .to_vec();
         command.extend(TEST_CERTIFY_KEY_CMD.as_bytes());

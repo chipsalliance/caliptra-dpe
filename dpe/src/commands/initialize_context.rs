@@ -100,7 +100,7 @@ mod tests {
 
     #[test]
     fn test_deserialize_init_ctx() {
-        let mut command = CommandHdr::new(Command::InitCtx(TEST_INIT_CTX_CMD))
+        let mut command = CommandHdr::new_for_test(Command::InitCtx(TEST_INIT_CTX_CMD))
             .as_bytes()
             .to_vec();
         command.extend(TEST_INIT_CTX_CMD.as_bytes());

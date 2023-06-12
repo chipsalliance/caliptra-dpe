@@ -103,6 +103,24 @@ impl Command {
     }
 }
 
+impl From<Command> for u32 {
+    fn from(cmd: Command) -> u32 {
+        match cmd {
+            Command::GetProfile => Command::GET_PROFILE,
+            Command::InitCtx(_) => Command::INITIALIZE_CONTEXT,
+            Command::DeriveChild(_) => Command::DERIVE_CHILD,
+            Command::CertifyKey(_) => Command::CERTIFY_KEY,
+            Command::Sign(_) => Command::SIGN,
+            Command::RotateCtx(_) => Command::ROTATE_CONTEXT_HANDLE,
+            Command::DestroyCtx(_) => Command::DESTROY_CONTEXT,
+            Command::ExtendTci(_) => Command::EXTEND_TCI,
+            Command::TagTci(_) => Command::TAG_TCI,
+            Command::GetTaggedTci(_) => Command::GET_TAGGED_TCI,
+            Command::GetCertificateChain(_) => Command::GET_CERTIFICATE_CHAIN,
+        }
+    }
+}
+
 pub trait CommandExecution<C: Crypto, P: Platform> {
     fn execute(&self, dpe: &mut DpeInstance<C, P>, locality: u32)
         -> Result<Response, DpeErrorCode>;
@@ -111,8 +129,7 @@ pub trait CommandExecution<C: Crypto, P: Platform> {
 // ABI Command structures
 
 #[repr(C)]
-#[derive(Debug, PartialEq, Eq, zerocopy::FromBytes)]
-#[cfg_attr(test, derive(zerocopy::AsBytes))]
+#[derive(Debug, PartialEq, Eq, zerocopy::FromBytes, zerocopy::AsBytes)]
 pub struct CommandHdr {
     pub magic: u32,
     pub cmd_id: u32,
@@ -121,6 +138,14 @@ pub struct CommandHdr {
 
 impl CommandHdr {
     const DPE_COMMAND_MAGIC: u32 = u32::from_be_bytes(*b"DPEC");
+
+    pub fn new_for_test(command: Command) -> CommandHdr {
+        CommandHdr {
+            magic: Self::DPE_COMMAND_MAGIC,
+            cmd_id: command.into(),
+            profile: DPE_PROFILE as u32,
+        }
+    }
 }
 
 impl TryFrom<&[u8]> for CommandHdr {
@@ -168,7 +193,7 @@ pub mod tests {
         // Commands that can be deserialized.
         assert_eq!(
             Ok(Command::GetProfile),
-            Command::deserialize(CommandHdr::new(Command::GetProfile).as_bytes())
+            Command::deserialize(CommandHdr::new_for_test(Command::GetProfile).as_bytes())
         );
     }
 
@@ -232,28 +257,5 @@ pub mod tests {
             GOOD_HEADER,
             CommandHdr::try_from(GOOD_HEADER.as_bytes()).unwrap()
         );
-    }
-
-    impl CommandHdr {
-        pub fn new(command: Command) -> CommandHdr {
-            let cmd_id = match command {
-                Command::GetProfile => Command::GET_PROFILE,
-                Command::InitCtx(_) => Command::INITIALIZE_CONTEXT,
-                Command::DeriveChild(_) => Command::DERIVE_CHILD,
-                Command::CertifyKey(_) => Command::CERTIFY_KEY,
-                Command::Sign(_) => Command::SIGN,
-                Command::RotateCtx(_) => Command::ROTATE_CONTEXT_HANDLE,
-                Command::DestroyCtx(_) => Command::DESTROY_CONTEXT,
-                Command::ExtendTci(_) => Command::EXTEND_TCI,
-                Command::TagTci(_) => Command::TAG_TCI,
-                Command::GetTaggedTci(_) => Command::GET_TAGGED_TCI,
-                Command::GetCertificateChain(_) => Command::GET_CERTIFICATE_CHAIN,
-            };
-            CommandHdr {
-                magic: Self::DPE_COMMAND_MAGIC,
-                cmd_id,
-                profile: DPE_PROFILE as u32,
-            }
-        }
     }
 }

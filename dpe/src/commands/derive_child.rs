@@ -176,7 +176,7 @@ mod tests {
 
     #[test]
     fn test_deserialize_derive_child() {
-        let mut command = CommandHdr::new(Command::DeriveChild(TEST_DERIVE_CHILD_CMD))
+        let mut command = CommandHdr::new_for_test(Command::DeriveChild(TEST_DERIVE_CHILD_CMD))
             .as_bytes()
             .to_vec();
         command.extend(TEST_DERIVE_CHILD_CMD.as_bytes());
