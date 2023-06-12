@@ -159,7 +159,7 @@ mod tests {
 
     #[test]
     fn test_deserialize_sign() {
-        let mut command = CommandHdr::new(Command::Sign(TEST_SIGN_CMD))
+        let mut command = CommandHdr::new_for_test(Command::Sign(TEST_SIGN_CMD))
             .as_bytes()
             .to_vec();
         command.extend(TEST_SIGN_CMD.as_bytes());

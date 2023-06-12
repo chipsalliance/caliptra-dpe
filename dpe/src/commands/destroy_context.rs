@@ -69,7 +69,7 @@ mod tests {
 
     #[test]
     fn test_deserialize_destroy_context() {
-        let mut command = CommandHdr::new(Command::DestroyCtx(TEST_DESTROY_CTX_CMD))
+        let mut command = CommandHdr::new_for_test(Command::DestroyCtx(TEST_DESTROY_CTX_CMD))
             .as_bytes()
             .to_vec();
         command.extend(TEST_DESTROY_CTX_CMD.as_bytes());

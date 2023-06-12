@@ -82,7 +82,7 @@ mod tests {
 
     #[test]
     fn test_deserialize_rotate_context() {
-        let mut command = CommandHdr::new(Command::RotateCtx(TEST_ROTATE_CTX_CMD))
+        let mut command = CommandHdr::new_for_test(Command::RotateCtx(TEST_ROTATE_CTX_CMD))
             .as_bytes()
             .to_vec();
         command.extend(TEST_ROTATE_CTX_CMD.as_bytes());
