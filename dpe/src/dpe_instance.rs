@@ -7,7 +7,7 @@ Abstract:
 use crate::{
     commands::{Command, CommandExecution, InitCtxCmd},
     context::{ChildToRootIter, Context, ContextHandle, ContextState},
-    response::{DpeErrorCode, GetProfileResp, Response},
+    response::{DpeErrorCode, GetProfileResp, Response, ResponseHdr},
     support::Support,
     tci::{TciMeasurement, TciNodeData},
     DPE_PROFILE, INTERNAL_INPUT_INFO_SIZE, MAX_HANDLES,
@@ -92,7 +92,7 @@ impl<C: Crypto, P: Platform> DpeInstance<'_, C, P> {
         cmd: &[u8],
     ) -> Result<Response, DpeErrorCode> {
         let command = Command::deserialize(cmd)?;
-        match command {
+        let resp = match command {
             Command::GetProfile => Ok(Response::GetProfile(self.get_profile()?)),
             Command::InitCtx(cmd) => cmd.execute(self, locality),
             Command::DeriveChild(cmd) => cmd.execute(self, locality),
@@ -104,6 +104,11 @@ impl<C: Crypto, P: Platform> DpeInstance<'_, C, P> {
             Command::TagTci(cmd) => cmd.execute(self, locality),
             Command::GetTaggedTci(cmd) => cmd.execute(self, locality),
             Command::GetCertificateChain(cmd) => cmd.execute(self, locality),
+        };
+
+        match resp {
+            Ok(resp) => Ok(resp),
+            Err(err_code) => Ok(Response::Error(ResponseHdr::new(err_code))),
         }
     }
 
@@ -392,7 +397,8 @@ pub mod tests {
         command.extend(InitCtxCmd::new_simulation().as_bytes());
         assert_eq!(
             Response::InitCtx(NewHandleResp {
-                handle: SIMULATION_HANDLE
+                handle: SIMULATION_HANDLE,
+                resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
             }),
             dpe.execute_serialized_command(TEST_LOCALITIES[0], &command)
                 .unwrap()

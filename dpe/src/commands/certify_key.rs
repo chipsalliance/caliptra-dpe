@@ -3,7 +3,7 @@ use super::CommandExecution;
 use crate::{
     context::ContextHandle,
     dpe_instance::DpeInstance,
-    response::{CertifyKeyResp, DpeErrorCode, Response},
+    response::{CertifyKeyResp, DpeErrorCode, Response, ResponseHdr},
     tci::TciNodeData,
     x509::{MeasurementData, Name, X509CertWriter},
     DPE_PROFILE, MAX_CERT_SIZE, MAX_HANDLES,
@@ -143,6 +143,7 @@ impl<C: Crypto, P: Platform> CommandExecution<C, P> for CertifyKeyCmd {
             derived_pubkey_y: pub_key.y.bytes().try_into().unwrap(),
             cert_size,
             cert,
+            resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
         }))
     }
 }

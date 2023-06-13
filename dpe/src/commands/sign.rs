@@ -3,7 +3,7 @@ use super::CommandExecution;
 use crate::{
     context::{ContextHandle, ContextType},
     dpe_instance::DpeInstance,
-    response::{DpeErrorCode, Response, SignResp},
+    response::{DpeErrorCode, Response, ResponseHdr, SignResp},
     DPE_PROFILE,
 };
 use crypto::{Crypto, CryptoBuf, Digest, EcdsaSig, HmacSig};
@@ -118,6 +118,7 @@ impl<C: Crypto, P: Platform> CommandExecution<C, P> for SignCmd {
             new_context_handle: dpe.contexts[idx].handle,
             sig_r_or_hmac: r.bytes().try_into().unwrap(),
             sig_s: s.bytes().try_into().unwrap(),
+            resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
         }))
     }
 }

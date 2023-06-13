@@ -3,7 +3,7 @@ use super::CommandExecution;
 use crate::{
     context::{ActiveContextArgs, ContextHandle, ContextState, ContextType},
     dpe_instance::DpeInstance,
-    response::{DeriveChildResp, DpeErrorCode, Response},
+    response::{DeriveChildResp, DpeErrorCode, Response, ResponseHdr},
     tci::TciMeasurement,
     DPE_PROFILE,
 };
@@ -149,6 +149,7 @@ impl<C: Crypto, P: Platform> CommandExecution<C, P> for DeriveChildCmd {
         Ok(Response::DeriveChild(DeriveChildResp {
             handle: child_handle,
             parent_handle: dpe.contexts[parent_idx].handle,
+            resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
         }))
     }
 }
@@ -316,7 +317,8 @@ mod tests {
         assert_eq!(
             Ok(Response::DeriveChild(DeriveChildResp {
                 handle: ContextHandle::default(),
-                parent_handle: ContextHandle([0xff; ContextHandle::SIZE])
+                parent_handle: ContextHandle([0xff; ContextHandle::SIZE]),
+                resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
             })),
             DeriveChildCmd {
                 handle: ContextHandle::default(),
@@ -332,7 +334,8 @@ mod tests {
         assert_eq!(
             Ok(Response::DeriveChild(DeriveChildResp {
                 handle: SIMULATION_HANDLE,
-                parent_handle: ContextHandle([0xff; ContextHandle::SIZE])
+                parent_handle: ContextHandle([0xff; ContextHandle::SIZE]),
+                resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
             })),
             DeriveChildCmd {
                 handle: ContextHandle::default(),
@@ -357,7 +360,8 @@ mod tests {
         assert_eq!(
             Ok(Response::DeriveChild(DeriveChildResp {
                 handle: ContextHandle::default(),
-                parent_handle: ContextHandle([0xff; ContextHandle::SIZE])
+                parent_handle: ContextHandle([0xff; ContextHandle::SIZE]),
+                resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
             })),
             DeriveChildCmd {
                 handle: ContextHandle::default(),
@@ -374,6 +378,7 @@ mod tests {
             Ok(Response::DeriveChild(DeriveChildResp {
                 handle: ContextHandle::default(),
                 parent_handle: ContextHandle::default(),
+                resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
             })),
             DeriveChildCmd {
                 handle: ContextHandle::default(),
@@ -401,6 +406,7 @@ mod tests {
             Ok(Response::DeriveChild(DeriveChildResp {
                 handle: ContextHandle::default(),
                 parent_handle: SIMULATION_HANDLE,
+                resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
             })),
             DeriveChildCmd {
                 handle: dpe.contexts[old_default_idx].handle,

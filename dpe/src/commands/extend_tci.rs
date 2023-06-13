@@ -3,7 +3,7 @@ use super::CommandExecution;
 use crate::{
     context::ContextHandle,
     dpe_instance::DpeInstance,
-    response::{DpeErrorCode, NewHandleResp, Response},
+    response::{DpeErrorCode, NewHandleResp, Response, ResponseHdr},
     tci::TciMeasurement,
     DPE_PROFILE,
 };
@@ -47,6 +47,7 @@ impl<C: Crypto, P: Platform> CommandExecution<C, P> for ExtendTciCmd {
         dpe.roll_onetime_use_handle(idx)?;
         Ok(Response::ExtendTci(NewHandleResp {
             handle: dpe.contexts[idx].handle,
+            resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
         }))
     }
 }
