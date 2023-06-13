@@ -3,7 +3,7 @@ use super::CommandExecution;
 use crate::{
     context::ContextHandle,
     dpe_instance::DpeInstance,
-    response::{DpeErrorCode, NewHandleResp, Response},
+    response::{DpeErrorCode, NewHandleResp, Response, ResponseHdr},
 };
 use crypto::Crypto;
 use platform::Platform;
@@ -51,6 +51,7 @@ impl<C: Crypto, P: Platform> CommandExecution<C, P> for TagTciCmd {
 
         Ok(Response::TagTci(NewHandleResp {
             handle: context.handle,
+            resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
         }))
     }
 }
@@ -139,6 +140,7 @@ mod tests {
         assert_eq!(
             Ok(Response::TagTci(NewHandleResp {
                 handle: ContextHandle::default(),
+                resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
             })),
             TagTciCmd {
                 handle: ContextHandle::default(),
@@ -182,6 +184,7 @@ mod tests {
         assert_eq!(
             Ok(Response::TagTci(NewHandleResp {
                 handle: SIMULATION_HANDLE,
+                resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
             })),
             TagTciCmd {
                 handle: sim_tmp_handle,

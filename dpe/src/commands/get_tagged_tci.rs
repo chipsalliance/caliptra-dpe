@@ -2,7 +2,7 @@
 use super::CommandExecution;
 use crate::{
     dpe_instance::DpeInstance,
-    response::{DpeErrorCode, GetTaggedTciResp, Response},
+    response::{DpeErrorCode, GetTaggedTciResp, Response, ResponseHdr},
 };
 use crypto::Crypto;
 use platform::Platform;
@@ -32,6 +32,7 @@ impl<C: Crypto, P: Platform> CommandExecution<C, P> for GetTaggedTciCmd {
         Ok(Response::GetTaggedTci(GetTaggedTciResp {
             tci_cumulative: ctx.tci.tci_cumulative,
             tci_current: ctx.tci.tci_current,
+            resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
         }))
     }
 }

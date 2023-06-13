@@ -3,7 +3,7 @@ use super::CommandExecution;
 use crate::{
     context::ContextHandle,
     dpe_instance::DpeInstance,
-    response::{DpeErrorCode, NewHandleResp, Response},
+    response::{DpeErrorCode, NewHandleResp, Response, ResponseHdr},
 };
 use crypto::Crypto;
 use platform::Platform;
@@ -58,7 +58,10 @@ impl<C: Crypto, P: Platform> CommandExecution<C, P> for RotateCtxCmd {
             dpe.generate_new_handle()?
         };
         dpe.contexts[idx].handle = new_handle;
-        Ok(Response::RotateCtx(NewHandleResp { handle: new_handle }))
+        Ok(Response::RotateCtx(NewHandleResp {
+            handle: new_handle,
+            resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
+        }))
     }
 }
 
@@ -154,7 +157,8 @@ mod tests {
         // Rotate default handle.
         assert_eq!(
             Ok(Response::RotateCtx(NewHandleResp {
-                handle: SIMULATION_HANDLE
+                handle: SIMULATION_HANDLE,
+                resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
             })),
             RotateCtxCmd {
                 handle: ContextHandle::default(),
@@ -167,7 +171,8 @@ mod tests {
         // New handle is all 0s if caller requests default handle
         assert_eq!(
             Ok(Response::RotateCtx(NewHandleResp {
-                handle: ContextHandle::default()
+                handle: ContextHandle::default(),
+                resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
             })),
             RotateCtxCmd {
                 handle: SIMULATION_HANDLE,

@@ -16,10 +16,7 @@ pub mod response;
 pub mod support;
 
 use core::mem::size_of;
-use crypto::Crypto;
-use platform::Platform;
-use response::{DpeErrorCode, GetProfileResp, ResponseHdr};
-use zerocopy::AsBytes;
+use response::GetProfileResp;
 mod tci;
 mod x509;
 
@@ -64,47 +61,6 @@ pub const DPE_PROFILE: DpeProfile = DpeProfile::P256Sha256;
 
 #[cfg(feature = "dpe_profile_p384_sha384")]
 pub const DPE_PROFILE: DpeProfile = DpeProfile::P384Sha384;
-
-/// Execute a DPE command.
-/// Returns the number of bytes written to `response`.
-pub fn execute_command<C: Crypto, P: Platform>(
-    dpe: &mut dpe_instance::DpeInstance<C, P>,
-    locality: u32,
-    cmd: &[u8],
-    response: &mut [u8],
-) -> Result<usize, DpeErrorCode> {
-    match dpe.execute_serialized_command(locality, cmd) {
-        Ok(response_data) => {
-            // Add the response header.
-            let hdr = ResponseHdr::new(DpeErrorCode::NoError);
-            let hdr_bytes = hdr.as_bytes();
-            let hdr_len = hdr_bytes.len();
-            let mut out = response
-                .get_mut(..hdr_len)
-                .ok_or(DpeErrorCode::InternalError)?;
-            out.copy_from_slice(hdr_bytes);
-
-            // Add the response data.
-            let response_bytes = response_data.as_bytes();
-            out = response
-                .get_mut(hdr_len..hdr_len + response_bytes.len())
-                .ok_or(DpeErrorCode::InternalError)?;
-            out.copy_from_slice(response_bytes);
-
-            Ok(hdr_len + response_bytes.len())
-        }
-        Err(error_code) => {
-            let hdr = ResponseHdr::new(error_code);
-            let hdr_len = hdr.as_bytes().len();
-            response
-                .get_mut(..hdr_len)
-                .ok_or(DpeErrorCode::InternalError)?
-                .copy_from_slice(hdr.as_bytes());
-
-            Ok(hdr_len)
-        }
-    }
-}
 
 fn _set_flag(field: &mut u32, mask: u32, value: bool) {
     *field = if value { *field | mask } else { *field & !mask };

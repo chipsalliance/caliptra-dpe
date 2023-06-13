@@ -2,7 +2,7 @@
 use super::CommandExecution;
 use crate::{
     dpe_instance::DpeInstance,
-    response::{DpeErrorCode, GetCertificateChainResp, Response},
+    response::{DpeErrorCode, GetCertificateChainResp, Response, ResponseHdr},
     MAX_CERT_SIZE,
 };
 use crypto::Crypto;
@@ -37,6 +37,7 @@ impl<C: Crypto, P: Platform> CommandExecution<C, P> for GetCertificateChainCmd {
         Ok(Response::GetCertificateChain(GetCertificateChainResp {
             certificate_chain: cert_chunk,
             certificate_size: len,
+            resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
         }))
     }
 }

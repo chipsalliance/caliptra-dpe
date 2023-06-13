@@ -3,7 +3,7 @@ use super::CommandExecution;
 use crate::{
     context::{ActiveContextArgs, Context, ContextHandle, ContextType},
     dpe_instance::DpeInstance,
-    response::{DpeErrorCode, NewHandleResp, Response},
+    response::{DpeErrorCode, NewHandleResp, Response, ResponseHdr},
 };
 use crypto::Crypto;
 use platform::Platform;
@@ -79,7 +79,10 @@ impl<C: Crypto, P: Platform> CommandExecution<C, P> for InitCtxCmd {
             tci_type: 0,
             parent_idx: Context::<C>::ROOT_INDEX,
         });
-        Ok(Response::InitCtx(NewHandleResp { handle }))
+        Ok(Response::InitCtx(NewHandleResp {
+            handle,
+            resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
+        }))
     }
 }
 

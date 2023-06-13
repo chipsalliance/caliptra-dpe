@@ -10,7 +10,7 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
 use std::process;
 
-use dpe::{commands::Command, execute_command, DpeInstance, Support};
+use dpe::{commands::Command, response::Response, DpeInstance, Support};
 
 const SOCKET_PATH: &str = "/tmp/dpe-sim.socket";
 
@@ -32,16 +32,27 @@ fn handle_request(dpe: &mut DpeInstance<OpensslCrypto, DefaultPlatform>, stream:
     }
     trace!("|");
 
-    let mut response = [0u8; 4096];
+    let response = dpe.execute_serialized_command(locality, cmd).unwrap();
 
-    let len = execute_command(dpe, locality, cmd, &mut response).unwrap();
-
-    let response_code = u32::from_le_bytes(response[4..8].try_into().unwrap());
+    let response_code = match response {
+        Response::GetProfile(ref res) => res.resp_hdr.status,
+        Response::InitCtx(ref res) => res.resp_hdr.status,
+        Response::DeriveChild(ref res) => res.resp_hdr.status,
+        Response::RotateCtx(ref res) => res.resp_hdr.status,
+        Response::CertifyKey(ref res) => res.resp_hdr.status,
+        Response::Sign(ref res) => res.resp_hdr.status,
+        Response::DestroyCtx(ref resp_hdr) => resp_hdr.status,
+        Response::ExtendTci(ref res) => res.resp_hdr.status,
+        Response::TagTci(ref res) => res.resp_hdr.status,
+        Response::GetTaggedTci(ref res) => res.resp_hdr.status,
+        Response::GetCertificateChain(ref res) => res.resp_hdr.status,
+        Response::Error(ref resp_hdr) => resp_hdr.status,
+    };
     // There are a few vendor error codes starting at 0x1000, so this can be a 2 bytes.
     trace!("| Response Code {response_code:#06x}");
     trace!("----------------------------------");
 
-    stream.write_all(&response[..len]).unwrap();
+    stream.write_all(response.as_bytes()).unwrap();
 }
 
 fn cleanup() {

@@ -3,7 +3,7 @@ use super::CommandExecution;
 use crate::{
     context::ContextHandle,
     dpe_instance::{flags_iter, DpeInstance},
-    response::{DpeErrorCode, Response},
+    response::{DpeErrorCode, Response, ResponseHdr},
     MAX_HANDLES,
 };
 use crypto::Crypto;
@@ -49,7 +49,9 @@ impl<C: Crypto, P: Platform> CommandExecution<C, P> for DestroyCtxCmd {
         for idx in flags_iter(to_destroy, MAX_HANDLES) {
             dpe.contexts[idx].destroy();
         }
-        Ok(Response::DestroyCtx)
+        Ok(Response::DestroyCtx(ResponseHdr::new(
+            DpeErrorCode::NoError,
+        )))
     }
 }
 
