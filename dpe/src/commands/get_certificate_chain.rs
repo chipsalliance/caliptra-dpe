@@ -31,7 +31,7 @@ impl<C: Crypto, P: Platform> CommandExecution<C, P> for GetCertificateChainCmd {
         let len = P::get_certificate_chain(self.offset, self.size, &mut cert_chunk).map_err(
             |platform_error| match platform_error {
                 PlatformError::CertificateChainError => DpeErrorCode::InvalidArgument,
-                PlatformError::NotImplemented => DpeErrorCode::InternalError,
+                PlatformError::NotImplemented => DpeErrorCode::PlatformError,
             },
         )?;
         Ok(Response::GetCertificateChain(GetCertificateChainResp {

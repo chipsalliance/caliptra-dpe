@@ -191,4 +191,8 @@ pub enum DpeErrorCode {
     BadTag = 0x1002,
     HandleDefined = 0x1003,
     MaxTcis = 0x1004,
+    PlatformError = 0x1005,
+    CryptoError = 0x1006,
+    HashError = 0x1007,
+    RandError = 0x1008,
 }

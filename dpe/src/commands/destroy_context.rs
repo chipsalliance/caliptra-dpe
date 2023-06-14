@@ -31,13 +31,11 @@ impl<C: Crypto, P: Platform> CommandExecution<C, P> for DestroyCtxCmd {
         dpe: &mut DpeInstance<C, P>,
         locality: u32,
     ) -> Result<Response, DpeErrorCode> {
-        let idx = dpe
-            .get_active_context_pos(&self.handle, locality)
-            .ok_or(DpeErrorCode::InvalidHandle)?;
+        let idx = dpe.get_active_context_pos(&self.handle, locality)?;
         let context = &dpe.contexts[idx];
         // Make sure the command is coming from the right locality.
         if context.locality != locality {
-            return Err(DpeErrorCode::InvalidHandle);
+            return Err(DpeErrorCode::InvalidLocality);
         }
 
         let to_destroy = if self.flag_is_destroy_descendants() {

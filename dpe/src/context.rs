@@ -87,7 +87,7 @@ impl<C: Crypto> Context<C> {
     /// Add a child to list of children in the context.
     pub fn add_child(&mut self, idx: usize) -> Result<(), DpeErrorCode> {
         if idx >= MAX_HANDLES {
-            return Err(DpeErrorCode::InternalError);
+            return Err(DpeErrorCode::MaxTcis);
         }
         self.children |= 1 << idx;
         Ok(())
@@ -128,7 +128,7 @@ impl TryFrom<&[u8]> for ContextHandle {
 
     fn try_from(raw: &[u8]) -> Result<Self, Self::Error> {
         if raw.len() < size_of::<ContextHandle>() {
-            return Err(DpeErrorCode::InvalidArgument);
+            return Err(DpeErrorCode::InternalError);
         }
 
         Ok(ContextHandle(raw[0..Self::SIZE].try_into().unwrap()))
@@ -202,7 +202,7 @@ impl<'a, C: Crypto> Iterator for ChildToRootIter<'a, C> {
         let valid_parent_idx = matches!(context.parent_idx, 0..=MAX_IDX | Context::<C>::ROOT_INDEX);
         if !valid_parent_idx || context.state == ContextState::Inactive {
             self.done = true;
-            return Some(Err(DpeErrorCode::InternalError));
+            return Some(Err(DpeErrorCode::InvalidHandle));
         }
 
         if context.parent_idx == Context::<C>::ROOT_INDEX {
@@ -283,7 +283,7 @@ mod tests {
         // Above upper bound of handles.
         let mut iter = ChildToRootIter::new(0, &contexts);
         assert_eq!(
-            DpeErrorCode::InternalError,
+            DpeErrorCode::InvalidHandle,
             iter.next().unwrap().err().unwrap()
         );
 
@@ -292,7 +292,7 @@ mod tests {
         contexts[0].parent_idx = 0;
         let mut iter = ChildToRootIter::new(0, &contexts);
         assert_eq!(
-            DpeErrorCode::InternalError,
+            DpeErrorCode::InvalidHandle,
             iter.next().unwrap().err().unwrap()
         );
 

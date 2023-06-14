@@ -71,8 +71,12 @@ impl DeriveChildCmd {
     ///
     /// * `parent_idx` - Index of the soon-to-be parent.
     /// * `default_context_idx` - Index of the current default context, if there is one.
-    fn safe_to_make_default(&self, parent_idx: usize, default_context_idx: Option<usize>) -> bool {
-        if let Some(default_idx) = default_context_idx {
+    fn safe_to_make_default(
+        &self,
+        parent_idx: usize,
+        default_context_idx: Result<usize, DpeErrorCode>,
+    ) -> bool {
+        if let Ok(default_idx) = default_context_idx {
             if default_idx != parent_idx || self.retains_parent() {
                 return false;
             }
@@ -94,9 +98,7 @@ impl<C: Crypto, P: Platform> CommandExecution<C, P> for DeriveChildCmd {
             return Err(DpeErrorCode::InvalidArgument);
         }
 
-        let parent_idx = dpe
-            .get_active_context_pos(&self.handle, locality)
-            .ok_or(DpeErrorCode::InvalidHandle)?;
+        let parent_idx = dpe.get_active_context_pos(&self.handle, locality)?;
         let child_idx = dpe
             .get_next_inactive_context_pos()
             .ok_or(DpeErrorCode::MaxTcis)?;
@@ -197,7 +199,7 @@ mod tests {
 
         // Make sure it can detect wrong locality.
         assert_eq!(
-            Err(DpeErrorCode::InvalidHandle),
+            Err(DpeErrorCode::InvalidLocality),
             DeriveChildCmd {
                 handle: ContextHandle::default(),
                 data: [0; DPE_PROFILE.get_tci_size()],
@@ -436,19 +438,23 @@ mod tests {
         };
         let parent_idx = 0;
         // No default context.
-        assert!(make_default_in_0.safe_to_make_default(parent_idx, None));
+        assert!(
+            make_default_in_0.safe_to_make_default(parent_idx, Err(DpeErrorCode::InvalidHandle))
+        );
         // Default context at parent, but not going to retain parent.
-        assert!(make_default_in_0.safe_to_make_default(parent_idx, Some(parent_idx)));
+        assert!(make_default_in_0.safe_to_make_default(parent_idx, Ok(parent_idx)));
         // Make default in a different locality that already has a default.
-        assert!(!make_default_in_0.safe_to_make_default(parent_idx, Some(1)));
+        assert!(!make_default_in_0.safe_to_make_default(parent_idx, Ok(1)));
 
         make_default_in_0.flags |= DeriveChildCmd::RETAIN_PARENT;
 
         // Retain parent and make default in another locality that doesn't have a default.
-        assert!(make_default_in_0.safe_to_make_default(parent_idx, None));
+        assert!(
+            make_default_in_0.safe_to_make_default(parent_idx, Err(DpeErrorCode::InvalidHandle))
+        );
         // Retain default parent and make default in another locality that has a default.
-        assert!(!make_default_in_0.safe_to_make_default(parent_idx, Some(1)));
+        assert!(!make_default_in_0.safe_to_make_default(parent_idx, Ok(1)));
         // Retain default parent.
-        assert!(!make_default_in_0.safe_to_make_default(parent_idx, Some(parent_idx)));
+        assert!(!make_default_in_0.safe_to_make_default(parent_idx, Ok(parent_idx)));
     }
 }

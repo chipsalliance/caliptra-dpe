@@ -28,18 +28,11 @@ impl<C: Crypto, P: Platform> CommandExecution<C, P> for ExtendTciCmd {
         if !dpe.support.extend_tci {
             return Err(DpeErrorCode::InvalidCommand);
         }
-        let idx = dpe
-            .get_active_context_pos(&self.handle, locality)
-            .ok_or(DpeErrorCode::InvalidHandle)?;
+        let idx = dpe.get_active_context_pos(&self.handle, locality)?;
         let context = &mut dpe.contexts[idx];
 
         // invalidate cached private key
         context.cached_priv_key = None;
-
-        // Make sure the command is coming from the right locality.
-        if context.locality != locality {
-            return Err(DpeErrorCode::InvalidHandle);
-        }
 
         dpe.add_tci_measurement(idx, &TciMeasurement(self.data), locality)?;
 
@@ -104,7 +97,7 @@ mod tests {
 
         // Wrong locality.
         assert_eq!(
-            Err(DpeErrorCode::InvalidHandle),
+            Err(DpeErrorCode::InvalidLocality),
             ExtendTciCmd {
                 handle: ContextHandle::default(),
                 data: [0; DPE_PROFILE.get_hash_size()],
@@ -151,7 +144,7 @@ mod tests {
         simulation_ctx.handle = sim_tmp_handle;
         assert!(dpe
             .get_active_context_pos(&SIMULATION_HANDLE, sim_local)
-            .is_none());
+            .is_err());
 
         ExtendTciCmd {
             handle: sim_tmp_handle,
@@ -162,9 +155,9 @@ mod tests {
         // Make sure it rotated back to the deterministic simulation handle.
         assert!(dpe
             .get_active_context_pos(&sim_tmp_handle, sim_local)
-            .is_none());
+            .is_err());
         assert!(dpe
             .get_active_context_pos(&SIMULATION_HANDLE, sim_local)
-            .is_some());
+            .is_ok());
     }
 }

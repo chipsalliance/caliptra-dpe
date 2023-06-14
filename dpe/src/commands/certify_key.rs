@@ -49,14 +49,12 @@ impl<C: Crypto, P: Platform> CommandExecution<C, P> for CertifyKeyCmd {
             return Err(DpeErrorCode::InvalidArgument);
         }
 
-        let idx = dpe
-            .get_active_context_pos(&self.handle, locality)
-            .ok_or(DpeErrorCode::InvalidHandle)?;
+        let idx = dpe.get_active_context_pos(&self.handle, locality)?;
         let context = &dpe.contexts[idx];
 
         // Make sure the command is coming from the right locality.
         if context.locality != locality {
-            return Err(DpeErrorCode::InvalidHandle);
+            return Err(DpeErrorCode::InvalidLocality);
         }
 
         let algs = DPE_PROFILE.alg_len();
@@ -65,16 +63,16 @@ impl<C: Crypto, P: Platform> CommandExecution<C, P> for CertifyKeyCmd {
                 Ok(cached)
             } else {
                 C::derive_private_key(algs, &dpe.derive_cdi(idx, true)?, &self.label, b"ECC")
-                    .map_err(|_| DpeErrorCode::InternalError)
+                    .map_err(|_| DpeErrorCode::CryptoError)
             }
         } else {
             let cdi = dpe.derive_cdi(idx, false)?;
             C::derive_private_key(algs, &cdi, &self.label, b"ECC")
-                .map_err(|_| DpeErrorCode::InternalError)
+                .map_err(|_| DpeErrorCode::CryptoError)
         }?;
 
         let pub_key = C::derive_ecdsa_pub(DPE_PROFILE.alg_len(), &priv_key)
-            .map_err(|_| DpeErrorCode::InternalError)?;
+            .map_err(|_| DpeErrorCode::CryptoError)?;
         // cache private key
         if self.uses_nd_derivation() {
             dpe.contexts[idx].cached_priv_key.replace(priv_key);
@@ -85,14 +83,14 @@ impl<C: Crypto, P: Platform> CommandExecution<C, P> for CertifyKeyCmd {
             serial: [0u8; DPE_PROFILE.get_hash_size() * 2],
         };
         C::get_ecdsa_alias_serial(DPE_PROFILE.alg_len(), &mut issuer_name.serial)
-            .map_err(|_| DpeErrorCode::InternalError)?;
+            .map_err(|_| DpeErrorCode::CryptoError)?;
 
         let mut subject_name = Name {
             cn: b"DPE Leaf",
             serial: [0u8; DPE_PROFILE.get_hash_size() * 2],
         };
         C::get_pubkey_serial(DPE_PROFILE.alg_len(), &pub_key, &mut subject_name.serial)
-            .map_err(|_| DpeErrorCode::InternalError)?;
+            .map_err(|_| DpeErrorCode::CryptoError)?;
 
         // Get TCI Nodes
         const INITIALIZER: TciNodeData = TciNodeData::new();
@@ -119,9 +117,9 @@ impl<C: Crypto, P: Platform> CommandExecution<C, P> for CertifyKeyCmd {
                 )?;
 
                 let tbs_digest = C::hash(DPE_PROFILE.alg_len(), &tbs_buffer[..bytes_written])
-                    .map_err(|_| DpeErrorCode::InternalError)?;
+                    .map_err(|_| DpeErrorCode::HashError)?;
                 let sig = C::ecdsa_sign_with_alias(DPE_PROFILE.alg_len(), &tbs_digest)
-                    .map_err(|_| DpeErrorCode::InternalError)?;
+                    .map_err(|_| DpeErrorCode::CryptoError)?;
 
                 let mut cert_writer = X509CertWriter::new(&mut cert, true);
                 bytes_written =
