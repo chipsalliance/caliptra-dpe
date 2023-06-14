@@ -12,8 +12,11 @@ const (
 	StatusInvalidHandle        Status = 0x1000
 	StatusInvalidLocality      Status = 0x1001
 	StatusBadTag               Status = 0x1002
-	StatusHandleDefined        Status = 0x1003
-	StatusMaxTCIs              Status = 0x1004
+	StatusMaxTCIs              Status = 0x1003
+	StatusPlatformError        Status = 0x1004
+	StatusCryptoError          Status = 0x1005
+	StatusHashError            Status = 0x1006
+	StatusRandError            Status = 0x1007
 )
 
 func (s Status) Error() string {
@@ -32,10 +35,16 @@ func (s Status) Error() string {
 		return "Hardware Locality does not exist"
 	case StatusBadTag:
 		return "TCI Tag is either in use (TagTci) or not found (GetTaggedTci)"
-	case StatusHandleDefined:
-		return "passed handle is already defined"
 	case StatusMaxTCIs:
 		return "maximum number of TCIs have been created"
+	case StatusPlatformError:
+		return "error internal to platform"
+	case StatusCryptoError:
+		return "cryptography error"
+	case StatusHashError:
+		return "error in hashing buffer"
+	case StatusRandError:
+		return "error in random byte generation"
 	default:
 		return fmt.Sprintf("unrecognized status code 0x%0x", uint32(s))
 	}
