@@ -1,5 +1,5 @@
 // Licensed under the Apache-2.0 license.
-use crate::{_set_flag, response::DpeErrorCode, DPE_PROFILE};
+use crate::{response::DpeErrorCode, DPE_PROFILE};
 use core::mem::size_of;
 use zerocopy::AsBytes;
 
@@ -8,32 +8,18 @@ use zerocopy::AsBytes;
 #[cfg_attr(test, derive(zerocopy::FromBytes))]
 pub(crate) struct TciNodeData {
     pub tci_type: u32,
-
-    // Bits
-    // 31: INTERNAL
-    // 30-0: Reserved. Must be zero
-    flags: u32,
     pub tci_cumulative: TciMeasurement,
     pub tci_current: TciMeasurement,
+    pub locality: u32,
 }
 
 impl TciNodeData {
-    const INTERNAL_FLAG_MASK: u32 = 1 << 31;
-
-    pub const fn flag_is_internal(&self) -> bool {
-        self.flags & Self::INTERNAL_FLAG_MASK != 0
-    }
-
-    fn _set_flag_is_internal(&mut self, value: bool) {
-        _set_flag(&mut self.flags, Self::INTERNAL_FLAG_MASK, value);
-    }
-
     pub const fn new() -> TciNodeData {
         TciNodeData {
             tci_type: 0,
-            flags: 0,
             tci_cumulative: TciMeasurement([0; DPE_PROFILE.get_tci_size()]),
             tci_current: TciMeasurement([0; DPE_PROFILE.get_tci_size()]),
+            locality: 0,
         }
     }
 
@@ -47,14 +33,14 @@ impl TciNodeData {
         dst[offset..offset + size_of::<u32>()].copy_from_slice(&self.tci_type.to_le_bytes());
         offset += size_of::<u32>();
 
-        dst[offset..offset + size_of::<u32>()].copy_from_slice(&self.flags.to_le_bytes());
-        offset += size_of::<u32>();
-
         dst[offset..offset + self.tci_cumulative.0.len()].copy_from_slice(&self.tci_cumulative.0);
         offset += self.tci_cumulative.0.len();
 
         dst[offset..offset + self.tci_current.0.len()].copy_from_slice(&self.tci_current.0);
         offset += self.tci_current.0.len();
+
+        dst[offset..offset + size_of::<u32>()].copy_from_slice(&self.locality.to_le_bytes());
+        offset += size_of::<u32>();
 
         Ok(offset)
     }
@@ -80,9 +66,9 @@ mod test {
     fn test_serialize_tci_node_data() {
         let tci_node_data = TciNodeData {
             tci_type: 0x1234_5678,
-            flags: 0x9876_5432,
             tci_cumulative: TciMeasurement(core::array::from_fn(|i| (i + 1) as u8)),
             tci_current: TciMeasurement(core::array::from_fn(|i| (0xff - i) as u8)),
+            locality: 0xffffffff,
         };
         // Test too small slice.
         let mut response_buffer = [0; size_of::<TciNodeData>() - 1];
