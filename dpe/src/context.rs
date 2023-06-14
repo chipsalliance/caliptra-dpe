@@ -65,6 +65,7 @@ impl<C: Crypto> Context<C> {
         self.handle = *args.handle;
         self.tci = TciNodeData::new();
         self.tci.tci_type = args.tci_type;
+        self.tci.locality = args.locality;
         self.children = 0;
         self.parent_idx = args.parent_idx;
         self.context_type = args.context_type;

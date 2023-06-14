@@ -667,11 +667,7 @@ impl X509CertWriter<'_> {
 
         // vendorInfo OCTET STRING
         // IMPLICIT[8] Primitive
-        let vinfo = if node.flag_is_internal() {
-            b"VNDR"
-        } else {
-            b"USER"
-        };
+        let vinfo = &node.locality.to_be_bytes();
         bytes_written += self.encode_byte(Self::PRIVATE | 0x08)?;
         bytes_written += self.encode_size_field(vinfo.len())?;
         bytes_written += self.encode_bytes(vinfo)?;
@@ -1025,6 +1021,7 @@ mod tests {
         node.tci_type = 0x11223344;
         node.tci_cumulative = TciMeasurement([0xaau8; DPE_PROFILE.get_hash_size()]);
         node.tci_current = TciMeasurement([0xbbu8; DPE_PROFILE.get_hash_size()]);
+        node.locality = 0xFFFFFFFF;
 
         let mut cert = [0u8; 256];
         let mut w = X509CertWriter::new(&mut cert, true);
@@ -1048,7 +1045,10 @@ mod tests {
             parsed_tcb_info.tci_type.unwrap(),
             node.tci_type.to_be_bytes()
         );
-        assert_eq!(parsed_tcb_info.vendor_info.unwrap(), b"USER");
+        assert_eq!(
+            parsed_tcb_info.vendor_info.unwrap(),
+            node.locality.to_be_bytes()
+        );
     }
 
     #[test]

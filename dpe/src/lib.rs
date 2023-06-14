@@ -61,7 +61,3 @@ pub const DPE_PROFILE: DpeProfile = DpeProfile::P256Sha256;
 
 #[cfg(feature = "dpe_profile_p384_sha384")]
 pub const DPE_PROFILE: DpeProfile = DpeProfile::P384Sha384;
-
-fn _set_flag(field: &mut u32, mask: u32, value: bool) {
-    *field = if value { *field | mask } else { *field & !mask };
-}
