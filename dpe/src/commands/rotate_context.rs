@@ -34,20 +34,13 @@ impl<C: Crypto, P: Platform> CommandExecution<C, P> for RotateCtxCmd {
         if !dpe.support.rotate_context {
             return Err(DpeErrorCode::InvalidCommand);
         }
-        let idx = dpe
-            .get_active_context_pos(&self.handle, locality)
-            .ok_or(DpeErrorCode::InvalidHandle)?;
-
-        // Make sure the command is coming from the right locality.
-        if dpe.contexts[idx].locality != locality {
-            return Err(DpeErrorCode::InvalidHandle);
-        }
+        let idx = dpe.get_active_context_pos(&self.handle, locality)?;
 
         // Make sure caller's locality does not already have a default context.
         if self.uses_target_is_default() {
             let default_context_idx =
                 dpe.get_active_context_pos(&ContextHandle::default(), locality);
-            if default_context_idx.is_some() {
+            if default_context_idx.is_ok() {
                 return Err(DpeErrorCode::InvalidArgument);
             }
         }
@@ -134,7 +127,7 @@ mod tests {
 
         // Wrong locality.
         assert_eq!(
-            Err(DpeErrorCode::InvalidHandle),
+            Err(DpeErrorCode::InvalidLocality),
             RotateCtxCmd {
                 handle: ContextHandle::default(),
                 flags: 0,

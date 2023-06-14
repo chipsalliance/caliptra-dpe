@@ -31,14 +31,8 @@ impl<C: Crypto, P: Platform> CommandExecution<C, P> for TagTciCmd {
             return Err(DpeErrorCode::BadTag);
         }
 
-        let idx = dpe
-            .get_active_context_pos(&self.handle, locality)
-            .ok_or(DpeErrorCode::InvalidHandle)?;
+        let idx = dpe.get_active_context_pos(&self.handle, locality)?;
 
-        // Make sure the command is coming from the right locality.
-        if dpe.contexts[idx].locality != locality {
-            return Err(DpeErrorCode::InvalidHandle);
-        }
         if dpe.contexts[idx].has_tag {
             return Err(DpeErrorCode::BadTag);
         }
@@ -128,7 +122,7 @@ mod tests {
 
         // Wrong locality.
         assert_eq!(
-            Err(DpeErrorCode::InvalidHandle),
+            Err(DpeErrorCode::InvalidLocality),
             TagTciCmd {
                 handle: ContextHandle::default(),
                 tag: 0,
@@ -178,7 +172,7 @@ mod tests {
         simulation_ctx.handle = sim_tmp_handle;
         assert!(dpe
             .get_active_context_pos(&SIMULATION_HANDLE, sim_local)
-            .is_none());
+            .is_err());
 
         // Tag simulation.
         assert_eq!(
@@ -195,9 +189,9 @@ mod tests {
         // Make sure it rotated back to the deterministic simulation handle.
         assert!(dpe
             .get_active_context_pos(&sim_tmp_handle, sim_local)
-            .is_none());
+            .is_err());
         assert!(dpe
             .get_active_context_pos(&SIMULATION_HANDLE, sim_local)
-            .is_some());
+            .is_ok());
     }
 }

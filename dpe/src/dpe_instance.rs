@@ -75,8 +75,8 @@ impl<C: Crypto, P: Platform> DpeInstance<'_, C, P> {
     pub fn get_profile(&self) -> Result<GetProfileResp, DpeErrorCode> {
         Ok(GetProfileResp::new(
             self.support.get_flags(),
-            P::get_vendor_id().map_err(|_| DpeErrorCode::InternalError)?,
-            P::get_vendor_sku().map_err(|_| DpeErrorCode::InternalError)?,
+            P::get_vendor_id().map_err(|_| DpeErrorCode::PlatformError)?,
+            P::get_vendor_sku().map_err(|_| DpeErrorCode::PlatformError)?,
         ))
     }
 
@@ -116,12 +116,32 @@ impl<C: Crypto, P: Platform> DpeInstance<'_, C, P> {
         &self,
         handle: &ContextHandle,
         locality: u32,
-    ) -> Option<usize> {
-        self.contexts.iter().position(|context| {
-            context.state == ContextState::Active
-                && &context.handle == handle
-                && context.locality == locality
-        })
+    ) -> Result<usize, DpeErrorCode> {
+        let mut valid_handles = self
+            .contexts
+            .iter()
+            .enumerate()
+            .filter(|(_, context)| {
+                context.state == ContextState::Active && &context.handle == handle
+            })
+            .peekable();
+        if valid_handles.peek().is_none() {
+            return Err(DpeErrorCode::InvalidHandle);
+        }
+        let mut valid_handles_and_localities = valid_handles
+            .filter(|(_, context)| context.locality == locality)
+            .peekable();
+        if valid_handles_and_localities.peek().is_none() {
+            return Err(DpeErrorCode::InvalidLocality);
+        }
+        let (i, _) = valid_handles_and_localities
+            .find(|(_, context)| {
+                context.state == ContextState::Active
+                    && &context.handle == handle
+                    && context.locality == locality
+            })
+            .unwrap();
+        Ok(i)
     }
 
     pub(crate) fn get_next_inactive_context_pos(&self) -> Option<usize> {
@@ -147,7 +167,7 @@ impl<C: Crypto, P: Platform> DpeInstance<'_, C, P> {
     pub(crate) fn generate_new_handle(&self) -> Result<ContextHandle, DpeErrorCode> {
         for _ in 0..Self::MAX_NEW_HANDLE_ATTEMPTS {
             let mut handle = ContextHandle::default();
-            C::rand_bytes(&mut handle.0).map_err(|_| DpeErrorCode::InternalError)?;
+            C::rand_bytes(&mut handle.0).map_err(|_| DpeErrorCode::RandError)?;
             if !handle.is_default() && !self.contexts.iter().any(|c| c.handle == handle) {
                 return Ok(handle);
             }
@@ -162,7 +182,7 @@ impl<C: Crypto, P: Platform> DpeInstance<'_, C, P> {
     /// * `idx` - the index of the context
     pub(crate) fn roll_onetime_use_handle(&mut self, idx: usize) -> Result<(), DpeErrorCode> {
         if idx >= MAX_HANDLES {
-            return Err(DpeErrorCode::InternalError);
+            return Err(DpeErrorCode::MaxTcis);
         }
         if !self.contexts[idx].handle.is_default() {
             self.contexts[idx].handle = self.generate_new_handle()?
@@ -205,7 +225,7 @@ impl<C: Crypto, P: Platform> DpeInstance<'_, C, P> {
         locality: u32,
     ) -> Result<(), DpeErrorCode> {
         if idx >= MAX_HANDLES {
-            return Err(DpeErrorCode::InternalError);
+            return Err(DpeErrorCode::MaxTcis);
         }
 
         let context = &mut self.contexts[idx];
@@ -219,14 +239,14 @@ impl<C: Crypto, P: Platform> DpeInstance<'_, C, P> {
 
         // Derive the new TCI as HASH(TCI_CUMULATIVE || INPUT_DATA).
         let mut hasher =
-            C::hash_initialize(DPE_PROFILE.alg_len()).map_err(|_| DpeErrorCode::InternalError)?;
+            C::hash_initialize(DPE_PROFILE.alg_len()).map_err(|_| DpeErrorCode::HashError)?;
         hasher
             .update(&context.tci.tci_cumulative.0)
-            .map_err(|_| DpeErrorCode::InternalError)?;
+            .map_err(|_| DpeErrorCode::HashError)?;
         hasher
             .update(&measurement.0)
-            .map_err(|_| DpeErrorCode::InternalError)?;
-        let digest = hasher.finish().map_err(|_| DpeErrorCode::InternalError)?;
+            .map_err(|_| DpeErrorCode::HashError)?;
+        let digest = hasher.finish().map_err(|_| DpeErrorCode::HashError)?;
 
         context.tci.tci_cumulative.0.copy_from_slice(digest.bytes());
         context.tci.tci_current = *measurement;
@@ -266,7 +286,7 @@ impl<C: Crypto, P: Platform> DpeInstance<'_, C, P> {
         mix_random_value: bool,
     ) -> Result<C::Cdi, DpeErrorCode> {
         let mut hasher =
-            C::hash_initialize(DPE_PROFILE.alg_len()).map_err(|_| DpeErrorCode::InternalError)?;
+            C::hash_initialize(DPE_PROFILE.alg_len()).map_err(|_| DpeErrorCode::HashError)?;
 
         let mut uses_internal_input_info = false;
         let mut uses_internal_input_dice = false;
@@ -279,7 +299,7 @@ impl<C: Crypto, P: Platform> DpeInstance<'_, C, P> {
             let len = context.tci.serialize(&mut tci_bytes)?;
             hasher
                 .update(&tci_bytes[..len])
-                .map_err(|_| DpeErrorCode::InternalError)?;
+                .map_err(|_| DpeErrorCode::HashError)?;
 
             // Check if any context uses internal inputs
             uses_internal_input_info = uses_internal_input_info || context.uses_internal_input_info;
@@ -292,7 +312,7 @@ impl<C: Crypto, P: Platform> DpeInstance<'_, C, P> {
             self.serialize_internal_input_info(&mut internal_input_info)?;
             hasher
                 .update(&internal_input_info[..INTERNAL_INPUT_INFO_SIZE])
-                .map_err(|_| DpeErrorCode::InternalError)?;
+                .map_err(|_| DpeErrorCode::HashError)?;
         }
 
         // Add internal input dice to hash
@@ -304,22 +324,22 @@ impl<C: Crypto, P: Platform> DpeInstance<'_, C, P> {
             {
                 hasher
                     .update(&cert_chunk[..len as usize])
-                    .map_err(|_| DpeErrorCode::InternalError)?;
+                    .map_err(|_| DpeErrorCode::HashError)?;
                 offset += len;
             }
         }
 
-        let digest = hasher.finish().map_err(|_| DpeErrorCode::InternalError)?;
+        let digest = hasher.finish().map_err(|_| DpeErrorCode::HashError)?;
         let mut seed = [0; DPE_PROFILE.alg_len().size()];
         let random_seed = if mix_random_value {
-            C::rand_bytes(&mut seed).map_err(|_| DpeErrorCode::InternalError)?;
+            C::rand_bytes(&mut seed).map_err(|_| DpeErrorCode::RandError)?;
             Some(seed.as_ref())
         } else {
             None
         };
 
         C::derive_cdi(DPE_PROFILE.alg_len(), &digest, b"DPE", random_seed)
-            .map_err(|_| DpeErrorCode::InternalError)
+            .map_err(|_| DpeErrorCode::CryptoError)
     }
 }
 
@@ -425,20 +445,20 @@ pub mod tests {
         // Has not been activated.
         assert!(dpe
             .get_active_context_pos(&SIMULATION_HANDLE, locality)
-            .is_none());
+            .is_err());
 
         // Shouldn't be able to find it if it is retired either.
         dpe.contexts[expected_index].state = ContextState::Retired;
         assert!(dpe
             .get_active_context_pos(&SIMULATION_HANDLE, locality)
-            .is_none());
+            .is_err());
 
         // Mark it active, but check the wrong locality.
         let locality = 2;
         dpe.contexts[expected_index].state = ContextState::Active;
         assert!(dpe
             .get_active_context_pos(&SIMULATION_HANDLE, locality)
-            .is_none());
+            .is_err());
 
         // Should find it now.
         dpe.contexts[expected_index].locality = locality;
@@ -458,7 +478,7 @@ pub mod tests {
 
         // Verify bounds checking.
         assert_eq!(
-            Err(DpeErrorCode::InternalError),
+            Err(DpeErrorCode::MaxTcis),
             dpe.add_tci_measurement(MAX_HANDLES, &TciMeasurement::default(), TEST_LOCALITIES[0])
         );
 

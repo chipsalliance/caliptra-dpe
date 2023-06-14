@@ -44,16 +44,16 @@ impl SignCmd {
                 Ok(cached)
             } else {
                 C::derive_private_key(algs, &dpe.derive_cdi(idx, true)?, &self.label, b"ECC")
-                    .map_err(|_| DpeErrorCode::InternalError)
+                    .map_err(|_| DpeErrorCode::CryptoError)
             }
         } else {
             let cdi = dpe.derive_cdi(idx, false)?;
             C::derive_private_key(algs, &cdi, &self.label, b"ECC")
-                .map_err(|_| DpeErrorCode::InternalError)
+                .map_err(|_| DpeErrorCode::CryptoError)
         }?;
 
         let sig = C::ecdsa_sign_with_derived(algs, digest, &priv_key)
-            .map_err(|_| DpeErrorCode::InternalError)?;
+            .map_err(|_| DpeErrorCode::CryptoError)?;
 
         // cache private key
         if self.uses_nd_derivation() {
@@ -72,7 +72,7 @@ impl SignCmd {
         let algs = DPE_PROFILE.alg_len();
         let cdi = dpe.derive_cdi(idx, false)?;
         C::hmac_sign_with_derived(algs, &cdi, &self.label, b"HMAC", digest)
-            .map_err(|_| DpeErrorCode::InternalError)
+            .map_err(|_| DpeErrorCode::CryptoError)
     }
 }
 
@@ -89,14 +89,9 @@ impl<C: Crypto, P: Platform> CommandExecution<C, P> for SignCmd {
             return Err(DpeErrorCode::InvalidArgument);
         }
 
-        let idx = dpe
-            .get_active_context_pos(&self.handle, locality)
-            .ok_or(DpeErrorCode::InvalidHandle)?;
+        let idx = dpe.get_active_context_pos(&self.handle, locality)?;
         let context = &dpe.contexts[idx];
 
-        if context.locality != locality {
-            return Err(DpeErrorCode::InvalidHandle);
-        }
         if context.context_type == ContextType::Simulation {
             return Err(DpeErrorCode::InvalidArgument);
         }
@@ -268,9 +263,9 @@ mod tests {
         // Wrong locality.
         assert!(dpe
             .get_active_context_pos(&ContextHandle::default(), TEST_LOCALITIES[0])
-            .is_some());
+            .is_ok());
         assert_eq!(
-            Err(DpeErrorCode::InvalidHandle),
+            Err(DpeErrorCode::InvalidLocality),
             SignCmd {
                 handle: ContextHandle::default(),
                 label: TEST_LABEL,
@@ -286,7 +281,7 @@ mod tests {
             .unwrap();
         assert!(dpe
             .get_active_context_pos(&SIMULATION_HANDLE, TEST_LOCALITIES[0])
-            .is_some());
+            .is_ok());
         assert_eq!(
             Err(DpeErrorCode::InvalidArgument),
             SignCmd {
@@ -376,7 +371,6 @@ mod tests {
 
         let idx = dpe
             .get_active_context_pos(&ContextHandle::default(), TEST_LOCALITIES[0])
-            .ok_or(DpeErrorCode::InvalidHandle)
             .unwrap();
         // Check that r is equal to the HMAC over the digest
         assert_eq!(
