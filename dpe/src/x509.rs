@@ -43,6 +43,8 @@ impl X509CertWriter<'_> {
     const SEQUENCE_OF_TAG: u8 = 0x30;
     const SET_OF_TAG: u8 = 0x31;
 
+    const BOOL_SIZE: usize = 1;
+
     // Constants for setting tag bits
     const PRIVATE: u8 = 0x80; // Used for Implicit/Explicit tags
     const CONSTRUCTED: u8 = 0x20; // SET{OF} and SEQUENCE{OF} have this bit set
@@ -80,6 +82,9 @@ impl X509CertWriter<'_> {
 
     // tcg-dice-Ueid 2.23.133.5.4.1
     const UEID_OID: &[u8] = &[0x67, 0x81, 0x05, 0x05, 0x04, 0x01];
+
+    // RFC 5280 2.5.29.19
+    const BASIC_CONSTRAINTS_OID: &[u8] = &[0x55, 0x1D, 0x13];
 
     // All DPE certs are valid from January 1st, 2023 00:00:00 until
     // December 31st, 9999 23:59:59
@@ -293,6 +298,22 @@ impl X509CertWriter<'_> {
         Self::get_structure_size(size, tagged)
     }
 
+    /// Get the size of a basicConstraints extension, including the extension
+    /// OID and critical bits.
+    fn get_basic_constraints_size(tagged: bool) -> Result<usize, DpeErrorCode> {
+        // Extension data is sequence -> octet string. To compute size, wrap
+        // in tagging twice.
+        let ext_size = Self::get_structure_size(
+            Self::get_structure_size(Self::BOOL_SIZE, /*tagged=*/ true)?,
+            /*tagged=*/ true,
+        )?;
+        let size = Self::get_structure_size(Self::BASIC_CONSTRAINTS_OID.len(), /*tagged=*/true)? // Extension OID
+            + Self::get_structure_size(Self::BOOL_SIZE, /*tagged=*/true)? // Critical bool
+            + Self::get_structure_size(ext_size, /*tagged=*/true)?; // OCTET STRING
+
+        Self::get_structure_size(size, tagged)
+    }
+
     /// Get the size of the TBS Extensions field.
     fn get_extensions_size(
         measurements: &MeasurementData,
@@ -300,7 +321,8 @@ impl X509CertWriter<'_> {
         explicit: bool,
     ) -> Result<usize, DpeErrorCode> {
         let mut size = Self::get_multi_tcb_info_size(measurements, /*tagged=*/ true)?
-            + Self::get_ueid_size(measurements, /*tagged=*/ true)?;
+            + Self::get_ueid_size(measurements, /*tagged=*/ true)?
+            + Self::get_basic_constraints_size(/*tagged=*/ true)?;
 
         // Determine whether to include the explicit tag wrapping in the size calculation
         size = Self::get_structure_size(size, /*tagged=*/ explicit)?;
@@ -698,7 +720,7 @@ impl X509CertWriter<'_> {
 
         let crit = if self.crit_dice { 0xFF } else { 0x00 };
         bytes_written += self.encode_byte(Self::BOOL_TAG)?;
-        bytes_written += self.encode_size_field(1)?;
+        bytes_written += self.encode_size_field(Self::BOOL_SIZE)?;
         bytes_written += self.encode_byte(crit)?;
 
         let tcb_infos_size =
@@ -735,7 +757,7 @@ impl X509CertWriter<'_> {
 
         let crit = if self.crit_dice { 0xFF } else { 0x00 };
         bytes_written += self.encode_byte(Self::BOOL_TAG)?;
-        bytes_written += self.encode_size_field(1)?;
+        bytes_written += self.encode_size_field(Self::BOOL_SIZE)?;
         bytes_written += self.encode_byte(crit)?;
 
         // Extension data is sequence -> octet string. To compute size, wrap
@@ -764,6 +786,43 @@ impl X509CertWriter<'_> {
         Ok(bytes_written)
     }
 
+    /// Encode a BasicConstraints extension
+    ///
+    /// https://datatracker.ietf.org/doc/html/rfc5280
+    fn encode_basic_constraints(&mut self) -> Result<usize, DpeErrorCode> {
+        let basic_constraints_size = Self::get_basic_constraints_size(/*tagged=*/ false)?;
+
+        // Encode Extension
+        let mut bytes_written = self.encode_byte(Self::SEQUENCE_TAG)?;
+        bytes_written += self.encode_size_field(basic_constraints_size)?;
+        bytes_written += self.encode_oid(Self::BASIC_CONSTRAINTS_OID)?;
+
+        bytes_written += self.encode_byte(Self::BOOL_TAG)?;
+        bytes_written += self.encode_size_field(Self::BOOL_SIZE)?;
+        bytes_written += self.encode_byte(0xFF)?;
+
+        // Extension data is sequence -> octet string. To compute size, wrap
+        // in tagging twice.
+        bytes_written += self.encode_byte(Self::OCTET_STRING_TAG)?;
+        bytes_written += self.encode_size_field(Self::get_structure_size(
+            Self::get_structure_size(1, /*tagged=*/ true)?,
+            /*tagged=*/ true,
+        )?)?;
+
+        // Sequence size to just a tagged bool
+        bytes_written += self.encode_byte(Self::SEQUENCE_TAG)?;
+        bytes_written += self.encode_size_field(Self::get_structure_size(
+            Self::BOOL_SIZE,
+            /*tagged=*/ true,
+        )?)?;
+
+        bytes_written += self.encode_byte(Self::BOOL_TAG)?;
+        bytes_written += self.encode_size_field(Self::BOOL_SIZE)?;
+        bytes_written += self.encode_byte(0x00)?;
+
+        Ok(bytes_written)
+    }
+
     fn encode_extensions(&mut self, measurements: &MeasurementData) -> Result<usize, DpeErrorCode> {
         // Extensions is EXPLICIT field number 3
         let mut bytes_written = self.encode_byte(Self::PRIVATE | Self::CONSTRUCTED | 0x03)?;
@@ -783,6 +842,7 @@ impl X509CertWriter<'_> {
 
         bytes_written += self.encode_multi_tcb_info(measurements)?;
         bytes_written += self.encode_ueid(measurements)?;
+        bytes_written += self.encode_basic_constraints()?;
 
         Ok(bytes_written)
     }
@@ -1159,13 +1219,24 @@ mod tests {
             .encode_ecdsa_certificate(&tbs[..bytes_written], &test_sig)
             .unwrap();
 
-        let mut parser = X509CertificateParser::new().with_deep_parse_extensions(false);
-        match parser.parse(&cert) {
+        let mut parser = X509CertificateParser::new().with_deep_parse_extensions(true);
+        let cert = match parser.parse(&cert) {
             Ok((rem, parsed_cert)) => {
                 assert_eq!(parsed_cert.version(), X509Version::V3);
                 assert_eq!(rem.len(), cert.len() - bytes_written);
+                parsed_cert
             }
             Err(e) => panic!("x509 parsing failed: {:?}", e),
         };
+
+        match cert.basic_constraints() {
+            Ok(Some(basic_constraints)) => {
+                assert!(basic_constraints.critical);
+                assert!(!basic_constraints.value.ca);
+                assert!(basic_constraints.value.path_len_constraint.is_none());
+            }
+            Ok(None) => panic!("basic constraints extension not found"),
+            Err(_) => panic!("multiple basic constraints extensions found"),
+        }
     }
 }
