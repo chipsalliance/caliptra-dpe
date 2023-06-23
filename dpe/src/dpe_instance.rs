@@ -9,8 +9,8 @@ use crate::{
     context::{ChildToRootIter, Context, ContextHandle, ContextState},
     response::{DpeErrorCode, GetProfileResp, Response, ResponseHdr},
     support::Support,
-    tci::{TciMeasurement, TciNodeData},
-    DPE_PROFILE, INTERNAL_INPUT_INFO_SIZE, MAX_HANDLES,
+    x509::tci::{TciMeasurement, TciNodeData},
+    x509::DPE_PROFILE, INTERNAL_INPUT_INFO_SIZE, MAX_HANDLES,
 };
 use core::{marker::PhantomData, mem::size_of};
 use crypto::{Crypto, Hasher};
@@ -296,7 +296,10 @@ impl<C: Crypto, P: Platform> DpeInstance<'_, C, P> {
             let context = status?;
 
             let mut tci_bytes = [0u8; size_of::<TciNodeData>()];
-            let len = context.tci.serialize(&mut tci_bytes)?;
+            let len = match context.tci.serialize(&mut tci_bytes) {
+                Ok(usize) => Ok(usize),
+                Err(_) => Err(DpeErrorCode::InvalidArgument)
+            }?;
             hasher
                 .update(&tci_bytes[..len])
                 .map_err(|_| DpeErrorCode::HashError)?;

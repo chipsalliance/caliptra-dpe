@@ -6,7 +6,7 @@
 //! this functionality for a no_std environment.
 
 use crate::{
-    response::DpeErrorCode,
+    X509ErrorCode,
     tci::{TciMeasurement, TciNodeData},
     DpeProfile, DPE_PROFILE,
 };
@@ -21,8 +21,8 @@ pub struct Name<'a> {
 }
 
 pub struct MeasurementData<'a> {
-    pub(crate) label: &'a [u8],
-    pub(crate) tci_nodes: &'a [TciNodeData],
+    pub label: &'a [u8],
+    pub tci_nodes: &'a [TciNodeData],
 }
 
 pub struct X509CertWriter<'a> {
@@ -107,7 +107,7 @@ impl X509CertWriter<'_> {
     }
 
     /// Calculate the number of bytes the ASN.1 size field will be
-    fn get_size_width(size: usize) -> Result<usize, DpeErrorCode> {
+    fn get_size_width(size: usize) -> Result<usize, X509ErrorCode> {
         if size <= 127 {
             Ok(1)
         } else if size <= 255 {
@@ -115,13 +115,13 @@ impl X509CertWriter<'_> {
         } else if size <= 65535 {
             Ok(3)
         } else {
-            Err(DpeErrorCode::InternalError)
+            Err(X509ErrorCode::InternalError)
         }
     }
 
     /// Get the size of an ASN.1 structure
     /// If tagged, includes the tag and size
-    fn get_structure_size(data_size: usize, tagged: bool) -> Result<usize, DpeErrorCode> {
+    fn get_structure_size(data_size: usize, tagged: bool) -> Result<usize, X509ErrorCode> {
         let size = if tagged {
             1 + Self::get_size_width(data_size)? + data_size
         } else {
@@ -133,7 +133,7 @@ impl X509CertWriter<'_> {
 
     /// Calculate the number of bytes the ASN.1 INTEGER will be
     /// If `tagged`, include the tag and size fields
-    fn get_integer_bytes_size(integer: &[u8], tagged: bool) -> Result<usize, DpeErrorCode> {
+    fn get_integer_bytes_size(integer: &[u8], tagged: bool) -> Result<usize, X509ErrorCode> {
         let mut len = integer.len();
         for (i, &byte) in integer.iter().enumerate() {
             if byte == 0 && i != integer.len() - 1 {
@@ -151,7 +151,7 @@ impl X509CertWriter<'_> {
 
     /// Calculate the number of bytes the ASN.1 INTEGER will be
     /// If `tagged`, include the tag and size fields
-    fn get_integer_size(integer: u64, tagged: bool) -> Result<usize, DpeErrorCode> {
+    fn get_integer_size(integer: u64, tagged: bool) -> Result<usize, X509ErrorCode> {
         let bytes = integer.to_be_bytes();
         Self::get_integer_bytes_size(&bytes, tagged)
     }
@@ -159,12 +159,12 @@ impl X509CertWriter<'_> {
     /// Calculate the number of bytes an ASN.1 raw bytes field will be.
     /// Can be used for OCTET STRING, OID, UTF8 STRING, etc.
     /// If `tagged`, include the tag and size fields
-    fn get_bytes_size(bytes: &[u8], tagged: bool) -> Result<usize, DpeErrorCode> {
+    fn get_bytes_size(bytes: &[u8], tagged: bool) -> Result<usize, X509ErrorCode> {
         Self::get_structure_size(bytes.len(), tagged)
     }
 
     /// If `tagged`, include the tag and size fields
-    fn get_rdn_size(name: &Name, tagged: bool) -> Result<usize, DpeErrorCode> {
+    fn get_rdn_size(name: &Name, tagged: bool) -> Result<usize, X509ErrorCode> {
         let cn_seq_size = Self::get_structure_size(
             Self::get_bytes_size(&Self::RDN_COMMON_NAME_OID, /*tagged=*/ true)?
                 + Self::get_bytes_size(name.cn, true)?,
@@ -184,7 +184,7 @@ impl X509CertWriter<'_> {
 
     /// Calculate the number of bytes an ECC Public Key AlgorithmIdentifier
     /// If `tagged`, include the tag and size fields
-    fn get_ec_pub_alg_id_size(tagged: bool) -> Result<usize, DpeErrorCode> {
+    fn get_ec_pub_alg_id_size(tagged: bool) -> Result<usize, X509ErrorCode> {
         let len = Self::get_bytes_size(Self::EC_PUB_OID, true)?
             + Self::get_bytes_size(Self::CURVE_OID, true)?;
         Self::get_structure_size(len, tagged)
@@ -192,13 +192,13 @@ impl X509CertWriter<'_> {
 
     /// Calculate the number of bytes an ECDSA signature AlgorithmIdentifier
     /// If `tagged`, include the tag and size fields
-    fn get_ecdsa_sig_alg_id_size(tagged: bool) -> Result<usize, DpeErrorCode> {
+    fn get_ecdsa_sig_alg_id_size(tagged: bool) -> Result<usize, X509ErrorCode> {
         let len = Self::get_bytes_size(Self::ECDSA_OID, true)?;
         Self::get_structure_size(len, tagged)
     }
 
     /// If `tagged`, include the tag and size fields
-    fn get_validity_size(tagged: bool) -> Result<usize, DpeErrorCode> {
+    fn get_validity_size(tagged: bool) -> Result<usize, X509ErrorCode> {
         let len = Self::get_bytes_size(Self::NOT_BEFORE.as_bytes(), true)?
             + Self::get_bytes_size(Self::NOT_AFTER.as_bytes(), true)?;
         Self::get_structure_size(len, tagged)
@@ -209,7 +209,7 @@ impl X509CertWriter<'_> {
     fn get_ecdsa_subject_pubkey_info_size(
         pubkey: &EcdsaPub,
         tagged: bool,
-    ) -> Result<usize, DpeErrorCode> {
+    ) -> Result<usize, X509ErrorCode> {
         let point_size = 1 + pubkey.x.len() + pubkey.y.len();
         let bitstring_size = 1 + point_size;
         let seq_size = Self::get_structure_size(bitstring_size, /*tagged=*/ true)?
@@ -219,7 +219,7 @@ impl X509CertWriter<'_> {
     }
 
     /// If `tagged`, include the tag and size fields
-    fn get_ecdsa_signature_size(sig: &EcdsaSig, tagged: bool) -> Result<usize, DpeErrorCode> {
+    fn get_ecdsa_signature_size(sig: &EcdsaSig, tagged: bool) -> Result<usize, X509ErrorCode> {
         let seq_size = Self::get_structure_size(
             Self::get_integer_bytes_size(sig.r.bytes(), /*tagged=*/ true)?
                 + Self::get_integer_bytes_size(sig.s.bytes(), /*tagged=*/ true)?,
@@ -232,7 +232,7 @@ impl X509CertWriter<'_> {
 
     /// version is marked as EXPLICIT [0]
     /// If `tagged`, include the explicit tag and size fields
-    fn get_version_size(tagged: bool) -> Result<usize, DpeErrorCode> {
+    fn get_version_size(tagged: bool) -> Result<usize, X509ErrorCode> {
         let integer_size = Self::get_integer_size(Self::X509_V3, /*tagged=*/ true)?;
 
         // If tagged, also add explicit wrapping
@@ -240,7 +240,7 @@ impl X509CertWriter<'_> {
     }
 
     /// Get the size of a DICE FWID structure
-    fn get_fwid_size(digest: &[u8], tagged: bool) -> Result<usize, DpeErrorCode> {
+    fn get_fwid_size(digest: &[u8], tagged: bool) -> Result<usize, X509ErrorCode> {
         let size = Self::get_structure_size(Self::HASH_OID.len(), /*tagged=*/ true)?
             + Self::get_structure_size(digest.len(), /*tagged=*/ true)?;
 
@@ -250,7 +250,7 @@ impl X509CertWriter<'_> {
     /// Get the size of a tcg-dice-TcbInfo structure. For DPE, this is only used
     /// as part of a MultiTcbInfo. For this reason, do not include the standard
     /// extension fields. Only include the size of the structure itself.
-    fn get_tcb_info_size(node: &TciNodeData, tagged: bool) -> Result<usize, DpeErrorCode> {
+    fn get_tcb_info_size(node: &TciNodeData, tagged: bool) -> Result<usize, X509ErrorCode> {
         let size = Self::get_structure_size(
             2 * Self::get_fwid_size(&node.tci_current.0, /*tagged=*/ true)?,
             /*tagged=*/ true,
@@ -266,9 +266,9 @@ impl X509CertWriter<'_> {
     fn get_multi_tcb_info_size(
         measurements: &MeasurementData,
         tagged: bool,
-    ) -> Result<usize, DpeErrorCode> {
+    ) -> Result<usize, X509ErrorCode> {
         if measurements.tci_nodes.is_empty() {
-            return Err(DpeErrorCode::InternalError);
+            return Err(X509ErrorCode::InternalError);
         }
 
         // Size of concatenated tcb infos
@@ -287,7 +287,7 @@ impl X509CertWriter<'_> {
 
     /// Get the size of a tcg-dice-Ueid extension, including the extension
     /// OID and critical bits.
-    fn get_ueid_size(measurements: &MeasurementData, tagged: bool) -> Result<usize, DpeErrorCode> {
+    fn get_ueid_size(measurements: &MeasurementData, tagged: bool) -> Result<usize, X509ErrorCode> {
         // Extension data is sequence -> octet string. To compute size, wrap
         // in tagging twice.
         let ext_size = Self::get_structure_size(
@@ -303,7 +303,7 @@ impl X509CertWriter<'_> {
 
     /// Get the size of a basicConstraints extension, including the extension
     /// OID and critical bits.
-    fn get_basic_constraints_size(tagged: bool) -> Result<usize, DpeErrorCode> {
+    fn get_basic_constraints_size(tagged: bool) -> Result<usize, X509ErrorCode> {
         // Extension data is sequence -> octet string. To compute size, wrap
         // in tagging twice.
         let ext_size = Self::get_structure_size(
@@ -338,7 +338,7 @@ impl X509CertWriter<'_> {
         measurements: &MeasurementData,
         tagged: bool,
         explicit: bool,
-    ) -> Result<usize, DpeErrorCode> {
+    ) -> Result<usize, X509ErrorCode> {
         let mut size = Self::get_multi_tcb_info_size(measurements, /*tagged=*/ true)?
             + Self::get_ueid_size(measurements, /*tagged=*/ true)?
             + Self::get_basic_constraints_size(/*tagged=*/ true)?
@@ -359,7 +359,7 @@ impl X509CertWriter<'_> {
         pubkey: &EcdsaPub,
         measurements: &MeasurementData,
         tagged: bool,
-    ) -> Result<usize, DpeErrorCode> {
+    ) -> Result<usize, X509ErrorCode> {
         let tbs_size = Self::get_version_size(/*tagged=*/ true)?
             + Self::get_integer_bytes_size(serial_number, /*tagged=*/ true)?
             + Self::get_ecdsa_sig_alg_id_size(/*tagged=*/ true)?
@@ -377,11 +377,11 @@ impl X509CertWriter<'_> {
     }
 
     /// Write all of `bytes` to the certificate buffer
-    fn encode_bytes(&mut self, bytes: &[u8]) -> Result<usize, DpeErrorCode> {
+    fn encode_bytes(&mut self, bytes: &[u8]) -> Result<usize, X509ErrorCode> {
         let size = bytes.len();
 
         if size > self.certificate.len().saturating_sub(self.offset) {
-            return Err(DpeErrorCode::InternalError);
+            return Err(X509ErrorCode::InternalError);
         }
 
         self.certificate[self.offset..self.offset + size].copy_from_slice(bytes);
@@ -391,9 +391,9 @@ impl X509CertWriter<'_> {
     }
 
     /// Write a single `byte` to be certificate buffer
-    fn encode_byte(&mut self, byte: u8) -> Result<usize, DpeErrorCode> {
+    fn encode_byte(&mut self, byte: u8) -> Result<usize, X509ErrorCode> {
         if self.offset >= self.certificate.len() {
-            return Err(DpeErrorCode::InternalError);
+            return Err(X509ErrorCode::InternalError);
         }
 
         self.certificate[self.offset] = byte;
@@ -402,12 +402,12 @@ impl X509CertWriter<'_> {
     }
 
     /// DER-encodes the tag field of an ASN.1 type
-    fn encode_tag_field(&mut self, tag: u8) -> Result<usize, DpeErrorCode> {
+    fn encode_tag_field(&mut self, tag: u8) -> Result<usize, X509ErrorCode> {
         self.encode_byte(tag)
     }
 
     /// DER-encodes the size field of an ASN.1 type)
-    fn encode_size_field(&mut self, size: usize) -> Result<usize, DpeErrorCode> {
+    fn encode_size_field(&mut self, size: usize) -> Result<usize, X509ErrorCode> {
         let size_width = Self::get_size_width(size)?;
 
         if size_width == 1 {
@@ -425,7 +425,7 @@ impl X509CertWriter<'_> {
     }
 
     /// DER-encodes a big-endian integer buffer as an ASN.1 INTEGER
-    fn encode_integer_bytes(&mut self, integer: &[u8]) -> Result<usize, DpeErrorCode> {
+    fn encode_integer_bytes(&mut self, integer: &[u8]) -> Result<usize, X509ErrorCode> {
         let mut bytes_written = self.encode_tag_field(Self::INTEGER_TAG)?;
 
         let size = Self::get_integer_bytes_size(integer, false)?;
@@ -445,12 +445,12 @@ impl X509CertWriter<'_> {
     }
 
     /// DER-encodes `integer` as an ASN.1 INTEGER
-    fn encode_integer(&mut self, integer: u64) -> Result<usize, DpeErrorCode> {
+    fn encode_integer(&mut self, integer: u64) -> Result<usize, X509ErrorCode> {
         self.encode_integer_bytes(&integer.to_be_bytes())
     }
 
     /// DER-encodes `oid` as an ASN.1 ObjectIdentifier
-    fn encode_oid(&mut self, oid: &[u8]) -> Result<usize, DpeErrorCode> {
+    fn encode_oid(&mut self, oid: &[u8]) -> Result<usize, X509ErrorCode> {
         let mut bytes_written = self.encode_tag_field(Self::OID_TAG)?;
         bytes_written += self.encode_size_field(oid.len())?;
         bytes_written += self.encode_bytes(oid)?;
@@ -458,7 +458,7 @@ impl X509CertWriter<'_> {
         Ok(bytes_written)
     }
 
-    fn encode_printable_string(&mut self, s: &[u8]) -> Result<usize, DpeErrorCode> {
+    fn encode_printable_string(&mut self, s: &[u8]) -> Result<usize, X509ErrorCode> {
         let mut bytes_written = self.encode_tag_field(Self::PRINTABLE_STRING_TAG)?;
         bytes_written += self.encode_size_field(s.len())?;
         bytes_written += self.encode_bytes(s)?;
@@ -484,7 +484,7 @@ impl X509CertWriter<'_> {
     ///     printableString   PrintableString (SIZE (1..ub-common-name)),
     ///     ...
     ///     }
-    fn encode_rdn(&mut self, name: &Name) -> Result<usize, DpeErrorCode> {
+    fn encode_rdn(&mut self, name: &Name) -> Result<usize, X509ErrorCode> {
         let cn_size =
             Self::get_structure_size(Self::RDN_COMMON_NAME_OID.len(), /*tagged=*/ true)?
                 + Self::get_structure_size(name.cn.len(), /*tagged=*/ true)?;
@@ -532,7 +532,7 @@ impl X509CertWriter<'_> {
     ///       -- implicitCurve   NULL
     ///       -- specifiedCurve  SpecifiedECDomain
     ///     }
-    fn encode_ec_pub_alg_id(&mut self) -> Result<usize, DpeErrorCode> {
+    fn encode_ec_pub_alg_id(&mut self) -> Result<usize, X509ErrorCode> {
         let seq_size = Self::get_ec_pub_alg_id_size(/*tagged=*/ false)?;
 
         let mut bytes_written = self.encode_tag_field(Self::SEQUENCE_TAG)?;
@@ -550,7 +550,7 @@ impl X509CertWriter<'_> {
     ///     algorithm   OBJECT IDENTIFIER,
     ///     parameters  ECParameters
     ///     }
-    fn encode_ecdsa_sig_alg_id(&mut self) -> Result<usize, DpeErrorCode> {
+    fn encode_ecdsa_sig_alg_id(&mut self) -> Result<usize, X509ErrorCode> {
         let seq_size = Self::get_ecdsa_sig_alg_id_size(/*tagged=*/ false)?;
 
         let mut bytes_written = self.encode_tag_field(Self::SEQUENCE_TAG)?;
@@ -561,7 +561,7 @@ impl X509CertWriter<'_> {
     }
 
     // Encode ASN.1 Validity which never expires
-    fn encode_validity(&mut self) -> Result<usize, DpeErrorCode> {
+    fn encode_validity(&mut self) -> Result<usize, X509ErrorCode> {
         let seq_size = Self::get_validity_size(/*tagged=*/ false)?;
 
         let mut bytes_written = self.encode_tag_field(Self::SEQUENCE_TAG)?;
@@ -596,7 +596,7 @@ impl X509CertWriter<'_> {
     fn encode_ecdsa_subject_pubkey_info(
         &mut self,
         pubkey: &EcdsaPub,
-    ) -> Result<usize, DpeErrorCode> {
+    ) -> Result<usize, X509ErrorCode> {
         let point_size = 1 + pubkey.x.len() + pubkey.y.len();
         let bitstring_size = 1 + point_size;
         let seq_size = Self::get_structure_size(bitstring_size, /*tagged=*/ true)?
@@ -625,7 +625,7 @@ impl X509CertWriter<'_> {
     ///     r  INTEGER,
     ///     s  INTEGER
     ///   }
-    fn encode_ecdsa_signature(&mut self, sig: &EcdsaSig) -> Result<usize, DpeErrorCode> {
+    fn encode_ecdsa_signature(&mut self, sig: &EcdsaSig) -> Result<usize, X509ErrorCode> {
         let seq_size = Self::get_integer_bytes_size(sig.r.bytes(), /*tagged=*/ true)?
             + Self::get_integer_bytes_size(sig.s.bytes(), /*tagged=*/ true)?;
 
@@ -647,7 +647,7 @@ impl X509CertWriter<'_> {
         Ok(bytes_written)
     }
 
-    pub fn encode_version(&mut self) -> Result<usize, DpeErrorCode> {
+    pub fn encode_version(&mut self) -> Result<usize, X509ErrorCode> {
         // Version is EXPLICIT field number 0
         let mut bytes_written = self.encode_byte(Self::PRIVATE | Self::CONSTRUCTED)?;
         bytes_written += self.encode_size_field(Self::get_integer_size(
@@ -659,7 +659,7 @@ impl X509CertWriter<'_> {
         Ok(bytes_written)
     }
 
-    fn encode_fwid(&mut self, tci: &TciMeasurement) -> Result<usize, DpeErrorCode> {
+    fn encode_fwid(&mut self, tci: &TciMeasurement) -> Result<usize, X509ErrorCode> {
         let mut bytes_written = self.encode_byte(Self::SEQUENCE_TAG)?;
         bytes_written +=
             self.encode_size_field(Self::get_fwid_size(&tci.0, /*tagged=*/ false)?)?;
@@ -689,7 +689,7 @@ impl X509CertWriter<'_> {
     /// For constructed types (SEQUENCE, SEQUENCE OF, SET, SET OF) the 6th
     /// bit is also set. For example, "Implicit tag number 2" would be encoded
     /// with tag 0xA2 for constructed types.
-    fn encode_tcb_info(&mut self, node: &TciNodeData) -> Result<usize, DpeErrorCode> {
+    fn encode_tcb_info(&mut self, node: &TciNodeData) -> Result<usize, X509ErrorCode> {
         let tcb_info_size = Self::get_tcb_info_size(node, /*tagged=*/ false)?;
         // TcbInfo sequence
         let mut bytes_written = self.encode_byte(Self::SEQUENCE_TAG)?;
@@ -729,7 +729,7 @@ impl X509CertWriter<'_> {
     fn encode_multi_tcb_info(
         &mut self,
         measurements: &MeasurementData,
-    ) -> Result<usize, DpeErrorCode> {
+    ) -> Result<usize, X509ErrorCode> {
         let multi_tcb_info_size =
             Self::get_multi_tcb_info_size(measurements, /*tagged=*/ false)?;
 
@@ -767,7 +767,7 @@ impl X509CertWriter<'_> {
     /// Encode a tcg-dice-Ueid extension
     ///
     /// https://trustedcomputinggroup.org/wp-content/uploads/TCG_DICE_Attestation_Architecture_r22_02dec2020.pdf
-    fn encode_ueid(&mut self, measurements: &MeasurementData) -> Result<usize, DpeErrorCode> {
+    fn encode_ueid(&mut self, measurements: &MeasurementData) -> Result<usize, X509ErrorCode> {
         let ueid_size = Self::get_ueid_size(measurements, /*tagged=*/ false)?;
 
         // Encode Extension
@@ -809,7 +809,7 @@ impl X509CertWriter<'_> {
     /// Encode a BasicConstraints extension
     ///
     /// https://datatracker.ietf.org/doc/html/rfc5280
-    fn encode_basic_constraints(&mut self) -> Result<usize, DpeErrorCode> {
+    fn encode_basic_constraints(&mut self) -> Result<usize, X509ErrorCode> {
         let basic_constraints_size = Self::get_basic_constraints_size(/*tagged=*/ false)?;
 
         // Encode Extension
@@ -927,7 +927,7 @@ impl X509CertWriter<'_> {
         subject_name: &Name,
         pubkey: &EcdsaPub,
         measurements: &MeasurementData,
-    ) -> Result<usize, DpeErrorCode> {
+    ) -> Result<usize, X509ErrorCode> {
         let tbs_size = Self::get_tbs_size(
             serial_number,
             issuer_name,
@@ -980,7 +980,7 @@ impl X509CertWriter<'_> {
         &mut self,
         tbs: &[u8],
         sig: &EcdsaSig,
-    ) -> Result<usize, DpeErrorCode> {
+    ) -> Result<usize, X509ErrorCode> {
         let cert_size = tbs.len()
             + Self::get_ecdsa_sig_alg_id_size(/*tagged=*/ true)?
             + Self::get_ecdsa_signature_size(sig, /*tagged=*/ true)?;

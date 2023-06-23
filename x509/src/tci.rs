@@ -1,12 +1,12 @@
 // Licensed under the Apache-2.0 license.
-use crate::{response::DpeErrorCode, DPE_PROFILE};
+use crate::{DPE_PROFILE, X509ErrorCode};
 use core::mem::size_of;
 use zerocopy::AsBytes;
 
 #[repr(C, align(4))]
 #[derive(Default, Copy, Clone, AsBytes)]
 #[cfg_attr(test, derive(zerocopy::FromBytes))]
-pub(crate) struct TciNodeData {
+pub struct TciNodeData {
     pub tci_type: u32,
     pub tci_cumulative: TciMeasurement,
     pub tci_current: TciMeasurement,
@@ -23,9 +23,9 @@ impl TciNodeData {
         }
     }
 
-    pub fn serialize(&self, dst: &mut [u8]) -> Result<usize, DpeErrorCode> {
+    pub fn serialize(&self, dst: &mut [u8]) -> Result<usize, X509ErrorCode> {
         if dst.len() < size_of::<Self>() {
-            return Err(DpeErrorCode::InternalError);
+            return Err(X509ErrorCode::InternalError);
         }
 
         let mut offset: usize = 0;
@@ -47,8 +47,8 @@ impl TciNodeData {
 }
 
 #[repr(transparent)]
-#[derive(Copy, Clone, Debug, AsBytes)]
-#[cfg_attr(test, derive(PartialEq, Eq, zerocopy::FromBytes))]
+#[derive(Copy, Clone, Debug, AsBytes, PartialEq, Eq)]
+#[cfg_attr(test, derive(zerocopy::FromBytes))]
 pub struct TciMeasurement(pub [u8; DPE_PROFILE.get_tci_size()]);
 
 impl Default for TciMeasurement {
@@ -73,7 +73,7 @@ mod test {
         // Test too small slice.
         let mut response_buffer = [0; size_of::<TciNodeData>() - 1];
         assert_eq!(
-            Err(DpeErrorCode::InternalError),
+            Err(X509ErrorCode::InternalError),
             tci_node_data.serialize(response_buffer.as_mut_slice())
         );
         let mut response_buffer = [0; size_of::<TciNodeData>()];

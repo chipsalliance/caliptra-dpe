@@ -1,5 +1,5 @@
 // Licensed under the Apache-2.0 license.
-use crate::{response::DpeErrorCode, tci::TciNodeData, MAX_HANDLES};
+use crate::{response::DpeErrorCode, x509::tci::TciNodeData, MAX_HANDLES};
 use core::mem::size_of;
 use crypto::Crypto;
 

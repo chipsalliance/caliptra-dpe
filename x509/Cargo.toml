@@ -1,9 +1,9 @@
-# Licensed under the Apache-2.0 license
-
 [package]
-name = "dpe"
+name = "x509"
 version = "0.1.0"
 edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
 default = ["dpe_profile_p256_sha256"]
@@ -11,14 +11,11 @@ dpe_profile_p256_sha256 = []
 dpe_profile_p384_sha384 = []
 
 [dependencies]
-crypto = {path = "../crypto"}
-x509 = {path = "../x509"}
-platform = {path = "../platform"}
 zerocopy = "0.6.1"
+crypto = {path = "../crypto"}
 
 [dev-dependencies]
 asn1 = "0.13.0"
 openssl = "0.10"
 x509-parser = "0.14.0"
 crypto = {path = "../crypto", features = ["deterministic_rand"]}
-x509 = {path = "../x509", features = ["dpe_profile_p256_sha256"]}

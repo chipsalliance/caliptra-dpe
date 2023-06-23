@@ -4,7 +4,7 @@ use crate::{
     context::{ContextHandle, ContextType},
     dpe_instance::DpeInstance,
     response::{DpeErrorCode, Response, ResponseHdr, SignResp},
-    DPE_PROFILE,
+    x509::DPE_PROFILE,
 };
 use crypto::{Crypto, CryptoBuf, Digest, EcdsaSig, HmacSig};
 use platform::Platform;

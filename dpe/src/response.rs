@@ -5,8 +5,8 @@ Abstract:
     DPE reponses and serialization.
 --*/
 use crate::{
-    context::ContextHandle, tci::TciMeasurement, CURRENT_PROFILE_MAJOR_VERSION,
-    CURRENT_PROFILE_MINOR_VERSION, DPE_PROFILE, MAX_CERT_SIZE, MAX_HANDLES,
+    context::ContextHandle, x509::tci::TciMeasurement, CURRENT_PROFILE_MAJOR_VERSION,
+    CURRENT_PROFILE_MINOR_VERSION, x509::DPE_PROFILE, MAX_CERT_SIZE, MAX_HANDLES,
 };
 use zerocopy::AsBytes;
 

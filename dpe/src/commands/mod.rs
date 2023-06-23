@@ -20,7 +20,7 @@ use self::tag_tci::TagTciCmd;
 use crate::{
     dpe_instance::DpeInstance,
     response::{DpeErrorCode, Response},
-    DPE_PROFILE,
+    x509::DPE_PROFILE,
 };
 use core::mem::size_of;
 use crypto::Crypto;
@@ -168,7 +168,7 @@ impl TryFrom<&[u8]> for CommandHdr {
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::{DpeProfile, DPE_PROFILE};
+    use crate::{x509::DpeProfile, x509::DPE_PROFILE};
     use zerocopy::AsBytes;
 
     #[cfg(feature = "dpe_profile_p256_sha256")]

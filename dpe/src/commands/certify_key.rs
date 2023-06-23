@@ -4,9 +4,9 @@ use crate::{
     context::ContextHandle,
     dpe_instance::DpeInstance,
     response::{CertifyKeyResp, DpeErrorCode, Response, ResponseHdr},
-    tci::TciNodeData,
-    x509::{MeasurementData, Name, X509CertWriter},
-    DPE_PROFILE, MAX_CERT_SIZE, MAX_HANDLES,
+    x509::tci::TciNodeData,
+    x509::x509::{MeasurementData, Name, X509CertWriter},
+    x509::DPE_PROFILE, MAX_CERT_SIZE, MAX_HANDLES,
 };
 use crypto::Crypto;
 use platform::Platform;
@@ -107,14 +107,17 @@ impl<C: Crypto, P: Platform> CommandExecution<C, P> for CertifyKeyCmd {
             Self::FORMAT_X509 => {
                 let mut tbs_buffer = [0u8; MAX_CERT_SIZE];
                 let mut tbs_writer = X509CertWriter::new(&mut tbs_buffer, true);
-                let mut bytes_written = tbs_writer.encode_ecdsa_tbs(
+                let mut bytes_written = match tbs_writer.encode_ecdsa_tbs(
                     /*serial=*/
                     &subject_name.serial[..20], // Serial number must be truncated to 20 bytes
                     &issuer_name,
                     &subject_name,
                     &pub_key,
                     &measurements,
-                )?;
+                ) {
+                    Ok(usize) => Ok(usize),
+                    Err(_) => Err(DpeErrorCode::InvalidArgument)
+                }?;
 
                 let tbs_digest = C::hash(DPE_PROFILE.alg_len(), &tbs_buffer[..bytes_written])
                     .map_err(|_| DpeErrorCode::HashError)?;
@@ -123,7 +126,10 @@ impl<C: Crypto, P: Platform> CommandExecution<C, P> for CertifyKeyCmd {
 
                 let mut cert_writer = X509CertWriter::new(&mut cert, true);
                 bytes_written =
-                    cert_writer.encode_ecdsa_certificate(&tbs_buffer[..bytes_written], &sig)?;
+                    match cert_writer.encode_ecdsa_certificate(&tbs_buffer[..bytes_written], &sig) {
+                        Ok(usize) => Ok(usize),
+                        Err(_) => Err(DpeErrorCode::InvalidArgument)
+                    }?;
                 u32::try_from(bytes_written).map_err(|_| DpeErrorCode::InternalError)?
             }
             Self::FORMAT_CSR => {
