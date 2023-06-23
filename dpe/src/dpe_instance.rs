@@ -296,10 +296,7 @@ impl<C: Crypto, P: Platform> DpeInstance<'_, C, P> {
             let context = status?;
 
             let mut tci_bytes = [0u8; size_of::<TciNodeData>()];
-            let len = match context.tci.serialize(&mut tci_bytes) {
-                Ok(usize) => Ok(usize),
-                Err(_) => Err(DpeErrorCode::InvalidArgument)
-            }?;
+            let len = context.tci.serialize(&mut tci_bytes).map_err(|_| DpeErrorCode::InvalidArgument)?;
             hasher
                 .update(&tci_bytes[..len])
                 .map_err(|_| DpeErrorCode::HashError)?;
