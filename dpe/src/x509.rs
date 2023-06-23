@@ -86,6 +86,9 @@ impl X509CertWriter<'_> {
     // RFC 5280 2.5.29.19
     const BASIC_CONSTRAINTS_OID: &[u8] = &[0x55, 0x1D, 0x13];
 
+    // RFC 5280 2.5.29.15
+    const KEY_USAGE_OID: &[u8] = &[0x55, 0x1D, 0x0F];
+
     // All DPE certs are valid from January 1st, 2023 00:00:00 until
     // December 31st, 9999 23:59:59
     const NOT_BEFORE: &str = "20230227000000Z";
@@ -314,6 +317,22 @@ impl X509CertWriter<'_> {
         Self::get_structure_size(size, tagged)
     }
 
+    /// Get the size of a keyUsage extension, including the extension
+    /// OID and critical bits.
+    fn get_key_usage_size(tagged: bool) -> Result<usize, DpeErrorCode> {
+        // Extension data is sequence -> octet string. To compute size, wrap
+        // in tagging twice.
+        let ext_size = Self::get_structure_size(
+            Self::get_structure_size(1, /*tagged=*/ true)?,
+            /*tagged=*/ true,
+        )?;
+        let size = Self::get_structure_size(Self::KEY_USAGE_OID.len(), /*tagged=*/true)? // Extension OID
+            + Self::get_structure_size(Self::BOOL_SIZE, /*tagged=*/true)? // Critical bool
+            + Self::get_structure_size(ext_size, /*tagged=*/true)?; // OCTET STRING
+
+        Self::get_structure_size(size, tagged)
+    }
+
     /// Get the size of the TBS Extensions field.
     fn get_extensions_size(
         measurements: &MeasurementData,
@@ -322,7 +341,8 @@ impl X509CertWriter<'_> {
     ) -> Result<usize, DpeErrorCode> {
         let mut size = Self::get_multi_tcb_info_size(measurements, /*tagged=*/ true)?
             + Self::get_ueid_size(measurements, /*tagged=*/ true)?
-            + Self::get_basic_constraints_size(/*tagged=*/ true)?;
+            + Self::get_basic_constraints_size(/*tagged=*/ true)?
+            + Self::get_key_usage_size(/*tagged=*/ true)?;
 
         // Determine whether to include the explicit tag wrapping in the size calculation
         size = Self::get_structure_size(size, /*tagged=*/ explicit)?;
@@ -823,6 +843,43 @@ impl X509CertWriter<'_> {
         Ok(bytes_written)
     }
 
+    /// Encode a KeyUsage extension
+    ///
+    /// https://datatracker.ietf.org/doc/html/rfc5280
+    fn encode_key_usage(&mut self) -> Result<usize, DpeErrorCode> {
+        let key_usage_size = Self::get_key_usage_size(/*tagged=*/ false)?;
+
+        // Encode Extension
+        let mut bytes_written = self.encode_byte(Self::SEQUENCE_TAG)?;
+        bytes_written += self.encode_size_field(key_usage_size)?;
+        bytes_written += self.encode_oid(Self::KEY_USAGE_OID)?;
+
+        bytes_written += self.encode_byte(Self::BOOL_TAG)?;
+        bytes_written += self.encode_size_field(Self::BOOL_SIZE)?;
+        bytes_written += self.encode_byte(0xFF)?;
+
+        // Extension data is sequence -> octet string. To compute size, wrap
+        // in tagging twice.
+        bytes_written += self.encode_byte(Self::OCTET_STRING_TAG)?;
+        bytes_written += self.encode_size_field(Self::get_structure_size(
+            Self::get_structure_size(1, /*tagged=*/ true)?,
+            /*tagged=*/ true,
+        )?)?;
+
+        bytes_written += self.encode_byte(Self::BIT_STRING_TAG)?;
+        bytes_written +=
+            self.encode_size_field(Self::get_structure_size(1, /*tagged=*/ true)?)?;
+        // First byte of BIT STRING is the number of unused bits. But all bits
+        // are used.
+        bytes_written += self.encode_byte(0)?;
+
+        // Set digitalSignature bit
+        bytes_written += self.encode_byte(0x80)?;
+        bytes_written += self.encode_size_field(1)?;
+
+        Ok(bytes_written)
+    }
+
     fn encode_extensions(&mut self, measurements: &MeasurementData) -> Result<usize, DpeErrorCode> {
         // Extensions is EXPLICIT field number 3
         let mut bytes_written = self.encode_byte(Self::PRIVATE | Self::CONSTRUCTED | 0x03)?;
@@ -843,6 +900,7 @@ impl X509CertWriter<'_> {
         bytes_written += self.encode_multi_tcb_info(measurements)?;
         bytes_written += self.encode_ueid(measurements)?;
         bytes_written += self.encode_basic_constraints()?;
+        bytes_written += self.encode_key_usage()?;
 
         Ok(bytes_written)
     }
@@ -1237,6 +1295,15 @@ mod tests {
             }
             Ok(None) => panic!("basic constraints extension not found"),
             Err(_) => panic!("multiple basic constraints extensions found"),
+        }
+
+        match cert.key_usage() {
+            Ok(Some(key_usage)) => {
+                assert!(key_usage.critical);
+                assert!(key_usage.value.digital_signature());
+            }
+            Ok(None) => panic!("key usage extension not found"),
+            Err(_) => panic!("multiple key usage extensions found"),
         }
     }
 }
