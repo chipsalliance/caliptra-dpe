@@ -2,7 +2,8 @@
 use super::CommandExecution;
 use crate::{
     dpe_instance::DpeInstance,
-    response::{DpeErrorCode, GetCertificateChainResp, Response, ResponseHdr},
+    response::{GetCertificateChainResp, Response, ResponseHdr},
+    common::error_code::DpeErrorCode,
     MAX_CERT_SIZE,
 };
 use crypto::Crypto;

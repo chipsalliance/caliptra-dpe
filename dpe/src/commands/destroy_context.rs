@@ -3,7 +3,8 @@ use super::CommandExecution;
 use crate::{
     context::ContextHandle,
     dpe_instance::{flags_iter, DpeInstance},
-    response::{DpeErrorCode, Response, ResponseHdr},
+    response::{Response, ResponseHdr},
+    common::error_code::DpeErrorCode,
     MAX_HANDLES,
 };
 use crypto::Crypto;

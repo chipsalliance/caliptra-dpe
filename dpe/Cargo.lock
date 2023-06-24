@@ -118,6 +118,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "common"
+version = "0.1.0"
+dependencies = [
+ "crypto",
+ "zerocopy",
+]
+
+[[package]]
 name = "cpufeatures"
 version = "0.2.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -192,10 +200,10 @@ name = "dpe"
 version = "0.1.0"
 dependencies = [
  "asn1",
+ "common",
  "crypto",
  "openssl",
  "platform",
- "x509",
  "x509-parser",
  "zerocopy",
 ]
@@ -526,14 +534,6 @@ name = "version_check"
 version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
-
-[[package]]
-name = "x509"
-version = "0.1.0"
-dependencies = [
- "crypto",
- "zerocopy",
-]
 
 [[package]]
 name = "x509-parser"

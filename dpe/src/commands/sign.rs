@@ -3,8 +3,8 @@ use super::CommandExecution;
 use crate::{
     context::{ContextHandle, ContextType},
     dpe_instance::DpeInstance,
-    response::{DpeErrorCode, Response, ResponseHdr, SignResp},
-    x509::DPE_PROFILE,
+    response::{Response, ResponseHdr, SignResp},
+    common::{DPE_PROFILE, error_code::DpeErrorCode},
 };
 use crypto::{Crypto, CryptoBuf, Digest, EcdsaSig, HmacSig};
 use platform::Platform;

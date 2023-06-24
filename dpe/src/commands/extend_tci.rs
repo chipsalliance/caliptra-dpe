@@ -3,9 +3,8 @@ use super::CommandExecution;
 use crate::{
     context::ContextHandle,
     dpe_instance::DpeInstance,
-    response::{DpeErrorCode, NewHandleResp, Response, ResponseHdr},
-    x509::tci::TciMeasurement,
-    x509::DPE_PROFILE,
+    response::{NewHandleResp, Response, ResponseHdr},
+    common::{tci::TciMeasurement, error_code::DpeErrorCode, DPE_PROFILE},
 };
 use crypto::Crypto;
 use platform::Platform;

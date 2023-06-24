@@ -1,5 +1,5 @@
 // Licensed under the Apache-2.0 license.
-use crate::{DPE_PROFILE, X509ErrorCode};
+use crate::{DPE_PROFILE, error_code::DpeErrorCode};
 use core::mem::size_of;
 use zerocopy::AsBytes;
 
@@ -23,9 +23,9 @@ impl TciNodeData {
         }
     }
 
-    pub fn serialize(&self, dst: &mut [u8]) -> Result<usize, X509ErrorCode> {
+    pub fn serialize(&self, dst: &mut [u8]) -> Result<usize, DpeErrorCode> {
         if dst.len() < size_of::<Self>() {
-            return Err(X509ErrorCode::InternalError);
+            return Err(DpeErrorCode::InternalError);
         }
 
         let mut offset: usize = 0;
@@ -73,7 +73,7 @@ mod test {
         // Test too small slice.
         let mut response_buffer = [0; size_of::<TciNodeData>() - 1];
         assert_eq!(
-            Err(X509ErrorCode::InternalError),
+            Err(DpeErrorCode::InternalError),
             tci_node_data.serialize(response_buffer.as_mut_slice())
         );
         let mut response_buffer = [0; size_of::<TciNodeData>()];

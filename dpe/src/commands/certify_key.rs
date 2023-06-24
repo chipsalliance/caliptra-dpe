@@ -3,10 +3,10 @@ use super::CommandExecution;
 use crate::{
     context::ContextHandle,
     dpe_instance::DpeInstance,
-    response::{CertifyKeyResp, DpeErrorCode, Response, ResponseHdr},
-    x509::tci::TciNodeData,
-    x509::x509::{MeasurementData, Name, X509CertWriter},
-    x509::DPE_PROFILE, MAX_CERT_SIZE, MAX_HANDLES,
+    response::{CertifyKeyResp, Response, ResponseHdr},
+    common::{tci::TciNodeData, error_code::DpeErrorCode, DPE_PROFILE},
+    common::x509::{MeasurementData, Name, X509CertWriter},
+    MAX_CERT_SIZE, MAX_HANDLES,
 };
 use crypto::Crypto;
 use platform::Platform;
@@ -114,7 +114,7 @@ impl<C: Crypto, P: Platform> CommandExecution<C, P> for CertifyKeyCmd {
                     &subject_name,
                     &pub_key,
                     &measurements,
-                ).map_err(|_| DpeErrorCode::InvalidArgument)?;
+                )?;
 
                 let tbs_digest = C::hash(DPE_PROFILE.alg_len(), &tbs_buffer[..bytes_written])
                     .map_err(|_| DpeErrorCode::HashError)?;
@@ -123,8 +123,7 @@ impl<C: Crypto, P: Platform> CommandExecution<C, P> for CertifyKeyCmd {
 
                 let mut cert_writer = X509CertWriter::new(&mut cert, true);
                 bytes_written =
-                    cert_writer.encode_ecdsa_certificate(&tbs_buffer[..bytes_written], &sig).map_err(
-                        |_| DpeErrorCode::InvalidArgument)?;
+                    cert_writer.encode_ecdsa_certificate(&tbs_buffer[..bytes_written], &sig)?;
                 u32::try_from(bytes_written).map_err(|_| DpeErrorCode::InternalError)?
             }
             Self::FORMAT_CSR => {

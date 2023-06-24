@@ -2,7 +2,8 @@
 use super::CommandExecution;
 use crate::{
     dpe_instance::DpeInstance,
-    response::{DpeErrorCode, GetTaggedTciResp, Response, ResponseHdr},
+    response::{GetTaggedTciResp, Response, ResponseHdr},
+    common::error_code::DpeErrorCode,
 };
 use crypto::Crypto;
 use platform::Platform;

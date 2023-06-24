@@ -8,14 +8,7 @@ Abstract:
 
 pub mod x509;
 pub mod tci;
-
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum X509ErrorCode {
-    NoError = 0,
-    InternalError = 1,
-    InvalidCommand = 2,
-    InvalidArgument = 3,
-}
+pub mod error_code;
 
 pub enum DpeProfile {
     P256Sha256 = 1,

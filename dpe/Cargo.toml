@@ -7,12 +7,12 @@ edition = "2021"
 
 [features]
 default = ["dpe_profile_p256_sha256"]
-dpe_profile_p256_sha256 = []
-dpe_profile_p384_sha384 = []
+dpe_profile_p256_sha256 = ["common/dpe_profile_p256_sha256"]
+dpe_profile_p384_sha384 = ["common/dpe_profile_p384_sha384"]
 
 [dependencies]
 crypto = {path = "../crypto"}
-x509 = {path = "../x509"}
+common = {path = "../common"}
 platform = {path = "../platform"}
 zerocopy = "0.6.1"
 
@@ -21,4 +21,4 @@ asn1 = "0.13.0"
 openssl = "0.10"
 x509-parser = "0.14.0"
 crypto = {path = "../crypto", features = ["deterministic_rand"]}
-x509 = {path = "../x509", features = ["dpe_profile_p256_sha256"]}
+common = {path = "../common", default-features = false}
