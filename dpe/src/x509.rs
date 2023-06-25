@@ -23,6 +23,7 @@ pub struct Name<'a> {
 pub struct MeasurementData<'a> {
     pub(crate) label: &'a [u8],
     pub(crate) tci_nodes: &'a [TciNodeData],
+    pub(crate) is_ca: bool,
 }
 
 pub struct X509CertWriter<'a> {
@@ -809,7 +810,10 @@ impl X509CertWriter<'_> {
     /// Encode a BasicConstraints extension
     ///
     /// https://datatracker.ietf.org/doc/html/rfc5280
-    fn encode_basic_constraints(&mut self) -> Result<usize, DpeErrorCode> {
+    fn encode_basic_constraints(
+        &mut self,
+        measurements: &MeasurementData,
+    ) -> Result<usize, DpeErrorCode> {
         let basic_constraints_size = Self::get_basic_constraints_size(/*tagged=*/ false)?;
 
         // Encode Extension
@@ -838,7 +842,11 @@ impl X509CertWriter<'_> {
 
         bytes_written += self.encode_byte(Self::BOOL_TAG)?;
         bytes_written += self.encode_size_field(Self::BOOL_SIZE)?;
-        bytes_written += self.encode_byte(0x00)?;
+        if measurements.is_ca {
+            bytes_written += self.encode_byte(0x01)?;
+        } else {
+            bytes_written += self.encode_byte(0x00)?;
+        }
 
         Ok(bytes_written)
     }
@@ -899,7 +907,7 @@ impl X509CertWriter<'_> {
 
         bytes_written += self.encode_multi_tcb_info(measurements)?;
         bytes_written += self.encode_ueid(measurements)?;
-        bytes_written += self.encode_basic_constraints()?;
+        bytes_written += self.encode_basic_constraints(measurements)?;
         bytes_written += self.encode_key_usage()?;
 
         Ok(bytes_written)
@@ -1197,6 +1205,7 @@ mod tests {
         let measurements = MeasurementData {
             label: &[0xCC; DPE_PROFILE.get_hash_size()],
             tci_nodes: &[node],
+            is_ca: false,
         };
 
         let bytes_written = w
@@ -1257,6 +1266,7 @@ mod tests {
         let measurements = MeasurementData {
             label: &[0; DPE_PROFILE.get_hash_size()],
             tci_nodes: &[node],
+            is_ca: true,
         };
 
         let mut tbs = [0u8; 1024];
@@ -1290,7 +1300,7 @@ mod tests {
         match cert.basic_constraints() {
             Ok(Some(basic_constraints)) => {
                 assert!(basic_constraints.critical);
-                assert!(!basic_constraints.value.ca);
+                assert!(basic_constraints.value.ca);
                 assert!(basic_constraints.value.path_len_constraint.is_none());
             }
             Ok(None) => panic!("basic constraints extension not found"),

@@ -302,7 +302,7 @@ mod tests {
             DeriveChildCmd {
                 handle: ContextHandle::default(),
                 data: [i; DPE_PROFILE.get_hash_size()],
-                flags: DeriveChildCmd::MAKE_DEFAULT,
+                flags: DeriveChildCmd::MAKE_DEFAULT | DeriveChildCmd::INPUT_ALLOW_X509,
                 tci_type: i as u32,
                 target_locality: 0,
             }
@@ -392,6 +392,7 @@ mod tests {
         let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(Support {
             auto_init: true,
             nd_derivation: true,
+            x509: true,
             ..Support::default()
         })
         .unwrap();
@@ -400,7 +401,7 @@ mod tests {
             DeriveChildCmd {
                 handle: ContextHandle::default(),
                 data: [i; DPE_PROFILE.get_hash_size()],
-                flags: DeriveChildCmd::MAKE_DEFAULT,
+                flags: DeriveChildCmd::MAKE_DEFAULT | DeriveChildCmd::INPUT_ALLOW_X509,
                 tci_type: i as u32,
                 target_locality: 0,
             }

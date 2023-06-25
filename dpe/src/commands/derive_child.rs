@@ -50,14 +50,11 @@ impl DeriveChildCmd {
         self.flags & Self::CHANGE_LOCALITY != 0
     }
 
-    //
-    // TODO: Implement ALLOW_CA and ALLOW_X509
-    //
-    const fn _allows_ca(&self) -> bool {
+    const fn allows_ca(&self) -> bool {
         self.flags & Self::INPUT_ALLOW_CA != 0
     }
 
-    const fn _allows_x509(&self) -> bool {
+    const fn allows_x509(&self) -> bool {
         self.flags & Self::INPUT_ALLOW_X509 != 0
     }
 
@@ -95,10 +92,20 @@ impl<C: Crypto, P: Platform> CommandExecution<C, P> for DeriveChildCmd {
         if !dpe.support.internal_info && self.uses_internal_info_input()
             || !dpe.support.internal_dice && self.uses_internal_dice_input()
         {
-            return Err(DpeErrorCode::InvalidArgument);
+            return Err(DpeErrorCode::ArgumentNotSupported);
+        }
+
+        if !dpe.support.is_ca && self.allows_ca() || !dpe.support.x509 && self.allows_x509() {
+            return Err(DpeErrorCode::ArgumentNotSupported);
         }
 
         let parent_idx = dpe.get_active_context_pos(&self.handle, locality)?;
+        if !dpe.contexts[parent_idx].allow_ca && self.allows_ca()
+            || !dpe.contexts[parent_idx].allow_x509 && self.allows_x509()
+        {
+            return Err(DpeErrorCode::InvalidArgument);
+        }
+
         let child_idx = dpe
             .get_next_inactive_context_pos()
             .ok_or(DpeErrorCode::MaxTcis)?;
@@ -141,6 +148,8 @@ impl<C: Crypto, P: Platform> CommandExecution<C, P> for DeriveChildCmd {
             handle: &child_handle,
             tci_type: self.tci_type,
             parent_idx: parent_idx as u8,
+            allow_ca: self.allows_ca(),
+            allow_x509: self.allows_x509(),
         });
 
         dpe.add_tci_measurement(child_idx, &TciMeasurement(self.data), target_locality)?;

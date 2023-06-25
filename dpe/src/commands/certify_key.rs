@@ -33,7 +33,7 @@ impl CertifyKeyCmd {
         self.flags & Self::ND_DERIVATION != 0
     }
 
-    const fn _uses_is_ca(&self) -> bool {
+    const fn uses_is_ca(&self) -> bool {
         self.flags & Self::IS_CA != 0
     }
 }
@@ -51,6 +51,22 @@ impl<C: Crypto, P: Platform> CommandExecution<C, P> for CertifyKeyCmd {
 
         let idx = dpe.get_active_context_pos(&self.handle, locality)?;
         let context = &dpe.contexts[idx];
+
+        if self.uses_is_ca() && !dpe.support.is_ca {
+            return Err(DpeErrorCode::ArgumentNotSupported);
+        }
+        if self.uses_is_ca() && !context.allow_ca {
+            return Err(DpeErrorCode::InvalidArgument);
+        }
+
+        if self.format == Self::FORMAT_X509 {
+            if !dpe.support.x509 {
+                return Err(DpeErrorCode::ArgumentNotSupported);
+            }
+            if !context.allow_x509 {
+                return Err(DpeErrorCode::InvalidArgument);
+            }
+        }
 
         // Make sure the command is coming from the right locality.
         if context.locality != locality {
@@ -100,6 +116,7 @@ impl<C: Crypto, P: Platform> CommandExecution<C, P> for CertifyKeyCmd {
         let measurements = MeasurementData {
             label: &self.label,
             tci_nodes: &nodes[..tcb_count],
+            is_ca: self.uses_is_ca(),
         };
 
         let mut cert = [0u8; MAX_CERT_SIZE];
@@ -127,7 +144,10 @@ impl<C: Crypto, P: Platform> CommandExecution<C, P> for CertifyKeyCmd {
                 u32::try_from(bytes_written).map_err(|_| DpeErrorCode::InternalError)?
             }
             Self::FORMAT_CSR => {
-                return Err(DpeErrorCode::ArgumentNotSupported);
+                if !dpe.support.csr {
+                    return Err(DpeErrorCode::ArgumentNotSupported);
+                }
+                return Err(DpeErrorCode::InternalError);
             }
             _ => return Err(DpeErrorCode::InvalidArgument),
         };
@@ -182,9 +202,11 @@ mod tests {
 
     #[test]
     fn test_certify_key() {
-        let mut dpe =
-            DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(Support::default())
-                .unwrap();
+        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(Support {
+            x509: true,
+            ..Support::default()
+        })
+        .unwrap();
 
         let init_resp = match InitCtxCmd::new_use_default()
             .execute(&mut dpe, TEST_LOCALITIES[0])
