@@ -33,7 +33,7 @@ impl CertifyKeyCmd {
         self.flags & Self::ND_DERIVATION != 0
     }
 
-    const fn _uses_is_ca(&self) -> bool {
+    const fn uses_is_ca(&self) -> bool {
         self.flags & Self::IS_CA != 0
     }
 }
@@ -51,6 +51,22 @@ impl<C: Crypto, P: Platform> CommandExecution<C, P> for CertifyKeyCmd {
 
         let idx = dpe.get_active_context_pos(&self.handle, locality)?;
         let context = &dpe.contexts[idx];
+
+        if self.uses_is_ca() && !dpe.support.is_ca {
+            return Err(DpeErrorCode::ArgumentNotSupported);
+        }
+        if self.uses_is_ca() && !context.allow_ca {
+            return Err(DpeErrorCode::InvalidArgument);
+        }
+
+        if self.format == Self::FORMAT_X509 {
+            if !dpe.support.x509 {
+                return Err(DpeErrorCode::ArgumentNotSupported);
+            }
+            if !context.allow_x509 {
+                return Err(DpeErrorCode::InvalidArgument);
+            }
+        }
 
         // Make sure the command is coming from the right locality.
         if context.locality != locality {
@@ -100,6 +116,7 @@ impl<C: Crypto, P: Platform> CommandExecution<C, P> for CertifyKeyCmd {
         let measurements = MeasurementData {
             label: &self.label,
             tci_nodes: &nodes[..tcb_count],
+            is_ca: self.uses_is_ca(),
         };
 
         let mut cert = [0u8; MAX_CERT_SIZE];
@@ -127,6 +144,9 @@ impl<C: Crypto, P: Platform> CommandExecution<C, P> for CertifyKeyCmd {
                 u32::try_from(bytes_written).map_err(|_| DpeErrorCode::InternalError)?
             }
             Self::FORMAT_CSR => {
+                if !dpe.support.csr {
+                    return Err(DpeErrorCode::ArgumentNotSupported);
+                }
                 return Err(DpeErrorCode::ArgumentNotSupported);
             }
             _ => return Err(DpeErrorCode::InvalidArgument),
@@ -182,9 +202,11 @@ mod tests {
 
     #[test]
     fn test_certify_key() {
-        let mut dpe =
-            DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(Support::default())
-                .unwrap();
+        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(Support {
+            x509: true,
+            ..Support::default()
+        })
+        .unwrap();
 
         let init_resp = match InitCtxCmd::new_use_default()
             .execute(&mut dpe, TEST_LOCALITIES[0])
@@ -211,6 +233,78 @@ mod tests {
             Ok((_, cert)) => {
                 assert_eq!(cert.version(), X509Version::V3);
             }
+            Err(e) => panic!("x509 parsing failed: {:?}", e),
+        };
+    }
+
+    #[test]
+    fn test_is_ca() {
+        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(Support {
+            x509: true,
+            is_ca: true,
+            ..Support::default()
+        })
+        .unwrap();
+
+        let init_resp = match InitCtxCmd::new_use_default()
+            .execute(&mut dpe, TEST_LOCALITIES[0])
+            .unwrap()
+        {
+            Response::InitCtx(resp) => resp,
+            _ => panic!("Incorrect return type."),
+        };
+        let certify_cmd_ca = CertifyKeyCmd {
+            handle: init_resp.handle,
+            flags: CertifyKeyCmd::IS_CA,
+            label: [0; DPE_PROFILE.get_hash_size()],
+            format: CertifyKeyCmd::FORMAT_X509,
+        };
+
+        let certify_resp_ca = match certify_cmd_ca
+            .execute(&mut dpe, TEST_LOCALITIES[0])
+            .unwrap()
+        {
+            Response::CertifyKey(resp) => resp,
+            _ => panic!("Wrong response type."),
+        };
+
+        let mut parser = X509CertificateParser::new().with_deep_parse_extensions(true);
+        match parser.parse(&certify_resp_ca.cert[..certify_resp_ca.cert_size.try_into().unwrap()]) {
+            Ok((_, cert)) => match cert.basic_constraints() {
+                Ok(Some(basic_constraints)) => {
+                    assert!(basic_constraints.value.ca);
+                }
+                Ok(None) => panic!("basic constraints extension not found"),
+                Err(_) => panic!("multiple basic constraints extensions found"),
+            },
+            Err(e) => panic!("x509 parsing failed: {:?}", e),
+        };
+
+        let certify_cmd_non_ca = CertifyKeyCmd {
+            handle: init_resp.handle,
+            flags: 0,
+            label: [0; DPE_PROFILE.get_hash_size()],
+            format: CertifyKeyCmd::FORMAT_X509,
+        };
+
+        let certify_resp_non_ca = match certify_cmd_non_ca
+            .execute(&mut dpe, TEST_LOCALITIES[0])
+            .unwrap()
+        {
+            Response::CertifyKey(resp) => resp,
+            _ => panic!("Wrong response type."),
+        };
+
+        match parser
+            .parse(&certify_resp_non_ca.cert[..certify_resp_non_ca.cert_size.try_into().unwrap()])
+        {
+            Ok((_, cert)) => match cert.basic_constraints() {
+                Ok(Some(basic_constraints)) => {
+                    assert!(!basic_constraints.value.ca);
+                }
+                Ok(None) => panic!("basic constraints extension not found"),
+                Err(_) => panic!("multiple basic constraints extensions found"),
+            },
             Err(e) => panic!("x509 parsing failed: {:?}", e),
         };
     }
