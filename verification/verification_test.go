@@ -238,9 +238,9 @@ func testInitContext(d TestDPEInstance, t *testing.T) {
 func TestCertifyKey(t *testing.T) {
 	simulators := []TestDPEInstance{
 		// No extra options besides AutoInit.
-		&DpeSimulator{exe_path: *sim_exe, supports: Support{AutoInit: true}},
+		&DpeSimulator{exe_path: *sim_exe, supports: Support{AutoInit: true, X509: true}},
 		// Supports AutoInit and simulation contexts.
-		&DpeSimulator{exe_path: *sim_exe, supports: Support{AutoInit: true, Simulation: true}},
+		&DpeSimulator{exe_path: *sim_exe, supports: Support{AutoInit: true, Simulation: true, X509: true}},
 	}
 
 	for _, s := range simulators {

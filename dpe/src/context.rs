@@ -71,6 +71,8 @@ impl<C: Crypto> Context<C> {
         self.context_type = args.context_type;
         self.state = ContextState::Active;
         self.locality = args.locality;
+        self.allow_ca = args.allow_ca;
+        self.allow_x509 = args.allow_x509
     }
 
     /// Destroy this context so it can no longer be used until it is re-initialized. The default
@@ -163,6 +165,8 @@ pub(crate) struct ActiveContextArgs<'a> {
     pub handle: &'a ContextHandle,
     pub tci_type: u32,
     pub parent_idx: u8,
+    pub allow_ca: bool,
+    pub allow_x509: bool,
 }
 
 pub(crate) struct ChildToRootIter<'a, C: Crypto> {
