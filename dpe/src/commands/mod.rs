@@ -9,7 +9,7 @@ pub(crate) use self::destroy_context::DestroyCtxCmd;
 pub(crate) use self::get_certificate_chain::GetCertificateChainCmd;
 pub(crate) use self::initialize_context::InitCtxCmd;
 
-pub(in crate::commands) use self::certify_key::CertifyKeyCmd;
+pub use self::certify_key::CertifyKeyCmd;
 
 use self::extend_tci::ExtendTciCmd;
 use self::get_tagged_tci::GetTaggedTciCmd;

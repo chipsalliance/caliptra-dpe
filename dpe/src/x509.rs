@@ -21,9 +21,9 @@ pub struct Name<'a> {
 }
 
 pub struct MeasurementData<'a> {
-    pub(crate) label: &'a [u8],
-    pub(crate) tci_nodes: &'a [TciNodeData],
-    pub(crate) is_ca: bool,
+    pub label: &'a [u8],
+    pub tci_nodes: &'a [TciNodeData],
+    pub is_ca: bool,
 }
 
 pub struct X509CertWriter<'a> {

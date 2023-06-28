@@ -11,8 +11,7 @@ use crate::{
 use crypto::Crypto;
 
 #[repr(C)]
-#[derive(Debug, PartialEq, Eq, zerocopy::FromBytes)]
-#[cfg_attr(test, derive(zerocopy::AsBytes))]
+#[derive(Debug, PartialEq, Eq, zerocopy::FromBytes, zerocopy::AsBytes)]
 pub struct CertifyKeyCmd {
     pub handle: ContextHandle,
     pub flags: u32,

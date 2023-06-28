@@ -6,7 +6,7 @@ use zerocopy::AsBytes;
 #[repr(C, align(4))]
 #[derive(Default, Copy, Clone, AsBytes)]
 #[cfg_attr(test, derive(zerocopy::FromBytes))]
-pub(crate) struct TciNodeData {
+pub struct TciNodeData {
     pub tci_type: u32,
     pub tci_cumulative: TciMeasurement,
     pub tci_current: TciMeasurement,
