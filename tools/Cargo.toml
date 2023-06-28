@@ -1,0 +1,21 @@
+[package]
+name = "tools"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = ["dpe_profile_p256_sha256"]
+dpe_profile_p256_sha256 = ["dpe/dpe_profile_p256_sha256"]
+dpe_profile_p384_sha384 = ["dpe/dpe_profile_p384_sha384"]
+
+[dependencies]
+dpe = {path = "../dpe"}
+crypto = {path = "../crypto", features = ["deterministic_rand"]}
+pem = "2"
+platform = {path = "../platform"}
+zerocopy = "0.6.1"
+
+[[bin]]
+name = "sample_dpe_cert"
+path = "src/sample_dpe_cert.rs"
+target = 'cfg("test")'

@@ -184,24 +184,14 @@ impl Crypto for OpensslCrypto {
 
         Ok(EcdsaPub { x, y })
     }
-
+    
     fn ecdsa_sign_with_alias(
         &mut self,
         algs: AlgLen,
         digest: &Digest,
     ) -> Result<super::EcdsaSig, CryptoError> {
-        let nid = Self::get_curve(algs);
-        let priv_bytes = self.get_priv_bytes(algs)?;
-        let group = EcGroup::from_curve_name(nid).map_err(|_| CryptoError::CryptoLibError)?;
-        let priv_bn =
-            BigNum::from_slice(priv_bytes.as_slice()).map_err(|_| CryptoError::CryptoLibError)?;
-
-        let mut pub_point = EcPoint::new(&group).map_err(|_| CryptoError::CryptoLibError)?;
-        let bn_ctx = BigNumContext::new().map_err(|_| CryptoError::CryptoLibError)?;
-        pub_point.mul_generator(&group, &priv_bn, &bn_ctx).unwrap();
-
-        let ec_priv = EcKey::from_private_components(&group, &priv_bn, &pub_point)
-            .map_err(|_| CryptoError::CryptoLibError)?;
+        let pem = include_bytes!(concat!(env!("OUT_DIR"), "/alias_priv.pem"));
+        let ec_priv: EcKey<Private> = EcKey::private_key_from_pem(pem).unwrap();
 
         let sig = EcdsaSig::sign::<Private>(digest.bytes(), &ec_priv)
             .map_err(|_| CryptoError::CryptoLibError)?;

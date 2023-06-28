@@ -17,8 +17,8 @@ pub mod support;
 
 use core::mem::size_of;
 use response::GetProfileResp;
-mod tci;
-mod x509;
+pub mod tci;
+pub mod x509;
 
 const MAX_CERT_SIZE: usize = 2048;
 const MAX_HANDLES: usize = 24;
