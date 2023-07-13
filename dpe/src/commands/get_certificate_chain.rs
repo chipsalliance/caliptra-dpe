@@ -1,11 +1,10 @@
 // Licensed under the Apache-2.0 license.
 use super::CommandExecution;
 use crate::{
-    dpe_instance::DpeInstance,
+    dpe_instance::{DpeEnv, DpeInstance},
     response::{DpeErrorCode, GetCertificateChainResp, Response, ResponseHdr},
     MAX_CERT_SIZE,
 };
-use crypto::Crypto;
 use platform::{Platform, PlatformError, MAX_CHUNK_SIZE};
 
 #[repr(C)]
@@ -16,12 +15,12 @@ pub struct GetCertificateChainCmd {
     pub size: u32,
 }
 
-impl<C: Crypto, P: Platform> CommandExecution<C, P> for GetCertificateChainCmd {
+impl CommandExecution for GetCertificateChainCmd {
     fn execute(
         &self,
-        _dpe: &mut DpeInstance<C, P>,
+        _dpe: &mut DpeInstance,
+        env: &mut impl DpeEnv,
         _locality: u32,
-        _crypto: &mut C,
     ) -> Result<Response, DpeErrorCode> {
         // Make sure the operation is supported.
         if self.size > MAX_CERT_SIZE as u32 {
@@ -29,12 +28,13 @@ impl<C: Crypto, P: Platform> CommandExecution<C, P> for GetCertificateChainCmd {
         }
 
         let mut cert_chunk = [0u8; MAX_CHUNK_SIZE];
-        let len = P::get_certificate_chain(self.offset, self.size, &mut cert_chunk).map_err(
-            |platform_error| match platform_error {
+        let len = env
+            .platform()
+            .get_certificate_chain(self.offset, self.size, &mut cert_chunk)
+            .map_err(|platform_error| match platform_error {
                 PlatformError::CertificateChainError => DpeErrorCode::InvalidArgument,
                 PlatformError::NotImplemented => DpeErrorCode::PlatformError,
-            },
-        )?;
+            })?;
         Ok(Response::GetCertificateChain(GetCertificateChainResp {
             certificate_chain: cert_chunk,
             certificate_size: len,
@@ -48,7 +48,7 @@ mod tests {
     use super::*;
     use crate::{
         commands::{Command, CommandHdr},
-        dpe_instance::tests::TEST_LOCALITIES,
+        dpe_instance::tests::{TestEnv, TEST_LOCALITIES},
         support::test::SUPPORT,
     };
     use crypto::OpensslCrypto;
@@ -75,10 +75,11 @@ mod tests {
 
     #[test]
     fn test_fails_if_size_greater_than_max_cert_size() {
-        let mut crypto = OpensslCrypto::new();
-        let mut dpe =
-            DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(SUPPORT, &mut crypto)
-                .unwrap();
+        let mut env = TestEnv {
+            crypto: OpensslCrypto::new(),
+            platform: DefaultPlatform,
+        };
+        let mut dpe = DpeInstance::new_for_test(&mut env, SUPPORT).unwrap();
 
         assert_eq!(
             Err(DpeErrorCode::InvalidArgument),
@@ -86,7 +87,7 @@ mod tests {
                 size: MAX_CERT_SIZE as u32 + 1,
                 ..TEST_GET_CERTIFICATE_CHAIN_CMD
             }
-            .execute(&mut dpe, TEST_LOCALITIES[0], &mut crypto)
+            .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         );
     }
 }

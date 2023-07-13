@@ -17,7 +17,7 @@ pub enum PlatformError {
 }
 
 pub trait Platform {
-    /// Retrieves a chunk of the parent certificates in the certificate chain.  
+    /// Retrieves a chunk of the parent certificates in the certificate chain.
     ///
     /// # Arguments
     ///
@@ -25,14 +25,15 @@ pub trait Platform {
     /// * `size` - The requested size of the chunk. Actual written number of bytes could be smaller, depending on size of chain.
     /// * `out` - Output buffer for cert chain chunk to be written to
     fn get_certificate_chain(
+        &mut self,
         offset: u32,
         size: u32,
         out: &mut [u8; MAX_CHUNK_SIZE],
     ) -> Result<u32, PlatformError>;
 
-    fn get_vendor_id() -> Result<u32, PlatformError>;
+    fn get_vendor_id(&mut self) -> Result<u32, PlatformError>;
 
-    fn get_vendor_sku() -> Result<u32, PlatformError>;
+    fn get_vendor_sku(&mut self) -> Result<u32, PlatformError>;
 
-    fn get_auto_init_locality() -> Result<u32, PlatformError>;
+    fn get_auto_init_locality(&mut self) -> Result<u32, PlatformError>;
 }

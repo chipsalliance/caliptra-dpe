@@ -2,11 +2,9 @@
 use super::CommandExecution;
 use crate::{
     context::ContextHandle,
-    dpe_instance::DpeInstance,
+    dpe_instance::{DpeEnv, DpeInstance},
     response::{DpeErrorCode, NewHandleResp, Response, ResponseHdr},
 };
-use crypto::Crypto;
-use platform::Platform;
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, zerocopy::FromBytes)]
@@ -16,12 +14,12 @@ pub struct TagTciCmd {
     tag: u32,
 }
 
-impl<C: Crypto, P: Platform> CommandExecution<C, P> for TagTciCmd {
+impl CommandExecution for TagTciCmd {
     fn execute(
         &self,
-        dpe: &mut DpeInstance<C, P>,
+        dpe: &mut DpeInstance,
+        env: &mut impl DpeEnv,
         locality: u32,
-        crypto: &mut C,
     ) -> Result<Response, DpeErrorCode> {
         // Make sure this command is supported.
         if !dpe.support.tagging {
@@ -39,7 +37,7 @@ impl<C: Crypto, P: Platform> CommandExecution<C, P> for TagTciCmd {
         }
 
         // Because handles are one-time use, let's rotate the handle, if it isn't the default.
-        dpe.roll_onetime_use_handle(idx, crypto)?;
+        dpe.roll_onetime_use_handle(env, idx)?;
         let context = &mut dpe.contexts[idx];
         context.has_tag = true;
         context.tag = self.tag;
@@ -56,7 +54,7 @@ mod tests {
     use super::*;
     use crate::{
         commands::{Command, CommandHdr, InitCtxCmd},
-        dpe_instance::tests::{SIMULATION_HANDLE, TEST_HANDLE, TEST_LOCALITIES},
+        dpe_instance::tests::{TestEnv, SIMULATION_HANDLE, TEST_HANDLE, TEST_LOCALITIES},
         support::Support,
     };
     use crypto::OpensslCrypto;
@@ -82,12 +80,11 @@ mod tests {
 
     #[test]
     fn test_tag_tci() {
-        let mut crypto = OpensslCrypto::new();
-        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(
-            Support::default(),
-            &mut crypto,
-        )
-        .unwrap();
+        let mut env = TestEnv {
+            crypto: OpensslCrypto::new(),
+            platform: DefaultPlatform,
+        };
+        let mut dpe = DpeInstance::new_for_test(&mut env, Support::default()).unwrap();
         // Make sure it returns an error if the command is marked unsupported.
         assert_eq!(
             Err(DpeErrorCode::InvalidCommand),
@@ -95,26 +92,26 @@ mod tests {
                 handle: ContextHandle::default(),
                 tag: 0,
             }
-            .execute(&mut dpe, TEST_LOCALITIES[0], &mut crypto)
+            .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         );
 
         // Make a new instance that supports tagging.
-        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(
+        let mut dpe = DpeInstance::new_for_test(
+            &mut env,
             Support {
                 tagging: true,
                 simulation: true,
                 ..Support::default()
             },
-            &mut crypto,
         )
         .unwrap();
         InitCtxCmd::new_use_default()
-            .execute(&mut dpe, TEST_LOCALITIES[0], &mut crypto)
+            .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
             .unwrap();
         let sim_local = TEST_LOCALITIES[1];
         // Make a simulation context to test against.
         InitCtxCmd::new_simulation()
-            .execute(&mut dpe, sim_local, &mut crypto)
+            .execute(&mut dpe, &mut env, sim_local)
             .unwrap();
 
         // Invalid handle.
@@ -124,7 +121,7 @@ mod tests {
                 handle: TEST_HANDLE,
                 tag: 0,
             }
-            .execute(&mut dpe, TEST_LOCALITIES[0], &mut crypto)
+            .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         );
 
         // Wrong locality.
@@ -134,7 +131,7 @@ mod tests {
                 handle: ContextHandle::default(),
                 tag: 0,
             }
-            .execute(&mut dpe, TEST_LOCALITIES[1], &mut crypto)
+            .execute(&mut dpe, &mut env, TEST_LOCALITIES[1])
         );
 
         // Tag default handle.
@@ -147,7 +144,7 @@ mod tests {
                 handle: ContextHandle::default(),
                 tag: 0,
             }
-            .execute(&mut dpe, TEST_LOCALITIES[0], &mut crypto)
+            .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         );
 
         // Try to re-tag the default context.
@@ -157,7 +154,7 @@ mod tests {
                 handle: ContextHandle::default(),
                 tag: 1,
             }
-            .execute(&mut dpe, TEST_LOCALITIES[0], &mut crypto)
+            .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         );
 
         // Try same tag on simulation.
@@ -167,7 +164,7 @@ mod tests {
                 handle: SIMULATION_HANDLE,
                 tag: 0,
             }
-            .execute(&mut dpe, TEST_LOCALITIES[1], &mut crypto)
+            .execute(&mut dpe, &mut env, TEST_LOCALITIES[1])
         );
 
         // Give the simulation context another handle so we can prove the handle rotates when it
@@ -191,7 +188,7 @@ mod tests {
                 handle: sim_tmp_handle,
                 tag: 1,
             }
-            .execute(&mut dpe, TEST_LOCALITIES[1], &mut crypto)
+            .execute(&mut dpe, &mut env, TEST_LOCALITIES[1])
         );
         // Make sure it rotated back to the deterministic simulation handle.
         assert!(dpe

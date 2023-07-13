@@ -2,11 +2,9 @@
 use super::CommandExecution;
 use crate::{
     context::{ActiveContextArgs, Context, ContextHandle, ContextType},
-    dpe_instance::DpeInstance,
+    dpe_instance::{DpeEnv, DpeInstance},
     response::{DpeErrorCode, NewHandleResp, Response, ResponseHdr},
 };
-use crypto::Crypto;
-use platform::Platform;
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, zerocopy::FromBytes)]
@@ -41,12 +39,12 @@ impl InitCtxCmd {
     }
 }
 
-impl<C: Crypto, P: Platform> CommandExecution<C, P> for InitCtxCmd {
+impl CommandExecution for InitCtxCmd {
     fn execute(
         &self,
-        dpe: &mut DpeInstance<C, P>,
+        dpe: &mut DpeInstance,
+        env: &mut impl DpeEnv,
         locality: u32,
-        crypto: &mut C,
     ) -> Result<Response, DpeErrorCode> {
         // This function can only be called once for non-simulation contexts.
         if (self.flag_is_default() && dpe.has_initialized)
@@ -70,7 +68,7 @@ impl<C: Crypto, P: Platform> CommandExecution<C, P> for InitCtxCmd {
             (ContextType::Normal, ContextHandle::default())
         } else {
             // Simulation.
-            (ContextType::Simulation, dpe.generate_new_handle(crypto)?)
+            (ContextType::Simulation, dpe.generate_new_handle(env)?)
         };
 
         dpe.contexts[idx].activate(&ActiveContextArgs {
@@ -95,7 +93,7 @@ mod tests {
     use crate::{
         commands::{Command, CommandHdr},
         context::ContextState,
-        dpe_instance::tests::TEST_LOCALITIES,
+        dpe_instance::tests::{TestEnv, TEST_LOCALITIES},
         support::Support,
     };
     use crypto::OpensslCrypto;
@@ -118,15 +116,14 @@ mod tests {
 
     #[test]
     fn test_initialize_context() {
-        let mut crypto = OpensslCrypto::new();
-        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(
-            Support::default(),
-            &mut crypto,
-        )
-        .unwrap();
+        let mut env = TestEnv {
+            crypto: OpensslCrypto::new(),
+            platform: DefaultPlatform,
+        };
+        let mut dpe = DpeInstance::new_for_test(&mut env, Support::default()).unwrap();
 
         let handle = match InitCtxCmd::new_use_default()
-            .execute(&mut dpe, TEST_LOCALITIES[0], &mut crypto)
+            .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
             .unwrap()
         {
             Response::InitCtx(resp) => resp.handle,
@@ -138,35 +135,35 @@ mod tests {
         // Try to double initialize the default context.
         assert_eq!(
             Err(DpeErrorCode::ArgumentNotSupported),
-            InitCtxCmd::new_use_default().execute(&mut dpe, TEST_LOCALITIES[0], &mut crypto)
+            InitCtxCmd::new_use_default().execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         );
 
         // Try not setting any flags.
         assert_eq!(
             Err(DpeErrorCode::InvalidArgument),
-            InitCtxCmd { flags: 0 }.execute(&mut dpe, TEST_LOCALITIES[0], &mut crypto)
+            InitCtxCmd { flags: 0 }.execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         );
 
         // Try simulation when not supported.
         assert_eq!(
             Err(DpeErrorCode::ArgumentNotSupported),
-            InitCtxCmd::new_simulation().execute(&mut dpe, TEST_LOCALITIES[0], &mut crypto)
+            InitCtxCmd::new_simulation().execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         );
 
         // Change to support simulation.
-        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(
+        let mut dpe = DpeInstance::new_for_test(
+            &mut env,
             Support {
                 simulation: true,
                 ..Support::default()
             },
-            &mut crypto,
         )
         .unwrap();
 
         // Try setting both flags.
         assert_eq!(
             Err(DpeErrorCode::InvalidArgument),
-            InitCtxCmd { flags: 3 << 30 }.execute(&mut dpe, TEST_LOCALITIES[0], &mut crypto)
+            InitCtxCmd { flags: 3 << 30 }.execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         );
 
         // Set all handles as active.
@@ -177,7 +174,7 @@ mod tests {
         // Try to initialize a context when it is full.
         assert_eq!(
             Err(DpeErrorCode::MaxTcis),
-            InitCtxCmd::new_simulation().execute(&mut dpe, TEST_LOCALITIES[0], &mut crypto)
+            InitCtxCmd::new_simulation().execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         );
     }
 }

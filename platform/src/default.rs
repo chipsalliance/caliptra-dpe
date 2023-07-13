@@ -145,6 +145,7 @@ pub const TEST_CERT_CHAIN: [u8; 2048] = [
 
 impl Platform for DefaultPlatform {
     fn get_certificate_chain(
+        &mut self,
         offset: u32,
         size: u32,
         out: &mut [u8; MAX_CHUNK_SIZE],
@@ -158,15 +159,15 @@ impl Platform for DefaultPlatform {
         Ok(cert_chunk_range_end - offset)
     }
 
-    fn get_vendor_id() -> Result<u32, PlatformError> {
+    fn get_vendor_id(&mut self) -> Result<u32, PlatformError> {
         Ok(VENDOR_ID)
     }
 
-    fn get_vendor_sku() -> Result<u32, PlatformError> {
+    fn get_vendor_sku(&mut self) -> Result<u32, PlatformError> {
         Ok(VENDOR_SKU)
     }
 
-    fn get_auto_init_locality() -> Result<u32, PlatformError> {
+    fn get_auto_init_locality(&mut self) -> Result<u32, PlatformError> {
         Ok(AUTO_INIT_LOCALITY)
     }
 }

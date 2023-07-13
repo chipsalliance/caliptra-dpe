@@ -18,13 +18,11 @@ use self::sign::SignCmd;
 use self::tag_tci::TagTciCmd;
 
 use crate::{
-    dpe_instance::DpeInstance,
+    dpe_instance::{DpeEnv, DpeInstance},
     response::{DpeErrorCode, Response},
     DPE_PROFILE,
 };
 use core::mem::size_of;
-use crypto::Crypto;
-use platform::Platform;
 use zerocopy::FromBytes;
 
 mod certify_key;
@@ -121,12 +119,12 @@ impl From<Command> for u32 {
     }
 }
 
-pub trait CommandExecution<C: Crypto, P: Platform> {
+pub trait CommandExecution {
     fn execute(
         &self,
-        dpe: &mut DpeInstance<C, P>,
+        dpe: &mut DpeInstance,
+        env: &mut impl DpeEnv,
         locality: u32,
-        crypto: &mut C,
     ) -> Result<Response, DpeErrorCode>;
 }
 

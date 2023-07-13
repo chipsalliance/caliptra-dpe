@@ -10,15 +10,11 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
 use std::process;
 
-use dpe::{commands::Command, response::Response, DpeInstance, Support};
+use dpe::{commands::Command, dpe_instance::DpeEnv, response::Response, DpeInstance, Support};
 
 const SOCKET_PATH: &str = "/tmp/dpe-sim.socket";
 
-fn handle_request(
-    dpe: &mut DpeInstance<OpensslCrypto, DefaultPlatform>,
-    stream: &mut UnixStream,
-    crypto: &mut OpensslCrypto,
-) {
+fn handle_request(dpe: &mut DpeInstance, env: &mut SimEnv, stream: &mut UnixStream) {
     let mut buf = [0u8; 4096];
     let (locality, cmd) = {
         let len = stream.read(&mut buf).unwrap();
@@ -36,9 +32,7 @@ fn handle_request(
     }
     trace!("|");
 
-    let response = dpe
-        .execute_serialized_command(locality, cmd, crypto)
-        .unwrap();
+    let response = dpe.execute_serialized_command(env, locality, cmd).unwrap();
 
     let response_code = match response {
         Response::GetProfile(ref res) => res.resp_hdr.status,
@@ -116,6 +110,24 @@ struct Args {
     supports_internal_dice: bool,
 }
 
+struct SimEnv {
+    platform: DefaultPlatform,
+    crypto: OpensslCrypto,
+}
+
+impl DpeEnv for SimEnv {
+    type Crypto = OpensslCrypto;
+    type Platform = DefaultPlatform;
+
+    fn crypto(&mut self) -> &mut OpensslCrypto {
+        &mut self.crypto
+    }
+
+    fn platform(&mut self) -> &mut DefaultPlatform {
+        &mut self.platform
+    }
+}
+
 fn main() -> std::io::Result<()> {
     env_logger::init();
     let args = Args::parse();
@@ -134,7 +146,6 @@ fn main() -> std::io::Result<()> {
     })
     .unwrap();
 
-    let mut crypto = OpensslCrypto::new();
     let support = Support {
         simulation: args.supports_simulation,
         extend_tci: args.supports_extend_tci,
@@ -148,20 +159,25 @@ fn main() -> std::io::Result<()> {
         internal_info: args.supports_internal_info,
         internal_dice: args.supports_internal_dice,
     };
-    let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(support, &mut crypto)
-        .map_err(|err| {
-            Error::new(
-                ErrorKind::Other,
-                format!("{err:?} while creating new DPE instance"),
-            )
-        })?;
+
+    let mut env = SimEnv {
+        crypto: OpensslCrypto::new(),
+        platform: DefaultPlatform,
+    };
+
+    let mut dpe = DpeInstance::new_for_test(&mut env, support).map_err(|err| {
+        Error::new(
+            ErrorKind::Other,
+            format!("{err:?} while creating new DPE instance"),
+        )
+    })?;
 
     info!("DPE listening to socket {SOCKET_PATH}");
 
     for stream in listener.incoming() {
         match stream {
             Ok(mut stream) => {
-                handle_request(&mut dpe, &mut stream, &mut crypto);
+                handle_request(&mut dpe, &mut env, &mut stream);
             }
             Err(err) => {
                 error!("Failed to open socket: {err}");
