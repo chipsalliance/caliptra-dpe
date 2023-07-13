@@ -2,12 +2,10 @@
 use super::CommandExecution;
 use crate::{
     context::ContextHandle,
-    dpe_instance::{flags_iter, DpeInstance},
+    dpe_instance::{flags_iter, DpeEnv, DpeInstance},
     response::{DpeErrorCode, Response, ResponseHdr},
     MAX_HANDLES,
 };
-use crypto::Crypto;
-use platform::Platform;
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, zerocopy::FromBytes)]
@@ -25,12 +23,12 @@ impl DestroyCtxCmd {
     }
 }
 
-impl<C: Crypto, P: Platform> CommandExecution<C, P> for DestroyCtxCmd {
+impl CommandExecution for DestroyCtxCmd {
     fn execute(
         &self,
-        dpe: &mut DpeInstance<C, P>,
+        dpe: &mut DpeInstance,
+        _env: &mut impl DpeEnv,
         locality: u32,
-        _crypto: &mut C,
     ) -> Result<Response, DpeErrorCode> {
         let idx = dpe.get_active_context_pos(&self.handle, locality)?;
         let context = &dpe.contexts[idx];

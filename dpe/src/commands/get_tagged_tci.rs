@@ -1,11 +1,9 @@
 // Licensed under the Apache-2.0 license.
 use super::CommandExecution;
 use crate::{
-    dpe_instance::DpeInstance,
+    dpe_instance::{DpeEnv, DpeInstance},
     response::{DpeErrorCode, GetTaggedTciResp, Response, ResponseHdr},
 };
-use crypto::Crypto;
-use platform::Platform;
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, zerocopy::FromBytes)]
@@ -14,12 +12,12 @@ pub struct GetTaggedTciCmd {
     tag: u32,
 }
 
-impl<C: Crypto, P: Platform> CommandExecution<C, P> for GetTaggedTciCmd {
+impl CommandExecution for GetTaggedTciCmd {
     fn execute(
         &self,
-        dpe: &mut DpeInstance<C, P>,
+        dpe: &mut DpeInstance,
+        _env: &mut impl DpeEnv,
         _: u32,
-        _crypto: &mut C,
     ) -> Result<Response, DpeErrorCode> {
         // Make sure this command is supported.
         if !dpe.support.tagging {
