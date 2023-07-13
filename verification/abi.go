@@ -74,10 +74,6 @@ type GetProfileResp struct {
 
 type CertifyKeyFlags uint32
 
-const (
-	CertifyKeyNDDerivation CertifyKeyFlags = 0x800000
-)
-
 type CertifyKeyFormat uint32
 
 const (

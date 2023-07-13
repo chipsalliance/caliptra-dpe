@@ -29,12 +29,8 @@ impl<C: Crypto, P: Platform> CommandExecution<C, P> for ExtendTciCmd {
         if !dpe.support.extend_tci {
             return Err(DpeErrorCode::InvalidCommand);
         }
+
         let idx = dpe.get_active_context_pos(&self.handle, locality)?;
-        let context = &mut dpe.contexts[idx];
-
-        // invalidate cached private key
-        context.cached_priv_key = None;
-
         dpe.add_tci_measurement(idx, &TciMeasurement(self.data), locality, crypto)?;
 
         // Rotate the handle if it isn't the default context.
@@ -131,7 +127,6 @@ mod tests {
         // Make sure the current TCI was updated correctly.
         assert_eq!(data, default_context.tci.tci_current.0);
         // Make sure cached private key is invalidated
-        assert_eq!(None, default_context.cached_priv_key);
 
         let sim_local = TEST_LOCALITIES[1];
         dpe.support.simulation = true;

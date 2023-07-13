@@ -107,10 +107,6 @@ struct Args {
     #[arg(long)]
     supports_is_symmetric: bool,
 
-    /// Supports non-deterministic key derivation.
-    #[arg(long)]
-    supports_nd_derivation: bool,
-
     /// Supports the INTERNAL_INPUT_INFO extension to DeriveChild
     #[arg(long)]
     supports_internal_info: bool,
@@ -149,7 +145,6 @@ fn main() -> std::io::Result<()> {
         csr: args.supports_csr,
         is_ca: args.supports_is_ca,
         is_symmetric: args.supports_is_symmetric,
-        nd_derivation: args.supports_nd_derivation,
         internal_info: args.supports_internal_info,
         internal_dice: args.supports_internal_dice,
     };
