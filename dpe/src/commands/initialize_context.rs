@@ -78,7 +78,7 @@ impl<C: Crypto, P: Platform> CommandExecution<C, P> for InitCtxCmd {
             locality,
             handle: &handle,
             tci_type: 0,
-            parent_idx: Context::<C>::ROOT_INDEX,
+            parent_idx: Context::ROOT_INDEX,
             allow_ca: true,
             allow_x509: true,
         });

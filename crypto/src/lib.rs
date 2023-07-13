@@ -125,20 +125,18 @@ pub trait Crypto {
     /// * `algs` - Which length of algorithm to use.
     fn hash_initialize(&mut self, algs: AlgLen) -> Result<Self::Hasher, CryptoError>;
 
-    /// Derive a CDI based on the current base CDI and measurements as well as an optional random seed value.
+    /// Derive a CDI based on the current base CDI and measurements
     ///
     /// # Arguments
     ///
     /// * `algs` - Which length of algorithms to use.
     /// * `measurement` - A digest of the measurements which should be used for CDI derivation
     /// * `info` - Caller-supplied info string to use in CDI derivation
-    /// * `rand_seed` - Caller-supplied optional random seed to use in CDI derivation
     fn derive_cdi(
         &mut self,
         algs: AlgLen,
         measurement: &Digest,
         info: &[u8],
-        rand_seed: Option<&[u8]>,
     ) -> Result<Self::Cdi, CryptoError>;
 
     /// Derives a private key using a cryptographically secure KDF
@@ -237,7 +235,7 @@ struct BufWriter<'a> {
 impl Write for BufWriter<'_> {
     fn write_str(&mut self, s: &str) -> Result<(), Error> {
         if s.len() > self.buf.len().saturating_sub(self.offset) {
-            return Err(Error::default());
+            return Err(Error);
         }
 
         self.buf[self.offset..self.offset + s.len()].copy_from_slice(s.as_bytes());

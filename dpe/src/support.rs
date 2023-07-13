@@ -10,7 +10,6 @@ pub struct Support {
     pub x509: bool,
     pub csr: bool,
     pub is_symmetric: bool,
-    pub nd_derivation: bool,
     pub internal_info: bool,
     pub internal_dice: bool,
     pub is_ca: bool,
@@ -28,7 +27,6 @@ impl Support {
             | self.get_x509_flag()
             | self.get_csr_flag()
             | self.get_is_symmetric_flag()
-            | self.get_nd_derivation_flag()
             | self.get_internal_info_flag()
             | self.get_internal_dice_flag()
             | self.get_is_ca_flag()
@@ -57,17 +55,14 @@ impl Support {
     fn get_is_symmetric_flag(&self) -> u32 {
         u32::from(self.is_symmetric) << 24
     }
-    fn get_nd_derivation_flag(&self) -> u32 {
-        u32::from(self.nd_derivation) << 23
-    }
     fn get_internal_info_flag(&self) -> u32 {
-        u32::from(self.internal_info) << 22
+        u32::from(self.internal_info) << 23
     }
     fn get_internal_dice_flag(&self) -> u32 {
-        u32::from(self.internal_dice) << 21
+        u32::from(self.internal_dice) << 22
     }
     fn get_is_ca_flag(&self) -> u32 {
-        u32::from(self.is_ca) << 20
+        u32::from(self.is_ca) << 21
     }
 }
 
@@ -84,7 +79,6 @@ pub mod test {
         x509: true,
         csr: false,
         is_symmetric: false,
-        nd_derivation: false,
         internal_info: false,
         internal_dice: false,
         is_ca: false,
@@ -148,41 +142,33 @@ pub mod test {
         }
         .get_flags();
         assert_eq!(flags, 1 << 24);
-        // Supports nd derivation.
-        let flags = Support {
-            nd_derivation: true,
-            ..Support::default()
-        }
-        .get_flags();
-        assert_eq!(flags, 1 << 23);
         // Supports internal info.
         let flags = Support {
             internal_info: true,
             ..Support::default()
         }
         .get_flags();
-        assert_eq!(flags, 1 << 22);
+        assert_eq!(flags, 1 << 23);
         // Supports internal DICE.
         let flags = Support {
             internal_dice: true,
             ..Support::default()
         }
         .get_flags();
-        assert_eq!(flags, 1 << 21);
+        assert_eq!(flags, 1 << 22);
         // Supports a couple combos.
         let flags = Support {
             simulation: true,
             auto_init: true,
             rotate_context: true,
             csr: true,
-            nd_derivation: true,
             internal_dice: true,
             ..Support::default()
         }
         .get_flags();
         assert_eq!(
             flags,
-            (1 << 31) | (1 << 29) | (1 << 27) | (1 << 25) | (1 << 23) | (1 << 21)
+            (1 << 31) | (1 << 29) | (1 << 27) | (1 << 25) | (1 << 22)
         );
         let flags = Support {
             extend_tci: true,
@@ -195,7 +181,7 @@ pub mod test {
         .get_flags();
         assert_eq!(
             flags,
-            (1 << 30) | (1 << 28) | (1 << 26) | (1 << 24) | (1 << 22)
+            (1 << 30) | (1 << 28) | (1 << 26) | (1 << 24) | (1 << 23)
         );
         // Supports everything.
         let flags = Support {
@@ -207,7 +193,6 @@ pub mod test {
             x509: true,
             csr: true,
             is_symmetric: true,
-            nd_derivation: true,
             internal_info: true,
             internal_dice: true,
             is_ca: true,
@@ -226,7 +211,6 @@ pub mod test {
                 | (1 << 23)
                 | (1 << 22)
                 | (1 << 21)
-                | (1 << 20)
         );
     }
 }

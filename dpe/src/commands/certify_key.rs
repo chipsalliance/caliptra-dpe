@@ -22,16 +22,10 @@ pub struct CertifyKeyCmd {
 }
 
 impl CertifyKeyCmd {
-    pub const ND_DERIVATION: u32 = 1 << 31;
-    pub const IS_CA: u32 = 1 << 30;
+    pub const IS_CA: u32 = 1 << 31;
 
     pub const FORMAT_X509: u32 = 0;
     pub const FORMAT_CSR: u32 = 1;
-
-    // Uses non-deterministic derivation.
-    const fn uses_nd_derivation(&self) -> bool {
-        self.flags & Self::ND_DERIVATION != 0
-    }
 
     const fn uses_is_ca(&self) -> bool {
         self.flags & Self::IS_CA != 0
@@ -45,11 +39,6 @@ impl<C: Crypto, P: Platform> CommandExecution<C, P> for CertifyKeyCmd {
         locality: u32,
         crypto: &mut C,
     ) -> Result<Response, DpeErrorCode> {
-        // Make sure the operation is supported.
-        if !dpe.support.nd_derivation && self.uses_nd_derivation() {
-            return Err(DpeErrorCode::InvalidArgument);
-        }
-
         let idx = dpe.get_active_context_pos(&self.handle, locality)?;
         let context = &dpe.contexts[idx];
 
@@ -75,29 +64,14 @@ impl<C: Crypto, P: Platform> CommandExecution<C, P> for CertifyKeyCmd {
         }
 
         let algs = DPE_PROFILE.alg_len();
-        let priv_key = if self.uses_nd_derivation() {
-            if let Some(cached) = dpe.contexts[idx].cached_priv_key.take() {
-                Ok(cached)
-            } else {
-                let cdi = dpe.derive_cdi(idx, true, crypto)?;
-                crypto
-                    .derive_private_key(algs, &cdi, &self.label, b"ECC")
-                    .map_err(|_| DpeErrorCode::CryptoError)
-            }
-        } else {
-            let cdi = dpe.derive_cdi(idx, false, crypto)?;
-            crypto
-                .derive_private_key(algs, &cdi, &self.label, b"ECC")
-                .map_err(|_| DpeErrorCode::CryptoError)
-        }?;
+        let cdi = dpe.derive_cdi(idx, crypto)?;
+        let priv_key = crypto
+            .derive_private_key(algs, &cdi, &self.label, b"ECC")
+            .map_err(|_| DpeErrorCode::CryptoError)?;
 
         let pub_key = crypto
             .derive_ecdsa_pub(DPE_PROFILE.alg_len(), &priv_key)
             .map_err(|_| DpeErrorCode::CryptoError)?;
-        // cache private key
-        if self.uses_nd_derivation() {
-            dpe.contexts[idx].cached_priv_key.replace(priv_key);
-        }
 
         let mut issuer_name = Name {
             cn: dpe.issuer_cn,

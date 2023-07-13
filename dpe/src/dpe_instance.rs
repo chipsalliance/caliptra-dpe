@@ -18,7 +18,7 @@ use platform::{Platform, MAX_CHUNK_SIZE};
 use zerocopy::AsBytes;
 
 pub struct DpeInstance<'a, C: Crypto, P: Platform> {
-    pub(crate) contexts: [Context<C>; MAX_HANDLES],
+    pub(crate) contexts: [Context; MAX_HANDLES],
     pub(crate) support: Support,
 
     /// Can only successfully execute the initialize context command for non-simulation (i.e.
@@ -32,14 +32,11 @@ pub struct DpeInstance<'a, C: Crypto, P: Platform> {
     // DpeInstance doesn't actually need to hold an instance. The PhantomData
     // is just to make the Crypto and Platform traits work.
     phantom_platform: PhantomData<P>,
+    phantom_crypto: PhantomData<C>,
 }
 
 impl<C: Crypto, P: Platform> DpeInstance<'_, C, P> {
     const MAX_NEW_HANDLE_ATTEMPTS: usize = 8;
-
-    pub(crate) fn new_context_handles() -> [Context<C>; MAX_HANDLES] {
-        core::array::from_fn(|_| Context::new())
-    }
 
     /// Create a new DPE instance.
     ///
@@ -52,12 +49,14 @@ impl<C: Crypto, P: Platform> DpeInstance<'_, C, P> {
         issuer_cn: &'a [u8],
         crypto: &mut C,
     ) -> Result<DpeInstance<'a, C, P>, DpeErrorCode> {
+        const CONTEXT_INITIALIZER: Context = Context::new();
         let mut dpe = DpeInstance {
-            contexts: Self::new_context_handles(),
+            contexts: [CONTEXT_INITIALIZER; MAX_HANDLES],
             support,
             has_initialized: false,
             issuer_cn,
             phantom_platform: PhantomData,
+            phantom_crypto: PhantomData,
         };
 
         if dpe.support.auto_init {
@@ -160,7 +159,7 @@ impl<C: Crypto, P: Platform> DpeInstance<'_, C, P> {
 
     /// Recursive function that will return all of a context's descendants. Returns a u32 that is
     /// a bitmap of the node indices.
-    pub(crate) fn get_descendants(&self, context: &Context<C>) -> Result<u32, DpeErrorCode> {
+    pub(crate) fn get_descendants(&self, context: &Context) -> Result<u32, DpeErrorCode> {
         if matches!(context.state, ContextState::Inactive) {
             return Err(DpeErrorCode::InvalidHandle);
         }
@@ -302,7 +301,6 @@ impl<C: Crypto, P: Platform> DpeInstance<'_, C, P> {
     pub(crate) fn derive_cdi(
         &mut self,
         start_idx: usize,
-        mix_random_value: bool,
         crypto: &mut C,
     ) -> Result<C::Cdi, DpeErrorCode> {
         let mut hasher = crypto
@@ -351,18 +349,9 @@ impl<C: Crypto, P: Platform> DpeInstance<'_, C, P> {
         }
 
         let digest = hasher.finish().map_err(|_| DpeErrorCode::HashError)?;
-        let mut seed = [0; DPE_PROFILE.alg_len().size()];
-        let random_seed = if mix_random_value {
-            crypto
-                .rand_bytes(&mut seed)
-                .map_err(|_| DpeErrorCode::RandError)?;
-            Some(seed.as_ref())
-        } else {
-            None
-        };
 
         crypto
-            .derive_cdi(DPE_PROFILE.alg_len(), &digest, b"DPE", random_seed)
+            .derive_cdi(DPE_PROFILE.alg_len(), &digest, b"DPE")
             .map_err(|_| DpeErrorCode::CryptoError)
     }
 }
@@ -636,14 +625,8 @@ pub mod tests {
             let leaf_context_idx = dpe
                 .get_active_context_pos(&ContextHandle::default(), TEST_LOCALITIES[0])
                 .unwrap();
-            let curr_cdi = dpe
-                .derive_cdi(leaf_context_idx, false, &mut crypto)
-                .unwrap();
+            let curr_cdi = dpe.derive_cdi(leaf_context_idx, &mut crypto).unwrap();
             assert_ne!(last_cdi, curr_cdi);
-
-            // Ensure the CDI changes when mixing random seed
-            let cdi_with_rand_seed = dpe.derive_cdi(leaf_context_idx, true, &mut crypto).unwrap();
-            assert_ne!(curr_cdi, cdi_with_rand_seed);
 
             last_cdi = curr_cdi;
         }
@@ -660,7 +643,7 @@ pub mod tests {
 
         let digest = hasher.finish().unwrap();
         let answer = crypto
-            .derive_cdi(DPE_PROFILE.alg_len(), &digest, b"DPE", None)
+            .derive_cdi(DPE_PROFILE.alg_len(), &digest, b"DPE")
             .unwrap();
         assert_eq!(answer, last_cdi);
     }
@@ -690,9 +673,7 @@ pub mod tests {
         .execute(&mut dpe, TEST_LOCALITIES[0], &mut crypto)
         .unwrap();
 
-        let cdi_with_internal_input_info = dpe
-            .derive_cdi(parent_context_idx, false, &mut crypto)
-            .unwrap();
+        let cdi_with_internal_input_info = dpe.derive_cdi(parent_context_idx, &mut crypto).unwrap();
         let context = &dpe.contexts[parent_context_idx];
         assert!(context.uses_internal_input_info);
 
@@ -709,7 +690,7 @@ pub mod tests {
 
         let digest = hasher.finish().unwrap();
         let answer = crypto
-            .derive_cdi(DPE_PROFILE.alg_len(), &digest, b"DPE", None)
+            .derive_cdi(DPE_PROFILE.alg_len(), &digest, b"DPE")
             .unwrap();
         assert_eq!(answer, cdi_with_internal_input_info);
     }
@@ -739,9 +720,7 @@ pub mod tests {
         .execute(&mut dpe, TEST_LOCALITIES[0], &mut crypto)
         .unwrap();
 
-        let cdi_with_internal_input_dice = dpe
-            .derive_cdi(parent_context_idx, false, &mut crypto)
-            .unwrap();
+        let cdi_with_internal_input_dice = dpe.derive_cdi(parent_context_idx, &mut crypto).unwrap();
         let context = &dpe.contexts[parent_context_idx];
         assert!(context.uses_internal_input_dice);
 
@@ -752,7 +731,7 @@ pub mod tests {
 
         let digest = hasher.finish().unwrap();
         let answer = crypto
-            .derive_cdi(DPE_PROFILE.alg_len(), &digest, b"DPE", None)
+            .derive_cdi(DPE_PROFILE.alg_len(), &digest, b"DPE")
             .unwrap();
         assert_eq!(answer, cdi_with_internal_input_dice)
     }

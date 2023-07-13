@@ -13,7 +13,6 @@ type Support struct {
 	X509          bool
 	Csr           bool
 	IsSymmetric   bool
-	NDDerivation  bool
 	InternalInfo  bool
 	InternalDice  bool
 	IsCA          bool
@@ -241,17 +240,14 @@ func (s *Support) ToFlags() uint32 {
 	if s.IsSymmetric {
 		flags |= (1 << 24)
 	}
-	if s.NDDerivation {
+	if s.InternalInfo {
 		flags |= (1 << 23)
 	}
-	if s.InternalInfo {
+	if s.InternalDice {
 		flags |= (1 << 22)
 	}
-	if s.InternalDice {
-		flags |= (1 << 21)
-	}
 	if s.IsCA {
-		flags |= (1 << 20)
+		flags |= (1 << 21)
 	}
 	return flags
 }

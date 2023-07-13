@@ -72,8 +72,6 @@ func TestGetProfile(t *testing.T) {
 		&DpeSimulator{exe_path: *sim_exe, supports: Support{Csr: true}},
 		// Supports symmetric derivation.
 		&DpeSimulator{exe_path: *sim_exe, supports: Support{IsSymmetric: true}},
-		// Supports non-deterministic key derivation.
-		&DpeSimulator{exe_path: *sim_exe, supports: Support{NDDerivation: true}},
 		// Supports internal info.
 		&DpeSimulator{exe_path: *sim_exe, supports: Support{InternalInfo: true}},
 		// Supports internal DICE.
@@ -84,7 +82,7 @@ func TestGetProfile(t *testing.T) {
 		&DpeSimulator{exe_path: *sim_exe, supports: Support{Simulation: true, AutoInit: true, RotateContext: true, Csr: true, InternalDice: true, IsCA: true}},
 		&DpeSimulator{exe_path: *sim_exe, supports: Support{ExtendTci: true, Tagging: true, X509: true, InternalInfo: true}},
 		// Supports everything.
-		&DpeSimulator{exe_path: *sim_exe, supports: Support{Simulation: true, ExtendTci: true, AutoInit: true, Tagging: true, RotateContext: true, X509: true, Csr: true, IsSymmetric: true, NDDerivation: true, InternalInfo: true, InternalDice: true, IsCA: true}},
+		&DpeSimulator{exe_path: *sim_exe, supports: Support{Simulation: true, ExtendTci: true, AutoInit: true, Tagging: true, RotateContext: true, X509: true, Csr: true, IsSymmetric: true, InternalInfo: true, InternalDice: true, IsCA: true}},
 	}
 
 	for _, s := range simulators {

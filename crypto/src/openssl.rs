@@ -111,7 +111,6 @@ impl Crypto for OpensslCrypto {
         algs: AlgLen,
         measurement: &Digest,
         info: &[u8],
-        rand_seed: Option<&[u8]>,
     ) -> Result<Self::Cdi, CryptoError> {
         match algs {
             AlgLen::Bit256 => {
@@ -119,10 +118,6 @@ impl Crypto for OpensslCrypto {
                 let mut cdi = [0u8; AlgLen::Bit256.size()];
                 hk.expand(measurement.bytes(), &mut cdi)
                     .map_err(|_| CryptoError::CryptoLibError)?;
-                if let Some(seed) = rand_seed {
-                    hk.expand(seed, &mut cdi)
-                        .map_err(|_| CryptoError::CryptoLibError)?;
-                }
 
                 Ok(cdi.to_vec())
             }
@@ -131,10 +126,6 @@ impl Crypto for OpensslCrypto {
                 let mut cdi = [0u8; AlgLen::Bit384.size()];
                 hk.expand(measurement.bytes(), &mut cdi)
                     .map_err(|_| CryptoError::CryptoLibError)?;
-                if let Some(seed) = rand_seed {
-                    hk.expand(seed, &mut cdi)
-                        .map_err(|_| CryptoError::CryptoLibError)?;
-                }
 
                 Ok(cdi.to_vec())
             }
