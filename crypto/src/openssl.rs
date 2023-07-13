@@ -34,6 +34,10 @@ impl Hasher for OpensslHasher {
 pub struct OpensslCrypto;
 
 impl OpensslCrypto {
+    pub fn new() -> Self {
+        Self {}
+    }
+
     fn get_digest(algs: AlgLen) -> MessageDigest {
         match algs {
             AlgLen::Bit256 => MessageDigest::sha256(),
@@ -48,9 +52,9 @@ impl OpensslCrypto {
         }
     }
 
-    fn get_priv_bytes(algs: AlgLen) -> Result<Vec<u8>, CryptoError> {
+    fn get_priv_bytes(&mut self, algs: AlgLen) -> Result<Vec<u8>, CryptoError> {
         let priv_bytes = vec![0u8; algs.size()];
-        let priv_digest = Self::hash(algs, &priv_bytes)?;
+        let priv_digest = self.hash(algs, &priv_bytes)?;
         Ok(priv_digest.bytes().to_vec())
     }
 
@@ -82,7 +86,7 @@ impl Crypto for OpensslCrypto {
     type PrivKey = OpensslPrivKey;
 
     #[cfg(feature = "deterministic_rand")]
-    fn rand_bytes(dst: &mut [u8]) -> Result<(), CryptoError> {
+    fn rand_bytes(&mut self, dst: &mut [u8]) -> Result<(), CryptoError> {
         for (i, char) in dst.iter_mut().enumerate() {
             *char = (i + 1) as u8;
         }
@@ -90,11 +94,11 @@ impl Crypto for OpensslCrypto {
     }
 
     #[cfg(not(feature = "deterministic_rand"))]
-    fn rand_bytes(dst: &mut [u8]) -> Result<(), CryptoError> {
+    fn rand_bytes(&mut self, dst: &mut [u8]) -> Result<(), CryptoError> {
         openssl::rand::rand_bytes(dst).map_err(|_| CryptoError::CryptoLibError)
     }
 
-    fn hash_initialize(algs: AlgLen) -> Result<Self::Hasher, CryptoError> {
+    fn hash_initialize(&mut self, algs: AlgLen) -> Result<Self::Hasher, CryptoError> {
         let md = Self::get_digest(algs);
         Ok(OpensslHasher(
             openssl::hash::Hasher::new(md).map_err(|_| CryptoError::CryptoLibError)?,
@@ -103,6 +107,7 @@ impl Crypto for OpensslCrypto {
     }
 
     fn derive_cdi(
+        &mut self,
         algs: AlgLen,
         measurement: &Digest,
         info: &[u8],
@@ -137,6 +142,7 @@ impl Crypto for OpensslCrypto {
     }
 
     fn derive_private_key(
+        &mut self,
         algs: AlgLen,
         cdi: &Self::Cdi,
         label: &[u8],
@@ -162,7 +168,11 @@ impl Crypto for OpensslCrypto {
         }
     }
 
-    fn derive_ecdsa_pub(algs: AlgLen, priv_key: &Self::PrivKey) -> Result<EcdsaPub, CryptoError> {
+    fn derive_ecdsa_pub(
+        &mut self,
+        algs: AlgLen,
+        priv_key: &Self::PrivKey,
+    ) -> Result<EcdsaPub, CryptoError> {
         let ec_priv_key = OpensslCrypto::ec_key_from_priv_key(algs, priv_key)
             .map_err(|_| CryptoError::CryptoLibError)?;
         let nid = OpensslCrypto::get_curve(algs);
@@ -185,11 +195,12 @@ impl Crypto for OpensslCrypto {
     }
 
     fn ecdsa_sign_with_alias(
+        &mut self,
         algs: AlgLen,
         digest: &Digest,
     ) -> Result<super::EcdsaSig, CryptoError> {
         let nid = Self::get_curve(algs);
-        let priv_bytes = Self::get_priv_bytes(algs)?;
+        let priv_bytes = self.get_priv_bytes(algs)?;
         let group = EcGroup::from_curve_name(nid).map_err(|_| CryptoError::CryptoLibError)?;
         let priv_bn =
             BigNum::from_slice(priv_bytes.as_slice()).map_err(|_| CryptoError::CryptoLibError)?;
@@ -211,6 +222,7 @@ impl Crypto for OpensslCrypto {
     }
 
     fn ecdsa_sign_with_derived(
+        &mut self,
         algs: AlgLen,
         digest: &Digest,
         priv_key: &Self::PrivKey,
@@ -225,9 +237,13 @@ impl Crypto for OpensslCrypto {
         Ok(super::EcdsaSig { r, s })
     }
 
-    fn get_ecdsa_alias_serial(algs: AlgLen, serial: &mut [u8]) -> Result<(), CryptoError> {
+    fn get_ecdsa_alias_serial(
+        &mut self,
+        algs: AlgLen,
+        serial: &mut [u8],
+    ) -> Result<(), CryptoError> {
         let nid = Self::get_curve(algs);
-        let priv_bytes = Self::get_priv_bytes(algs)?;
+        let priv_bytes = self.get_priv_bytes(algs)?;
 
         let group = EcGroup::from_curve_name(nid).map_err(|_| CryptoError::CryptoLibError)?;
         let priv_bn =
@@ -246,17 +262,18 @@ impl Crypto for OpensslCrypto {
         let x = CryptoBuf::new(&x.to_vec_padded(algs.size() as i32).unwrap(), algs).unwrap();
         let y = CryptoBuf::new(&y.to_vec_padded(algs.size() as i32).unwrap(), algs).unwrap();
 
-        Self::get_pubkey_serial(algs, &EcdsaPub { x, y }, serial)
+        self.get_pubkey_serial(algs, &EcdsaPub { x, y }, serial)
     }
 
     fn hmac_sign_with_derived(
+        &mut self,
         algs: AlgLen,
         cdi: &Self::Cdi,
         label: &[u8],
         info: &[u8],
         digest: &Digest,
     ) -> Result<HmacSig, CryptoError> {
-        let symmetric_key = Self::derive_private_key(algs, cdi, label, info)?;
+        let symmetric_key = self.derive_private_key(algs, cdi, label, info)?;
         let hmac_key = PKey::hmac(symmetric_key.bytes()).unwrap();
 
         let sha_size = Self::get_digest(algs);

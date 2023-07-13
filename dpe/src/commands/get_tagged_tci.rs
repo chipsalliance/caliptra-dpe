@@ -15,7 +15,12 @@ pub struct GetTaggedTciCmd {
 }
 
 impl<C: Crypto, P: Platform> CommandExecution<C, P> for GetTaggedTciCmd {
-    fn execute(&self, dpe: &mut DpeInstance<C, P>, _: u32) -> Result<Response, DpeErrorCode> {
+    fn execute(
+        &self,
+        dpe: &mut DpeInstance<C, P>,
+        _: u32,
+        _crypto: &mut C,
+    ) -> Result<Response, DpeErrorCode> {
         // Make sure this command is supported.
         if !dpe.support.tagging {
             return Err(DpeErrorCode::InvalidCommand);

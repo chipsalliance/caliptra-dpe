@@ -21,6 +21,7 @@ impl<C: Crypto, P: Platform> CommandExecution<C, P> for GetCertificateChainCmd {
         &self,
         _dpe: &mut DpeInstance<C, P>,
         _locality: u32,
+        _crypto: &mut C,
     ) -> Result<Response, DpeErrorCode> {
         // Make sure the operation is supported.
         if self.size > MAX_CERT_SIZE as u32 {
@@ -74,7 +75,10 @@ mod tests {
 
     #[test]
     fn test_fails_if_size_greater_than_max_cert_size() {
-        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(SUPPORT).unwrap();
+        let mut crypto = OpensslCrypto::new();
+        let mut dpe =
+            DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(SUPPORT, &mut crypto)
+                .unwrap();
 
         assert_eq!(
             Err(DpeErrorCode::InvalidArgument),
@@ -82,7 +86,7 @@ mod tests {
                 size: MAX_CERT_SIZE as u32 + 1,
                 ..TEST_GET_CERTIFICATE_CHAIN_CMD
             }
-            .execute(&mut dpe, TEST_LOCALITIES[0])
+            .execute(&mut dpe, TEST_LOCALITIES[0], &mut crypto)
         );
     }
 }

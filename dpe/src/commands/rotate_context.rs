@@ -30,6 +30,7 @@ impl<C: Crypto, P: Platform> CommandExecution<C, P> for RotateCtxCmd {
         &self,
         dpe: &mut DpeInstance<C, P>,
         locality: u32,
+        crypto: &mut C,
     ) -> Result<Response, DpeErrorCode> {
         if !dpe.support.rotate_context {
             return Err(DpeErrorCode::InvalidCommand);
@@ -48,7 +49,7 @@ impl<C: Crypto, P: Platform> CommandExecution<C, P> for RotateCtxCmd {
         let new_handle = if self.uses_target_is_default() {
             ContextHandle::default()
         } else {
-            dpe.generate_new_handle()?
+            dpe.generate_new_handle(crypto)?
         };
         dpe.contexts[idx].handle = new_handle;
         Ok(Response::RotateCtx(NewHandleResp {
@@ -90,9 +91,12 @@ mod tests {
 
     #[test]
     fn test_rotate_context() {
-        let mut dpe =
-            DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(Support::default())
-                .unwrap();
+        let mut crypto = OpensslCrypto::new();
+        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(
+            Support::default(),
+            &mut crypto,
+        )
+        .unwrap();
         // Make sure it returns an error if the command is marked unsupported.
         assert_eq!(
             Err(DpeErrorCode::InvalidCommand),
@@ -101,17 +105,20 @@ mod tests {
                 flags: 0,
                 target_locality: 0
             }
-            .execute(&mut dpe, TEST_LOCALITIES[0])
+            .execute(&mut dpe, TEST_LOCALITIES[0], &mut crypto)
         );
 
         // Make a new instance that supports RotateContext.
-        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(Support {
-            rotate_context: true,
-            ..Support::default()
-        })
+        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(
+            Support {
+                rotate_context: true,
+                ..Support::default()
+            },
+            &mut crypto,
+        )
         .unwrap();
         InitCtxCmd::new_use_default()
-            .execute(&mut dpe, TEST_LOCALITIES[0])
+            .execute(&mut dpe, TEST_LOCALITIES[0], &mut crypto)
             .unwrap();
 
         // Invalid handle.
@@ -122,7 +129,7 @@ mod tests {
                 flags: 0,
                 target_locality: 0
             }
-            .execute(&mut dpe, TEST_LOCALITIES[0])
+            .execute(&mut dpe, TEST_LOCALITIES[0], &mut crypto)
         );
 
         // Wrong locality.
@@ -133,7 +140,7 @@ mod tests {
                 flags: 0,
                 target_locality: 0
             }
-            .execute(&mut dpe, TEST_LOCALITIES[1])
+            .execute(&mut dpe, TEST_LOCALITIES[1], &mut crypto)
         );
 
         // Caller's locality already has default context.
@@ -144,7 +151,7 @@ mod tests {
                 flags: RotateCtxCmd::TARGET_IS_DEFAULT,
                 target_locality: 0
             }
-            .execute(&mut dpe, TEST_LOCALITIES[0])
+            .execute(&mut dpe, TEST_LOCALITIES[0], &mut crypto)
         );
 
         // Rotate default handle.
@@ -158,7 +165,7 @@ mod tests {
                 flags: 0,
                 target_locality: 0
             }
-            .execute(&mut dpe, TEST_LOCALITIES[0])
+            .execute(&mut dpe, TEST_LOCALITIES[0], &mut crypto)
         );
 
         // New handle is all 0s if caller requests default handle
@@ -172,7 +179,7 @@ mod tests {
                 flags: RotateCtxCmd::TARGET_IS_DEFAULT,
                 target_locality: 0
             }
-            .execute(&mut dpe, TEST_LOCALITIES[0])
+            .execute(&mut dpe, TEST_LOCALITIES[0], &mut crypto)
         );
     }
 }

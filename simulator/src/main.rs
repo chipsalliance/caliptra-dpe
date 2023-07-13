@@ -14,7 +14,11 @@ use dpe::{commands::Command, response::Response, DpeInstance, Support};
 
 const SOCKET_PATH: &str = "/tmp/dpe-sim.socket";
 
-fn handle_request(dpe: &mut DpeInstance<OpensslCrypto, DefaultPlatform>, stream: &mut UnixStream) {
+fn handle_request(
+    dpe: &mut DpeInstance<OpensslCrypto, DefaultPlatform>,
+    stream: &mut UnixStream,
+    crypto: &mut OpensslCrypto,
+) {
     let mut buf = [0u8; 4096];
     let (locality, cmd) = {
         let len = stream.read(&mut buf).unwrap();
@@ -32,7 +36,9 @@ fn handle_request(dpe: &mut DpeInstance<OpensslCrypto, DefaultPlatform>, stream:
     }
     trace!("|");
 
-    let response = dpe.execute_serialized_command(locality, cmd).unwrap();
+    let response = dpe
+        .execute_serialized_command(locality, cmd, crypto)
+        .unwrap();
 
     let response_code = match response {
         Response::GetProfile(ref res) => res.resp_hdr.status,
@@ -132,6 +138,7 @@ fn main() -> std::io::Result<()> {
     })
     .unwrap();
 
+    let mut crypto = OpensslCrypto::new();
     let support = Support {
         simulation: args.supports_simulation,
         extend_tci: args.supports_extend_tci,
@@ -146,8 +153,8 @@ fn main() -> std::io::Result<()> {
         internal_info: args.supports_internal_info,
         internal_dice: args.supports_internal_dice,
     };
-    let mut dpe =
-        DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(support).map_err(|err| {
+    let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(support, &mut crypto)
+        .map_err(|err| {
             Error::new(
                 ErrorKind::Other,
                 format!("{err:?} while creating new DPE instance"),
@@ -159,7 +166,7 @@ fn main() -> std::io::Result<()> {
     for stream in listener.incoming() {
         match stream {
             Ok(mut stream) => {
-                handle_request(&mut dpe, &mut stream);
+                handle_request(&mut dpe, &mut stream, &mut crypto);
             }
             Err(err) => {
                 error!("Failed to open socket: {err}");

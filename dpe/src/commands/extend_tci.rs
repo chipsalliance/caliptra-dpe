@@ -23,6 +23,7 @@ impl<C: Crypto, P: Platform> CommandExecution<C, P> for ExtendTciCmd {
         &self,
         dpe: &mut DpeInstance<C, P>,
         locality: u32,
+        crypto: &mut C,
     ) -> Result<Response, DpeErrorCode> {
         // Make sure this command is supported.
         if !dpe.support.extend_tci {
@@ -34,10 +35,10 @@ impl<C: Crypto, P: Platform> CommandExecution<C, P> for ExtendTciCmd {
         // invalidate cached private key
         context.cached_priv_key = None;
 
-        dpe.add_tci_measurement(idx, &TciMeasurement(self.data), locality)?;
+        dpe.add_tci_measurement(idx, &TciMeasurement(self.data), locality, crypto)?;
 
         // Rotate the handle if it isn't the default context.
-        dpe.roll_onetime_use_handle(idx)?;
+        dpe.roll_onetime_use_handle(idx, crypto)?;
         Ok(Response::ExtendTci(NewHandleResp {
             handle: dpe.contexts[idx].handle,
             resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
@@ -76,9 +77,12 @@ mod tests {
 
     #[test]
     fn test_extend_tci() {
-        let mut dpe =
-            DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(Support::default())
-                .unwrap();
+        let mut crypto = OpensslCrypto::new();
+        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(
+            Support::default(),
+            &mut crypto,
+        )
+        .unwrap();
         // Make sure it returns an error if the command is marked unsupported.
         assert_eq!(
             Err(DpeErrorCode::InvalidCommand),
@@ -86,13 +90,13 @@ mod tests {
                 handle: ContextHandle::default(),
                 data: [0; DPE_PROFILE.get_hash_size()],
             }
-            .execute(&mut dpe, TEST_LOCALITIES[0])
+            .execute(&mut dpe, TEST_LOCALITIES[0], &mut crypto)
         );
 
         // Turn on support.
         dpe.support.extend_tci = true;
         InitCtxCmd::new_use_default()
-            .execute(&mut dpe, TEST_LOCALITIES[0])
+            .execute(&mut dpe, TEST_LOCALITIES[0], &mut crypto)
             .unwrap();
 
         // Wrong locality.
@@ -102,7 +106,7 @@ mod tests {
                 handle: ContextHandle::default(),
                 data: [0; DPE_PROFILE.get_hash_size()],
             }
-            .execute(&mut dpe, TEST_LOCALITIES[1])
+            .execute(&mut dpe, TEST_LOCALITIES[1], &mut crypto)
         );
 
         let locality = AUTO_INIT_LOCALITY;
@@ -116,7 +120,7 @@ mod tests {
             handle: ContextHandle::default(),
             data,
         }
-        .execute(&mut dpe, TEST_LOCALITIES[0])
+        .execute(&mut dpe, TEST_LOCALITIES[0], &mut crypto)
         .unwrap();
 
         // Make sure extending the default TCI doesn't change the handle.
@@ -132,7 +136,7 @@ mod tests {
         let sim_local = TEST_LOCALITIES[1];
         dpe.support.simulation = true;
         InitCtxCmd::new_simulation()
-            .execute(&mut dpe, sim_local)
+            .execute(&mut dpe, sim_local, &mut crypto)
             .unwrap();
 
         // Give the simulation context another handle so we can prove the handle rotates when it
@@ -150,7 +154,7 @@ mod tests {
             handle: sim_tmp_handle,
             data,
         }
-        .execute(&mut dpe, TEST_LOCALITIES[1])
+        .execute(&mut dpe, TEST_LOCALITIES[1], &mut crypto)
         .unwrap();
         // Make sure it rotated back to the deterministic simulation handle.
         assert!(dpe

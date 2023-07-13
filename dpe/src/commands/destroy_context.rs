@@ -30,6 +30,7 @@ impl<C: Crypto, P: Platform> CommandExecution<C, P> for DestroyCtxCmd {
         &self,
         dpe: &mut DpeInstance<C, P>,
         locality: u32,
+        _crypto: &mut C,
     ) -> Result<Response, DpeErrorCode> {
         let idx = dpe.get_active_context_pos(&self.handle, locality)?;
         let context = &dpe.contexts[idx];

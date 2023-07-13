@@ -43,6 +43,7 @@ impl<C: Crypto, P: Platform> CommandExecution<C, P> for CertifyKeyCmd {
         &self,
         dpe: &mut DpeInstance<C, P>,
         locality: u32,
+        crypto: &mut C,
     ) -> Result<Response, DpeErrorCode> {
         // Make sure the operation is supported.
         if !dpe.support.nd_derivation && self.uses_nd_derivation() {
@@ -78,16 +79,20 @@ impl<C: Crypto, P: Platform> CommandExecution<C, P> for CertifyKeyCmd {
             if let Some(cached) = dpe.contexts[idx].cached_priv_key.take() {
                 Ok(cached)
             } else {
-                C::derive_private_key(algs, &dpe.derive_cdi(idx, true)?, &self.label, b"ECC")
+                let cdi = dpe.derive_cdi(idx, true, crypto)?;
+                crypto
+                    .derive_private_key(algs, &cdi, &self.label, b"ECC")
                     .map_err(|_| DpeErrorCode::CryptoError)
             }
         } else {
-            let cdi = dpe.derive_cdi(idx, false)?;
-            C::derive_private_key(algs, &cdi, &self.label, b"ECC")
+            let cdi = dpe.derive_cdi(idx, false, crypto)?;
+            crypto
+                .derive_private_key(algs, &cdi, &self.label, b"ECC")
                 .map_err(|_| DpeErrorCode::CryptoError)
         }?;
 
-        let pub_key = C::derive_ecdsa_pub(DPE_PROFILE.alg_len(), &priv_key)
+        let pub_key = crypto
+            .derive_ecdsa_pub(DPE_PROFILE.alg_len(), &priv_key)
             .map_err(|_| DpeErrorCode::CryptoError)?;
         // cache private key
         if self.uses_nd_derivation() {
@@ -98,14 +103,16 @@ impl<C: Crypto, P: Platform> CommandExecution<C, P> for CertifyKeyCmd {
             cn: dpe.issuer_cn,
             serial: [0u8; DPE_PROFILE.get_hash_size() * 2],
         };
-        C::get_ecdsa_alias_serial(DPE_PROFILE.alg_len(), &mut issuer_name.serial)
+        crypto
+            .get_ecdsa_alias_serial(DPE_PROFILE.alg_len(), &mut issuer_name.serial)
             .map_err(|_| DpeErrorCode::CryptoError)?;
 
         let mut subject_name = Name {
             cn: b"DPE Leaf",
             serial: [0u8; DPE_PROFILE.get_hash_size() * 2],
         };
-        C::get_pubkey_serial(DPE_PROFILE.alg_len(), &pub_key, &mut subject_name.serial)
+        crypto
+            .get_pubkey_serial(DPE_PROFILE.alg_len(), &pub_key, &mut subject_name.serial)
             .map_err(|_| DpeErrorCode::CryptoError)?;
 
         // Get TCI Nodes
@@ -133,9 +140,11 @@ impl<C: Crypto, P: Platform> CommandExecution<C, P> for CertifyKeyCmd {
                     &measurements,
                 )?;
 
-                let tbs_digest = C::hash(DPE_PROFILE.alg_len(), &tbs_buffer[..bytes_written])
+                let tbs_digest = crypto
+                    .hash(DPE_PROFILE.alg_len(), &tbs_buffer[..bytes_written])
                     .map_err(|_| DpeErrorCode::HashError)?;
-                let sig = C::ecdsa_sign_with_alias(DPE_PROFILE.alg_len(), &tbs_digest)
+                let sig = crypto
+                    .ecdsa_sign_with_alias(DPE_PROFILE.alg_len(), &tbs_digest)
                     .map_err(|_| DpeErrorCode::CryptoError)?;
 
                 let mut cert_writer = X509CertWriter::new(&mut cert, true);
@@ -153,7 +162,7 @@ impl<C: Crypto, P: Platform> CommandExecution<C, P> for CertifyKeyCmd {
         };
 
         // Rotate handle if it isn't the default
-        dpe.roll_onetime_use_handle(idx)?;
+        dpe.roll_onetime_use_handle(idx, crypto)?;
 
         Ok(Response::CertifyKey(CertifyKeyResp {
             new_context_handle: dpe.contexts[idx].handle,
@@ -202,14 +211,18 @@ mod tests {
 
     #[test]
     fn test_certify_key() {
-        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(Support {
-            x509: true,
-            ..Support::default()
-        })
+        let mut crypto = OpensslCrypto::new();
+        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(
+            Support {
+                x509: true,
+                ..Support::default()
+            },
+            &mut crypto,
+        )
         .unwrap();
 
         let init_resp = match InitCtxCmd::new_use_default()
-            .execute(&mut dpe, TEST_LOCALITIES[0])
+            .execute(&mut dpe, TEST_LOCALITIES[0], &mut crypto)
             .unwrap()
         {
             Response::InitCtx(resp) => resp,
@@ -222,7 +235,10 @@ mod tests {
             format: CertifyKeyCmd::FORMAT_X509,
         };
 
-        let certify_resp = match certify_cmd.execute(&mut dpe, TEST_LOCALITIES[0]).unwrap() {
+        let certify_resp = match certify_cmd
+            .execute(&mut dpe, TEST_LOCALITIES[0], &mut crypto)
+            .unwrap()
+        {
             Response::CertifyKey(resp) => resp,
             _ => panic!("Wrong response type."),
         };
@@ -239,15 +255,19 @@ mod tests {
 
     #[test]
     fn test_is_ca() {
-        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(Support {
-            x509: true,
-            is_ca: true,
-            ..Support::default()
-        })
+        let mut crypto = OpensslCrypto::new();
+        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(
+            Support {
+                x509: true,
+                is_ca: true,
+                ..Support::default()
+            },
+            &mut crypto,
+        )
         .unwrap();
 
         let init_resp = match InitCtxCmd::new_use_default()
-            .execute(&mut dpe, TEST_LOCALITIES[0])
+            .execute(&mut dpe, TEST_LOCALITIES[0], &mut crypto)
             .unwrap()
         {
             Response::InitCtx(resp) => resp,
@@ -261,7 +281,7 @@ mod tests {
         };
 
         let certify_resp_ca = match certify_cmd_ca
-            .execute(&mut dpe, TEST_LOCALITIES[0])
+            .execute(&mut dpe, TEST_LOCALITIES[0], &mut crypto)
             .unwrap()
         {
             Response::CertifyKey(resp) => resp,
@@ -288,7 +308,7 @@ mod tests {
         };
 
         let certify_resp_non_ca = match certify_cmd_non_ca
-            .execute(&mut dpe, TEST_LOCALITIES[0])
+            .execute(&mut dpe, TEST_LOCALITIES[0], &mut crypto)
             .unwrap()
         {
             Response::CertifyKey(resp) => resp,

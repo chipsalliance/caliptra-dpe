@@ -87,6 +87,7 @@ impl<C: Crypto, P: Platform> CommandExecution<C, P> for DeriveChildCmd {
         &self,
         dpe: &mut DpeInstance<C, P>,
         locality: u32,
+        crypto: &mut C,
     ) -> Result<Response, DpeErrorCode> {
         // Make sure the operation is supported.
         if (!dpe.support.internal_info && self.uses_internal_info_input())
@@ -132,14 +133,14 @@ impl<C: Crypto, P: Platform> CommandExecution<C, P> for DeriveChildCmd {
         let child_handle = if self.makes_default() {
             ContextHandle::default()
         } else {
-            dpe.generate_new_handle()?
+            dpe.generate_new_handle(crypto)?
         };
 
         if !self.retains_parent() {
             dpe.contexts[parent_idx].state = ContextState::Retired;
             dpe.contexts[parent_idx].handle = ContextHandle([0xff; ContextHandle::SIZE]);
         } else if !dpe.contexts[parent_idx].handle.is_default() {
-            dpe.contexts[parent_idx].handle = dpe.generate_new_handle()?;
+            dpe.contexts[parent_idx].handle = dpe.generate_new_handle(crypto)?;
         }
 
         dpe.contexts[child_idx].activate(&ActiveContextArgs {
@@ -152,7 +153,12 @@ impl<C: Crypto, P: Platform> CommandExecution<C, P> for DeriveChildCmd {
             allow_x509: self.allows_x509(),
         });
 
-        dpe.add_tci_measurement(child_idx, &TciMeasurement(self.data), target_locality)?;
+        dpe.add_tci_measurement(
+            child_idx,
+            &TciMeasurement(self.data),
+            target_locality,
+            crypto,
+        )?;
 
         // Add child to the parent's list of children.
         dpe.contexts[parent_idx].add_child(child_idx)?;
@@ -200,11 +206,16 @@ mod tests {
 
     #[test]
     fn test_initial_conditions() {
-        let mut dpe =
-            DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(Support::default())
-                .unwrap();
+        let mut crypto = OpensslCrypto::new();
+        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(
+            Support::default(),
+            &mut crypto,
+        )
+        .unwrap();
 
-        InitCtxCmd::new_use_default().execute(&mut dpe, 0).unwrap();
+        InitCtxCmd::new_use_default()
+            .execute(&mut dpe, 0, &mut crypto)
+            .unwrap();
 
         // Make sure it can detect wrong locality.
         assert_eq!(
@@ -216,16 +227,20 @@ mod tests {
                 tci_type: 0,
                 target_locality: 0
             }
-            .execute(&mut dpe, 1)
+            .execute(&mut dpe, 1, &mut crypto)
         );
     }
 
     #[test]
     fn test_max_tcis() {
-        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(Support {
-            auto_init: true,
-            ..Support::default()
-        })
+        let mut crypto = OpensslCrypto::new();
+        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(
+            Support {
+                auto_init: true,
+                ..Support::default()
+            },
+            &mut crypto,
+        )
         .unwrap();
 
         // Fill all contexts with children (minus the auto-init context).
@@ -237,7 +252,7 @@ mod tests {
                 tci_type: 0,
                 target_locality: 0,
             }
-            .execute(&mut dpe, TEST_LOCALITIES[0])
+            .execute(&mut dpe, TEST_LOCALITIES[0], &mut crypto)
             .unwrap();
         }
 
@@ -251,16 +266,20 @@ mod tests {
                 tci_type: 0,
                 target_locality: 0
             }
-            .execute(&mut dpe, TEST_LOCALITIES[0])
+            .execute(&mut dpe, TEST_LOCALITIES[0], &mut crypto)
         );
     }
 
     #[test]
     fn test_set_child_parent_relationship() {
-        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(Support {
-            auto_init: true,
-            ..Support::default()
-        })
+        let mut crypto = OpensslCrypto::new();
+        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(
+            Support {
+                auto_init: true,
+                ..Support::default()
+            },
+            &mut crypto,
+        )
         .unwrap();
 
         let parent_idx = dpe
@@ -273,7 +292,7 @@ mod tests {
             tci_type: 7,
             target_locality: TEST_LOCALITIES[1],
         }
-        .execute(&mut dpe, TEST_LOCALITIES[0])
+        .execute(&mut dpe, TEST_LOCALITIES[0], &mut crypto)
         .unwrap();
         let child_idx = dpe
             .get_active_context_pos(&ContextHandle::default(), TEST_LOCALITIES[1])
@@ -291,10 +310,14 @@ mod tests {
 
     #[test]
     fn test_set_other_values() {
-        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(Support {
-            auto_init: true,
-            ..Support::default()
-        })
+        let mut crypto = OpensslCrypto::new();
+        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(
+            Support {
+                auto_init: true,
+                ..Support::default()
+            },
+            &mut crypto,
+        )
         .unwrap();
 
         DeriveChildCmd {
@@ -304,7 +327,7 @@ mod tests {
             tci_type: 7,
             target_locality: TEST_LOCALITIES[1],
         }
-        .execute(&mut dpe, TEST_LOCALITIES[0])
+        .execute(&mut dpe, TEST_LOCALITIES[0], &mut crypto)
         .unwrap();
 
         let child = &dpe.contexts[dpe
@@ -318,10 +341,14 @@ mod tests {
 
     #[test]
     fn test_correct_child_handle() {
-        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(Support {
-            auto_init: true,
-            ..Support::default()
-        })
+        let mut crypto = OpensslCrypto::new();
+        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(
+            Support {
+                auto_init: true,
+                ..Support::default()
+            },
+            &mut crypto,
+        )
         .unwrap();
 
         // Make sure child handle is default when creating default child.
@@ -338,7 +365,7 @@ mod tests {
                 tci_type: 0,
                 target_locality: 0,
             }
-            .execute(&mut dpe, TEST_LOCALITIES[0])
+            .execute(&mut dpe, TEST_LOCALITIES[0], &mut crypto)
         );
 
         // Make sure child has a random handle when not creating default.
@@ -355,16 +382,20 @@ mod tests {
                 tci_type: 0,
                 target_locality: 0,
             }
-            .execute(&mut dpe, TEST_LOCALITIES[0])
+            .execute(&mut dpe, TEST_LOCALITIES[0], &mut crypto)
         );
     }
 
     #[test]
     fn test_correct_parent_handle() {
-        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(Support {
-            auto_init: true,
-            ..Support::default()
-        })
+        let mut crypto = OpensslCrypto::new();
+        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(
+            Support {
+                auto_init: true,
+                ..Support::default()
+            },
+            &mut crypto,
+        )
         .unwrap();
 
         // Make sure the parent handle is non-sense when not retaining.
@@ -381,7 +412,7 @@ mod tests {
                 tci_type: 0,
                 target_locality: 0,
             }
-            .execute(&mut dpe, TEST_LOCALITIES[0])
+            .execute(&mut dpe, TEST_LOCALITIES[0], &mut crypto)
         );
 
         // Make sure the default parent handle stays the default handle when retained.
@@ -400,7 +431,7 @@ mod tests {
                 tci_type: 0,
                 target_locality: TEST_LOCALITIES[1],
             }
-            .execute(&mut dpe, TEST_LOCALITIES[0])
+            .execute(&mut dpe, TEST_LOCALITIES[0], &mut crypto)
         );
 
         // The next test case is to make sure the parent handle rotates when not the default and
@@ -426,7 +457,7 @@ mod tests {
                 tci_type: 0,
                 target_locality: 0,
             }
-            .execute(&mut dpe, TEST_LOCALITIES[0])
+            .execute(&mut dpe, TEST_LOCALITIES[0], &mut crypto)
         );
 
         // NOTE: The deterministic RNG we use in tests will create the same value every time. This

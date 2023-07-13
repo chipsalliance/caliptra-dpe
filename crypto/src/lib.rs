@@ -69,7 +69,7 @@ pub trait Crypto {
     /// # Arguments
     ///
     /// * `dst` - The buffer to be filled.
-    fn rand_bytes(dst: &mut [u8]) -> Result<(), CryptoError>;
+    fn rand_bytes(&mut self, dst: &mut [u8]) -> Result<(), CryptoError>;
 
     /// Cryptographically hashes the given buffer.
     ///
@@ -77,8 +77,8 @@ pub trait Crypto {
     ///
     /// * `algs` - Which length of algorithm to use.
     /// * `bytes` - Value to be hashed.
-    fn hash(algs: AlgLen, bytes: &[u8]) -> Result<Digest, CryptoError> {
-        let mut hasher = Self::hash_initialize(algs)?;
+    fn hash(&mut self, algs: AlgLen, bytes: &[u8]) -> Result<Digest, CryptoError> {
+        let mut hasher = self.hash_initialize(algs)?;
         hasher.update(bytes)?;
         hasher.finish()
     }
@@ -94,6 +94,7 @@ pub trait Crypto {
     /// * `pub_key` - EC public key
     /// * `serial` - Output buffer to write serial number
     fn get_pubkey_serial(
+        &mut self,
         algs: AlgLen,
         pub_key: &EcdsaPub,
         serial: &mut [u8],
@@ -102,7 +103,7 @@ pub trait Crypto {
             return Err(CryptoError::CryptoLibError);
         }
 
-        let mut hasher = Self::hash_initialize(algs)?;
+        let mut hasher = self.hash_initialize(algs)?;
         hasher.update(&[0x4u8])?;
         hasher.update(pub_key.x.bytes())?;
         hasher.update(pub_key.y.bytes())?;
@@ -122,7 +123,7 @@ pub trait Crypto {
     /// # Arguments
     ///
     /// * `algs` - Which length of algorithm to use.
-    fn hash_initialize(algs: AlgLen) -> Result<Self::Hasher, CryptoError>;
+    fn hash_initialize(&mut self, algs: AlgLen) -> Result<Self::Hasher, CryptoError>;
 
     /// Derive a CDI based on the current base CDI and measurements as well as an optional random seed value.
     ///
@@ -133,6 +134,7 @@ pub trait Crypto {
     /// * `info` - Caller-supplied info string to use in CDI derivation
     /// * `rand_seed` - Caller-supplied optional random seed to use in CDI derivation
     fn derive_cdi(
+        &mut self,
         algs: AlgLen,
         measurement: &Digest,
         info: &[u8],
@@ -149,6 +151,7 @@ pub trait Crypto {
     /// * `info` - Caller-supplied info string to use in asymmetric key derivation
     ///
     fn derive_private_key(
+        &mut self,
         algs: AlgLen,
         cdi: &Self::Cdi,
         label: &[u8],
@@ -162,7 +165,11 @@ pub trait Crypto {
     /// * `algs` - Which length of algorithms to use.
     /// * `priv_key` - Caller-supplied private key to use in public key derivation
     /// Returns a derived public key
-    fn derive_ecdsa_pub(algs: AlgLen, priv_key: &Self::PrivKey) -> Result<EcdsaPub, CryptoError>;
+    fn derive_ecdsa_pub(
+        &mut self,
+        algs: AlgLen,
+        priv_key: &Self::PrivKey,
+    ) -> Result<EcdsaPub, CryptoError>;
 
     /// Sign `digest` with the platform Alias Key
     ///
@@ -170,7 +177,11 @@ pub trait Crypto {
     ///
     /// * `algs` - Which length of algorithms to use.
     /// * `digest` - Digest of data to be signed.
-    fn ecdsa_sign_with_alias(algs: AlgLen, digest: &Digest) -> Result<EcdsaSig, CryptoError>;
+    fn ecdsa_sign_with_alias(
+        &mut self,
+        algs: AlgLen,
+        digest: &Digest,
+    ) -> Result<EcdsaSig, CryptoError>;
 
     /// Sign `digest` with a derived key-pair from the CDI and caller-supplied private key
     ///
@@ -180,6 +191,7 @@ pub trait Crypto {
     /// * `digest` - Digest of data to be signed.
     /// * `priv_key` - Caller-supplied private key to use in public key derivation
     fn ecdsa_sign_with_derived(
+        &mut self,
         algs: AlgLen,
         digest: &Digest,
         priv_key: &Self::PrivKey,
@@ -191,7 +203,11 @@ pub trait Crypto {
     ///
     /// * `algs` - Length of algorithm to use.
     /// * `serial` - Output buffer to write serial number
-    fn get_ecdsa_alias_serial(algs: AlgLen, serial: &mut [u8]) -> Result<(), CryptoError>;
+    fn get_ecdsa_alias_serial(
+        &mut self,
+        algs: AlgLen,
+        serial: &mut [u8],
+    ) -> Result<(), CryptoError>;
 
     /// Sign `digest` with a derived HMAC key from the CDI.
     ///
@@ -203,6 +219,7 @@ pub trait Crypto {
     /// * `info` - Caller-supplied info string to use in symmetric key derivation
     /// * `digest` - Digest of data to be signed.
     fn hmac_sign_with_derived(
+        &mut self,
         algs: AlgLen,
         cdi: &Self::Cdi,
         label: &[u8],

@@ -122,8 +122,12 @@ impl From<Command> for u32 {
 }
 
 pub trait CommandExecution<C: Crypto, P: Platform> {
-    fn execute(&self, dpe: &mut DpeInstance<C, P>, locality: u32)
-        -> Result<Response, DpeErrorCode>;
+    fn execute(
+        &self,
+        dpe: &mut DpeInstance<C, P>,
+        locality: u32,
+        crypto: &mut C,
+    ) -> Result<Response, DpeErrorCode>;
 }
 
 // ABI Command structures

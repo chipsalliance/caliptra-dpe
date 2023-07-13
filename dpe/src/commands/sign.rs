@@ -37,22 +37,27 @@ impl SignCmd {
         dpe: &mut DpeInstance<C, P>,
         idx: usize,
         digest: &Digest,
+        crypto: &mut C,
     ) -> Result<EcdsaSig, DpeErrorCode> {
         let algs = DPE_PROFILE.alg_len();
         let priv_key = if self.uses_nd_derivation() {
             if let Some(cached) = dpe.contexts[idx].cached_priv_key.take() {
                 Ok(cached)
             } else {
-                C::derive_private_key(algs, &dpe.derive_cdi(idx, true)?, &self.label, b"ECC")
+                let cdi = dpe.derive_cdi(idx, true, crypto)?;
+                crypto
+                    .derive_private_key(algs, &cdi, &self.label, b"ECC")
                     .map_err(|_| DpeErrorCode::CryptoError)
             }
         } else {
-            let cdi = dpe.derive_cdi(idx, false)?;
-            C::derive_private_key(algs, &cdi, &self.label, b"ECC")
+            let cdi = dpe.derive_cdi(idx, false, crypto)?;
+            crypto
+                .derive_private_key(algs, &cdi, &self.label, b"ECC")
                 .map_err(|_| DpeErrorCode::CryptoError)
         }?;
 
-        let sig = C::ecdsa_sign_with_derived(algs, digest, &priv_key)
+        let sig = crypto
+            .ecdsa_sign_with_derived(algs, digest, &priv_key)
             .map_err(|_| DpeErrorCode::CryptoError)?;
 
         // cache private key
@@ -68,10 +73,12 @@ impl SignCmd {
         dpe: &mut DpeInstance<C, P>,
         idx: usize,
         digest: &Digest,
+        crypto: &mut C,
     ) -> Result<HmacSig, DpeErrorCode> {
         let algs = DPE_PROFILE.alg_len();
-        let cdi = dpe.derive_cdi(idx, false)?;
-        C::hmac_sign_with_derived(algs, &cdi, &self.label, b"HMAC", digest)
+        let cdi = dpe.derive_cdi(idx, false, crypto)?;
+        crypto
+            .hmac_sign_with_derived(algs, &cdi, &self.label, b"HMAC", digest)
             .map_err(|_| DpeErrorCode::CryptoError)
     }
 }
@@ -81,6 +88,7 @@ impl<C: Crypto, P: Platform> CommandExecution<C, P> for SignCmd {
         &self,
         dpe: &mut DpeInstance<C, P>,
         locality: u32,
+        crypto: &mut C,
     ) -> Result<Response, DpeErrorCode> {
         // Make sure the operation is supported.
         if !dpe.support.nd_derivation && self.uses_nd_derivation()
@@ -100,14 +108,14 @@ impl<C: Crypto, P: Platform> CommandExecution<C, P> for SignCmd {
         let digest = Digest::new(&self.digest, algs).map_err(|_| DpeErrorCode::InternalError)?;
 
         let EcdsaSig { r, s } = if !self.uses_symmetric() {
-            self.ecdsa_sign(dpe, idx, &digest)?
+            self.ecdsa_sign(dpe, idx, &digest, crypto)?
         } else {
-            let r = self.hmac_sign(dpe, idx, &digest)?;
+            let r = self.hmac_sign(dpe, idx, &digest, crypto)?;
             let s = CryptoBuf::default(algs);
             EcdsaSig { r, s }
         };
 
-        dpe.roll_onetime_use_handle(idx)?;
+        dpe.roll_onetime_use_handle(idx, crypto)?;
 
         Ok(Response::Sign(SignResp {
             new_context_handle: dpe.contexts[idx].handle,
@@ -222,7 +230,10 @@ mod tests {
 
     #[test]
     fn test_bad_command_inputs() {
-        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(SUPPORT).unwrap();
+        let mut crypto = OpensslCrypto::new();
+        let mut dpe =
+            DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(SUPPORT, &mut crypto)
+                .unwrap();
 
         // Bad argument
         assert_eq!(
@@ -233,7 +244,7 @@ mod tests {
                 flags: SignCmd::ND_DERIVATION,
                 digest: TEST_DIGEST
             }
-            .execute(&mut dpe, TEST_LOCALITIES[0])
+            .execute(&mut dpe, TEST_LOCALITIES[0], &mut crypto)
         );
 
         // Bad argument
@@ -245,7 +256,7 @@ mod tests {
                 flags: SignCmd::IS_SYMMETRIC,
                 digest: TEST_DIGEST
             }
-            .execute(&mut dpe, TEST_LOCALITIES[0])
+            .execute(&mut dpe, TEST_LOCALITIES[0], &mut crypto)
         );
 
         // Bad handle.
@@ -257,7 +268,7 @@ mod tests {
                 flags: 0,
                 digest: TEST_DIGEST
             }
-            .execute(&mut dpe, TEST_LOCALITIES[0])
+            .execute(&mut dpe, TEST_LOCALITIES[0], &mut crypto)
         );
 
         // Wrong locality.
@@ -272,12 +283,12 @@ mod tests {
                 flags: 0,
                 digest: TEST_DIGEST
             }
-            .execute(&mut dpe, TEST_LOCALITIES[1])
+            .execute(&mut dpe, TEST_LOCALITIES[1], &mut crypto)
         );
 
         // Simulation contexts should not support the Sign command.
         InitCtxCmd::new_simulation()
-            .execute(&mut dpe, TEST_LOCALITIES[0])
+            .execute(&mut dpe, TEST_LOCALITIES[0], &mut crypto)
             .unwrap();
         assert!(dpe
             .get_active_context_pos(&SIMULATION_HANDLE, TEST_LOCALITIES[0])
@@ -290,13 +301,16 @@ mod tests {
                 flags: 0,
                 digest: TEST_DIGEST
             }
-            .execute(&mut dpe, TEST_LOCALITIES[0])
+            .execute(&mut dpe, TEST_LOCALITIES[0], &mut crypto)
         );
     }
 
     #[test]
     fn test_asymmetric_deterministic() {
-        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(SUPPORT).unwrap();
+        let mut crypto = OpensslCrypto::new();
+        let mut dpe =
+            DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(SUPPORT, &mut crypto)
+                .unwrap();
 
         for i in 0..3 {
             DeriveChildCmd {
@@ -306,7 +320,7 @@ mod tests {
                 tci_type: i as u32,
                 target_locality: 0,
             }
-            .execute(&mut dpe, TEST_LOCALITIES[0])
+            .execute(&mut dpe, TEST_LOCALITIES[0], &mut crypto)
             .unwrap();
         }
 
@@ -317,7 +331,10 @@ mod tests {
                 flags: 0,
                 digest: TEST_DIGEST,
             };
-            let resp = match cmd.execute(&mut dpe, TEST_LOCALITIES[0]).unwrap() {
+            let resp = match cmd
+                .execute(&mut dpe, TEST_LOCALITIES[0], &mut crypto)
+                .unwrap()
+            {
                 Response::Sign(resp) => resp,
                 _ => panic!("Incorrect response type"),
             };
@@ -336,7 +353,10 @@ mod tests {
                 label: TEST_LABEL,
                 format: CertifyKeyCmd::FORMAT_X509,
             };
-            let certify_resp = match cmd.execute(&mut dpe, TEST_LOCALITIES[0]).unwrap() {
+            let certify_resp = match cmd
+                .execute(&mut dpe, TEST_LOCALITIES[0], &mut crypto)
+                .unwrap()
+            {
                 Response::CertifyKey(resp) => resp,
                 _ => panic!("Incorrect response type"),
             };
@@ -351,11 +371,15 @@ mod tests {
 
     #[test]
     fn test_symmetric() {
-        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(Support {
-            auto_init: true,
-            is_symmetric: true,
-            ..Support::default()
-        })
+        let mut crypto = OpensslCrypto::new();
+        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(
+            Support {
+                auto_init: true,
+                is_symmetric: true,
+                ..Support::default()
+            },
+            &mut crypto,
+        )
         .unwrap();
 
         let cmd = SignCmd {
@@ -364,7 +388,10 @@ mod tests {
             flags: SignCmd::IS_SYMMETRIC,
             digest: TEST_DIGEST,
         };
-        let resp = match cmd.execute(&mut dpe, TEST_LOCALITIES[0]).unwrap() {
+        let resp = match cmd
+            .execute(&mut dpe, TEST_LOCALITIES[0], &mut crypto)
+            .unwrap()
+        {
             Response::Sign(resp) => resp,
             _ => panic!("Incorrect response type"),
         };
@@ -378,7 +405,8 @@ mod tests {
             cmd.hmac_sign(
                 &mut dpe,
                 idx,
-                &Digest::new(&TEST_DIGEST, DPE_PROFILE.alg_len()).unwrap()
+                &Digest::new(&TEST_DIGEST, DPE_PROFILE.alg_len()).unwrap(),
+                &mut crypto,
             )
             .unwrap()
             .bytes()
@@ -389,12 +417,16 @@ mod tests {
 
     #[test]
     fn test_asymmetric_non_deterministic() {
-        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(Support {
-            auto_init: true,
-            nd_derivation: true,
-            x509: true,
-            ..Support::default()
-        })
+        let mut crypto = OpensslCrypto::new();
+        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(
+            Support {
+                auto_init: true,
+                nd_derivation: true,
+                x509: true,
+                ..Support::default()
+            },
+            &mut crypto,
+        )
         .unwrap();
 
         for i in 0..3 {
@@ -405,7 +437,7 @@ mod tests {
                 tci_type: i as u32,
                 target_locality: 0,
             }
-            .execute(&mut dpe, TEST_LOCALITIES[0])
+            .execute(&mut dpe, TEST_LOCALITIES[0], &mut crypto)
             .unwrap();
         }
 
@@ -424,7 +456,10 @@ mod tests {
                 flags: SignCmd::ND_DERIVATION,
                 digest: TEST_DIGEST,
             };
-            let resp = match cmd.execute(&mut dpe, TEST_LOCALITIES[0]).unwrap() {
+            let resp = match cmd
+                .execute(&mut dpe, TEST_LOCALITIES[0], &mut crypto)
+                .unwrap()
+            {
                 Response::Sign(resp) => resp,
                 _ => panic!("Incorrect response type"),
             };
@@ -449,7 +484,10 @@ mod tests {
                 label: TEST_LABEL,
                 format: CertifyKeyCmd::FORMAT_X509,
             };
-            let certify_resp = match cmd.execute(&mut dpe, TEST_LOCALITIES[0]).unwrap() {
+            let certify_resp = match cmd
+                .execute(&mut dpe, TEST_LOCALITIES[0], &mut crypto)
+                .unwrap()
+            {
                 Response::CertifyKey(resp) => resp,
                 _ => panic!("Incorrect response type"),
             };
