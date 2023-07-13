@@ -31,7 +31,6 @@ pub struct DpeInstance<'a, C: Crypto, P: Platform> {
     // All functions/data in C and P are static and global. For this reason
     // DpeInstance doesn't actually need to hold an instance. The PhantomData
     // is just to make the Crypto and Platform traits work.
-    phantom_crypto: PhantomData<C>,
     phantom_platform: PhantomData<P>,
 }
 
@@ -48,13 +47,16 @@ impl<C: Crypto, P: Platform> DpeInstance<'_, C, P> {
     ///
     /// * `support` - optional functionality the instance supports
     /// * `issuer_cn` - issuer Common Name to use in DPE leaf certs
-    pub fn new(support: Support, issuer_cn: &[u8]) -> Result<DpeInstance<'_, C, P>, DpeErrorCode> {
+    pub fn new<'a>(
+        support: Support,
+        issuer_cn: &'a [u8],
+        crypto: &mut C,
+    ) -> Result<DpeInstance<'a, C, P>, DpeErrorCode> {
         let mut dpe = DpeInstance {
             contexts: Self::new_context_handles(),
             support,
             has_initialized: false,
             issuer_cn,
-            phantom_crypto: PhantomData,
             phantom_platform: PhantomData,
         };
 
@@ -62,14 +64,18 @@ impl<C: Crypto, P: Platform> DpeInstance<'_, C, P> {
             InitCtxCmd::new_use_default().execute(
                 &mut dpe,
                 P::get_auto_init_locality().map_err(|_| DpeErrorCode::InvalidLocality)?,
+                crypto,
             )?;
         }
         Ok(dpe)
     }
 
-    pub fn new_for_test<'a>(support: Support) -> Result<DpeInstance<'a, C, P>, DpeErrorCode> {
+    pub fn new_for_test<'a>(
+        support: Support,
+        crypto: &mut C,
+    ) -> Result<DpeInstance<'a, C, P>, DpeErrorCode> {
         const TEST_ISSUER: &[u8] = b"Test Issuer";
-        Self::new(support, TEST_ISSUER)
+        Self::new(support, TEST_ISSUER, crypto)
     }
 
     pub fn get_profile(&self) -> Result<GetProfileResp, DpeErrorCode> {
@@ -86,24 +92,26 @@ impl<C: Crypto, P: Platform> DpeInstance<'_, C, P> {
     ///
     /// * `locality` - which hardware locality is making the request
     /// * `cmd` - serialized command
+    /// * `crypto` - Crypto interface
     pub fn execute_serialized_command(
         &mut self,
         locality: u32,
         cmd: &[u8],
+        crypto: &mut C,
     ) -> Result<Response, DpeErrorCode> {
         let command = Command::deserialize(cmd)?;
         let resp = match command {
             Command::GetProfile => Ok(Response::GetProfile(self.get_profile()?)),
-            Command::InitCtx(cmd) => cmd.execute(self, locality),
-            Command::DeriveChild(cmd) => cmd.execute(self, locality),
-            Command::CertifyKey(cmd) => cmd.execute(self, locality),
-            Command::Sign(cmd) => cmd.execute(self, locality),
-            Command::RotateCtx(cmd) => cmd.execute(self, locality),
-            Command::DestroyCtx(cmd) => cmd.execute(self, locality),
-            Command::ExtendTci(cmd) => cmd.execute(self, locality),
-            Command::TagTci(cmd) => cmd.execute(self, locality),
-            Command::GetTaggedTci(cmd) => cmd.execute(self, locality),
-            Command::GetCertificateChain(cmd) => cmd.execute(self, locality),
+            Command::InitCtx(cmd) => cmd.execute(self, locality, crypto),
+            Command::DeriveChild(cmd) => cmd.execute(self, locality, crypto),
+            Command::CertifyKey(cmd) => cmd.execute(self, locality, crypto),
+            Command::Sign(cmd) => cmd.execute(self, locality, crypto),
+            Command::RotateCtx(cmd) => cmd.execute(self, locality, crypto),
+            Command::DestroyCtx(cmd) => cmd.execute(self, locality, crypto),
+            Command::ExtendTci(cmd) => cmd.execute(self, locality, crypto),
+            Command::TagTci(cmd) => cmd.execute(self, locality, crypto),
+            Command::GetTaggedTci(cmd) => cmd.execute(self, locality, crypto),
+            Command::GetCertificateChain(cmd) => cmd.execute(self, locality, crypto),
         };
 
         match resp {
@@ -164,10 +172,15 @@ impl<C: Crypto, P: Platform> DpeInstance<'_, C, P> {
         Ok(descendants)
     }
 
-    pub(crate) fn generate_new_handle(&self) -> Result<ContextHandle, DpeErrorCode> {
+    pub(crate) fn generate_new_handle(
+        &self,
+        crypto: &mut C,
+    ) -> Result<ContextHandle, DpeErrorCode> {
         for _ in 0..Self::MAX_NEW_HANDLE_ATTEMPTS {
             let mut handle = ContextHandle::default();
-            C::rand_bytes(&mut handle.0).map_err(|_| DpeErrorCode::RandError)?;
+            crypto
+                .rand_bytes(&mut handle.0)
+                .map_err(|_| DpeErrorCode::RandError)?;
             if !handle.is_default() && !self.contexts.iter().any(|c| c.handle == handle) {
                 return Ok(handle);
             }
@@ -180,12 +193,16 @@ impl<C: Crypto, P: Platform> DpeInstance<'_, C, P> {
     /// # Arguments
     ///
     /// * `idx` - the index of the context
-    pub(crate) fn roll_onetime_use_handle(&mut self, idx: usize) -> Result<(), DpeErrorCode> {
+    pub(crate) fn roll_onetime_use_handle(
+        &mut self,
+        idx: usize,
+        crypto: &mut C,
+    ) -> Result<(), DpeErrorCode> {
         if idx >= MAX_HANDLES {
             return Err(DpeErrorCode::MaxTcis);
         }
         if !self.contexts[idx].handle.is_default() {
-            self.contexts[idx].handle = self.generate_new_handle()?
+            self.contexts[idx].handle = self.generate_new_handle(crypto)?
         };
         Ok(())
     }
@@ -223,6 +240,7 @@ impl<C: Crypto, P: Platform> DpeInstance<'_, C, P> {
         idx: usize,
         measurement: &TciMeasurement,
         locality: u32,
+        crypto: &mut C,
     ) -> Result<(), DpeErrorCode> {
         if idx >= MAX_HANDLES {
             return Err(DpeErrorCode::MaxTcis);
@@ -238,8 +256,9 @@ impl<C: Crypto, P: Platform> DpeInstance<'_, C, P> {
         }
 
         // Derive the new TCI as HASH(TCI_CUMULATIVE || INPUT_DATA).
-        let mut hasher =
-            C::hash_initialize(DPE_PROFILE.alg_len()).map_err(|_| DpeErrorCode::HashError)?;
+        let mut hasher = crypto
+            .hash_initialize(DPE_PROFILE.alg_len())
+            .map_err(|_| DpeErrorCode::HashError)?;
         hasher
             .update(&context.tci.tci_cumulative.0)
             .map_err(|_| DpeErrorCode::HashError)?;
@@ -284,9 +303,11 @@ impl<C: Crypto, P: Platform> DpeInstance<'_, C, P> {
         &mut self,
         start_idx: usize,
         mix_random_value: bool,
+        crypto: &mut C,
     ) -> Result<C::Cdi, DpeErrorCode> {
-        let mut hasher =
-            C::hash_initialize(DPE_PROFILE.alg_len()).map_err(|_| DpeErrorCode::HashError)?;
+        let mut hasher = crypto
+            .hash_initialize(DPE_PROFILE.alg_len())
+            .map_err(|_| DpeErrorCode::HashError)?;
 
         let mut uses_internal_input_info = false;
         let mut uses_internal_input_dice = false;
@@ -332,13 +353,16 @@ impl<C: Crypto, P: Platform> DpeInstance<'_, C, P> {
         let digest = hasher.finish().map_err(|_| DpeErrorCode::HashError)?;
         let mut seed = [0; DPE_PROFILE.alg_len().size()];
         let random_seed = if mix_random_value {
-            C::rand_bytes(&mut seed).map_err(|_| DpeErrorCode::RandError)?;
+            crypto
+                .rand_bytes(&mut seed)
+                .map_err(|_| DpeErrorCode::RandError)?;
             Some(seed.as_ref())
         } else {
             None
         };
 
-        C::derive_cdi(DPE_PROFILE.alg_len(), &digest, b"DPE", random_seed)
+        crypto
+            .derive_cdi(DPE_PROFILE.alg_len(), &digest, b"DPE", random_seed)
             .map_err(|_| DpeErrorCode::CryptoError)
     }
 }
@@ -394,7 +418,10 @@ pub mod tests {
 
     #[test]
     fn test_execute_serialized_command() {
-        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(SUPPORT).unwrap();
+        let mut crypto = OpensslCrypto::new();
+        let mut dpe =
+            DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(SUPPORT, &mut crypto)
+                .unwrap();
 
         assert_eq!(
             Response::GetProfile(GetProfileResp::new(
@@ -405,6 +432,7 @@ pub mod tests {
             dpe.execute_serialized_command(
                 TEST_LOCALITIES[0],
                 CommandHdr::new_for_test(Command::GetProfile).as_bytes(),
+                &mut crypto,
             )
             .unwrap()
         );
@@ -420,14 +448,16 @@ pub mod tests {
                 handle: SIMULATION_HANDLE,
                 resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
             }),
-            dpe.execute_serialized_command(TEST_LOCALITIES[0], &command)
+            dpe.execute_serialized_command(TEST_LOCALITIES[0], &command, &mut crypto)
                 .unwrap()
         );
     }
 
     #[test]
     fn test_get_profile() {
-        let dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(SUPPORT).unwrap();
+        let mut crypto = OpensslCrypto::new();
+        let dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(SUPPORT, &mut crypto)
+            .unwrap();
         let profile = dpe.get_profile().unwrap();
         assert_eq!(profile.major_version, CURRENT_PROFILE_MAJOR_VERSION);
         assert_eq!(profile.flags, SUPPORT.get_flags());
@@ -435,9 +465,12 @@ pub mod tests {
 
     #[test]
     fn test_get_active_context_index() {
-        let mut dpe =
-            DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(Support::default())
-                .unwrap();
+        let mut crypto = OpensslCrypto::new();
+        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(
+            Support::default(),
+            &mut crypto,
+        )
+        .unwrap();
         let expected_index = 7;
         dpe.contexts[expected_index].handle = SIMULATION_HANDLE;
 
@@ -470,26 +503,36 @@ pub mod tests {
 
     #[test]
     fn test_add_tci_measurement() {
-        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(Support {
-            auto_init: true,
-            ..Default::default()
-        })
+        let mut crypto = OpensslCrypto::new();
+
+        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(
+            Support {
+                auto_init: true,
+                ..Default::default()
+            },
+            &mut crypto,
+        )
         .unwrap();
 
         // Verify bounds checking.
         assert_eq!(
             Err(DpeErrorCode::MaxTcis),
-            dpe.add_tci_measurement(MAX_HANDLES, &TciMeasurement::default(), TEST_LOCALITIES[0])
+            dpe.add_tci_measurement(
+                MAX_HANDLES,
+                &TciMeasurement::default(),
+                TEST_LOCALITIES[0],
+                &mut crypto
+            )
         );
 
         let data = [1; DPE_PROFILE.get_hash_size()];
-        dpe.add_tci_measurement(0, &TciMeasurement(data), TEST_LOCALITIES[0])
+        dpe.add_tci_measurement(0, &TciMeasurement(data), TEST_LOCALITIES[0], &mut crypto)
             .unwrap();
         let context = &dpe.contexts[0];
         assert_eq!(data, context.tci.tci_current.0);
 
         // Compute cumulative.
-        let mut hasher = OpensslCrypto::hash_initialize(DPE_PROFILE.alg_len()).unwrap();
+        let mut hasher = crypto.hash_initialize(DPE_PROFILE.alg_len()).unwrap();
         hasher.update(&[0; DPE_PROFILE.get_hash_size()]).unwrap();
         hasher.update(&data).unwrap();
         let first_cumulative = hasher.finish().unwrap();
@@ -498,13 +541,13 @@ pub mod tests {
         assert_eq!(first_cumulative.bytes(), context.tci.tci_cumulative.0);
 
         let data = [2; DPE_PROFILE.get_hash_size()];
-        dpe.add_tci_measurement(0, &TciMeasurement(data), TEST_LOCALITIES[0])
+        dpe.add_tci_measurement(0, &TciMeasurement(data), TEST_LOCALITIES[0], &mut crypto)
             .unwrap();
         // Make sure the current TCI was updated correctly.
         let context = &dpe.contexts[0];
         assert_eq!(data, context.tci.tci_current.0);
 
-        let mut hasher = OpensslCrypto::hash_initialize(DPE_PROFILE.alg_len()).unwrap();
+        let mut hasher = crypto.hash_initialize(DPE_PROFILE.alg_len()).unwrap();
         hasher.update(first_cumulative.bytes()).unwrap();
         hasher.update(&data).unwrap();
         let second_cumulative = hasher.finish().unwrap();
@@ -515,9 +558,12 @@ pub mod tests {
 
     #[test]
     fn test_get_descendants() {
-        let mut dpe =
-            DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(Support::default())
-                .unwrap();
+        let mut crypto = OpensslCrypto::new();
+        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(
+            Support::default(),
+            &mut crypto,
+        )
+        .unwrap();
         let root = 7;
         let child_1 = 3;
         let child_1_1 = 0;
@@ -568,7 +614,10 @@ pub mod tests {
 
     #[test]
     fn test_derive_cdi() {
-        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(SUPPORT).unwrap();
+        let mut crypto = OpensslCrypto::new();
+        let mut dpe =
+            DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(SUPPORT, &mut crypto)
+                .unwrap();
 
         let mut last_cdi = vec![];
 
@@ -580,24 +629,26 @@ pub mod tests {
                 tci_type: i as u32,
                 target_locality: 0,
             }
-            .execute(&mut dpe, TEST_LOCALITIES[0])
+            .execute(&mut dpe, TEST_LOCALITIES[0], &mut crypto)
             .unwrap();
 
             // Check the CDI changes each time.
             let leaf_context_idx = dpe
                 .get_active_context_pos(&ContextHandle::default(), TEST_LOCALITIES[0])
                 .unwrap();
-            let curr_cdi = dpe.derive_cdi(leaf_context_idx, false).unwrap();
+            let curr_cdi = dpe
+                .derive_cdi(leaf_context_idx, false, &mut crypto)
+                .unwrap();
             assert_ne!(last_cdi, curr_cdi);
 
             // Ensure the CDI changes when mixing random seed
-            let cdi_with_rand_seed = dpe.derive_cdi(leaf_context_idx, true).unwrap();
+            let cdi_with_rand_seed = dpe.derive_cdi(leaf_context_idx, true, &mut crypto).unwrap();
             assert_ne!(curr_cdi, cdi_with_rand_seed);
 
             last_cdi = curr_cdi;
         }
 
-        let mut hasher = OpensslCrypto::hash_initialize(DPE_PROFILE.alg_len()).unwrap();
+        let mut hasher = crypto.hash_initialize(DPE_PROFILE.alg_len()).unwrap();
         let leaf_idx = dpe
             .get_active_context_pos(&ContextHandle::default(), TEST_LOCALITIES[0])
             .unwrap();
@@ -608,17 +659,22 @@ pub mod tests {
         }
 
         let digest = hasher.finish().unwrap();
-        let answer =
-            OpensslCrypto::derive_cdi(DPE_PROFILE.alg_len(), &digest, b"DPE", None).unwrap();
+        let answer = crypto
+            .derive_cdi(DPE_PROFILE.alg_len(), &digest, b"DPE", None)
+            .unwrap();
         assert_eq!(answer, last_cdi);
     }
 
     #[test]
     fn test_hash_internal_input_info() {
-        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(Support {
-            internal_info: true,
-            ..SUPPORT
-        })
+        let mut crypto = OpensslCrypto::new();
+        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(
+            Support {
+                internal_info: true,
+                ..SUPPORT
+            },
+            &mut crypto,
+        )
         .unwrap();
 
         let parent_context_idx = dpe
@@ -631,14 +687,16 @@ pub mod tests {
             tci_type: 0u32,
             target_locality: 0,
         }
-        .execute(&mut dpe, TEST_LOCALITIES[0])
+        .execute(&mut dpe, TEST_LOCALITIES[0], &mut crypto)
         .unwrap();
 
-        let cdi_with_internal_input_info = dpe.derive_cdi(parent_context_idx, false).unwrap();
+        let cdi_with_internal_input_info = dpe
+            .derive_cdi(parent_context_idx, false, &mut crypto)
+            .unwrap();
         let context = &dpe.contexts[parent_context_idx];
         assert!(context.uses_internal_input_info);
 
-        let mut hasher = OpensslCrypto::hash_initialize(DPE_PROFILE.alg_len()).unwrap();
+        let mut hasher = crypto.hash_initialize(DPE_PROFILE.alg_len()).unwrap();
 
         hasher.update(context.tci.as_bytes()).unwrap();
         let mut internal_input_info = [0u8; INTERNAL_INPUT_INFO_SIZE];
@@ -650,17 +708,22 @@ pub mod tests {
             .unwrap();
 
         let digest = hasher.finish().unwrap();
-        let answer =
-            OpensslCrypto::derive_cdi(DPE_PROFILE.alg_len(), &digest, b"DPE", None).unwrap();
+        let answer = crypto
+            .derive_cdi(DPE_PROFILE.alg_len(), &digest, b"DPE", None)
+            .unwrap();
         assert_eq!(answer, cdi_with_internal_input_info);
     }
 
     #[test]
     fn test_hash_internal_input_dice() {
-        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(Support {
-            internal_dice: true,
-            ..SUPPORT
-        })
+        let mut crypto = OpensslCrypto::new();
+        let mut dpe = DpeInstance::<OpensslCrypto, DefaultPlatform>::new_for_test(
+            Support {
+                internal_dice: true,
+                ..SUPPORT
+            },
+            &mut crypto,
+        )
         .unwrap();
 
         let parent_context_idx = dpe
@@ -673,21 +736,24 @@ pub mod tests {
             tci_type: 0u32,
             target_locality: 0,
         }
-        .execute(&mut dpe, TEST_LOCALITIES[0])
+        .execute(&mut dpe, TEST_LOCALITIES[0], &mut crypto)
         .unwrap();
 
-        let cdi_with_internal_input_dice = dpe.derive_cdi(parent_context_idx, false).unwrap();
+        let cdi_with_internal_input_dice = dpe
+            .derive_cdi(parent_context_idx, false, &mut crypto)
+            .unwrap();
         let context = &dpe.contexts[parent_context_idx];
         assert!(context.uses_internal_input_dice);
 
-        let mut hasher = OpensslCrypto::hash_initialize(DPE_PROFILE.alg_len()).unwrap();
+        let mut hasher = crypto.hash_initialize(DPE_PROFILE.alg_len()).unwrap();
 
         hasher.update(context.tci.as_bytes()).unwrap();
         hasher.update(&TEST_CERT_CHAIN[..MAX_CHUNK_SIZE]).unwrap();
 
         let digest = hasher.finish().unwrap();
-        let answer =
-            OpensslCrypto::derive_cdi(DPE_PROFILE.alg_len(), &digest, b"DPE", None).unwrap();
+        let answer = crypto
+            .derive_cdi(DPE_PROFILE.alg_len(), &digest, b"DPE", None)
+            .unwrap();
         assert_eq!(answer, cdi_with_internal_input_dice)
     }
 }
