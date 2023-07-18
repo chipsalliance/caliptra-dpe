@@ -1,7 +1,6 @@
 use {
     crypto::OpensslCrypto,
     dpe::commands::{self, CertifyKeyCmd, CommandExecution, CommandHdr, InitCtxCmd},
-    dpe::context::ContextHandle,
     dpe::dpe_instance::DpeEnv,
     dpe::response::Response,
     dpe::{DpeInstance, Support, DPE_PROFILE},
@@ -45,9 +44,6 @@ fn main() {
     .unwrap();
 
     const TEST_LOCALITIES: [u32; 2] = [AUTO_INIT_LOCALITY, u32::from_be_bytes(*b"OTHR")];
-    const SIMULATION_HANDLE: ContextHandle =
-        ContextHandle([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
-
     let init_resp = match InitCtxCmd::new_use_default()
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         .unwrap()
@@ -56,22 +52,17 @@ fn main() {
         _ => panic!("Incorrect return type."),
     };
 
-    let CERTIFY_KEY_CMD: CertifyKeyCmd = commands::CertifyKeyCmd {
+    let certify_key_cmd: CertifyKeyCmd = commands::CertifyKeyCmd {
         handle: init_resp.handle,
         flags: 0,
         label: [0; DPE_PROFILE.get_hash_size()],
         format: commands::CertifyKeyCmd::FORMAT_X509,
     };
-    let cmd_hdr = CommandHdr::new_for_test(dpe::commands::Command::CertifyKey(CERTIFY_KEY_CMD));
-
-    let CERTIFY_KEY_CMD2: CertifyKeyCmd = commands::CertifyKeyCmd {
-        handle: init_resp.handle,
-        flags: 0,
-        label: [0; DPE_PROFILE.get_hash_size()],
-        format: commands::CertifyKeyCmd::FORMAT_X509,
-    };
-    let mut command = cmd_hdr.as_bytes().to_vec();
-    command.extend(CERTIFY_KEY_CMD2.as_bytes());
+    let cmd_body = certify_key_cmd.as_bytes().to_vec();
+    let cmd_hdr = CommandHdr::new_for_test(
+        dpe::commands::Command::CertifyKey(certify_key_cmd)).as_bytes().to_vec();
+    let mut command = cmd_hdr;
+    command.extend(cmd_body);
 
     let resp = dpe
         .execute_serialized_command(&mut env, 0, &command)
@@ -89,7 +80,7 @@ fn main() {
         &certify_key_response.cert[..usize::try_from(certify_key_response.cert_size).unwrap()],
     );
 
-    println!(
+    print!(
         "{}",
         encode_config(
             &pem,
