@@ -1,12 +1,12 @@
 use {
     crypto::OpensslCrypto,
-    dpe::commands::{self, CertifyKeyCmd, CommandExecution, CommandHdr, InitCtxCmd},
+    dpe::commands::{self, CertifyKeyCmd, CommandHdr},
+    dpe::context::ContextHandle,
     dpe::dpe_instance::DpeEnv,
     dpe::response::Response,
     dpe::{DpeInstance, Support, DPE_PROFILE},
     pem::{encode_config, EncodeConfig, LineEnding, Pem},
     platform::DefaultPlatform,
-    platform::AUTO_INIT_LOCALITY,
     zerocopy::AsBytes,
 };
 
@@ -37,30 +37,23 @@ fn main() {
     let mut dpe = DpeInstance::new_for_test(
         &mut env,
         Support {
+            auto_init: true,
             x509: true,
             ..Support::default()
         },
     )
     .unwrap();
 
-    const TEST_LOCALITIES: [u32; 2] = [AUTO_INIT_LOCALITY, u32::from_be_bytes(*b"OTHR")];
-    let init_resp = match InitCtxCmd::new_use_default()
-        .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
-        .unwrap()
-    {
-        Response::InitCtx(resp) => resp,
-        _ => panic!("Incorrect return type."),
-    };
-
     let certify_key_cmd: CertifyKeyCmd = commands::CertifyKeyCmd {
-        handle: init_resp.handle,
+        handle: ContextHandle::default(),
         flags: 0,
         label: [0; DPE_PROFILE.get_hash_size()],
         format: commands::CertifyKeyCmd::FORMAT_X509,
     };
     let cmd_body = certify_key_cmd.as_bytes().to_vec();
-    let cmd_hdr = CommandHdr::new_for_test(
-        dpe::commands::Command::CertifyKey(certify_key_cmd)).as_bytes().to_vec();
+    let cmd_hdr = CommandHdr::new_for_test(dpe::commands::Command::CertifyKey(certify_key_cmd))
+        .as_bytes()
+        .to_vec();
     let mut command = cmd_hdr;
     command.extend(cmd_body);
 
@@ -77,7 +70,7 @@ fn main() {
 
     let pem = Pem::new(
         "CERTIFICATE",
-        &certify_key_response.cert[..usize::try_from(certify_key_response.cert_size).unwrap()],
+        &certify_key_response.cert[..certify_key_response.cert_size as usize],
     );
 
     print!(

@@ -184,7 +184,7 @@ impl Crypto for OpensslCrypto {
 
         Ok(EcdsaPub { x, y })
     }
-    
+
     fn ecdsa_sign_with_alias(
         &mut self,
         algs: AlgLen,
