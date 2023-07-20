@@ -52,12 +52,6 @@ impl OpensslCrypto {
         }
     }
 
-    fn get_priv_bytes(&mut self, algs: AlgLen) -> Result<Vec<u8>, CryptoError> {
-        let priv_bytes = vec![0u8; algs.size()];
-        let priv_digest = self.hash(algs, &priv_bytes)?;
-        Ok(priv_digest.bytes().to_vec())
-    }
-
     fn ec_key_from_priv_key(
         algs: AlgLen,
         priv_key: &OpensslPrivKey,
@@ -224,15 +218,16 @@ impl Crypto for OpensslCrypto {
         serial: &mut [u8],
     ) -> Result<(), CryptoError> {
         let nid = Self::get_curve(algs);
-        let priv_bytes = self.get_priv_bytes(algs)?;
+        let pem = include_bytes!(concat!(env!("OUT_DIR"), "/alias_priv.pem"));
+        let ec_priv: EcKey<Private> = EcKey::private_key_from_pem(pem).unwrap();
 
         let group = EcGroup::from_curve_name(nid).map_err(|_| CryptoError::CryptoLibError)?;
-        let priv_bn =
-            BigNum::from_slice(priv_bytes.as_slice()).map_err(|_| CryptoError::CryptoLibError)?;
 
         let mut pub_point = EcPoint::new(&group).map_err(|_| CryptoError::CryptoLibError)?;
         let mut bn_ctx = BigNumContext::new().map_err(|_| CryptoError::CryptoLibError)?;
-        pub_point.mul_generator(&group, &priv_bn, &bn_ctx).unwrap();
+        pub_point
+            .mul_generator(&group, ec_priv.private_key(), &bn_ctx)
+            .unwrap();
 
         let mut x = BigNum::new().map_err(|_| CryptoError::CryptoLibError)?;
         let mut y = BigNum::new().map_err(|_| CryptoError::CryptoLibError)?;
