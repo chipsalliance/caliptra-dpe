@@ -81,8 +81,8 @@ impl X509CertWriter<'_> {
     // tcg-dice-MultiTcbInfo 2.23.133.5.4.5
     const MULTI_TCBINFO_OID: &[u8] = &[0x67, 0x81, 0x05, 0x05, 0x04, 0x05];
 
-    // tcg-dice-Ueid 2.23.133.5.4.1
-    const UEID_OID: &[u8] = &[0x67, 0x81, 0x05, 0x05, 0x04, 0x01];
+    // tcg-dice-Ueid 2.23.133.5.4.4
+    const UEID_OID: &[u8] = &[0x67, 0x81, 0x05, 0x05, 0x04, 0x04];
 
     // RFC 5280 2.5.29.19
     const BASIC_CONSTRAINTS_OID: &[u8] = &[0x55, 0x1D, 0x13];
@@ -1229,7 +1229,7 @@ mod tests {
         };
 
         let ueid = cert
-            .get_extension_unique(&oid!(2.23.133 .5 .4 .1))
+            .get_extension_unique(&oid!(2.23.133 .5 .4 .4))
             .unwrap()
             .unwrap();
         assert!(ueid.critical);
