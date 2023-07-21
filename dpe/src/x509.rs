@@ -38,6 +38,7 @@ impl X509CertWriter<'_> {
     const BIT_STRING_TAG: u8 = 0x3;
     const OCTET_STRING_TAG: u8 = 0x4;
     const OID_TAG: u8 = 0x6;
+    const UTF8_STRING_TAG: u8 = 0xc;
     const PRINTABLE_STRING_TAG: u8 = 0x13;
     const GENERALIZE_TIME_TAG: u8 = 0x18;
     const SEQUENCE_TAG: u8 = 0x30;
@@ -47,7 +48,7 @@ impl X509CertWriter<'_> {
     const BOOL_SIZE: usize = 1;
 
     // Constants for setting tag bits
-    const PRIVATE: u8 = 0x80; // Used for Implicit/Explicit tags
+    const CONTEXT_SPECIFIC: u8 = 0x80; // Used for Implicit/Explicit tags
     const CONSTRUCTED: u8 = 0x20; // SET{OF} and SEQUENCE{OF} have this bit set
 
     const X509_V3: u64 = 2;
@@ -177,10 +178,11 @@ impl X509CertWriter<'_> {
             /*tagged=*/ true,
         )?;
 
-        let set_len =
-            Self::get_structure_size(cn_seq_size + serialnumber_seq_size, /*tagged=*/ true)?;
+        let cn_set_size = Self::get_structure_size(cn_seq_size, /*tagged=*/ true)?;
+        let serialnumber_set_size =
+            Self::get_structure_size(serialnumber_seq_size, /*tagged=*/ true)?;
 
-        Self::get_structure_size(set_len, tagged)
+        Self::get_structure_size(cn_set_size + serialnumber_set_size, tagged)
     }
 
     /// Calculate the number of bytes an ECC Public Key AlgorithmIdentifier
@@ -467,6 +469,14 @@ impl X509CertWriter<'_> {
         Ok(bytes_written)
     }
 
+    fn encode_utf8_string(&mut self, s: &[u8]) -> Result<usize, DpeErrorCode> {
+        let mut bytes_written = self.encode_tag_field(Self::UTF8_STRING_TAG)?;
+        bytes_written += self.encode_size_field(s.len())?;
+        bytes_written += self.encode_bytes(s)?;
+
+        Ok(bytes_written)
+    }
+
     /// DER-encodes a RelativeDistinguishedName with CommonName and SerialNumber
     /// fields.
     ///
@@ -482,7 +492,9 @@ impl X509CertWriter<'_> {
     ///
     /// CommonName and SerialNumber ::= CHOICE {
     ///     ...
-    ///     printableString   PrintableString (SIZE (1..ub-common-name)),
+    ///     printableString   PrintableString (SIZE (1..ub-serial-number)),
+    ///     ...
+    ///     utf8String        UTF8String (SIZE (1..ub-common-name)),
     ///     ...
     ///     }
     fn encode_rdn(&mut self, name: &Name) -> Result<usize, DpeErrorCode> {
@@ -490,12 +502,14 @@ impl X509CertWriter<'_> {
             Self::get_structure_size(Self::RDN_COMMON_NAME_OID.len(), /*tagged=*/ true)?
                 + Self::get_structure_size(name.cn.len(), /*tagged=*/ true)?;
         let serialnumber_size =
-            Self::get_structure_size(Self::RDN_COMMON_NAME_OID.len(), /*tagged=*/ true)?
+            Self::get_structure_size(Self::RDN_SERIALNUMBER_OID.len(), /*tagged=*/ true)?
                 + Self::get_structure_size(name.serial.len(), /*tagged=*/ true)?;
 
-        let rdn_set_size = Self::get_structure_size(cn_size, /*tagged=*/ true)?
-            + Self::get_structure_size(serialnumber_size, /*tagged=*/ true)?;
-        let rdn_seq_size = Self::get_structure_size(rdn_set_size, /*tagged=*/ true)?;
+        let rdn_name_set_size = Self::get_structure_size(cn_size, /*tagged=*/ true)?;
+        let rnd_serial_set_size =
+            Self::get_structure_size(serialnumber_size, /*tagged=*/ true)?;
+        let rdn_seq_size = Self::get_structure_size(rdn_name_set_size, /*tagged=*/ true)?
+            + Self::get_structure_size(rnd_serial_set_size, /*tagged=*/ true)?;
 
         // Encode RDN SEQUENCE OF
         let mut bytes_written = self.encode_tag_field(Self::SEQUENCE_OF_TAG)?;
@@ -503,13 +517,17 @@ impl X509CertWriter<'_> {
 
         // Encode RDN SET
         bytes_written += self.encode_tag_field(Self::SET_OF_TAG)?;
-        bytes_written += self.encode_size_field(rdn_set_size)?;
+        bytes_written += self.encode_size_field(rdn_name_set_size)?;
 
         // Encode CN SEQUENCE
         bytes_written += self.encode_tag_field(Self::SEQUENCE_TAG)?;
         bytes_written += self.encode_size_field(cn_size)?;
         bytes_written += self.encode_oid(&Self::RDN_COMMON_NAME_OID)?;
-        bytes_written += self.encode_printable_string(name.cn)?;
+        bytes_written += self.encode_utf8_string(name.cn)?;
+
+        // Encode RDN SET
+        bytes_written += self.encode_tag_field(Self::SET_OF_TAG)?;
+        bytes_written += self.encode_size_field(rnd_serial_set_size)?;
 
         // Encode SERIALNUMBER SEQUENCE
         bytes_written += self.encode_tag_field(Self::SEQUENCE_TAG)?;
@@ -650,7 +668,7 @@ impl X509CertWriter<'_> {
 
     pub fn encode_version(&mut self) -> Result<usize, DpeErrorCode> {
         // Version is EXPLICIT field number 0
-        let mut bytes_written = self.encode_byte(Self::PRIVATE | Self::CONSTRUCTED)?;
+        let mut bytes_written = self.encode_byte(Self::CONTEXT_SPECIFIC | Self::CONSTRUCTED)?;
         bytes_written += self.encode_size_field(Self::get_integer_size(
             Self::X509_V3,
             /*tagged=*/ true,
@@ -699,7 +717,7 @@ impl X509CertWriter<'_> {
         // fwids SEQUENCE OF
         // IMPLICIT [6] Constructed
         let fwid_size = Self::get_fwid_size(&node.tci_current.0, /*tagged=*/ true)?;
-        bytes_written += self.encode_byte(Self::PRIVATE | Self::CONSTRUCTED | 0x06)?;
+        bytes_written += self.encode_byte(Self::CONTEXT_SPECIFIC | Self::CONSTRUCTED | 0x06)?;
         bytes_written += self.encode_size_field(fwid_size * 2)?;
 
         // fwid[0] current measurement
@@ -711,13 +729,13 @@ impl X509CertWriter<'_> {
         // vendorInfo OCTET STRING
         // IMPLICIT[8] Primitive
         let vinfo = &node.locality.to_be_bytes();
-        bytes_written += self.encode_byte(Self::PRIVATE | 0x08)?;
+        bytes_written += self.encode_byte(Self::CONTEXT_SPECIFIC | 0x08)?;
         bytes_written += self.encode_size_field(vinfo.len())?;
         bytes_written += self.encode_bytes(vinfo)?;
 
         // type OCTET STRING
         // IMPLICIT[9] Primitive
-        bytes_written += self.encode_byte(Self::PRIVATE | 0x09)?;
+        bytes_written += self.encode_byte(Self::CONTEXT_SPECIFIC | 0x09)?;
         bytes_written += self.encode_size_field(core::mem::size_of::<u32>())?;
         bytes_written += self.encode_bytes(&node.tci_type.to_be_bytes())?;
 
@@ -890,7 +908,8 @@ impl X509CertWriter<'_> {
 
     fn encode_extensions(&mut self, measurements: &MeasurementData) -> Result<usize, DpeErrorCode> {
         // Extensions is EXPLICIT field number 3
-        let mut bytes_written = self.encode_byte(Self::PRIVATE | Self::CONSTRUCTED | 0x03)?;
+        let mut bytes_written =
+            self.encode_byte(Self::CONTEXT_SPECIFIC | Self::CONSTRUCTED | 0x03)?;
         bytes_written += self.encode_size_field(Self::get_extensions_size(
             measurements,
             /*tagged=*/ true,
@@ -1111,7 +1130,7 @@ mod tests {
         };
 
         let expected = format!(
-            "CN={} + serialNumber={}",
+            "CN={}, serialNumber={}",
             str::from_utf8(test_name.cn).unwrap(),
             str::from_utf8(&test_name.serial).unwrap()
         );
