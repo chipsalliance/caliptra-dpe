@@ -38,7 +38,6 @@ impl X509CertWriter<'_> {
     const BIT_STRING_TAG: u8 = 0x3;
     const OCTET_STRING_TAG: u8 = 0x4;
     const OID_TAG: u8 = 0x6;
-    const UTF8_STRING_TAG: u8 = 0xc;
     const PRINTABLE_STRING_TAG: u8 = 0x13;
     const GENERALIZE_TIME_TAG: u8 = 0x18;
     const SEQUENCE_TAG: u8 = 0x30;
@@ -469,14 +468,6 @@ impl X509CertWriter<'_> {
         Ok(bytes_written)
     }
 
-    fn encode_utf8_string(&mut self, s: &[u8]) -> Result<usize, DpeErrorCode> {
-        let mut bytes_written = self.encode_tag_field(Self::UTF8_STRING_TAG)?;
-        bytes_written += self.encode_size_field(s.len())?;
-        bytes_written += self.encode_bytes(s)?;
-
-        Ok(bytes_written)
-    }
-
     /// DER-encodes a RelativeDistinguishedName with CommonName and SerialNumber
     /// fields.
     ///
@@ -492,9 +483,7 @@ impl X509CertWriter<'_> {
     ///
     /// CommonName and SerialNumber ::= CHOICE {
     ///     ...
-    ///     printableString   PrintableString (SIZE (1..ub-serial-number)),
-    ///     ...
-    ///     utf8String        UTF8String (SIZE (1..ub-common-name)),
+    ///     printableString   PrintableString (SIZE (1..ub-common-name)),
     ///     ...
     ///     }
     fn encode_rdn(&mut self, name: &Name) -> Result<usize, DpeErrorCode> {
@@ -523,7 +512,7 @@ impl X509CertWriter<'_> {
         bytes_written += self.encode_tag_field(Self::SEQUENCE_TAG)?;
         bytes_written += self.encode_size_field(cn_size)?;
         bytes_written += self.encode_oid(&Self::RDN_COMMON_NAME_OID)?;
-        bytes_written += self.encode_utf8_string(name.cn)?;
+        bytes_written += self.encode_printable_string(name.cn)?;
 
         // Encode RDN SET
         bytes_written += self.encode_tag_field(Self::SET_OF_TAG)?;
