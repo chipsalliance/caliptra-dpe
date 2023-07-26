@@ -1,0 +1,35 @@
+# Licensed under the Apache-2.0 license
+
+[package]
+name = "dpe-afl"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[dependencies]
+afl = "*"
+log = "*"
+simplelog = "*"
+
+[dependencies.dpe]
+path = ".."
+
+[dependencies.crypto]
+path = "../../crypto"
+features = ["openssl"]
+
+[dependencies.platform]
+path = "../../platform"
+
+# Prevent this from interfering with workspaces
+[workspace]
+members = ["."]
+
+[profile.release]
+debug = 1
+
+[[bin]]
+name = "fuzz_target_1"
+path = "src/fuzz_target_1.rs"
+test = false
+doc = false
