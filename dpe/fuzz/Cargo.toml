@@ -1,0 +1,39 @@
+# Licensed under the Apache-2.0 license
+
+[package]
+name = "dpe-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = { version = "0.4.6", optional = true }
+afl = { version = "0.13.3", optional = true }
+log = "0.4.19"
+simplelog = "0.12.1"
+
+[dependencies.dpe]
+path = ".."
+
+[dependencies.crypto]
+path = "../../crypto"
+features = ["openssl"]
+
+[dependencies.platform]
+path = "../../platform"
+
+# Prevent this from interfering with workspaces
+[workspace]
+members = ["."]
+
+[profile.release]
+debug = 1
+
+[[bin]]
+name = "fuzz_target_1"
+path = "src/fuzz_target_1.rs"
+test = false
+doc = false
