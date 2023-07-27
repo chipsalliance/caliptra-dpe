@@ -84,11 +84,20 @@ impl X509CertWriter<'_> {
     // tcg-dice-Ueid 2.23.133.5.4.4
     const UEID_OID: &[u8] = &[0x67, 0x81, 0x05, 0x05, 0x04, 0x04];
 
+    // id-tcg-kp-identityLoc 2.23.133.8.7
+    const IDENTITY_LOC_OID: &[u8] = &[0x67, 0x81, 0x05, 0x08, 0x07];
+
+    // id-tcg-kp-attestLoc 2.23.133.8.9
+    const ATTEST_LOC_OID: &[u8] = &[0x67, 0x81, 0x05, 0x08, 0x09];
+
     // RFC 5280 2.5.29.19
     const BASIC_CONSTRAINTS_OID: &[u8] = &[0x55, 0x1D, 0x13];
 
     // RFC 5280 2.5.29.15
     const KEY_USAGE_OID: &[u8] = &[0x55, 0x1D, 0x0F];
+
+    // RFC 5280 2.5.28.37
+    const EXTENDED_KEY_USAGE_OID: &[u8] = &[0x55, 0x1D, 0x25];
 
     // All DPE certs are valid from January 1st, 2023 00:00:00 until
     // December 31st, 9999 23:59:59
@@ -335,6 +344,31 @@ impl X509CertWriter<'_> {
         Self::get_structure_size(size, tagged)
     }
 
+    /// Get the size of an extendedKeyUsage extension, including the extension
+    /// OID and critical bits.
+    fn get_extended_key_usage_size(
+        measurements: &MeasurementData,
+        tagged: bool,
+    ) -> Result<usize, DpeErrorCode> {
+        let policy_oid_size = if measurements.is_ca {
+            Self::IDENTITY_LOC_OID.len()
+        } else {
+            Self::ATTEST_LOC_OID.len()
+        };
+
+        // Extension data is sequence -> octet string. To compute size, wrap
+        // in tagging twice.
+        let ext_size = Self::get_structure_size(
+            Self::get_structure_size(policy_oid_size, /*tagged=*/ true)?,
+            /*tagged=*/ true,
+        )?;
+        let size = Self::get_structure_size(Self::EXTENDED_KEY_USAGE_OID.len(), /*tagged=*/true)? // Extension OID
+            + Self::get_structure_size(Self::BOOL_SIZE, /*tagged=*/true)? // Critical bool
+            + Self::get_structure_size(ext_size, /*tagged=*/true)?; // OCTET STRING
+
+        Self::get_structure_size(size, tagged)
+    }
+
     /// Get the size of the TBS Extensions field.
     fn get_extensions_size(
         measurements: &MeasurementData,
@@ -344,7 +378,8 @@ impl X509CertWriter<'_> {
         let mut size = Self::get_multi_tcb_info_size(measurements, /*tagged=*/ true)?
             + Self::get_ueid_size(measurements, /*tagged=*/ true)?
             + Self::get_basic_constraints_size(/*tagged=*/ true)?
-            + Self::get_key_usage_size(/*tagged=*/ true)?;
+            + Self::get_key_usage_size(/*tagged=*/ true)?
+            + Self::get_extended_key_usage_size(measurements, /*tagged=*/ true)?;
 
         // Determine whether to include the explicit tag wrapping in the size calculation
         size = Self::get_structure_size(size, /*tagged=*/ explicit)?;
@@ -895,6 +930,56 @@ impl X509CertWriter<'_> {
         Ok(bytes_written)
     }
 
+    /// Encode ExtendedKeyUsage extension
+    ///
+    /// The included EKU OIDs is as follows based on whether or not this certificate is for a CA:
+    ///
+    /// is_ca = true: id-tcg-kp-identityLoc (2.23.133.8.7)
+    /// is_ca = false: id-tcg-kp-attestLoc (2.23.133.8.9)
+    ///
+    /// https://datatracker.ietf.org/doc/html/rfc5280
+    fn encode_extended_key_usage(
+        &mut self,
+        measurements: &MeasurementData,
+    ) -> Result<usize, DpeErrorCode> {
+        let policy_oid = if measurements.is_ca {
+            Self::IDENTITY_LOC_OID
+        } else {
+            Self::ATTEST_LOC_OID
+        };
+
+        // Assumes only one certificate policy is supported.
+        let extended_key_usage_size = Self::get_extended_key_usage_size(measurements, false)?;
+
+        // Encode Extension
+        let mut bytes_written = self.encode_byte(Self::SEQUENCE_TAG)?;
+        bytes_written += self.encode_size_field(extended_key_usage_size)?;
+        bytes_written += self.encode_oid(Self::EXTENDED_KEY_USAGE_OID)?;
+
+        bytes_written += self.encode_byte(Self::BOOL_TAG)?;
+        bytes_written += self.encode_size_field(Self::BOOL_SIZE)?;
+        bytes_written += self.encode_byte(0xFF)?;
+
+        // Extension data is sequence -> octet string. To compute size, wrap
+        // in tagging twice.
+        bytes_written += self.encode_byte(Self::OCTET_STRING_TAG)?;
+        bytes_written += self.encode_size_field(Self::get_structure_size(
+            Self::get_structure_size(policy_oid.len(), /*tagged=*/ true)?,
+            /*tagged=*/ true,
+        )?)?;
+
+        // Sequence size is the size of all the EKU OIDs.
+        bytes_written += self.encode_byte(Self::SEQUENCE_TAG)?;
+        bytes_written += self.encode_size_field(Self::get_structure_size(
+            policy_oid.len(),
+            /*tagged=*/ true,
+        )?)?;
+
+        bytes_written += self.encode_oid(policy_oid)?;
+
+        Ok(bytes_written)
+    }
+
     fn encode_extensions(&mut self, measurements: &MeasurementData) -> Result<usize, DpeErrorCode> {
         // Extensions is EXPLICIT field number 3
         let mut bytes_written =
@@ -917,6 +1002,7 @@ impl X509CertWriter<'_> {
         bytes_written += self.encode_ueid(measurements)?;
         bytes_written += self.encode_basic_constraints(measurements)?;
         bytes_written += self.encode_key_usage()?;
+        bytes_written += self.encode_extended_key_usage(measurements)?;
 
         Ok(bytes_written)
     }
@@ -1323,5 +1409,15 @@ mod tests {
             Ok(None) => panic!("key usage extension not found"),
             Err(_) => panic!("multiple key usage extensions found"),
         }
+
+        match cert.extended_key_usage() {
+            Ok(Some(ext_key_usage)) => {
+                assert!(ext_key_usage.critical);
+                // Expect id-tcg-kp-identityLoc OID (2.23.133.8.7)
+                assert_eq!(ext_key_usage.value.other, [oid!(2.23.133 .8 .7)]);
+            }
+            Ok(None) => panic!("extended key usage extension not found"),
+            Err(_) => panic!("multiple extended key usage extensions found"),
+        };
     }
 }
