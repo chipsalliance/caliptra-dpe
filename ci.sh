@@ -39,3 +39,4 @@ set -ex
   test -z "$(gofmt -l .)"
   go test
 )
+ci-tools/file-header-fix.sh --check
