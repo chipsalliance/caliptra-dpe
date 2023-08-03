@@ -18,7 +18,7 @@ use self::sign::SignCmd;
 use self::tag_tci::TagTciCmd;
 
 use crate::{
-    dpe_instance::{DpeEnv, DpeInstance},
+    dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
     response::{DpeErrorCode, Response},
     DPE_PROFILE,
 };
@@ -123,7 +123,7 @@ pub trait CommandExecution {
     fn execute(
         &self,
         dpe: &mut DpeInstance,
-        env: &mut impl DpeEnv,
+        env: &mut DpeEnv<impl DpeTypes>,
         locality: u32,
     ) -> Result<Response, DpeErrorCode>;
 }

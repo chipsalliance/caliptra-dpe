@@ -1,7 +1,7 @@
 // Licensed under the Apache-2.0 license.
 use super::CommandExecution;
 use crate::{
-    dpe_instance::{DpeEnv, DpeInstance},
+    dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
     response::{DpeErrorCode, GetCertificateChainResp, Response, ResponseHdr},
     MAX_CERT_SIZE,
 };
@@ -19,7 +19,7 @@ impl CommandExecution for GetCertificateChainCmd {
     fn execute(
         &self,
         _dpe: &mut DpeInstance,
-        env: &mut impl DpeEnv,
+        env: &mut DpeEnv<impl DpeTypes>,
         _locality: u32,
     ) -> Result<Response, DpeErrorCode> {
         // Make sure the operation is supported.
@@ -29,7 +29,7 @@ impl CommandExecution for GetCertificateChainCmd {
 
         let mut cert_chunk = [0u8; MAX_CHUNK_SIZE];
         let len = env
-            .platform()
+            .platform
             .get_certificate_chain(self.offset, self.size, &mut cert_chunk)
             .map_err(|platform_error| match platform_error {
                 PlatformError::CertificateChainError => DpeErrorCode::InvalidArgument,
@@ -48,7 +48,7 @@ mod tests {
     use super::*;
     use crate::{
         commands::{Command, CommandHdr},
-        dpe_instance::tests::{TestEnv, TEST_LOCALITIES},
+        dpe_instance::tests::{TestTypes, TEST_LOCALITIES},
         support::test::SUPPORT,
     };
     use crypto::OpensslCrypto;
@@ -75,7 +75,7 @@ mod tests {
 
     #[test]
     fn test_fails_if_size_greater_than_max_cert_size() {
-        let mut env = TestEnv {
+        let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };

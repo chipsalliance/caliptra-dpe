@@ -76,7 +76,7 @@ type OpensslPrivKey = CryptoBuf;
 
 impl Crypto for OpensslCrypto {
     type Cdi = OpensslCdi;
-    type Hasher = OpensslHasher;
+    type Hasher<'c> = OpensslHasher where Self: 'c;
     type PrivKey = OpensslPrivKey;
 
     #[cfg(feature = "deterministic_rand")]
@@ -92,7 +92,7 @@ impl Crypto for OpensslCrypto {
         openssl::rand::rand_bytes(dst).map_err(|_| CryptoError::CryptoLibError)
     }
 
-    fn hash_initialize(&mut self, algs: AlgLen) -> Result<Self::Hasher, CryptoError> {
+    fn hash_initialize(&mut self, algs: AlgLen) -> Result<Self::Hasher<'_>, CryptoError> {
         let md = Self::get_digest(algs);
         Ok(OpensslHasher(
             openssl::hash::Hasher::new(md).map_err(|_| CryptoError::CryptoLibError)?,

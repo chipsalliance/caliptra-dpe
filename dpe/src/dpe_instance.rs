@@ -17,12 +17,16 @@ use crypto::{Crypto, Digest, Hasher};
 use platform::{Platform, MAX_CHUNK_SIZE};
 use zerocopy::AsBytes;
 
-pub trait DpeEnv {
-    type Crypto: Crypto;
+pub trait DpeTypes {
+    type Crypto<'a>: Crypto
+    where
+        Self: 'a;
     type Platform: Platform;
+}
 
-    fn crypto(&mut self) -> &mut Self::Crypto;
-    fn platform(&mut self) -> &mut Self::Platform;
+pub struct DpeEnv<'a, T: DpeTypes + 'a> {
+    pub crypto: T::Crypto<'a>,
+    pub platform: T::Platform,
 }
 
 pub struct DpeInstance<'a> {
@@ -47,7 +51,7 @@ impl DpeInstance<'_> {
     /// * `support` - optional functionality the instance supports
     /// * `issuer_cn` - issuer Common Name to use in DPE leaf certs
     pub fn new<'a>(
-        env: &mut impl DpeEnv,
+        env: &mut DpeEnv<impl DpeTypes>,
         support: Support,
         issuer_cn: &'a [u8],
     ) -> Result<DpeInstance<'a>, DpeErrorCode> {
@@ -61,7 +65,7 @@ impl DpeInstance<'_> {
 
         if dpe.support.auto_init {
             let locality = env
-                .platform()
+                .platform
                 .get_auto_init_locality()
                 .map_err(|_| DpeErrorCode::InvalidLocality)?;
             InitCtxCmd::new_use_default().execute(&mut dpe, env, locality)?;
@@ -70,20 +74,21 @@ impl DpeInstance<'_> {
     }
 
     pub fn new_for_test<'a>(
-        env: &mut impl DpeEnv,
+        env: &mut DpeEnv<impl DpeTypes>,
         support: Support,
     ) -> Result<DpeInstance<'a>, DpeErrorCode> {
         const TEST_ISSUER: &[u8] = b"Test Issuer";
         Self::new(env, support, TEST_ISSUER)
     }
 
-    pub fn get_profile(&self, env: &mut impl DpeEnv) -> Result<GetProfileResp, DpeErrorCode> {
-        let vendor_id = env
-            .platform()
+    pub fn get_profile(
+        &self,
+        platform: &mut impl Platform,
+    ) -> Result<GetProfileResp, DpeErrorCode> {
+        let vendor_id = platform
             .get_vendor_id()
             .map_err(|_| DpeErrorCode::PlatformError)?;
-        let vendor_sku = env
-            .platform()
+        let vendor_sku = platform
             .get_vendor_sku()
             .map_err(|_| DpeErrorCode::PlatformError)?;
         Ok(GetProfileResp::new(
@@ -102,13 +107,13 @@ impl DpeInstance<'_> {
     /// * `crypto` - Crypto interface
     pub fn execute_serialized_command(
         &mut self,
-        env: &mut impl DpeEnv,
+        env: &mut DpeEnv<impl DpeTypes>,
         locality: u32,
         cmd: &[u8],
     ) -> Result<Response, DpeErrorCode> {
         let command = Command::deserialize(cmd)?;
         let resp = match command {
-            Command::GetProfile => Ok(Response::GetProfile(self.get_profile(env)?)),
+            Command::GetProfile => Ok(Response::GetProfile(self.get_profile(&mut env.platform)?)),
             Command::InitCtx(cmd) => cmd.execute(self, env, locality),
             Command::DeriveChild(cmd) => cmd.execute(self, env, locality),
             Command::CertifyKey(cmd) => cmd.execute(self, env, locality),
@@ -181,11 +186,11 @@ impl DpeInstance<'_> {
 
     pub(crate) fn generate_new_handle(
         &self,
-        env: &mut impl DpeEnv,
+        env: &mut DpeEnv<impl DpeTypes>,
     ) -> Result<ContextHandle, DpeErrorCode> {
         for _ in 0..Self::MAX_NEW_HANDLE_ATTEMPTS {
             let mut handle = ContextHandle::default();
-            env.crypto()
+            env.crypto
                 .rand_bytes(&mut handle.0)
                 .map_err(|_| DpeErrorCode::RandError)?;
             if !handle.is_default() && !self.contexts.iter().any(|c| c.handle == handle) {
@@ -202,7 +207,7 @@ impl DpeInstance<'_> {
     /// * `idx` - the index of the context
     pub(crate) fn roll_onetime_use_handle(
         &mut self,
-        env: &mut impl DpeEnv,
+        env: &mut DpeEnv<impl DpeTypes>,
         idx: usize,
     ) -> Result<(), DpeErrorCode> {
         if idx >= MAX_HANDLES {
@@ -244,7 +249,7 @@ impl DpeInstance<'_> {
 
     pub(crate) fn add_tci_measurement(
         &mut self,
-        env: &mut impl DpeEnv,
+        env: &mut DpeEnv<impl DpeTypes>,
         idx: usize,
         measurement: &TciMeasurement,
         locality: u32,
@@ -264,7 +269,7 @@ impl DpeInstance<'_> {
 
         // Derive the new TCI as HASH(TCI_CUMULATIVE || INPUT_DATA).
         let mut hasher = env
-            .crypto()
+            .crypto
             .hash_initialize(DPE_PROFILE.alg_len())
             .map_err(|_| DpeErrorCode::HashError)?;
         hasher
@@ -282,11 +287,11 @@ impl DpeInstance<'_> {
 
     fn serialize_internal_input_info(
         &self,
-        env: &mut impl DpeEnv,
+        platform: &mut impl Platform,
         internal_input_info: &mut [u8; INTERNAL_INPUT_INFO_SIZE],
     ) -> Result<(), DpeErrorCode> {
         // Internal DPE Info contains get profile response fields as well as the DPE_PROFILE
-        let profile = self.get_profile(env)?;
+        let profile = self.get_profile(platform)?;
         let profile_bytes = profile.as_bytes();
         internal_input_info
             .get_mut(..profile_bytes.len())
@@ -310,11 +315,11 @@ impl DpeInstance<'_> {
     /// * `start_idx` - index of the leaf context
     pub(crate) fn compute_measurement_hash(
         &mut self,
-        env: &mut impl DpeEnv,
+        env: &mut DpeEnv<impl DpeTypes>,
         start_idx: usize,
     ) -> Result<Digest, DpeErrorCode> {
         let mut hasher = env
-            .crypto()
+            .crypto
             .hash_initialize(DPE_PROFILE.alg_len())
             .map_err(|_| DpeErrorCode::HashError)?;
 
@@ -339,7 +344,7 @@ impl DpeInstance<'_> {
         // Add internal input info to hash
         if uses_internal_input_info {
             let mut internal_input_info = [0u8; INTERNAL_INPUT_INFO_SIZE];
-            self.serialize_internal_input_info(env, &mut internal_input_info)?;
+            self.serialize_internal_input_info(&mut env.platform, &mut internal_input_info)?;
             hasher
                 .update(&internal_input_info[..INTERNAL_INPUT_INFO_SIZE])
                 .map_err(|_| DpeErrorCode::HashError)?;
@@ -350,7 +355,7 @@ impl DpeInstance<'_> {
             let mut offset = 0;
             let mut cert_chunk = [0u8; MAX_CHUNK_SIZE];
             while let Ok(len) =
-                env.platform()
+                env.platform
                     .get_certificate_chain(offset, MAX_CHUNK_SIZE as u32, &mut cert_chunk)
             {
                 hasher
@@ -406,22 +411,10 @@ pub mod tests {
     use platform::{DefaultPlatform, AUTO_INIT_LOCALITY, MAX_CHUNK_SIZE, TEST_CERT_CHAIN};
     use zerocopy::AsBytes;
 
-    pub struct TestEnv {
-        pub crypto: OpensslCrypto,
-        pub platform: DefaultPlatform,
-    }
-
-    impl DpeEnv for TestEnv {
-        type Crypto = OpensslCrypto;
+    pub struct TestTypes;
+    impl DpeTypes for TestTypes {
+        type Crypto<'a> = OpensslCrypto;
         type Platform = DefaultPlatform;
-
-        fn crypto(&mut self) -> &mut OpensslCrypto {
-            &mut self.crypto
-        }
-
-        fn platform(&mut self) -> &mut DefaultPlatform {
-            &mut self.platform
-        }
     }
 
     pub const TEST_HANDLE: ContextHandle =
@@ -433,7 +426,7 @@ pub mod tests {
 
     #[test]
     fn test_execute_serialized_command() {
-        let mut env = TestEnv {
+        let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
@@ -442,8 +435,8 @@ pub mod tests {
         assert_eq!(
             Response::GetProfile(GetProfileResp::new(
                 SUPPORT.get_flags(),
-                env.platform().get_vendor_id().unwrap(),
-                env.platform().get_vendor_sku().unwrap()
+                env.platform.get_vendor_id().unwrap(),
+                env.platform.get_vendor_sku().unwrap()
             )),
             dpe.execute_serialized_command(
                 &mut env,
@@ -471,19 +464,19 @@ pub mod tests {
 
     #[test]
     fn test_get_profile() {
-        let mut env = TestEnv {
+        let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
         let dpe = DpeInstance::new_for_test(&mut env, SUPPORT).unwrap();
-        let profile = dpe.get_profile(&mut env).unwrap();
+        let profile = dpe.get_profile(&mut env.platform).unwrap();
         assert_eq!(profile.major_version, CURRENT_PROFILE_MAJOR_VERSION);
         assert_eq!(profile.flags, SUPPORT.get_flags());
     }
 
     #[test]
     fn test_get_active_context_index() {
-        let mut env = TestEnv {
+        let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
@@ -520,7 +513,7 @@ pub mod tests {
 
     #[test]
     fn test_add_tci_measurement() {
-        let mut env = TestEnv {
+        let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
@@ -552,7 +545,7 @@ pub mod tests {
         assert_eq!(data, context.tci.tci_current.0);
 
         // Compute cumulative.
-        let mut hasher = env.crypto().hash_initialize(DPE_PROFILE.alg_len()).unwrap();
+        let mut hasher = env.crypto.hash_initialize(DPE_PROFILE.alg_len()).unwrap();
         hasher.update(&[0; DPE_PROFILE.get_hash_size()]).unwrap();
         hasher.update(&data).unwrap();
         let first_cumulative = hasher.finish().unwrap();
@@ -567,7 +560,7 @@ pub mod tests {
         let context = &dpe.contexts[0];
         assert_eq!(data, context.tci.tci_current.0);
 
-        let mut hasher = env.crypto().hash_initialize(DPE_PROFILE.alg_len()).unwrap();
+        let mut hasher = env.crypto.hash_initialize(DPE_PROFILE.alg_len()).unwrap();
         hasher.update(first_cumulative.bytes()).unwrap();
         hasher.update(&data).unwrap();
         let second_cumulative = hasher.finish().unwrap();
@@ -578,7 +571,7 @@ pub mod tests {
 
     #[test]
     fn test_get_descendants() {
-        let mut env = TestEnv {
+        let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
@@ -633,7 +626,7 @@ pub mod tests {
 
     #[test]
     fn test_derive_cdi() {
-        let mut env = TestEnv {
+        let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
@@ -660,7 +653,7 @@ pub mod tests {
                 .compute_measurement_hash(&mut env, leaf_context_idx)
                 .unwrap();
             let curr_cdi = env
-                .crypto()
+                .crypto
                 .derive_cdi(DPE_PROFILE.alg_len(), &digest, b"DPE")
                 .unwrap();
             assert_ne!(last_cdi, curr_cdi);
@@ -668,7 +661,7 @@ pub mod tests {
             last_cdi = curr_cdi;
         }
 
-        let mut hasher = env.crypto().hash_initialize(DPE_PROFILE.alg_len()).unwrap();
+        let mut hasher = env.crypto.hash_initialize(DPE_PROFILE.alg_len()).unwrap();
         let leaf_idx = dpe
             .get_active_context_pos(&ContextHandle::default(), TEST_LOCALITIES[0])
             .unwrap();
@@ -680,7 +673,7 @@ pub mod tests {
 
         let digest = hasher.finish().unwrap();
         let answer = env
-            .crypto()
+            .crypto
             .derive_cdi(DPE_PROFILE.alg_len(), &digest, b"DPE")
             .unwrap();
         assert_eq!(answer, last_cdi);
@@ -688,7 +681,7 @@ pub mod tests {
 
     #[test]
     fn test_hash_internal_input_info() {
-        let mut env = TestEnv {
+        let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
@@ -718,17 +711,17 @@ pub mod tests {
             .compute_measurement_hash(&mut env, parent_context_idx)
             .unwrap();
         let cdi_with_internal_input_info = env
-            .crypto()
+            .crypto
             .derive_cdi(DPE_PROFILE.alg_len(), &digest, b"DPE")
             .unwrap();
         let context = &dpe.contexts[parent_context_idx];
         assert!(context.uses_internal_input_info);
 
-        let mut hasher = env.crypto().hash_initialize(DPE_PROFILE.alg_len()).unwrap();
+        let mut hasher = env.crypto.hash_initialize(DPE_PROFILE.alg_len()).unwrap();
 
         hasher.update(context.tci.as_bytes()).unwrap();
         let mut internal_input_info = [0u8; INTERNAL_INPUT_INFO_SIZE];
-        dpe.serialize_internal_input_info(&mut env, &mut internal_input_info)
+        dpe.serialize_internal_input_info(&mut env.platform, &mut internal_input_info)
             .unwrap();
 
         hasher
@@ -737,7 +730,7 @@ pub mod tests {
 
         let digest = hasher.finish().unwrap();
         let answer = env
-            .crypto()
+            .crypto
             .derive_cdi(DPE_PROFILE.alg_len(), &digest, b"DPE")
             .unwrap();
         assert_eq!(answer, cdi_with_internal_input_info);
@@ -745,7 +738,7 @@ pub mod tests {
 
     #[test]
     fn test_hash_internal_input_dice() {
-        let mut env = TestEnv {
+        let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
@@ -775,20 +768,20 @@ pub mod tests {
             .compute_measurement_hash(&mut env, parent_context_idx)
             .unwrap();
         let cdi_with_internal_input_dice = env
-            .crypto()
+            .crypto
             .derive_cdi(DPE_PROFILE.alg_len(), &digest, b"DPE")
             .unwrap();
         let context = &dpe.contexts[parent_context_idx];
         assert!(context.uses_internal_input_dice);
 
-        let mut hasher = env.crypto().hash_initialize(DPE_PROFILE.alg_len()).unwrap();
+        let mut hasher = env.crypto.hash_initialize(DPE_PROFILE.alg_len()).unwrap();
 
         hasher.update(context.tci.as_bytes()).unwrap();
         hasher.update(&TEST_CERT_CHAIN[..MAX_CHUNK_SIZE]).unwrap();
 
         let digest = hasher.finish().unwrap();
         let answer = env
-            .crypto()
+            .crypto
             .derive_cdi(DPE_PROFILE.alg_len(), &digest, b"DPE")
             .unwrap();
         assert_eq!(answer, cdi_with_internal_input_dice)

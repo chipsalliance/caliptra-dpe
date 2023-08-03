@@ -2,7 +2,7 @@
 use super::CommandExecution;
 use crate::{
     context::{ActiveContextArgs, Context, ContextHandle, ContextType},
-    dpe_instance::{DpeEnv, DpeInstance},
+    dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
     response::{DpeErrorCode, NewHandleResp, Response, ResponseHdr},
 };
 
@@ -43,7 +43,7 @@ impl CommandExecution for InitCtxCmd {
     fn execute(
         &self,
         dpe: &mut DpeInstance,
-        env: &mut impl DpeEnv,
+        env: &mut DpeEnv<impl DpeTypes>,
         locality: u32,
     ) -> Result<Response, DpeErrorCode> {
         // This function can only be called once for non-simulation contexts.
@@ -93,7 +93,7 @@ mod tests {
     use crate::{
         commands::{Command, CommandHdr},
         context::ContextState,
-        dpe_instance::tests::{TestEnv, TEST_LOCALITIES},
+        dpe_instance::tests::{TestTypes, TEST_LOCALITIES},
         support::Support,
     };
     use crypto::OpensslCrypto;
@@ -116,7 +116,7 @@ mod tests {
 
     #[test]
     fn test_initialize_context() {
-        let mut env = TestEnv {
+        let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };

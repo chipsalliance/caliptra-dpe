@@ -10,11 +10,16 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
 use std::process;
 
-use dpe::{commands::Command, dpe_instance::DpeEnv, response::Response, DpeInstance, Support};
+use dpe::{
+    commands::Command,
+    dpe_instance::{DpeEnv, DpeTypes},
+    response::Response,
+    DpeInstance, Support,
+};
 
 const SOCKET_PATH: &str = "/tmp/dpe-sim.socket";
 
-fn handle_request(dpe: &mut DpeInstance, env: &mut SimEnv, stream: &mut UnixStream) {
+fn handle_request(dpe: &mut DpeInstance, env: &mut DpeEnv<impl DpeTypes>, stream: &mut UnixStream) {
     let mut buf = [0u8; 4096];
     let (locality, cmd) = {
         let len = stream.read(&mut buf).unwrap();
@@ -110,22 +115,11 @@ struct Args {
     supports_internal_dice: bool,
 }
 
-struct SimEnv {
-    platform: DefaultPlatform,
-    crypto: OpensslCrypto,
-}
+struct SimTypes {}
 
-impl DpeEnv for SimEnv {
-    type Crypto = OpensslCrypto;
+impl DpeTypes for SimTypes {
+    type Crypto<'a> = OpensslCrypto;
     type Platform = DefaultPlatform;
-
-    fn crypto(&mut self) -> &mut OpensslCrypto {
-        &mut self.crypto
-    }
-
-    fn platform(&mut self) -> &mut DefaultPlatform {
-        &mut self.platform
-    }
 }
 
 fn main() -> std::io::Result<()> {
@@ -160,7 +154,7 @@ fn main() -> std::io::Result<()> {
         internal_dice: args.supports_internal_dice,
     };
 
-    let mut env = SimEnv {
+    let mut env = DpeEnv::<SimTypes> {
         crypto: OpensslCrypto::new(),
         platform: DefaultPlatform,
     };

@@ -2,7 +2,7 @@
 use super::CommandExecution;
 use crate::{
     context::{ContextHandle, ContextType},
-    dpe_instance::{DpeEnv, DpeInstance},
+    dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
     response::{DpeErrorCode, Response, ResponseHdr, SignResp},
     DPE_PROFILE,
 };
@@ -28,23 +28,23 @@ impl SignCmd {
     fn ecdsa_sign(
         &self,
         dpe: &mut DpeInstance,
-        env: &mut impl DpeEnv,
+        env: &mut DpeEnv<impl DpeTypes>,
         idx: usize,
         digest: &Digest,
     ) -> Result<EcdsaSig, DpeErrorCode> {
         let algs = DPE_PROFILE.alg_len();
         let cdi_digest = dpe.compute_measurement_hash(env, idx)?;
         let cdi = env
-            .crypto()
+            .crypto
             .derive_cdi(DPE_PROFILE.alg_len(), &cdi_digest, b"DPE")
             .map_err(|_| DpeErrorCode::CryptoError)?;
         let priv_key = env
-            .crypto()
+            .crypto
             .derive_private_key(algs, &cdi, &self.label, b"ECC")
             .map_err(|_| DpeErrorCode::CryptoError)?;
 
         let sig = env
-            .crypto()
+            .crypto
             .ecdsa_sign_with_derived(algs, digest, &priv_key)
             .map_err(|_| DpeErrorCode::CryptoError)?;
 
@@ -54,17 +54,17 @@ impl SignCmd {
     fn hmac_sign(
         &self,
         dpe: &mut DpeInstance,
-        env: &mut impl DpeEnv,
+        env: &mut DpeEnv<impl DpeTypes>,
         idx: usize,
         digest: &Digest,
     ) -> Result<HmacSig, DpeErrorCode> {
         let algs = DPE_PROFILE.alg_len();
         let cdi_digest = dpe.compute_measurement_hash(env, idx)?;
         let cdi = env
-            .crypto()
+            .crypto
             .derive_cdi(DPE_PROFILE.alg_len(), &cdi_digest, b"DPE")
             .map_err(|_| DpeErrorCode::CryptoError)?;
-        env.crypto()
+        env.crypto
             .hmac_sign_with_derived(algs, &cdi, &self.label, b"HMAC", digest)
             .map_err(|_| DpeErrorCode::CryptoError)
     }
@@ -74,7 +74,7 @@ impl CommandExecution for SignCmd {
     fn execute(
         &self,
         dpe: &mut DpeInstance,
-        env: &mut impl DpeEnv,
+        env: &mut DpeEnv<impl DpeTypes>,
         locality: u32,
     ) -> Result<Response, DpeErrorCode> {
         // Make sure the operation is supported.
@@ -119,7 +119,7 @@ mod tests {
             certify_key::CertifyKeyCmd, tests::TEST_DIGEST, Command, CommandHdr, DeriveChildCmd,
             InitCtxCmd,
         },
-        dpe_instance::tests::{TestEnv, SIMULATION_HANDLE, TEST_LOCALITIES},
+        dpe_instance::tests::{TestTypes, SIMULATION_HANDLE, TEST_LOCALITIES},
         support::{test::SUPPORT, Support},
     };
     use crypto::OpensslCrypto;
@@ -177,7 +177,7 @@ mod tests {
 
     #[test]
     fn test_bad_command_inputs() {
-        let mut env = TestEnv {
+        let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
@@ -243,7 +243,7 @@ mod tests {
 
     #[test]
     fn test_asymmetric() {
-        let mut env = TestEnv {
+        let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
@@ -302,7 +302,7 @@ mod tests {
 
     #[test]
     fn test_symmetric() {
-        let mut env = TestEnv {
+        let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };

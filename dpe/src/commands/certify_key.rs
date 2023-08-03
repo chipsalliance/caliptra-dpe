@@ -2,7 +2,7 @@
 use super::CommandExecution;
 use crate::{
     context::ContextHandle,
-    dpe_instance::{DpeEnv, DpeInstance},
+    dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
     response::{CertifyKeyResp, DpeErrorCode, Response, ResponseHdr},
     tci::TciNodeData,
     x509::{MeasurementData, Name, X509CertWriter},
@@ -34,7 +34,7 @@ impl CommandExecution for CertifyKeyCmd {
     fn execute(
         &self,
         dpe: &mut DpeInstance,
-        env: &mut impl DpeEnv,
+        env: &mut DpeEnv<impl DpeTypes>,
         locality: u32,
     ) -> Result<Response, DpeErrorCode> {
         let idx = dpe.get_active_context_pos(&self.handle, locality)?;
@@ -64,16 +64,16 @@ impl CommandExecution for CertifyKeyCmd {
         let algs = DPE_PROFILE.alg_len();
         let digest = dpe.compute_measurement_hash(env, idx)?;
         let cdi = env
-            .crypto()
+            .crypto
             .derive_cdi(DPE_PROFILE.alg_len(), &digest, b"DPE")
             .map_err(|_| DpeErrorCode::CryptoError)?;
         let priv_key = env
-            .crypto()
+            .crypto
             .derive_private_key(algs, &cdi, &self.label, b"ECC")
             .map_err(|_| DpeErrorCode::CryptoError)?;
 
         let pub_key = env
-            .crypto()
+            .crypto
             .derive_ecdsa_pub(DPE_PROFILE.alg_len(), &priv_key)
             .map_err(|_| DpeErrorCode::CryptoError)?;
 
@@ -81,7 +81,7 @@ impl CommandExecution for CertifyKeyCmd {
             cn: dpe.issuer_cn,
             serial: [0u8; DPE_PROFILE.get_hash_size() * 2],
         };
-        env.crypto()
+        env.crypto
             .get_ecdsa_alias_serial(DPE_PROFILE.alg_len(), &mut issuer_name.serial)
             .map_err(|_| DpeErrorCode::CryptoError)?;
 
@@ -89,7 +89,7 @@ impl CommandExecution for CertifyKeyCmd {
             cn: b"DPE Leaf",
             serial: [0u8; DPE_PROFILE.get_hash_size() * 2],
         };
-        env.crypto()
+        env.crypto
             .get_pubkey_serial(DPE_PROFILE.alg_len(), &pub_key, &mut subject_name.serial)
             .map_err(|_| DpeErrorCode::CryptoError)?;
 
@@ -119,11 +119,11 @@ impl CommandExecution for CertifyKeyCmd {
                 )?;
 
                 let tbs_digest = env
-                    .crypto()
+                    .crypto
                     .hash(DPE_PROFILE.alg_len(), &tbs_buffer[..bytes_written])
                     .map_err(|_| DpeErrorCode::HashError)?;
                 let sig = env
-                    .crypto()
+                    .crypto
                     .ecdsa_sign_with_alias(DPE_PROFILE.alg_len(), &tbs_digest)
                     .map_err(|_| DpeErrorCode::CryptoError)?;
 
@@ -160,7 +160,7 @@ mod tests {
     use super::*;
     use crate::{
         commands::{Command, CommandHdr, InitCtxCmd},
-        dpe_instance::tests::{TestEnv, SIMULATION_HANDLE, TEST_LOCALITIES},
+        dpe_instance::tests::{TestTypes, SIMULATION_HANDLE, TEST_LOCALITIES},
         support::Support,
     };
     use crypto::OpensslCrypto;
@@ -191,7 +191,7 @@ mod tests {
 
     #[test]
     fn test_certify_key() {
-        let mut env = TestEnv {
+        let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
@@ -238,7 +238,7 @@ mod tests {
 
     #[test]
     fn test_is_ca() {
-        let mut env = TestEnv {
+        let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
