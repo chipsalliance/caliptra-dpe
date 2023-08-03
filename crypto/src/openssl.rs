@@ -1,6 +1,6 @@
 // Licensed under the Apache-2.0 license
 
-use crate::{AlgLen, Crypto, CryptoBuf, CryptoError, Digest, EcdsaPub, HmacSig};
+use crate::{AlgLen, Crypto, CryptoBuf, CryptoError, Digest, EcdsaPub, Hasher, HmacSig};
 use hkdf::Hkdf;
 use openssl::{
     bn::{BigNum, BigNumContext},
@@ -13,6 +13,23 @@ use openssl::{
     sign::Signer,
 };
 use sha2::{Sha256, Sha384};
+
+pub struct OpensslHasher(openssl::hash::Hasher, AlgLen);
+
+impl Hasher for OpensslHasher {
+    fn update(&mut self, bytes: &[u8]) -> Result<(), CryptoError> {
+        self.0
+            .update(bytes)
+            .map_err(|_| CryptoError::CryptoLibError)
+    }
+
+    fn finish(mut self) -> Result<Digest, CryptoError> {
+        Digest::new(
+            &self.0.finish().map_err(|_| CryptoError::CryptoLibError)?,
+            self.1,
+        )
+    }
+}
 
 pub struct OpensslCrypto;
 
@@ -57,14 +74,9 @@ type OpensslCdi = Vec<u8>;
 
 type OpensslPrivKey = CryptoBuf;
 
-pub struct OpensslHasher {
-    hasher: openssl::hash::Hasher,
-    algs: AlgLen,
-}
-
 impl Crypto for OpensslCrypto {
     type Cdi = OpensslCdi;
-    type HashCtx = OpensslHasher;
+    type Hasher = OpensslHasher;
     type PrivKey = OpensslPrivKey;
 
     #[cfg(feature = "deterministic_rand")]
@@ -80,27 +92,12 @@ impl Crypto for OpensslCrypto {
         openssl::rand::rand_bytes(dst).map_err(|_| CryptoError::CryptoLibError)
     }
 
-    fn hash_initialize(&mut self, algs: AlgLen) -> Result<Self::HashCtx, CryptoError> {
+    fn hash_initialize(&mut self, algs: AlgLen) -> Result<Self::Hasher, CryptoError> {
         let md = Self::get_digest(algs);
-        Ok(OpensslHasher {
-            hasher: openssl::hash::Hasher::new(md).map_err(|_| CryptoError::CryptoLibError)?,
+        Ok(OpensslHasher(
+            openssl::hash::Hasher::new(md).map_err(|_| CryptoError::CryptoLibError)?,
             algs,
-        })
-    }
-
-    fn hash_update(&mut self, ctx: &mut Self::HashCtx, bytes: &[u8]) -> Result<(), CryptoError> {
-        ctx.hasher
-            .update(bytes)
-            .map_err(|_| CryptoError::CryptoLibError)
-    }
-
-    fn hash_finish(&mut self, ctx: &mut Self::HashCtx) -> Result<Digest, CryptoError> {
-        Digest::new(
-            &ctx.hasher
-                .finish()
-                .map_err(|_| CryptoError::CryptoLibError)?,
-            ctx.algs,
-        )
+        ))
     }
 
     fn derive_cdi(

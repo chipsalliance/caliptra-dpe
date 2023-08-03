@@ -40,17 +40,28 @@ pub enum CryptoError {
     CryptoLibError,
     Size,
     NotImplemented,
-    NotInitialized,
-    HashError,
 }
 
-pub trait Hasher: Sized {}
+pub trait Hasher: Sized {
+    /// Adds a chunk to the running hash.
+    ///
+    /// # Arguments
+    ///
+    /// * `bytes` - Value to add to hash.
+    fn update(&mut self, bytes: &[u8]) -> Result<(), CryptoError>;
+
+    /// Finish a running hash operation and return the result.
+    ///
+    /// Once this function has been called, the object can no longer be used and
+    /// a new one must be created to hash more data.
+    fn finish(self) -> Result<Digest, CryptoError>;
+}
 
 pub type Digest = CryptoBuf;
 
 pub trait Crypto {
     type Cdi;
-    type HashCtx;
+    type Hasher: Hasher;
     type PrivKey;
 
     /// Fills the buffer with random values.
@@ -67,9 +78,9 @@ pub trait Crypto {
     /// * `algs` - Which length of algorithm to use.
     /// * `bytes` - Value to be hashed.
     fn hash(&mut self, algs: AlgLen, bytes: &[u8]) -> Result<Digest, CryptoError> {
-        let mut hash_ctx = self.hash_initialize(algs)?;
-        self.hash_update(&mut hash_ctx, bytes)?;
-        self.hash_finish(&mut hash_ctx)
+        let mut hasher = self.hash_initialize(algs)?;
+        hasher.update(bytes)?;
+        hasher.finish()
     }
 
     /// Compute the serial number of an ECDSA public key by computing the hash
@@ -92,11 +103,11 @@ pub trait Crypto {
             return Err(CryptoError::CryptoLibError);
         }
 
-        let mut hash_ctx = self.hash_initialize(algs)?;
-        self.hash_update(&mut hash_ctx, &[0x4u8])?;
-        self.hash_update(&mut hash_ctx, pub_key.x.bytes())?;
-        self.hash_update(&mut hash_ctx, pub_key.y.bytes())?;
-        let digest = self.hash_finish(&mut hash_ctx)?;
+        let mut hasher = self.hash_initialize(algs)?;
+        hasher.update(&[0x4u8])?;
+        hasher.update(pub_key.x.bytes())?;
+        hasher.update(pub_key.y.bytes())?;
+        let digest = hasher.finish()?;
 
         let mut w = BufWriter {
             buf: serial,
@@ -112,20 +123,7 @@ pub trait Crypto {
     /// # Arguments
     ///
     /// * `algs` - Which length of algorithm to use.
-    fn hash_initialize(&mut self, algs: AlgLen) -> Result<Self::HashCtx, CryptoError>;
-
-    /// Adds a chunk to the running hash.
-    ///
-    /// # Arguments
-    ///
-    /// * `bytes` - Value to add to hash.
-    fn hash_update(&mut self, ctx: &mut Self::HashCtx, bytes: &[u8]) -> Result<(), CryptoError>;
-
-    /// Finish a running hash operation and return the result.
-    ///
-    /// Once this function has been called, the object can no longer be used and
-    /// a new one must be created to hash more data.
-    fn hash_finish(&mut self, ctx: &mut Self::HashCtx) -> Result<Digest, CryptoError>;
+    fn hash_initialize(&mut self, algs: AlgLen) -> Result<Self::Hasher, CryptoError>;
 
     /// Derive a CDI based on the current base CDI and measurements
     ///
