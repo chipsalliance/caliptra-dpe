@@ -9,6 +9,7 @@ use crate::{
     DPE_PROFILE, MAX_CERT_SIZE, MAX_HANDLES,
 };
 use crypto::Crypto;
+use platform::{Platform, PlatformError, MAX_CHUNK_SIZE};
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, zerocopy::FromBytes, zerocopy::AsBytes)]
@@ -77,14 +78,6 @@ impl CommandExecution for CertifyKeyCmd {
             .derive_ecdsa_pub(DPE_PROFILE.alg_len(), &priv_key)
             .map_err(|_| DpeErrorCode::CryptoError)?;
 
-        let mut issuer_name = Name {
-            cn: dpe.issuer_cn,
-            serial: [0u8; DPE_PROFILE.get_hash_size() * 2],
-        };
-        env.crypto
-            .get_ecdsa_alias_serial(DPE_PROFILE.alg_len(), &mut issuer_name.serial)
-            .map_err(|_| DpeErrorCode::CryptoError)?;
-
         let mut subject_name = Name {
             cn: b"DPE Leaf",
             serial: [0u8; DPE_PROFILE.get_hash_size() * 2],
@@ -104,6 +97,15 @@ impl CommandExecution for CertifyKeyCmd {
             is_ca: self.uses_is_ca(),
         };
 
+        let mut issuer_name = [0u8; MAX_CHUNK_SIZE];
+        let issuer_len =
+            env.platform
+                .get_issuer_name(&mut issuer_name)
+                .map_err(|platform_error| match platform_error {
+                    PlatformError::IssuerNameError => DpeErrorCode::InvalidArgument,
+                    _ => DpeErrorCode::PlatformError,
+                })?;
+
         let mut cert = [0u8; MAX_CERT_SIZE];
         let cert_size = match self.format {
             Self::FORMAT_X509 => {
@@ -112,7 +114,7 @@ impl CommandExecution for CertifyKeyCmd {
                 let mut bytes_written = tbs_writer.encode_ecdsa_tbs(
                     /*serial=*/
                     &subject_name.serial[..20], // Serial number must be truncated to 20 bytes
-                    &issuer_name,
+                    &issuer_name[..issuer_len],
                     &subject_name,
                     &pub_key,
                     &measurements,

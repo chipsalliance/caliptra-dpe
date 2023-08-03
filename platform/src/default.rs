@@ -143,6 +143,15 @@ pub const TEST_CERT_CHAIN: [u8; 2048] = [
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 ];
 
+// Generated manually using the x509 issuer name encoder in x509.rs.
+const TEST_ISSUER: [u8; 99] = [
+    48, 97, 49, 20, 48, 18, 6, 3, 85, 4, 3, 19, 11, 84, 101, 115, 116, 32, 73, 115, 115, 117, 101,
+    114, 49, 73, 48, 71, 6, 3, 85, 4, 5, 19, 64, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97,
+    97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97,
+    97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97, 97,
+    97, 97, 97, 97,
+];
+
 impl Platform for DefaultPlatform {
     fn get_certificate_chain(
         &mut self,
@@ -157,6 +166,14 @@ impl Platform for DefaultPlatform {
         let cert_chunk_range_end = min(offset + size, len);
         out.copy_from_slice(&TEST_CERT_CHAIN[offset as usize..cert_chunk_range_end as usize]);
         Ok(cert_chunk_range_end - offset)
+    }
+
+    fn get_issuer_name(&mut self, out: &mut [u8; MAX_CHUNK_SIZE]) -> Result<usize, PlatformError> {
+        if TEST_ISSUER.len() >= out.len() {
+            return Err(PlatformError::IssuerNameError);
+        }
+        out[..TEST_ISSUER.len()].copy_from_slice(&TEST_ISSUER);
+        Ok(TEST_ISSUER.len())
     }
 
     fn get_vendor_id(&mut self) -> Result<u32, PlatformError> {

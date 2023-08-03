@@ -29,19 +29,16 @@ pub struct DpeEnv<'a, T: DpeTypes + 'a> {
     pub platform: T::Platform,
 }
 
-pub struct DpeInstance<'a> {
+pub struct DpeInstance {
     pub(crate) contexts: [Context; MAX_HANDLES],
     pub(crate) support: Support,
 
     /// Can only successfully execute the initialize context command for non-simulation (i.e.
     /// `InitializeContext(simulation=false)`) once per reset cycle.
     pub(crate) has_initialized: bool,
-
-    // Issuer Common Name to use in DPE leaf certs
-    pub(crate) issuer_cn: &'a [u8],
 }
 
-impl DpeInstance<'_> {
+impl DpeInstance {
     const MAX_NEW_HANDLE_ATTEMPTS: usize = 8;
 
     /// Create a new DPE instance.
@@ -50,17 +47,15 @@ impl DpeInstance<'_> {
     ///
     /// * `support` - optional functionality the instance supports
     /// * `issuer_cn` - issuer Common Name to use in DPE leaf certs
-    pub fn new<'a>(
+    pub fn new(
         env: &mut DpeEnv<impl DpeTypes>,
         support: Support,
-        issuer_cn: &'a [u8],
-    ) -> Result<DpeInstance<'a>, DpeErrorCode> {
+    ) -> Result<DpeInstance, DpeErrorCode> {
         const CONTEXT_INITIALIZER: Context = Context::new();
         let mut dpe = DpeInstance {
             contexts: [CONTEXT_INITIALIZER; MAX_HANDLES],
             support,
             has_initialized: false,
-            issuer_cn,
         };
 
         if dpe.support.auto_init {
@@ -73,12 +68,11 @@ impl DpeInstance<'_> {
         Ok(dpe)
     }
 
-    pub fn new_for_test<'a>(
+    pub fn new_for_test(
         env: &mut DpeEnv<impl DpeTypes>,
         support: Support,
-    ) -> Result<DpeInstance<'a>, DpeErrorCode> {
-        const TEST_ISSUER: &[u8] = b"Test Issuer";
-        Self::new(env, support, TEST_ISSUER)
+    ) -> Result<DpeInstance, DpeErrorCode> {
+        Self::new(env, support)
     }
 
     pub fn get_profile(

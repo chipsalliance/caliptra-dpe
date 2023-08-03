@@ -1,6 +1,7 @@
 // Licensed under the Apache-2.0 license
 
 use {
+    clap::Parser,
     crypto::OpensslCrypto,
     dpe::commands::{self, CertifyKeyCmd, CommandHdr},
     dpe::context::ContextHandle,
@@ -9,6 +10,7 @@ use {
     dpe::{DpeInstance, Support, DPE_PROFILE},
     pem::{encode_config, EncodeConfig, LineEnding, Pem},
     platform::DefaultPlatform,
+    std::fs,
     zerocopy::AsBytes,
 };
 
@@ -30,21 +32,37 @@ impl DpeEnv for TestEnv {
     }
 }
 
+/// Tool to generate sample DPE leaf certificate
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// File containg DER encoded issuer name
+    #[arg(short, long)]
+    issuer_name_der_file: Option<String>,
+}
+
 fn main() {
+    let args = Args::parse();
+
+    let support = Support {
+        auto_init: true,
+        x509: true,
+        ..Support::default()
+    };
+
     let mut env = TestEnv {
         crypto: OpensslCrypto::new(),
         platform: DefaultPlatform,
     };
 
-    let mut dpe = DpeInstance::new_for_test(
-        &mut env,
-        Support {
-            auto_init: true,
-            x509: true,
-            ..Support::default()
-        },
-    )
-    .unwrap();
+    let der;
+    let mut dpe = match args.issuer_name_der_file {
+        Some(file) => {
+            der = fs::read(file).unwrap();
+            DpeInstance::new(&mut env, support, &der).unwrap()
+        }
+        None => DpeInstance::new_for_test(&mut env, support).unwrap(),
+    };
 
     let certify_key_cmd: CertifyKeyCmd = commands::CertifyKeyCmd {
         handle: ContextHandle::default(),
