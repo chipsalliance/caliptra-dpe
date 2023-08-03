@@ -13,7 +13,7 @@ use crate::{
     DPE_PROFILE, INTERNAL_INPUT_INFO_SIZE, MAX_HANDLES,
 };
 use core::mem::size_of;
-use crypto::{Crypto, Digest};
+use crypto::{Crypto, Digest, Hasher};
 use platform::{Platform, MAX_CHUNK_SIZE};
 use zerocopy::AsBytes;
 
@@ -263,20 +263,17 @@ impl DpeInstance<'_> {
         }
 
         // Derive the new TCI as HASH(TCI_CUMULATIVE || INPUT_DATA).
-        let mut hash_ctx = env
+        let mut hasher = env
             .crypto()
             .hash_initialize(DPE_PROFILE.alg_len())
             .map_err(|_| DpeErrorCode::HashError)?;
-        env.crypto()
-            .hash_update(&mut hash_ctx, &context.tci.tci_cumulative.0)
+        hasher
+            .update(&context.tci.tci_cumulative.0)
             .map_err(|_| DpeErrorCode::HashError)?;
-        env.crypto()
-            .hash_update(&mut hash_ctx, &measurement.0)
+        hasher
+            .update(&measurement.0)
             .map_err(|_| DpeErrorCode::HashError)?;
-        let digest = env
-            .crypto()
-            .hash_finish(&mut hash_ctx)
-            .map_err(|_| DpeErrorCode::HashError)?;
+        let digest = hasher.finish().map_err(|_| DpeErrorCode::HashError)?;
 
         context.tci.tci_cumulative.0.copy_from_slice(digest.bytes());
         context.tci.tci_current = *measurement;
@@ -316,7 +313,7 @@ impl DpeInstance<'_> {
         env: &mut impl DpeEnv,
         start_idx: usize,
     ) -> Result<Digest, DpeErrorCode> {
-        let mut hash_ctx = env
+        let mut hasher = env
             .crypto()
             .hash_initialize(DPE_PROFILE.alg_len())
             .map_err(|_| DpeErrorCode::HashError)?;
@@ -330,8 +327,8 @@ impl DpeInstance<'_> {
 
             let mut tci_bytes = [0u8; size_of::<TciNodeData>()];
             let len = context.tci.serialize(&mut tci_bytes)?;
-            env.crypto()
-                .hash_update(&mut hash_ctx, &tci_bytes[..len])
+            hasher
+                .update(&tci_bytes[..len])
                 .map_err(|_| DpeErrorCode::HashError)?;
 
             // Check if any context uses internal inputs
@@ -343,11 +340,8 @@ impl DpeInstance<'_> {
         if uses_internal_input_info {
             let mut internal_input_info = [0u8; INTERNAL_INPUT_INFO_SIZE];
             self.serialize_internal_input_info(env, &mut internal_input_info)?;
-            env.crypto()
-                .hash_update(
-                    &mut hash_ctx,
-                    &internal_input_info[..INTERNAL_INPUT_INFO_SIZE],
-                )
+            hasher
+                .update(&internal_input_info[..INTERNAL_INPUT_INFO_SIZE])
                 .map_err(|_| DpeErrorCode::HashError)?;
         }
 
@@ -359,16 +353,14 @@ impl DpeInstance<'_> {
                 env.platform()
                     .get_certificate_chain(offset, MAX_CHUNK_SIZE as u32, &mut cert_chunk)
             {
-                env.crypto()
-                    .hash_update(&mut hash_ctx, &cert_chunk[..len as usize])
+                hasher
+                    .update(&cert_chunk[..len as usize])
                     .map_err(|_| DpeErrorCode::HashError)?;
                 offset += len;
             }
         }
 
-        env.crypto()
-            .hash_finish(&mut hash_ctx)
-            .map_err(|_| DpeErrorCode::HashError)
+        hasher.finish().map_err(|_| DpeErrorCode::HashError)
     }
 }
 
@@ -560,12 +552,10 @@ pub mod tests {
         assert_eq!(data, context.tci.tci_current.0);
 
         // Compute cumulative.
-        let mut hash_ctx = env.crypto().hash_initialize(DPE_PROFILE.alg_len()).unwrap();
-        env.crypto()
-            .hash_update(&mut hash_ctx, &[0; DPE_PROFILE.get_hash_size()])
-            .unwrap();
-        env.crypto().hash_update(&mut hash_ctx, &data).unwrap();
-        let first_cumulative = env.crypto().hash_finish(&mut hash_ctx).unwrap();
+        let mut hasher = env.crypto().hash_initialize(DPE_PROFILE.alg_len()).unwrap();
+        hasher.update(&[0; DPE_PROFILE.get_hash_size()]).unwrap();
+        hasher.update(&data).unwrap();
+        let first_cumulative = hasher.finish().unwrap();
 
         // Make sure the cumulative was computed correctly.
         assert_eq!(first_cumulative.bytes(), context.tci.tci_cumulative.0);
@@ -577,12 +567,10 @@ pub mod tests {
         let context = &dpe.contexts[0];
         assert_eq!(data, context.tci.tci_current.0);
 
-        let mut hash_ctx = env.crypto().hash_initialize(DPE_PROFILE.alg_len()).unwrap();
-        env.crypto()
-            .hash_update(&mut hash_ctx, first_cumulative.bytes())
-            .unwrap();
-        env.crypto().hash_update(&mut hash_ctx, &data).unwrap();
-        let second_cumulative = env.crypto().hash_finish(&mut hash_ctx).unwrap();
+        let mut hasher = env.crypto().hash_initialize(DPE_PROFILE.alg_len()).unwrap();
+        hasher.update(first_cumulative.bytes()).unwrap();
+        hasher.update(&data).unwrap();
+        let second_cumulative = hasher.finish().unwrap();
 
         // Make sure the cumulative was computed correctly.
         assert_eq!(second_cumulative.bytes(), context.tci.tci_cumulative.0);
@@ -680,19 +668,17 @@ pub mod tests {
             last_cdi = curr_cdi;
         }
 
-        let mut hash_ctx = env.crypto().hash_initialize(DPE_PROFILE.alg_len()).unwrap();
+        let mut hasher = env.crypto().hash_initialize(DPE_PROFILE.alg_len()).unwrap();
         let leaf_idx = dpe
             .get_active_context_pos(&ContextHandle::default(), TEST_LOCALITIES[0])
             .unwrap();
 
         for result in ChildToRootIter::new(leaf_idx, &dpe.contexts) {
             let context = result.unwrap();
-            env.crypto()
-                .hash_update(&mut hash_ctx, context.tci.as_bytes())
-                .unwrap();
+            hasher.update(context.tci.as_bytes()).unwrap();
         }
 
-        let digest = env.crypto().hash_finish(&mut hash_ctx).unwrap();
+        let digest = hasher.finish().unwrap();
         let answer = env
             .crypto()
             .derive_cdi(DPE_PROFILE.alg_len(), &digest, b"DPE")
@@ -738,23 +724,18 @@ pub mod tests {
         let context = &dpe.contexts[parent_context_idx];
         assert!(context.uses_internal_input_info);
 
-        let mut hash_ctx = env.crypto().hash_initialize(DPE_PROFILE.alg_len()).unwrap();
+        let mut hasher = env.crypto().hash_initialize(DPE_PROFILE.alg_len()).unwrap();
 
-        env.crypto()
-            .hash_update(&mut hash_ctx, context.tci.as_bytes())
-            .unwrap();
+        hasher.update(context.tci.as_bytes()).unwrap();
         let mut internal_input_info = [0u8; INTERNAL_INPUT_INFO_SIZE];
         dpe.serialize_internal_input_info(&mut env, &mut internal_input_info)
             .unwrap();
 
-        env.crypto()
-            .hash_update(
-                &mut hash_ctx,
-                &internal_input_info[..INTERNAL_INPUT_INFO_SIZE],
-            )
+        hasher
+            .update(&internal_input_info[..INTERNAL_INPUT_INFO_SIZE])
             .unwrap();
 
-        let digest = env.crypto().hash_finish(&mut hash_ctx).unwrap();
+        let digest = hasher.finish().unwrap();
         let answer = env
             .crypto()
             .derive_cdi(DPE_PROFILE.alg_len(), &digest, b"DPE")
@@ -800,16 +781,12 @@ pub mod tests {
         let context = &dpe.contexts[parent_context_idx];
         assert!(context.uses_internal_input_dice);
 
-        let mut hash_ctx = env.crypto().hash_initialize(DPE_PROFILE.alg_len()).unwrap();
+        let mut hasher = env.crypto().hash_initialize(DPE_PROFILE.alg_len()).unwrap();
 
-        env.crypto()
-            .hash_update(&mut hash_ctx, context.tci.as_bytes())
-            .unwrap();
-        env.crypto()
-            .hash_update(&mut hash_ctx, &TEST_CERT_CHAIN[..MAX_CHUNK_SIZE])
-            .unwrap();
+        hasher.update(context.tci.as_bytes()).unwrap();
+        hasher.update(&TEST_CERT_CHAIN[..MAX_CHUNK_SIZE]).unwrap();
 
-        let digest = env.crypto().hash_finish(&mut hash_ctx).unwrap();
+        let digest = hasher.finish().unwrap();
         let answer = env
             .crypto()
             .derive_cdi(DPE_PROFILE.alg_len(), &digest, b"DPE")
