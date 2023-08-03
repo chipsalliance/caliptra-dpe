@@ -391,7 +391,7 @@ impl X509CertWriter<'_> {
     /// If `tagged`, include the tag and size fields
     fn get_tbs_size(
         serial_number: &[u8],
-        issuer_name: &Name,
+        issuer_der: &[u8],
         subject_name: &Name,
         pubkey: &EcdsaPub,
         measurements: &MeasurementData,
@@ -400,7 +400,7 @@ impl X509CertWriter<'_> {
         let tbs_size = Self::get_version_size(/*tagged=*/ true)?
             + Self::get_integer_bytes_size(serial_number, /*tagged=*/ true)?
             + Self::get_ecdsa_sig_alg_id_size(/*tagged=*/ true)?
-            + Self::get_rdn_size(issuer_name, /*tagged=*/ true)?
+            + issuer_der.len()
             + Self::get_validity_size(/*tagged=*/ true)?
             + Self::get_rdn_size(subject_name, /*tagged=*/ true)?
             + Self::get_ecdsa_subject_pubkey_info_size(pubkey, /*tagged=*/ true)?
@@ -1007,6 +1007,8 @@ impl X509CertWriter<'_> {
         Ok(bytes_written)
     }
 
+    /// Encodes a TBS Certificate with the following ASN.1 encoding:
+    ///
     /// TBSCertificate  ::=  SEQUENCE  {
     ///    version         [0]  EXPLICIT Version DEFAULT v1,
     ///    serialNumber         CertificateSerialNumber,
@@ -1022,10 +1024,18 @@ impl X509CertWriter<'_> {
     ///    extensions      [3]  EXPLICIT Extensions OPTIONAL
     ///                         -- If present, version MUST be v3
     ///    }
+    ///
+    /// # Arguments
+    ///
+    /// * `serial_number` - A byte slice holding the serial number.
+    /// * `issuer_name` - A DER encoded issuer RDN.
+    /// * `subject_name` - The subject name RDN struct to encode.
+    /// * `pubkey` - ECDSA Public key.
+    /// * `measurements` - DPE measurement data.
     pub fn encode_ecdsa_tbs(
         &mut self,
         serial_number: &[u8],
-        issuer_name: &Name,
+        issuer_name: &[u8],
         subject_name: &Name,
         pubkey: &EcdsaPub,
         measurements: &MeasurementData,
@@ -1053,7 +1063,7 @@ impl X509CertWriter<'_> {
         bytes_written += self.encode_ecdsa_sig_alg_id()?;
 
         // issuer
-        bytes_written += self.encode_rdn(issuer_name)?;
+        bytes_written += self.encode_bytes(issuer_name)?;
 
         // validity
         bytes_written += self.encode_validity()?;
@@ -1149,6 +1159,19 @@ mod tests {
     #[derive(asn1::Asn1Read)]
     struct Ueid<'a> {
         pub(crate) ueid: &'a [u8],
+    }
+
+    const TEST_ISSUER: Name = Name {
+        cn: b"Caliptra Alias",
+        serial: [0x00; DPE_PROFILE.get_hash_size() * 2],
+    };
+
+    fn encode_test_issuer() -> Vec<u8> {
+        let mut issuer_der = vec![0u8; 256];
+        let mut issuer_writer = X509CertWriter::new(&mut issuer_der, true);
+        let issuer_len = issuer_writer.encode_rdn(&TEST_ISSUER).unwrap();
+        issuer_der.resize(issuer_len, 0);
+        issuer_der
     }
 
     #[test]
@@ -1277,10 +1300,7 @@ mod tests {
         let mut w = X509CertWriter::new(&mut cert, true);
 
         let test_serial = [0x1F; 20];
-        let test_issuer_name = Name {
-            cn: b"Caliptra Alias",
-            serial: [0x00; DPE_PROFILE.get_hash_size() * 2],
-        };
+        let issuer_der = encode_test_issuer();
 
         let test_subject_name = Name {
             cn: b"DPE Leaf",
@@ -1305,7 +1325,7 @@ mod tests {
         let bytes_written = w
             .encode_ecdsa_tbs(
                 &test_serial,
-                &test_issuer_name,
+                &issuer_der,
                 &test_subject_name,
                 &test_pub,
                 &measurements,
@@ -1338,6 +1358,9 @@ mod tests {
             cn: b"Caliptra Alias",
             serial: [0x00; DPE_PROFILE.get_hash_size() * 2],
         };
+        let mut issuer_der = [0u8; 1024];
+        let mut issuer_writer = X509CertWriter::new(&mut issuer_der, true);
+        let issuer_len = issuer_writer.encode_rdn(&test_issuer_name).unwrap();
 
         let test_subject_name = Name {
             cn: b"DPE Leaf",
@@ -1368,7 +1391,7 @@ mod tests {
         let mut bytes_written = tbs_writer
             .encode_ecdsa_tbs(
                 &test_serial,
-                &test_issuer_name,
+                &issuer_der[..issuer_len],
                 &test_subject_name,
                 &test_pub,
                 &measurements,

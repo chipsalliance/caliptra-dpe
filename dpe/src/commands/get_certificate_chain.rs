@@ -33,7 +33,7 @@ impl CommandExecution for GetCertificateChainCmd {
             .get_certificate_chain(self.offset, self.size, &mut cert_chunk)
             .map_err(|platform_error| match platform_error {
                 PlatformError::CertificateChainError => DpeErrorCode::InvalidArgument,
-                PlatformError::NotImplemented => DpeErrorCode::PlatformError,
+                _ => DpeErrorCode::PlatformError,
             })?;
         Ok(Response::GetCertificateChain(GetCertificateChainResp {
             certificate_chain: cert_chunk,

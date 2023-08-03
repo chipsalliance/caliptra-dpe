@@ -14,6 +14,7 @@ pub const MAX_CHUNK_SIZE: usize = 2048;
 pub enum PlatformError {
     CertificateChainError,
     NotImplemented,
+    IssuerNameError,
 }
 
 pub trait Platform {
@@ -30,6 +31,13 @@ pub trait Platform {
         size: u32,
         out: &mut [u8; MAX_CHUNK_SIZE],
     ) -> Result<u32, PlatformError>;
+
+    /// Retrieves the parent certificate's DER encoded issuer name.
+    ///
+    /// # Arguments
+    ///
+    /// * `out` - Output buffer for issuer name to be written to.
+    fn get_issuer_name(&mut self, out: &mut [u8; MAX_CHUNK_SIZE]) -> Result<usize, PlatformError>;
 
     fn get_vendor_id(&mut self) -> Result<u32, PlatformError>;
 
