@@ -1,7 +1,7 @@
 // Licensed under the Apache-2.0 license.
 use super::CommandExecution;
 use crate::{
-    dpe_instance::{DpeEnv, DpeInstance},
+    dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
     response::{DpeErrorCode, GetTaggedTciResp, Response, ResponseHdr},
 };
 
@@ -16,7 +16,7 @@ impl CommandExecution for GetTaggedTciCmd {
     fn execute(
         &self,
         dpe: &mut DpeInstance,
-        _env: &mut impl DpeEnv,
+        _env: &mut DpeEnv<impl DpeTypes>,
         _: u32,
     ) -> Result<Response, DpeErrorCode> {
         // Make sure this command is supported.

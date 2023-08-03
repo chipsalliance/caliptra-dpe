@@ -40,6 +40,7 @@ pub enum CryptoError {
     CryptoLibError,
     Size,
     NotImplemented,
+    HashError,
 }
 
 pub trait Hasher: Sized {
@@ -61,7 +62,9 @@ pub type Digest = CryptoBuf;
 
 pub trait Crypto {
     type Cdi;
-    type Hasher: Hasher;
+    type Hasher<'c>: Hasher
+    where
+        Self: 'c;
     type PrivKey;
 
     /// Fills the buffer with random values.
@@ -123,7 +126,7 @@ pub trait Crypto {
     /// # Arguments
     ///
     /// * `algs` - Which length of algorithm to use.
-    fn hash_initialize(&mut self, algs: AlgLen) -> Result<Self::Hasher, CryptoError>;
+    fn hash_initialize(&mut self, algs: AlgLen) -> Result<Self::Hasher<'_>, CryptoError>;
 
     /// Derive a CDI based on the current base CDI and measurements
     ///

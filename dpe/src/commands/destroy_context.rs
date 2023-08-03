@@ -2,7 +2,7 @@
 use super::CommandExecution;
 use crate::{
     context::ContextHandle,
-    dpe_instance::{flags_iter, DpeEnv, DpeInstance},
+    dpe_instance::{flags_iter, DpeEnv, DpeInstance, DpeTypes},
     response::{DpeErrorCode, Response, ResponseHdr},
     MAX_HANDLES,
 };
@@ -27,7 +27,7 @@ impl CommandExecution for DestroyCtxCmd {
     fn execute(
         &self,
         dpe: &mut DpeInstance,
-        _env: &mut impl DpeEnv,
+        _env: &mut DpeEnv<impl DpeTypes>,
         locality: u32,
     ) -> Result<Response, DpeErrorCode> {
         let idx = dpe.get_active_context_pos(&self.handle, locality)?;

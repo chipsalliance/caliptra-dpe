@@ -2,7 +2,7 @@
 use super::CommandExecution;
 use crate::{
     context::{ActiveContextArgs, ContextHandle, ContextState, ContextType},
-    dpe_instance::{DpeEnv, DpeInstance},
+    dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
     response::{DeriveChildResp, DpeErrorCode, Response, ResponseHdr},
     tci::TciMeasurement,
     DPE_PROFILE,
@@ -84,7 +84,7 @@ impl CommandExecution for DeriveChildCmd {
     fn execute(
         &self,
         dpe: &mut DpeInstance,
-        env: &mut impl DpeEnv,
+        env: &mut DpeEnv<impl DpeTypes>,
         locality: u32,
     ) -> Result<Response, DpeErrorCode> {
         // Make sure the operation is supported.
@@ -169,7 +169,7 @@ mod tests {
     use super::*;
     use crate::{
         commands::{tests::TEST_DIGEST, Command, CommandHdr, InitCtxCmd},
-        dpe_instance::tests::{TestEnv, SIMULATION_HANDLE, TEST_LOCALITIES},
+        dpe_instance::tests::{TestTypes, SIMULATION_HANDLE, TEST_LOCALITIES},
         support::Support,
         MAX_HANDLES,
     };
@@ -199,7 +199,7 @@ mod tests {
 
     #[test]
     fn test_initial_conditions() {
-        let mut env = TestEnv {
+        let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
@@ -225,7 +225,7 @@ mod tests {
 
     #[test]
     fn test_max_tcis() {
-        let mut env = TestEnv {
+        let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
@@ -267,7 +267,7 @@ mod tests {
 
     #[test]
     fn test_set_child_parent_relationship() {
-        let mut env = TestEnv {
+        let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
@@ -308,7 +308,7 @@ mod tests {
 
     #[test]
     fn test_set_other_values() {
-        let mut env = TestEnv {
+        let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
@@ -342,7 +342,7 @@ mod tests {
 
     #[test]
     fn test_correct_child_handle() {
-        let mut env = TestEnv {
+        let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
@@ -392,7 +392,7 @@ mod tests {
 
     #[test]
     fn test_correct_parent_handle() {
-        let mut env = TestEnv {
+        let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
