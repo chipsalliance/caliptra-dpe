@@ -197,7 +197,7 @@ mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe = DpeInstance::new_for_test(
+        let mut dpe = DpeInstance::new(
             &mut env,
             Support {
                 x509: true,
@@ -244,7 +244,7 @@ mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe = DpeInstance::new_for_test(
+        let mut dpe = DpeInstance::new(
             &mut env,
             Support {
                 x509: true,

@@ -61,7 +61,7 @@ fn main() {
             der = fs::read(file).unwrap();
             DpeInstance::new(&mut env, support, &der).unwrap()
         }
-        None => DpeInstance::new_for_test(&mut env, support).unwrap(),
+        None => DpeInstance::new(&mut env, support).unwrap(),
     };
 
     let certify_key_cmd: CertifyKeyCmd = commands::CertifyKeyCmd {

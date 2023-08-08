@@ -159,7 +159,7 @@ fn main() -> std::io::Result<()> {
         platform: DefaultPlatform,
     };
 
-    let mut dpe = DpeInstance::new_for_test(&mut env, support).map_err(|err| {
+    let mut dpe = DpeInstance::new(&mut env, support).map_err(|err| {
         Error::new(
             ErrorKind::Other,
             format!("{err:?} while creating new DPE instance"),
