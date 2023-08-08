@@ -203,7 +203,7 @@ mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe = DpeInstance::new_for_test(&mut env, Support::default()).unwrap();
+        let mut dpe = DpeInstance::new(&mut env, Support::default()).unwrap();
 
         InitCtxCmd::new_use_default()
             .execute(&mut dpe, &mut env, 0)
@@ -229,7 +229,7 @@ mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe = DpeInstance::new_for_test(
+        let mut dpe = DpeInstance::new(
             &mut env,
             Support {
                 auto_init: true,
@@ -271,7 +271,7 @@ mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe = DpeInstance::new_for_test(
+        let mut dpe = DpeInstance::new(
             &mut env,
             Support {
                 auto_init: true,
@@ -312,7 +312,7 @@ mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe = DpeInstance::new_for_test(
+        let mut dpe = DpeInstance::new(
             &mut env,
             Support {
                 auto_init: true,
@@ -346,7 +346,7 @@ mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe = DpeInstance::new_for_test(
+        let mut dpe = DpeInstance::new(
             &mut env,
             Support {
                 auto_init: true,
@@ -396,7 +396,7 @@ mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe = DpeInstance::new_for_test(
+        let mut dpe = DpeInstance::new(
             &mut env,
             Support {
                 auto_init: true,

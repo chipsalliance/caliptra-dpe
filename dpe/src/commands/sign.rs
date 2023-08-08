@@ -181,7 +181,7 @@ mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe = DpeInstance::new_for_test(&mut env, SUPPORT).unwrap();
+        let mut dpe = DpeInstance::new(&mut env, SUPPORT).unwrap();
 
         // Bad argument
         assert_eq!(
@@ -247,7 +247,7 @@ mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe = DpeInstance::new_for_test(&mut env, SUPPORT).unwrap();
+        let mut dpe = DpeInstance::new(&mut env, SUPPORT).unwrap();
 
         for i in 0..3 {
             DeriveChildCmd {
@@ -306,7 +306,7 @@ mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe = DpeInstance::new_for_test(
+        let mut dpe = DpeInstance::new(
             &mut env,
             Support {
                 auto_init: true,

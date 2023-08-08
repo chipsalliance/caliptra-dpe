@@ -79,7 +79,7 @@ mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe = DpeInstance::new_for_test(&mut env, SUPPORT).unwrap();
+        let mut dpe = DpeInstance::new(&mut env, SUPPORT).unwrap();
 
         assert_eq!(
             Err(DpeErrorCode::InvalidArgument),

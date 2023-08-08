@@ -68,13 +68,6 @@ impl DpeInstance {
         Ok(dpe)
     }
 
-    pub fn new_for_test(
-        env: &mut DpeEnv<impl DpeTypes>,
-        support: Support,
-    ) -> Result<DpeInstance, DpeErrorCode> {
-        Self::new(env, support)
-    }
-
     pub fn get_profile(
         &self,
         platform: &mut impl Platform,
@@ -424,7 +417,7 @@ pub mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe = DpeInstance::new_for_test(&mut env, SUPPORT).unwrap();
+        let mut dpe = DpeInstance::new(&mut env, SUPPORT).unwrap();
 
         assert_eq!(
             Response::GetProfile(GetProfileResp::new(
@@ -462,7 +455,7 @@ pub mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let dpe = DpeInstance::new_for_test(&mut env, SUPPORT).unwrap();
+        let dpe = DpeInstance::new(&mut env, SUPPORT).unwrap();
         let profile = dpe.get_profile(&mut env.platform).unwrap();
         assert_eq!(profile.major_version, CURRENT_PROFILE_MAJOR_VERSION);
         assert_eq!(profile.flags, SUPPORT.get_flags());
@@ -474,7 +467,7 @@ pub mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe = DpeInstance::new_for_test(&mut env, Support::default()).unwrap();
+        let mut dpe = DpeInstance::new(&mut env, Support::default()).unwrap();
         let expected_index = 7;
         dpe.contexts[expected_index].handle = SIMULATION_HANDLE;
 
@@ -512,7 +505,7 @@ pub mod tests {
             platform: DefaultPlatform,
         };
 
-        let mut dpe = DpeInstance::new_for_test(
+        let mut dpe = DpeInstance::new(
             &mut env,
             Support {
                 auto_init: true,
@@ -569,7 +562,7 @@ pub mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe = DpeInstance::new_for_test(&mut env, Support::default()).unwrap();
+        let mut dpe = DpeInstance::new(&mut env, Support::default()).unwrap();
         let root = 7;
         let child_1 = 3;
         let child_1_1 = 0;
@@ -624,7 +617,7 @@ pub mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe = DpeInstance::new_for_test(&mut env, SUPPORT).unwrap();
+        let mut dpe = DpeInstance::new(&mut env, SUPPORT).unwrap();
 
         let mut last_cdi = vec![];
 
@@ -679,7 +672,7 @@ pub mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe = DpeInstance::new_for_test(
+        let mut dpe = DpeInstance::new(
             &mut env,
             Support {
                 internal_info: true,
@@ -736,7 +729,7 @@ pub mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe = DpeInstance::new_for_test(
+        let mut dpe = DpeInstance::new(
             &mut env,
             Support {
                 internal_dice: true,

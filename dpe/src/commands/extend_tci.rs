@@ -75,7 +75,7 @@ mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe = DpeInstance::new_for_test(&mut env, Support::default()).unwrap();
+        let mut dpe = DpeInstance::new(&mut env, Support::default()).unwrap();
         // Make sure it returns an error if the command is marked unsupported.
         assert_eq!(
             Err(DpeErrorCode::InvalidCommand),
