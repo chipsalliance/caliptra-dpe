@@ -16,7 +16,7 @@ use simplelog::{Config, WriteLogger};
 use std::fs::OpenOptions;
 
 use crypto::OpensslCrypto;
-use dpe::dpe_instance::DpeEnv;
+use dpe::dpe_instance::{DpeEnv, DpeTypes};
 use dpe::{commands::Command, response::Response, DpeInstance, Support};
 use platform::{DefaultPlatform, AUTO_INIT_LOCALITY};
 
@@ -35,22 +35,11 @@ const SUPPORT: Support = Support {
     internal_dice: true,
 };
 
-struct SimEnv {
-    platform: DefaultPlatform,
-    crypto: OpensslCrypto,
-}
+struct SimTypes {}
 
-impl DpeEnv for SimEnv {
-    type Crypto = OpensslCrypto;
+impl DpeTypes for SimTypes {
+    type Crypto<'a> = OpensslCrypto;
     type Platform = DefaultPlatform;
-
-    fn crypto(&mut self) -> &mut OpensslCrypto {
-        &mut self.crypto
-    }
-
-    fn platform(&mut self) -> &mut DefaultPlatform {
-        &mut self.platform
-    }
 }
 
 // Although fuzzers use persistent mode, using an internal worker shortens the lifetime.
@@ -78,12 +67,11 @@ fn harness(data: &[u8]) {
         return;
     }
 
-    // `new_for_test()` simply defines the issuer
-    let mut env = SimEnv {
+    let mut env = DpeEnv::<SimTypes> {
         crypto: OpensslCrypto::new(),
         platform: DefaultPlatform,
     };
-    let mut dpe = DpeInstance::new_for_test(&mut env, SUPPORT).unwrap();
+    let mut dpe = DpeInstance::new(&mut env, SUPPORT).unwrap();
 
     // Hard-code working locality
     let response = dpe
