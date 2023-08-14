@@ -97,15 +97,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "crypto"
-version = "0.1.0"
-dependencies = [
- "hkdf",
- "openssl",
- "sha2",
-]
-
-[[package]]
 name = "crypto-common"
 version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -140,9 +131,36 @@ dependencies = [
 name = "dpe"
 version = "0.1.0"
 dependencies = [
- "crypto",
- "platform",
+ "dpe-crypto",
+ "dpe-platform",
  "zerocopy",
+]
+
+[[package]]
+name = "dpe-crypto"
+version = "0.1.0"
+dependencies = [
+ "hkdf",
+ "openssl",
+ "sha2",
+]
+
+[[package]]
+name = "dpe-platform"
+version = "0.1.0"
+
+[[package]]
+name = "dpe-simulator"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "ctrlc",
+ "dpe",
+ "dpe-crypto",
+ "dpe-platform",
+ "env_logger",
+ "log",
+ "openssl",
 ]
 
 [[package]]
@@ -359,10 +377,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ac9a59f73473f1b8d852421e59e64809f025994837ef743615c6d0c5b305160"
 
 [[package]]
-name = "platform"
-version = "0.1.0"
-
-[[package]]
 name = "proc-macro-error"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -444,20 +458,6 @@ dependencies = [
  "cfg-if",
  "cpufeatures",
  "digest",
-]
-
-[[package]]
-name = "simulator"
-version = "0.1.0"
-dependencies = [
- "clap",
- "crypto",
- "ctrlc",
- "dpe",
- "env_logger",
- "log",
- "openssl",
- "platform",
 ]
 
 [[package]]

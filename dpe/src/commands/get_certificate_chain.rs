@@ -5,7 +5,7 @@ use crate::{
     response::{DpeErrorCode, GetCertificateChainResp, Response, ResponseHdr},
     MAX_CERT_SIZE,
 };
-use platform::{Platform, PlatformError, MAX_CHUNK_SIZE};
+use dpe_platform::{Platform, PlatformError, MAX_CHUNK_SIZE};
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, zerocopy::FromBytes)]
@@ -51,8 +51,8 @@ mod tests {
         dpe_instance::tests::{TestTypes, TEST_LOCALITIES},
         support::test::SUPPORT,
     };
-    use crypto::OpensslCrypto;
-    use platform::DefaultPlatform;
+    use dpe_crypto::OpensslCrypto;
+    use dpe_platform::DefaultPlatform;
     use zerocopy::AsBytes;
 
     const TEST_GET_CERTIFICATE_CHAIN_CMD: GetCertificateChainCmd = GetCertificateChainCmd {

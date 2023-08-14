@@ -6,7 +6,7 @@ use crate::{
     response::{DpeErrorCode, Response, ResponseHdr, SignResp},
     DPE_PROFILE,
 };
-use crypto::{Crypto, CryptoBuf, Digest, EcdsaSig, HmacSig};
+use dpe_crypto::{Crypto, CryptoBuf, Digest, EcdsaSig, HmacSig};
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, zerocopy::FromBytes)]
@@ -122,10 +122,10 @@ mod tests {
         dpe_instance::tests::{TestTypes, SIMULATION_HANDLE, TEST_LOCALITIES},
         support::{test::SUPPORT, Support},
     };
-    use crypto::OpensslCrypto;
+    use dpe_crypto::OpensslCrypto;
+    use dpe_platform::DefaultPlatform;
     use openssl::x509::X509;
     use openssl::{bn::BigNum, ecdsa::EcdsaSig};
-    use platform::DefaultPlatform;
     use zerocopy::AsBytes;
 
     #[cfg(feature = "dpe_profile_p256_sha256")]

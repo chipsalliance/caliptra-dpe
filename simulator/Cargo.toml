@@ -1,7 +1,7 @@
 # Licensed under the Apache-2.0 license
 
 [package]
-name = "simulator"
+name = "dpe-simulator"
 version = "0.1.0"
 edition = "2021"
 
@@ -14,5 +14,5 @@ clap = { version = "4.1.8", features = ["derive"] }
 log = "0.4.17"
 env_logger = "0.10.0"
 dpe = { path = "../dpe" }
-crypto = { path = "../crypto", features = ["openssl"] }
-platform = { path = "../platform" }
+dpe-crypto = { path = "../crypto", features = ["openssl"] }
+dpe-platform = { path = "../platform" }

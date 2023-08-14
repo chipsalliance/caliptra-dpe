@@ -13,8 +13,8 @@ use crate::{
     DPE_PROFILE, INTERNAL_INPUT_INFO_SIZE, MAX_HANDLES,
 };
 use core::mem::size_of;
-use crypto::{Crypto, Digest, Hasher};
-use platform::{Platform, MAX_CHUNK_SIZE};
+use dpe_crypto::{Crypto, Digest, Hasher};
+use dpe_platform::{Platform, MAX_CHUNK_SIZE};
 use zerocopy::AsBytes;
 
 pub trait DpeTypes {
@@ -394,8 +394,8 @@ pub mod tests {
     use crate::response::NewHandleResp;
     use crate::support::test::SUPPORT;
     use crate::{commands::CommandHdr, CURRENT_PROFILE_MAJOR_VERSION};
-    use crypto::OpensslCrypto;
-    use platform::{DefaultPlatform, AUTO_INIT_LOCALITY, MAX_CHUNK_SIZE, TEST_CERT_CHAIN};
+    use dpe_crypto::OpensslCrypto;
+    use dpe_platform::{DefaultPlatform, AUTO_INIT_LOCALITY, MAX_CHUNK_SIZE, TEST_CERT_CHAIN};
     use zerocopy::AsBytes;
 
     pub struct TestTypes;

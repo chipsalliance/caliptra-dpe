@@ -8,8 +8,8 @@ use crate::{
     x509::{MeasurementData, Name, X509CertWriter},
     DPE_PROFILE, MAX_CERT_SIZE, MAX_HANDLES,
 };
-use crypto::Crypto;
-use platform::{Platform, PlatformError, MAX_CHUNK_SIZE};
+use dpe_crypto::Crypto;
+use dpe_platform::{Platform, PlatformError, MAX_CHUNK_SIZE};
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, zerocopy::FromBytes, zerocopy::AsBytes)]
@@ -165,8 +165,8 @@ mod tests {
         dpe_instance::tests::{TestTypes, SIMULATION_HANDLE, TEST_LOCALITIES},
         support::Support,
     };
-    use crypto::OpensslCrypto;
-    use platform::DefaultPlatform;
+    use dpe_crypto::OpensslCrypto;
+    use dpe_platform::DefaultPlatform;
     use x509_parser::nom::Parser;
     use x509_parser::prelude::X509CertificateParser;
     use x509_parser::prelude::*;

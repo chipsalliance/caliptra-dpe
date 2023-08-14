@@ -1,7 +1,7 @@
 # Licensed under the Apache-2.0 license
 
 [package]
-name = "tools"
+name = "dpe-tools"
 version = "0.1.0"
 edition = "2021"
 
@@ -12,9 +12,9 @@ dpe_profile_p384_sha384 = ["dpe/dpe_profile_p384_sha384"]
 
 [dependencies]
 dpe = {path = "../dpe"}
-crypto = {path = "../crypto", features = ["deterministic_rand"]}
+dpe-crypto = {path = "../crypto", features = ["deterministic_rand"]}
 pem = "2"
-platform = {path = "../platform"}
+dpe-platform = {path = "../platform"}
 zerocopy = "0.6.1"
 clap = { version = "4.3.17", features = ["derive"] }
 

@@ -1,9 +1,9 @@
 // Licensed under the Apache-2.0 license
 
 use clap::Parser;
-use crypto::OpensslCrypto;
+use dpe_crypto::OpensslCrypto;
+use dpe_platform::DefaultPlatform;
 use log::{error, info, trace, warn};
-use platform::DefaultPlatform;
 use std::fs;
 use std::io::{Error, ErrorKind, Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};

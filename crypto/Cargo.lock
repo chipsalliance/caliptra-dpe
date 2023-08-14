@@ -45,17 +45,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "crypto"
-version = "0.1.0"
-dependencies = [
- "hkdf",
- "openssl",
- "sha2",
- "strum",
- "strum_macros",
-]
-
-[[package]]
 name = "crypto-common"
 version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -74,6 +63,17 @@ dependencies = [
  "block-buffer",
  "crypto-common",
  "subtle",
+]
+
+[[package]]
+name = "dpe-crypto"
+version = "0.1.0"
+dependencies = [
+ "hkdf",
+ "openssl",
+ "sha2",
+ "strum",
+ "strum_macros",
 ]
 
 [[package]]

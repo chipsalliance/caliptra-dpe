@@ -16,7 +16,7 @@ import (
 	"github.com/zmap/zlint/v3/lint"
 )
 
-var sim_exe = flag.String("sim", "../simulator/target/debug/simulator", "path to simulator executable")
+var sim_exe = flag.String("sim", "../simulator/target/debug/dpe-simulator", "path to simulator executable")
 
 // An extension to the main DPE transport interface with test hooks.
 type TestDPEInstance interface {
