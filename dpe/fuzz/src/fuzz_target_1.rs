@@ -22,9 +22,9 @@ use dpe::{
     support::Support,
     DpeInstance, DpeProfile,
 };
-use platform::default::{DefaultPlatform, DefaultPlatformProfile, AUTO_INIT_LOCALITY};
+use dpe_platform::default::{DefaultPlatform, DefaultPlatformProfile, AUTO_INIT_LOCALITY};
 
-use crypto::Ecdsa256RustCrypto;
+use dpe_crypto::Ecdsa256RustCrypto;
 
 // https://github.com/chipsalliance/caliptra-sw/issues/624 will consider matrix fuzzing.
 const SUPPORT: Support = Support::all();

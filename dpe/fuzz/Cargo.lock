@@ -131,28 +131,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "crypto"
-version = "0.1.0"
-dependencies = [
- "arrayvec",
- "base64ct",
- "caliptra-cfi-derive",
- "caliptra-cfi-lib",
- "constant_time_eq",
- "ecdsa",
- "hkdf",
- "ml-dsa",
- "p256",
- "p384",
- "pkcs8 0.11.0-rc.8",
- "rand",
- "sec1",
- "sha2",
- "zerocopy",
- "zeroize",
-]
-
-[[package]]
 name = "crypto-bigint"
 version = "0.5.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -258,9 +236,31 @@ dependencies = [
  "caliptra-cfi-lib",
  "cfg-if",
  "constant_time_eq",
- "crypto",
- "platform",
+ "dpe-crypto",
+ "dpe-platform",
  "ufmt",
+ "zerocopy",
+ "zeroize",
+]
+
+[[package]]
+name = "dpe-crypto"
+version = "0.1.0"
+dependencies = [
+ "arrayvec",
+ "base64ct",
+ "caliptra-cfi-derive",
+ "caliptra-cfi-lib",
+ "constant_time_eq",
+ "ecdsa",
+ "hkdf",
+ "ml-dsa",
+ "p256",
+ "p384",
+ "pkcs8 0.11.0-rc.8",
+ "rand",
+ "sec1",
+ "sha2",
  "zerocopy",
  "zeroize",
 ]
@@ -270,13 +270,23 @@ name = "dpe-fuzz"
 version = "0.0.0"
 dependencies = [
  "afl",
- "crypto",
  "dpe",
+ "dpe-crypto",
+ "dpe-platform",
  "libfuzzer-sys",
  "log",
- "platform",
  "simplelog",
  "time",
+]
+
+[[package]]
+name = "dpe-platform"
+version = "0.1.0"
+dependencies = [
+ "arrayvec",
+ "cfg-if",
+ "ufmt",
+ "x509-cert",
 ]
 
 [[package]]
@@ -557,16 +567,6 @@ checksum = "77089aec8290d0b7bb01b671b091095cf1937670725af4fd73d47249f03b12c0"
 dependencies = [
  "der 0.8.0-rc.10",
  "spki 0.8.0-rc.4",
-]
-
-[[package]]
-name = "platform"
-version = "0.1.0"
-dependencies = [
- "arrayvec",
- "cfg-if",
- "ufmt",
- "x509-cert",
 ]
 
 [[package]]

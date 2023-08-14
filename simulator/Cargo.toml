@@ -1,7 +1,7 @@
 # Licensed under the Apache-2.0 license
 
 [package]
-name = "simulator"
+name = "dpe-simulator"
 version = "0.1.0"
 edition = "2021"
 
@@ -11,7 +11,7 @@ p256 = ["dpe/p256"]
 p384 = ["dpe/p384"]
 # TODO(clundin): Placeholder name until we decide pattern for DPE profiles and feature flags.
 ml-dsa = ["dpe/ml-dsa"]
-rustcrypto = ["crypto/rustcrypto", "platform/rustcrypto"]
+rustcrypto = ["dpe-crypto/rustcrypto", "dpe-platform/rustcrypto"]
 cfi = ["dpe/cfi"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -22,5 +22,5 @@ clap = { version = "4.1.8", features = ["derive"] }
 log = "0.4.17"
 env_logger = "0.10.0"
 dpe = { path = "../dpe", default-features = false }
-crypto = { path = "../crypto", default-features = false }
-platform = { path = "../platform", default-features = false}
+dpe-crypto = { path = "../crypto", default-features = false }
+dpe-platform = { path = "../platform", default-features = false}

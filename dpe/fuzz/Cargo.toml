@@ -23,12 +23,12 @@ path = ".."
 default-features = false
 features = ["p256"]
 
-[dependencies.crypto]
+[dependencies.dpe-crypto]
 path = "../../crypto"
 default-features = false
 features = ["rustcrypto"]
 
-[dependencies.platform]
+[dependencies.dpe-platform]
 path = "../../platform"
 default-features = false
 features = ["rustcrypto"]

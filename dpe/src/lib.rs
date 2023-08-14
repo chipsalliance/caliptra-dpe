@@ -38,7 +38,7 @@ pub mod x509;
 use crate::response::{DpeErrorCode, ResponseHdr};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes};
 
-pub use crypto::{ecdsa::EcdsaAlgorithm, ExportedCdiHandle, MAX_EXPORTED_CDI_SIZE};
+pub use dpe_crypto::{ecdsa::EcdsaAlgorithm, ExportedCdiHandle, MAX_EXPORTED_CDI_SIZE};
 
 // Max cert size returned by CertifyKey
 #[cfg(feature = "ml-dsa")]
@@ -111,13 +111,13 @@ impl DpeProfile {
     pub const fn hash_size(&self) -> usize {
         self.tci_size()
     }
-    pub const fn alg(&self) -> crypto::SignatureAlgorithm {
+    pub const fn alg(&self) -> dpe_crypto::SignatureAlgorithm {
         match self {
-            DpeProfile::P256Sha256 => crypto::SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit256),
-            DpeProfile::P384Sha384 => crypto::SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384),
+            DpeProfile::P256Sha256 => dpe_crypto::SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit256),
+            DpeProfile::P384Sha384 => dpe_crypto::SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384),
             #[cfg(feature = "ml-dsa")]
             DpeProfile::Mldsa87 => {
-                crypto::SignatureAlgorithm::Mldsa(crypto::ml_dsa::MldsaAlgorithm::Mldsa87)
+                dpe_crypto::SignatureAlgorithm::Mldsa(dpe_crypto::ml_dsa::MldsaAlgorithm::Mldsa87)
             }
         }
     }

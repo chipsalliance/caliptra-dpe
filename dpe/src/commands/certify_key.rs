@@ -15,8 +15,8 @@ use caliptra_cfi_derive::cfi_impl_fn;
 use caliptra_cfi_lib::{cfi_assert, cfi_assert_bool, cfi_assert_eq};
 use cfg_if::cfg_if;
 #[cfg(any(feature = "p256", feature = "p384"))]
-use crypto::ecdsa::EcdsaPubKey;
-use crypto::PubKey;
+use dpe_crypto::ecdsa::EcdsaPubKey;
+use dpe_crypto::PubKey;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 #[cfg(not(feature = "disable_x509"))]
@@ -255,7 +255,7 @@ impl CommandExecution for CertifyKeyCommand<'_> {
             #[cfg(feature = "ml-dsa")]
             (
                 CertifyKeyResponseBytes::Mldsa87(resp),
-                PubKey::Mldsa(crypto::ml_dsa::MldsaPublicKey(pubkey)),
+                PubKey::Mldsa(dpe_crypto::ml_dsa::MldsaPublicKey(pubkey)),
             ) => {
                 resp.new_context_handle = ContextHandle::new_invalid();
                 resp.pubkey = *pubkey;
@@ -432,13 +432,14 @@ mod tests {
         content_info::{CmsVersion, ContentInfo},
         signed_data::{SignedData, SignerIdentifier},
     };
+    use der::{Decode, Encode};
     #[cfg(feature = "ml-dsa")]
-    use crypto::ml_dsa::{MldsaAlgorithm, MldsaPublicKey};
-    use crypto::{
+    use dpe_crypto::ml_dsa::{MldsaAlgorithm, MldsaPublicKey};
+    use dpe_crypto::{
         ecdsa::{EcdsaAlgorithm, EcdsaPub},
         Crypto, CryptoSuite, PubKey, SignatureAlgorithm,
     };
-    use der::{Decode, Encode};
+    use dpe_platform::Platform;
     #[cfg(feature = "ml-dsa")]
     use ml_dsa::EncodedSignature;
     use openssl::{
@@ -447,7 +448,6 @@ mod tests {
         ecdsa::EcdsaSig,
         nid::*,
     };
-    use platform::Platform;
     use spki::ObjectIdentifier;
     use std::str;
     use x509_parser::nom::Parser;
@@ -638,7 +638,7 @@ mod tests {
                     let cert_serial_number = &issuer_and_serial_number.serial_number;
                     let cert_issuer_name = &issuer_and_serial_number.issuer.to_der().unwrap();
 
-                    let platform::SignerIdentifier::IssuerAndSerialNumber {
+                    let dpe_platform::SignerIdentifier::IssuerAndSerialNumber {
                         issuer_name,
                         serial_number,
                     } = env.platform.get_signer_identifier().unwrap()

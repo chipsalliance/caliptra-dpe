@@ -2,25 +2,25 @@
 
 use clap::{Parser, ValueEnum};
 use dpe::{tci::TciMeasurement, DpeFlags};
-use platform::default::DefaultPlatformProfile;
+use dpe_platform::default::DefaultPlatformProfile;
 use profile::*;
 use {
-    crypto::RustCryptoImpl,
     dpe::commands::{self, CertifyKeyFlags, DeriveContextCmd, DeriveContextFlags},
     dpe::context::ContextHandle,
     dpe::dpe_instance::{DpeEnv, DpeTypes},
     dpe::response::Response,
     dpe::{support::Support, DpeInstance},
+    dpe_crypto::RustCryptoImpl,
+    dpe_platform::default::DefaultPlatform,
     pem::{encode_config, EncodeConfig, LineEnding, Pem},
-    platform::default::DefaultPlatform,
     zerocopy::IntoBytes,
 };
 
 #[cfg(feature = "p256")]
 mod profile {
     use super::*;
-    pub use crypto::Ecdsa256RustCrypto as RustCrypto;
     pub use dpe::commands::CertifyKeyP256Cmd as CertifyKeyCmd;
+    pub use dpe_crypto::Ecdsa256RustCrypto as RustCrypto;
     pub const DPE_PROFILE: dpe::DpeProfile = dpe::DpeProfile::P256Sha256;
     pub const PLATFORM_PROFILE: DefaultPlatformProfile = DefaultPlatformProfile::P256;
 }
@@ -28,8 +28,8 @@ mod profile {
 #[cfg(feature = "p384")]
 mod profile {
     use super::*;
-    pub use crypto::Ecdsa384RustCrypto as RustCrypto;
     pub use dpe::commands::CertifyKeyP384Cmd as CertifyKeyCmd;
+    pub use dpe_crypto::Ecdsa384RustCrypto as RustCrypto;
     pub const DPE_PROFILE: dpe::DpeProfile = dpe::DpeProfile::P384Sha384;
     pub const PLATFORM_PROFILE: DefaultPlatformProfile = DefaultPlatformProfile::P384;
 }
@@ -37,8 +37,8 @@ mod profile {
 #[cfg(feature = "ml-dsa")]
 mod profile {
     use super::*;
-    pub use crypto::MldsaRustCrypto as RustCrypto;
     pub use dpe::commands::CertifyKeyMldsa87Cmd as CertifyKeyCmd;
+    pub use dpe_crypto::MldsaRustCrypto as RustCrypto;
     pub const DPE_PROFILE: dpe::DpeProfile = dpe::DpeProfile::Mldsa87;
     pub const PLATFORM_PROFILE: DefaultPlatformProfile = DefaultPlatformProfile::Mldsa87;
 }

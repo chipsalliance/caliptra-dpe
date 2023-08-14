@@ -340,30 +340,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "crypto"
-version = "0.1.0"
-dependencies = [
- "arrayvec",
- "base64ct",
- "caliptra-cfi-derive",
- "caliptra-cfi-lib",
- "constant_time_eq",
- "ecdsa",
- "hkdf",
- "ml-dsa",
- "p256",
- "p384",
- "pkcs8 0.11.0-rc.8",
- "rand",
- "sec1",
- "sha2",
- "strum",
- "strum_macros",
- "zerocopy",
- "zeroize",
-]
-
-[[package]]
 name = "crypto-bigint"
 version = "0.5.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -513,20 +489,80 @@ dependencies = [
  "cms",
  "const-oid 0.10.2",
  "constant_time_eq",
- "crypto",
  "der 0.7.8",
+ "dpe-crypto",
+ "dpe-platform",
  "flexi_logger",
  "log",
  "ml-dsa",
  "openssl",
  "pkcs8 0.11.0-rc.8",
- "platform",
  "rand",
  "spki 0.7.2",
  "ufmt",
  "x509-parser",
  "zerocopy",
  "zeroize",
+]
+
+[[package]]
+name = "dpe-crypto"
+version = "0.1.0"
+dependencies = [
+ "arrayvec",
+ "base64ct",
+ "caliptra-cfi-derive",
+ "caliptra-cfi-lib",
+ "constant_time_eq",
+ "ecdsa",
+ "hkdf",
+ "ml-dsa",
+ "p256",
+ "p384",
+ "pkcs8 0.11.0-rc.8",
+ "rand",
+ "sec1",
+ "sha2",
+ "strum",
+ "strum_macros",
+ "zerocopy",
+ "zeroize",
+]
+
+[[package]]
+name = "dpe-platform"
+version = "0.1.0"
+dependencies = [
+ "arrayvec",
+ "cfg-if",
+ "ufmt",
+ "x509-cert",
+]
+
+[[package]]
+name = "dpe-simulator"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "ctrlc",
+ "dpe",
+ "dpe-crypto",
+ "dpe-platform",
+ "env_logger",
+ "log",
+]
+
+[[package]]
+name = "dpe-tools"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "dpe",
+ "dpe-crypto",
+ "dpe-platform",
+ "pem",
+ "zerocopy",
 ]
 
 [[package]]
@@ -1042,16 +1078,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7edddbd0b52d732b21ad9a5fab5c704c14cd949e5e9a1ec5929a24fded1b904c"
 
 [[package]]
-name = "platform"
-version = "0.1.0"
-dependencies = [
- "arrayvec",
- "cfg-if",
- "ufmt",
- "x509-cert",
-]
-
-[[package]]
 name = "powerfmt"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1275,19 +1301,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "simulator"
-version = "0.1.0"
-dependencies = [
- "clap",
- "crypto",
- "ctrlc",
- "dpe",
- "env_logger",
- "log",
- "platform",
-]
-
-[[package]]
 name = "spki"
 version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1450,19 +1463,6 @@ checksum = "2834e6017e3e5e4b9834939793b282bc03b37a3336245fa820e35e233e2a85de"
 dependencies = [
  "num-conv",
  "time-core",
-]
-
-[[package]]
-name = "tools"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "crypto",
- "dpe",
- "pem",
- "platform",
- "zerocopy",
 ]
 
 [[package]]

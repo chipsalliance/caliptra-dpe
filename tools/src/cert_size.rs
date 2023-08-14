@@ -12,7 +12,7 @@ use dpe::{
     support::Support,
     DpeInstance,
 };
-use platform::default::{DefaultPlatform, DefaultPlatformProfile};
+use dpe_platform::default::{DefaultPlatform, DefaultPlatformProfile};
 
 #[cfg(any(feature = "p256", feature = "p384"))]
 use self::ec::*;
@@ -21,23 +21,23 @@ use self::ml_dsa::*;
 
 #[cfg(feature = "p256")]
 mod ec {
-    pub use crypto::Ecdsa256RustCrypto as EcdsaRustCrypto;
     pub use dpe::commands::CertifyKeyP256Cmd as CertifyKeyCmd;
+    pub use dpe_crypto::Ecdsa256RustCrypto as EcdsaRustCrypto;
 }
 #[cfg(feature = "p384")]
 mod ec {
-    pub use crypto::Ecdsa384RustCrypto as EcdsaRustCrypto;
     pub use dpe::commands::CertifyKeyP384Cmd as CertifyKeyCmd;
+    pub use dpe_crypto::Ecdsa384RustCrypto as EcdsaRustCrypto;
 }
 #[cfg(feature = "ml-dsa")]
 mod ml_dsa {
-    pub use crypto::MldsaRustCrypto;
     pub use dpe::commands::CertifyKeyMldsa87Cmd as CertifyKeyMldsaCmd;
+    pub use dpe_crypto::MldsaRustCrypto;
 
     pub struct SimTypesMldsa;
     impl dpe::dpe_instance::DpeTypes for SimTypesMldsa {
         type Crypto<'a> = MldsaRustCrypto;
-        type Platform<'a> = platform::default::DefaultPlatform;
+        type Platform<'a> = dpe_platform::default::DefaultPlatform;
     }
 }
 

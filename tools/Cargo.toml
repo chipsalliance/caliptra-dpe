@@ -1,7 +1,7 @@
 # Licensed under the Apache-2.0 license
 
 [package]
-name = "tools"
+name = "dpe-tools"
 version = "0.1.0"
 edition = "2021"
 
@@ -22,9 +22,9 @@ cfi = ["dpe/cfi"]
 anyhow = "1.0.70"
 dpe = {path = "../dpe", default-features = false}
 clap = { version = "4.1.8", features = ["derive"] }
-crypto = {path = "../crypto", default-features = false, features = ["deterministic_rand", "rustcrypto"]}
+dpe-crypto = {path = "../crypto", default-features = false, features = ["deterministic_rand", "rustcrypto"]}
 pem = "2"
-platform = {path = "../platform", default-features = false, features = ["rustcrypto"]}
+dpe-platform = {path = "../platform", default-features = false, features = ["rustcrypto"]}
 zerocopy.workspace = true
 
 [[bin]]

@@ -17,23 +17,23 @@ use bitflags::bitflags;
 use caliptra_cfi_lib::cfi_launder;
 #[cfg(feature = "cfi")]
 use caliptra_cfi_lib::{cfi_assert, cfi_assert_bool};
-use crypto::{
+use dpe_crypto::{
     ecdsa::{EcdsaPubKey, EcdsaSignature},
     Crypto, CryptoError, CryptoSuite, Digest, Hasher, PubKey, SignData, Signature,
     MAX_EXPORTED_CDI_SIZE,
 };
 #[cfg(not(feature = "disable_x509"))]
-use platform::CertValidity;
+use dpe_platform::CertValidity;
 #[cfg(not(feature = "disable_csr"))]
-use platform::SignerIdentifier;
-use platform::{
+use dpe_platform::SignerIdentifier;
+use dpe_platform::{
     ArrayVec, OtherName, Platform, PlatformError, SubjectAltName, MAX_ISSUER_NAME_SIZE,
     MAX_KEY_IDENTIFIER_SIZE,
 };
 use zerocopy::IntoBytes;
 
 #[cfg(feature = "ml-dsa")]
-use crypto::ml_dsa::{MldsaPublicKey, MldsaSignature};
+use dpe_crypto::ml_dsa::{MldsaPublicKey, MldsaSignature};
 
 /// Max amount of backtracks during encoding.
 /// Currently the deepest backtrack path is 7.
@@ -3054,15 +3054,17 @@ pub(crate) mod tests {
     use crate::tci::{TciMeasurement, TciNodeData};
     use crate::x509::{CertWriter, DirectoryString, MeasurementData, Name};
     use crate::DpeProfile;
-    use crypto::ecdsa::{EcdsaAlgorithm, EcdsaSig};
-    use crypto::ecdsa::{EcdsaPub, EcdsaPubKey};
+    use dpe_crypto::ecdsa::{EcdsaAlgorithm, EcdsaSig};
+    use dpe_crypto::ecdsa::{EcdsaPub, EcdsaPubKey};
     #[cfg(feature = "ml-dsa")]
-    use crypto::ml_dsa::MldsaPublicKey;
+    use dpe_crypto::ml_dsa::MldsaPublicKey;
     #[cfg(feature = "ml-dsa")]
-    use crypto::ml_dsa::{MldsaAlgorithm, MldsaSignature};
-    use crypto::{PubKey, Signature, SignatureAlgorithm};
+    use dpe_crypto::ml_dsa::{MldsaAlgorithm, MldsaSignature};
+    use dpe_crypto::{PubKey, Signature, SignatureAlgorithm};
+    use dpe_platform::{
+        ArrayVec, CertValidity, OtherName, SubjectAltName, MAX_KEY_IDENTIFIER_SIZE,
+    };
     use openssl::hash::{Hasher, MessageDigest};
-    use platform::{ArrayVec, CertValidity, OtherName, SubjectAltName, MAX_KEY_IDENTIFIER_SIZE};
     use std::str;
     use x509_parser::certificate::X509CertificateParser;
     use x509_parser::nom::Parser;

@@ -11,8 +11,8 @@ use dpe::{
     support::Support,
     DpeInstance,
 };
+use dpe_platform::default::{DefaultPlatform, DefaultPlatformProfile};
 use log::{error, info, trace, warn};
-use platform::default::{DefaultPlatform, DefaultPlatformProfile};
 use profile::*;
 use std::fs;
 use std::io::{Error, ErrorKind, Read, Write};
@@ -23,7 +23,7 @@ use std::process;
 #[cfg(feature = "p256")]
 mod profile {
     use super::*;
-    pub use crypto::Ecdsa256RustCrypto as RustCrypto;
+    pub use dpe_crypto::Ecdsa256RustCrypto as RustCrypto;
     pub const DPE_PROFILE: dpe::DpeProfile = dpe::DpeProfile::P256Sha256;
     pub const PLATFORM_PROFILE: DefaultPlatformProfile = DefaultPlatformProfile::P256;
 }
@@ -31,7 +31,7 @@ mod profile {
 #[cfg(feature = "p384")]
 mod profile {
     use super::*;
-    pub use crypto::Ecdsa384RustCrypto as RustCrypto;
+    pub use dpe_crypto::Ecdsa384RustCrypto as RustCrypto;
     pub const DPE_PROFILE: dpe::DpeProfile = dpe::DpeProfile::P384Sha384;
     pub const PLATFORM_PROFILE: DefaultPlatformProfile = DefaultPlatformProfile::P384;
 }
@@ -39,7 +39,7 @@ mod profile {
 #[cfg(feature = "ml-dsa")]
 mod profile {
     use super::*;
-    pub use crypto::MldsaRustCrypto as RustCrypto;
+    pub use dpe_crypto::MldsaRustCrypto as RustCrypto;
     pub const DPE_PROFILE: dpe::DpeProfile = dpe::DpeProfile::Mldsa87;
     pub const PLATFORM_PROFILE: DefaultPlatformProfile = DefaultPlatformProfile::Mldsa87;
 }

@@ -401,7 +401,7 @@ pub mod tests {
     use crate::dpe_instance::tests::DPE_PROFILE;
     use crate::DpeProfile;
     use caliptra_cfi_lib::CfiCounter;
-    use platform::default::{DefaultPlatform, DefaultPlatformProfile};
+    use dpe_platform::default::{DefaultPlatform, DefaultPlatformProfile};
     use zerocopy::IntoBytes;
 
     #[cfg(feature = "p256")]
