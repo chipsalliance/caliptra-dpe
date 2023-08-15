@@ -19,4 +19,4 @@ strum = "0.24"
 strum_macros = "0.24"
 
 [build-dependencies]
-openssl = "0.10"
+openssl = {version = "0.10", optional = true}
