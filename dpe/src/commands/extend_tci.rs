@@ -48,8 +48,8 @@ mod tests {
         dpe_instance::tests::{TestTypes, SIMULATION_HANDLE, TEST_LOCALITIES},
         support::Support,
     };
-    use crypto::OpensslCrypto;
-    use platform::{DefaultPlatform, AUTO_INIT_LOCALITY};
+    use dpe_crypto::OpensslCrypto;
+    use dpe_platform::{DefaultPlatform, AUTO_INIT_LOCALITY};
     use zerocopy::AsBytes;
 
     const TEST_EXTEND_TCI_CMD: ExtendTciCmd = ExtendTciCmd {

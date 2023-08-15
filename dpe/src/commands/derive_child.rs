@@ -173,8 +173,8 @@ mod tests {
         support::Support,
         MAX_HANDLES,
     };
-    use crypto::OpensslCrypto;
-    use platform::DefaultPlatform;
+    use dpe_crypto::OpensslCrypto;
+    use dpe_platform::DefaultPlatform;
     use zerocopy::AsBytes;
 
     const TEST_DERIVE_CHILD_CMD: DeriveChildCmd = DeriveChildCmd {

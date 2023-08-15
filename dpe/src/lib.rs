@@ -48,10 +48,10 @@ impl DpeProfile {
     pub const fn get_hash_size(&self) -> usize {
         self.get_tci_size()
     }
-    pub const fn alg_len(&self) -> crypto::AlgLen {
+    pub const fn alg_len(&self) -> dpe_crypto::AlgLen {
         match self {
-            DpeProfile::P256Sha256 => crypto::AlgLen::Bit256,
-            DpeProfile::P384Sha384 => crypto::AlgLen::Bit384,
+            DpeProfile::P256Sha256 => dpe_crypto::AlgLen::Bit256,
+            DpeProfile::P384Sha384 => dpe_crypto::AlgLen::Bit384,
         }
     }
 }

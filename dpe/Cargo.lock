@@ -127,15 +127,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "crypto"
-version = "0.1.0"
-dependencies = [
- "hkdf",
- "openssl",
- "sha2",
-]
-
-[[package]]
 name = "crypto-common"
 version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -192,12 +183,25 @@ name = "dpe"
 version = "0.1.0"
 dependencies = [
  "asn1",
- "crypto",
+ "dpe-crypto",
+ "dpe-platform",
  "openssl",
- "platform",
  "x509-parser",
  "zerocopy",
 ]
+
+[[package]]
+name = "dpe-crypto"
+version = "0.1.0"
+dependencies = [
+ "hkdf",
+ "openssl",
+ "sha2",
+]
+
+[[package]]
+name = "dpe-platform"
+version = "0.1.0"
 
 [[package]]
 name = "foreign-types"
@@ -371,10 +375,6 @@ name = "pkg-config"
 version = "0.3.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ac9a59f73473f1b8d852421e59e64809f025994837ef743615c6d0c5b305160"
-
-[[package]]
-name = "platform"
-version = "0.1.0"
 
 [[package]]
 name = "proc-macro2"

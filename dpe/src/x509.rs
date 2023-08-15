@@ -10,7 +10,7 @@ use crate::{
     tci::{TciMeasurement, TciNodeData},
     DpeProfile, DPE_PROFILE,
 };
-use crypto::{EcdsaPub, EcdsaSig};
+use dpe_crypto::{EcdsaPub, EcdsaSig};
 
 /// Type for specifying an X.509 RelativeDistinguisedName
 ///
@@ -1119,7 +1119,7 @@ mod tests {
     use crate::tci::{TciMeasurement, TciNodeData};
     use crate::x509::{MeasurementData, Name, X509CertWriter};
     use crate::DPE_PROFILE;
-    use crypto::{AlgLen, CryptoBuf, EcdsaPub, EcdsaSig};
+    use dpe_crypto::{AlgLen, CryptoBuf, EcdsaPub, EcdsaSig};
     use std::str;
     use x509_parser::certificate::X509CertificateParser;
     use x509_parser::nom::Parser;

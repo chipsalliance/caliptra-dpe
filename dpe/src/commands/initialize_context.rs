@@ -96,8 +96,8 @@ mod tests {
         dpe_instance::tests::{TestTypes, TEST_LOCALITIES},
         support::Support,
     };
-    use crypto::OpensslCrypto;
-    use platform::DefaultPlatform;
+    use dpe_crypto::OpensslCrypto;
+    use dpe_platform::DefaultPlatform;
     use zerocopy::AsBytes;
 
     const TEST_INIT_CTX_CMD: InitCtxCmd = InitCtxCmd { flags: 0x1234_5678 };
