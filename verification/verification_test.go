@@ -6,7 +6,6 @@ import (
 	"flag"
 )
 
-
 var sim_exe = flag.String("sim", "../simulator/target/debug/simulator", "path to simulator executable")
 
 // An extension to the main DPE transport interface with test hooks.
