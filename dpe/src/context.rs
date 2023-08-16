@@ -194,6 +194,9 @@ impl<'a> Iterator for ChildToRootIter<'a> {
             self.done = true;
             return Some(Err(DpeErrorCode::MaxTcis));
         }
+        if self.idx >= self.contexts.len() {
+            return Some(Err(DpeErrorCode::InternalError));
+        }
 
         let context = &self.contexts[self.idx];
 

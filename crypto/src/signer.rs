@@ -66,7 +66,7 @@ impl CryptoBuf {
     }
 
     pub fn bytes(&self) -> &[u8] {
-        &self.bytes[..self.len]
+        &self.bytes[..usize::min(self.len, self.bytes.len())]
     }
 
     pub fn len(&self) -> usize {

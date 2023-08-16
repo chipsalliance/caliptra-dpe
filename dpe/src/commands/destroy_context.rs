@@ -44,6 +44,9 @@ impl CommandExecution for DestroyCtxCmd {
         };
 
         for idx in flags_iter(to_destroy, MAX_HANDLES) {
+            if idx >= dpe.contexts.len() {
+                return Err(DpeErrorCode::InternalError);
+            }
             dpe.contexts[idx].destroy();
         }
         Ok(Response::DestroyCtx(ResponseHdr::new(
