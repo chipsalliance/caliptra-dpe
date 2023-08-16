@@ -12,7 +12,6 @@ use crate::{
     tci::{TciMeasurement, TciNodeData},
     DPE_PROFILE, INTERNAL_INPUT_INFO_SIZE, MAX_HANDLES,
 };
-use core::mem::size_of;
 use crypto::{Crypto, Digest, Hasher};
 use platform::{Platform, MAX_CHUNK_SIZE};
 use zerocopy::AsBytes;
@@ -317,10 +316,8 @@ impl DpeInstance {
         for status in ChildToRootIter::new(start_idx, &self.contexts) {
             let context = status?;
 
-            let mut tci_bytes = [0u8; size_of::<TciNodeData>()];
-            let len = context.tci.serialize(&mut tci_bytes)?;
             hasher
-                .update(&tci_bytes[..len])
+                .update(context.tci.as_bytes())
                 .map_err(|_| DpeErrorCode::HashError)?;
 
             // Check if any context uses internal inputs
