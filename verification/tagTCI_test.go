@@ -11,29 +11,29 @@ import (
 // This file is used to test the tagTCI command by using a simulator
 
 func TestTagTCI(t *testing.T) {
-	var s *DpeInstance
+	var instance *DpeInstance
 	if *isEmulator {
 		//Added dummy support for emulator. Once the emulator is implemented, will add the actual enabled feature
-		s = &DpeInstance{exe_path: *socket_exe, supports: Support{AutoInit: true}}
+		instance = &DpeInstance{exe_path: *socket_exe, supports: Support{AutoInit: true}}
 	} else {
-		s = &DpeInstance{exe_path: *socket_exe, supports: Support{AutoInit: true, Tagging: true}}
-		s.SetLocality(DPE_SIMULATOR_AUTO_INIT_LOCALITY)
+		instance = &DpeInstance{exe_path: *socket_exe, supports: Support{AutoInit: true, Tagging: true}}
+		instance.SetLocality(DPE_SIMULATOR_AUTO_INIT_LOCALITY)
 	}
-	if s.HasPowerControl() {
-		err := s.PowerOn()
+	if instance.HasPowerControl() {
+		err := instance.PowerOn()
 		if err != nil {
 			log.Fatal(err)
 		}
-		defer s.PowerOff()
+		defer instance.PowerOff()
 	}
 
-	client, err := NewClient256(s)
+	client, err := NewClient256(instance)
 	if err != nil {
 		t.Fatalf("Could not initialize client: %v", err)
 	}
 
 	// Try to create the default context if isn't done automatically.
-	if !s.GetSupport().AutoInit {
+	if !instance.GetSupport().AutoInit {
 		initCtxResp, err := client.InitializeContext(NewInitCtxIsDefault())
 		if err != nil {
 			t.Fatalf("Failed to initialize default context: %v", err)

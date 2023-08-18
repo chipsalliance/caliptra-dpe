@@ -17,27 +17,27 @@ import (
 // This file is used to test the certify key command by using a simulator
 
 func TestCertifyKey(t *testing.T) {
-	var socketFeatures []TestDPEInstance
+	var instances []TestDPEInstance
 	if *isEmulator {
 		//Added dummy support for emulator. Once the emulator is implemented, will add the actual enabled feature
-		socketFeatures = []TestDPEInstance{
+		instances = []TestDPEInstance{
 			&DpeInstance{exe_path: *socket_exe, supports: Support{AutoInit: true}},
 		}
 	} else {
-		socketFeatures = []TestDPEInstance{
+		instances = []TestDPEInstance{
 			// No extra options besides AutoInit.
 			&DpeInstance{exe_path: *socket_exe, supports: Support{AutoInit: true, X509: true}},
 			// Supports AutoInit and simulation contexts.
 			&DpeInstance{exe_path: *socket_exe, supports: Support{AutoInit: true, Simulation: true, X509: true}},
 		}
-		for _, s := range socketFeatures {
-			s.SetLocality(DPE_SIMULATOR_AUTO_INIT_LOCALITY)
+		for _, instance := range instances {
+			instance.SetLocality(DPE_SIMULATOR_AUTO_INIT_LOCALITY)
 		}
 
 	}
 
-	for _, s := range socketFeatures {
-		testCertifyKey(s, t)
+	for _, instance := range instances {
+		testCertifyKey(instance, t)
 	}
 }
 

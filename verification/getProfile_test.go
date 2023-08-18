@@ -10,14 +10,14 @@ import (
 // This file is used to test the get profile command by using a simulator
 
 func TestGetProfile(t *testing.T) {
-	var socketFeatures []TestDPEInstance
+	var instances []TestDPEInstance
 	if *isEmulator {
 		//Added dummy support for emulator. Once the emulator is implemented, will add the actual enabled feature
-		socketFeatures = []TestDPEInstance{
+		instances = []TestDPEInstance{
 			&DpeInstance{exe_path: *socket_exe, supports: Support{AutoInit: true}},
 		}
 	} else {
-		socketFeatures = []TestDPEInstance{
+		instances = []TestDPEInstance{
 			// No extra options.
 			&DpeInstance{exe_path: *socket_exe},
 			// Supports simulation.
@@ -50,8 +50,8 @@ func TestGetProfile(t *testing.T) {
 		}
 	}
 
-	for _, s := range socketFeatures {
-		testGetProfile(s, t)
+	for _, instance := range instances {
+		testGetProfile(instance, t)
 	}
 }
 

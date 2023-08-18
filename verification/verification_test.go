@@ -11,7 +11,7 @@ import (
 var socket_exe *string
 var isEmulator *bool
 
-// This will be called before running each test, and it assigns the socket path based on command line flag.
+// This will be called before running tests, and it assigns the socket path based on command line flag.
 func TestMain(m *testing.M) {
 	isEmulator = flag.Bool("emulator", false, "socket type - emulator")
 	flag.Parse()

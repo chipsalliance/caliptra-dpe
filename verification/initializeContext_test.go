@@ -11,14 +11,14 @@ import (
 // This file is used to test the initialize context command by using a simulator
 
 func TestInitializeContext(t *testing.T) {
-	var socketFeatures []TestDPEInstance
+	var instances []TestDPEInstance
 	if *isEmulator {
 		//Added dummy support for emulator. Once the emulator is implemented, will add the actual enabled feature
-		socketFeatures = []TestDPEInstance{
+		instances = []TestDPEInstance{
 			&DpeInstance{exe_path: *socket_exe, supports: Support{AutoInit: true}},
 		}
 	} else {
-		socketFeatures = []TestDPEInstance{
+		instances = []TestDPEInstance{
 			// No extra options.
 			&DpeInstance{exe_path: *socket_exe},
 			// Supports simulation.
@@ -26,10 +26,10 @@ func TestInitializeContext(t *testing.T) {
 		}
 	}
 
-	for _, s := range socketFeatures {
-		for _, l := range s.GetSupportedLocalities() {
-			s.SetLocality(l)
-			testInitContext(s, t)
+	for _, instance := range instances {
+		for _, l := range instance.GetSupportedLocalities() {
+			instance.SetLocality(l)
+			testInitContext(instance, t)
 		}
 	}
 }
