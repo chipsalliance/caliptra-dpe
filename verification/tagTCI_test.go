@@ -11,8 +11,14 @@ import (
 // This file is used to test the tagTCI command by using a simulator
 
 func TestTagTCI(t *testing.T) {
-	s := &DpeSimulator{exe_path: *sim_exe, supports: Support{AutoInit: true, Tagging: true}}
-	s.SetLocality(DPE_SIMULATOR_AUTO_INIT_LOCALITY)
+	var s *DpeInstance
+	if *isEmulator {
+		//Added dummy support for emulator. Once the emulator is implemented, will add the actual enabled feature
+		s = &DpeInstance{exe_path: *socket_exe, supports: Support{AutoInit: true}}
+	} else {
+		s = &DpeInstance{exe_path: *socket_exe, supports: Support{AutoInit: true, Tagging: true}}
+		s.SetLocality(DPE_SIMULATOR_AUTO_INIT_LOCALITY)
+	}
 	if s.HasPowerControl() {
 		err := s.PowerOn()
 		if err != nil {

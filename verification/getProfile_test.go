@@ -10,39 +10,47 @@ import (
 // This file is used to test the get profile command by using a simulator
 
 func TestGetProfile(t *testing.T) {
-	simulators := []TestDPEInstance{
-		// No extra options.
-		&DpeSimulator{exe_path: *sim_exe},
-		// Supports simulation.
-		&DpeSimulator{exe_path: *sim_exe, supports: Support{Simulation: true}},
-		// Supports extended TCI.
-		&DpeSimulator{exe_path: *sim_exe, supports: Support{ExtendTci: true}},
-		// Supports auto-init.
-		&DpeSimulator{exe_path: *sim_exe, supports: Support{AutoInit: true}},
-		// Supports tagging.
-		&DpeSimulator{exe_path: *sim_exe, supports: Support{Tagging: true}},
-		// Supports rotate context.
-		&DpeSimulator{exe_path: *sim_exe, supports: Support{RotateContext: true}},
-		// Supports certify key.
-		&DpeSimulator{exe_path: *sim_exe, supports: Support{X509: true}},
-		// Supports certify csr.
-		&DpeSimulator{exe_path: *sim_exe, supports: Support{Csr: true}},
-		// Supports symmetric derivation.
-		&DpeSimulator{exe_path: *sim_exe, supports: Support{IsSymmetric: true}},
-		// Supports internal info.
-		&DpeSimulator{exe_path: *sim_exe, supports: Support{InternalInfo: true}},
-		// Supports internal DICE.
-		&DpeSimulator{exe_path: *sim_exe, supports: Support{InternalDice: true}},
-		// Supports IsCA
-		&DpeSimulator{exe_path: *sim_exe, supports: Support{IsCA: true}},
-		// Supports a couple combos.
-		&DpeSimulator{exe_path: *sim_exe, supports: Support{Simulation: true, AutoInit: true, RotateContext: true, Csr: true, InternalDice: true, IsCA: true}},
-		&DpeSimulator{exe_path: *sim_exe, supports: Support{ExtendTci: true, Tagging: true, X509: true, InternalInfo: true}},
-		// Supports everything.
-		&DpeSimulator{exe_path: *sim_exe, supports: Support{Simulation: true, ExtendTci: true, AutoInit: true, Tagging: true, RotateContext: true, X509: true, Csr: true, IsSymmetric: true, InternalInfo: true, InternalDice: true, IsCA: true}},
+	var socketFeatures []TestDPEInstance
+	if *isEmulator {
+		//Added dummy support for emulator. Once the emulator is implemented, will add the actual enabled feature
+		socketFeatures = []TestDPEInstance{
+			&DpeInstance{exe_path: *socket_exe, supports: Support{AutoInit: true}},
+		}
+	} else {
+		socketFeatures = []TestDPEInstance{
+			// No extra options.
+			&DpeInstance{exe_path: *socket_exe},
+			// Supports simulation.
+			&DpeInstance{exe_path: *socket_exe, supports: Support{Simulation: true}},
+			// Supports extended TCI.
+			&DpeInstance{exe_path: *socket_exe, supports: Support{ExtendTci: true}},
+			// Supports auto-init.
+			&DpeInstance{exe_path: *socket_exe, supports: Support{AutoInit: true}},
+			// Supports tagging.
+			&DpeInstance{exe_path: *socket_exe, supports: Support{Tagging: true}},
+			// Supports rotate context.
+			&DpeInstance{exe_path: *socket_exe, supports: Support{RotateContext: true}},
+			// Supports certify key.
+			&DpeInstance{exe_path: *socket_exe, supports: Support{X509: true}},
+			// Supports certify csr.
+			&DpeInstance{exe_path: *socket_exe, supports: Support{Csr: true}},
+			// Supports symmetric derivation.
+			&DpeInstance{exe_path: *socket_exe, supports: Support{IsSymmetric: true}},
+			// Supports internal info.
+			&DpeInstance{exe_path: *socket_exe, supports: Support{InternalInfo: true}},
+			// Supports internal DICE.
+			&DpeInstance{exe_path: *socket_exe, supports: Support{InternalDice: true}},
+			// Supports IsCA
+			&DpeInstance{exe_path: *socket_exe, supports: Support{IsCA: true}},
+			// Supports a couple combos.
+			&DpeInstance{exe_path: *socket_exe, supports: Support{Simulation: true, AutoInit: true, RotateContext: true, Csr: true, InternalDice: true, IsCA: true}},
+			&DpeInstance{exe_path: *socket_exe, supports: Support{ExtendTci: true, Tagging: true, X509: true, InternalInfo: true}},
+			// Supports everything.
+			&DpeInstance{exe_path: *socket_exe, supports: Support{Simulation: true, ExtendTci: true, AutoInit: true, Tagging: true, RotateContext: true, X509: true, Csr: true, IsSymmetric: true, InternalInfo: true, InternalDice: true, IsCA: true}},
+		}
 	}
 
-	for _, s := range simulators {
+	for _, s := range socketFeatures {
 		testGetProfile(s, t)
 	}
 }
