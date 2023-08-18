@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	socketPath = "/tmp/dpe-sim.socket"
+	simulatorSocketPath = "/tmp/dpe-sim.socket"
 
 	DPE_SIMULATOR_AUTO_INIT_LOCALITY    uint32  = 0
 	DPE_SIMULATOR_OTHER_LOCALITY        uint32  = 0x4f544852
@@ -27,7 +27,7 @@ const (
 	DPE_SIMULATOR_VENDOR_SKU            uint32  = 0
 )
 
-type DpeSimulator struct {
+type DpeInstance struct {
 	exe_path        string
 	cmd             *exec.Cmd
 	supports        Support
@@ -36,12 +36,12 @@ type DpeSimulator struct {
 }
 
 // Simulator can be started and stopped.
-func (s *DpeSimulator) HasPowerControl() bool {
+func (s *DpeInstance) HasPowerControl() bool {
 	return true
 }
 
 // Start the simulator.
-func (s *DpeSimulator) PowerOn() error {
+func (s *DpeInstance) PowerOn() error {
 	args := []string{}
 	if s.supports.Simulation {
 		args = append(args, "--supports-simulation")
@@ -90,7 +90,7 @@ func (s *DpeSimulator) PowerOn() error {
 }
 
 // Kill the simulator in a way that it can cleanup before closing.
-func (s *DpeSimulator) PowerOff() error {
+func (s *DpeInstance) PowerOff() error {
 	if s.cmd != nil {
 		err := s.cmd.Process.Signal(syscall.SIGTERM)
 		if err != nil {
@@ -104,13 +104,13 @@ func (s *DpeSimulator) PowerOff() error {
 }
 
 // Wait for the simulator to come alive. Timeout at 15 seconds.
-func (s *DpeSimulator) waitForPower(on bool) bool {
+func (s *DpeInstance) waitForPower(on bool) bool {
 	timeout_seconds := 15
 	checks_per_sec := 50
 
 	for i := 0; i < checks_per_sec*timeout_seconds; i++ {
 		// Check if the socket file has been created.
-		if fileExists(socketPath) == on {
+		if fileExists(simulatorSocketPath) == on {
 			return true
 		}
 		time.Sleep(time.Duration(1000/checks_per_sec) * time.Millisecond)
@@ -126,9 +126,9 @@ func fileExists(filename string) bool {
 	return !info.IsDir()
 }
 
-func (s *DpeSimulator) SendCmd(buf []byte) ([]byte, error) {
+func (s *DpeInstance) SendCmd(buf []byte) ([]byte, error) {
 	// Connect to DPE instance.
-	conn, err := net.Dial("unix", socketPath)
+	conn, err := net.Dial("unix", simulatorSocketPath)
 	if err != nil {
 		return nil, err
 	}
@@ -155,42 +155,42 @@ func (s *DpeSimulator) SendCmd(buf []byte) ([]byte, error) {
 	return io.ReadAll(conn)
 }
 
-func (s *DpeSimulator) GetSupport() *Support {
+func (s *DpeInstance) GetSupport() *Support {
 	return &s.supports
 }
 
-func (s *DpeSimulator) GetProfile() Profile {
+func (s *DpeInstance) GetProfile() Profile {
 	return DPE_SIMULATOR_PROFILE
 }
 
-func (s *DpeSimulator) GetSupportedLocalities() []uint32 {
+func (s *DpeInstance) GetSupportedLocalities() []uint32 {
 	return []uint32{DPE_SIMULATOR_AUTO_INIT_LOCALITY, DPE_SIMULATOR_OTHER_LOCALITY}
 }
 
-func (s *DpeSimulator) SetLocality(locality uint32) {
+func (s *DpeInstance) SetLocality(locality uint32) {
 	s.currentLocality = locality
 }
 
-func (s *DpeSimulator) GetLocality() uint32 {
+func (s *DpeInstance) GetLocality() uint32 {
 	return s.currentLocality
 }
 
-func (s *DpeSimulator) GetMaxTciNodes() uint32 {
+func (s *DpeInstance) GetMaxTciNodes() uint32 {
 	return DPE_SIMULATOR_MAX_TCI_NODES
 }
 
-func (s *DpeSimulator) GetProfileMajorVersion() uint16 {
+func (s *DpeInstance) GetProfileMajorVersion() uint16 {
 	return DPE_SIMULATOR_MAJOR_PROFILE_VERSION
 }
 
-func (s *DpeSimulator) GetProfileMinorVersion() uint16 {
+func (s *DpeInstance) GetProfileMinorVersion() uint16 {
 	return DPE_SIMULATOR_MINOR_PROFILE_VERSION
 }
 
-func (s *DpeSimulator) GetProfileVendorId() uint32 {
+func (s *DpeInstance) GetProfileVendorId() uint32 {
 	return DPE_SIMULATOR_VENDOR_ID
 }
 
-func (s *DpeSimulator) GetProfileVendorSku() uint32 {
+func (s *DpeInstance) GetProfileVendorSku() uint32 {
 	return DPE_SIMULATOR_VENDOR_SKU
 }

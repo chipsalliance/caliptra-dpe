@@ -4,9 +4,26 @@ package verification
 
 import (
 	"flag"
+	"os"
+	"testing"
 )
 
-var sim_exe = flag.String("sim", "../simulator/target/debug/simulator", "path to simulator executable")
+var socket_exe *string
+var isEmulator *bool
+
+// This will be called before running tests, and it assigns the socket path based on command line flag.
+func TestMain(m *testing.M) {
+	isEmulator = flag.Bool("emulator", false, "socket type - emulator")
+	flag.Parse()
+	if !*isEmulator {
+		socket_exe = flag.String("sim", "../simulator/target/debug/simulator", "path to simulator executable")
+	} else {
+		socket_exe = flag.String("emu", "../simulator/target/debug/emulator", "path to emulator executable")
+	}
+
+	exitVal := m.Run()
+	os.Exit(exitVal)
+}
 
 // An extension to the main DPE transport interface with test hooks.
 type TestDPEInstance interface {
