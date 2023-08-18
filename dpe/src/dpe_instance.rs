@@ -12,7 +12,6 @@ use crate::{
     tci::{TciMeasurement, TciNodeData},
     DPE_PROFILE, INTERNAL_INPUT_INFO_SIZE, MAX_HANDLES,
 };
-use core::mem::size_of;
 use crypto::{Crypto, Digest, Hasher};
 use platform::{Platform, MAX_CHUNK_SIZE};
 use zerocopy::AsBytes;
@@ -119,7 +118,23 @@ impl DpeInstance {
         }
     }
 
+    // Inlined so the callsite optimizer knows that idx < self.contexts.len()
+    // and won't insert possible call to panic.
+    #[inline(always)]
     pub(crate) fn get_active_context_pos(
+        &self,
+        handle: &ContextHandle,
+        locality: u32,
+    ) -> Result<usize, DpeErrorCode> {
+        let idx = self.get_active_context_pos_internal(handle, locality)?;
+        if idx >= self.contexts.len() {
+            // No idea if this is the correct error code
+            return Err(DpeErrorCode::InternalError);
+        }
+        Ok(idx)
+    }
+
+    fn get_active_context_pos_internal(
         &self,
         handle: &ContextHandle,
         locality: u32,
@@ -147,7 +162,7 @@ impl DpeInstance {
                     && &context.handle == handle
                     && context.locality == locality
             })
-            .unwrap();
+            .ok_or(DpeErrorCode::InternalError)?;
         Ok(i)
     }
 
@@ -166,6 +181,9 @@ impl DpeInstance {
 
         let mut descendants = context.children;
         for idx in flags_iter(context.children, MAX_HANDLES) {
+            if idx >= self.contexts.len() {
+                return Err(DpeErrorCode::InternalError);
+            }
             descendants |= self.get_descendants(&self.contexts[idx])?;
         }
         Ok(descendants)
@@ -267,7 +285,12 @@ impl DpeInstance {
             .map_err(|_| DpeErrorCode::HashError)?;
         let digest = hasher.finish().map_err(|_| DpeErrorCode::HashError)?;
 
-        context.tci.tci_cumulative.0.copy_from_slice(digest.bytes());
+        let digest_bytes = digest.bytes();
+
+        if digest_bytes.len() != context.tci.tci_cumulative.0.len() {
+            return Err(DpeErrorCode::InternalError);
+        }
+        context.tci.tci_cumulative.0.copy_from_slice(digest_bytes);
         context.tci.tci_current = *measurement;
         Ok(())
     }
@@ -317,10 +340,8 @@ impl DpeInstance {
         for status in ChildToRootIter::new(start_idx, &self.contexts) {
             let context = status?;
 
-            let mut tci_bytes = [0u8; size_of::<TciNodeData>()];
-            let len = context.tci.serialize(&mut tci_bytes)?;
             hasher
-                .update(&tci_bytes[..len])
+                .update(context.tci.as_bytes())
                 .map_err(|_| DpeErrorCode::HashError)?;
 
             // Check if any context uses internal inputs

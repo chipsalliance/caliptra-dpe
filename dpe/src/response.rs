@@ -49,8 +49,7 @@ impl Response {
 // ABI Response structures
 
 #[repr(C)]
-#[derive(Debug, PartialEq, Eq, zerocopy::AsBytes)]
-#[cfg_attr(test, derive(zerocopy::FromBytes))]
+#[derive(Debug, PartialEq, Eq, zerocopy::AsBytes, zerocopy::FromBytes)]
 pub struct ResponseHdr {
     pub magic: u32,
     pub status: u32,
@@ -70,8 +69,7 @@ impl ResponseHdr {
 }
 
 #[repr(C)]
-#[derive(Debug, PartialEq, Eq, zerocopy::AsBytes)]
-#[cfg_attr(test, derive(zerocopy::FromBytes))]
+#[derive(Debug, PartialEq, Eq, zerocopy::AsBytes, zerocopy::FromBytes)]
 pub struct GetProfileResp {
     pub resp_hdr: ResponseHdr,
     pub major_version: u16,
@@ -101,16 +99,14 @@ impl GetProfileResp {
 }
 
 #[repr(C)]
-#[derive(Debug, PartialEq, Eq, zerocopy::AsBytes)]
-#[cfg_attr(test, derive(zerocopy::FromBytes))]
+#[derive(Debug, PartialEq, Eq, zerocopy::AsBytes, zerocopy::FromBytes)]
 pub struct NewHandleResp {
     pub resp_hdr: ResponseHdr,
     pub handle: ContextHandle,
 }
 
 #[repr(C)]
-#[derive(Debug, PartialEq, Eq, zerocopy::AsBytes)]
-#[cfg_attr(test, derive(zerocopy::FromBytes))]
+#[derive(Debug, PartialEq, Eq, zerocopy::AsBytes, zerocopy::FromBytes)]
 pub struct DeriveChildResp {
     pub resp_hdr: ResponseHdr,
     pub handle: ContextHandle,
@@ -142,8 +138,7 @@ impl Default for CertifyKeyResp {
 }
 
 #[repr(C)]
-#[derive(Debug, PartialEq, Eq, zerocopy::AsBytes)]
-#[cfg_attr(test, derive(zerocopy::FromBytes))]
+#[derive(Debug, PartialEq, Eq, zerocopy::AsBytes, zerocopy::FromBytes)]
 pub struct SignResp {
     pub resp_hdr: ResponseHdr,
     pub new_context_handle: ContextHandle,
@@ -161,8 +156,7 @@ pub struct GetTaggedTciResp {
 }
 
 #[repr(C)]
-#[derive(Debug, PartialEq, Eq, zerocopy::AsBytes)]
-#[cfg_attr(test, derive(zerocopy::FromBytes))]
+#[derive(Debug, PartialEq, Eq, zerocopy::AsBytes, zerocopy::FromBytes)]
 pub struct GetCertificateChainResp {
     pub resp_hdr: ResponseHdr,
     pub certificate_size: u32,

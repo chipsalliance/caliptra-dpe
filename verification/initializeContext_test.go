@@ -27,8 +27,8 @@ func TestInitializeContext(t *testing.T) {
 	}
 
 	for _, instance := range instances {
-		for _, l := range instance.GetSupportedLocalities() {
-			instance.SetLocality(l)
+		for _, locality := range instance.GetSupportedLocalities() {
+			instance.SetLocality(locality)
 			testInitContext(instance, t)
 		}
 	}
