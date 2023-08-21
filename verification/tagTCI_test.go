@@ -10,30 +10,54 @@ import (
 
 // This file is used to test the tagTCI command by using a simulator
 
+func GetTestTarget_TagTCI(instances []TestDPEInstance) ([]TestDPEInstance, error) {
+	// Added dummy support for emulator
+	support_needed := []string{"AutoInit", "X509"}
+
+	return GetEmulatorTarget(support_needed, instances)
+
+}
+
 func TestTagTCI(t *testing.T) {
-	var instance *DpeInstance
-	if *isEmulator {
-		//Added dummy support for emulator. Once the emulator is implemented, will add the actual enabled feature
-		instance = &DpeInstance{exe_path: *socket_exe, supports: Support{AutoInit: true}}
-	} else {
-		instance = &DpeInstance{exe_path: *socket_exe, supports: Support{AutoInit: true, Tagging: true}}
-		instance.SetLocality(DPE_SIMULATOR_AUTO_INIT_LOCALITY)
-	}
-	if instance.HasPowerControl() {
-		err := instance.PowerOn()
+	var instances []TestDPEInstance
+	var err error
+	if testTargetType == EMULATOR {
+		instances, err = GetTestTarget_TagTCI(instances)
 		if err != nil {
 			log.Fatal(err)
 		}
-		defer instance.PowerOff()
+	} else if testTargetType == SIMULATOR {
+		instances = []TestDPEInstance{
+			&DpeSimulator{exe_path: *socket_exe, supports: Support{AutoInit: true, Tagging: true}},
+		}
+		for _, instance := range instances {
+			instance.SetLocality(DPE_SIMULATOR_AUTO_INIT_LOCALITY)
+		}
 	}
 
-	client, err := NewClient256(instance)
+	for _, instance := range instances {
+		testtagTCI(instance, t)
+	}
+
+}
+
+func testtagTCI(d TestDPEInstance, t *testing.T) {
+
+	if d.HasPowerControl() {
+		err := d.PowerOn()
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer d.PowerOff()
+	}
+
+	client, err := NewClient256(d)
 	if err != nil {
 		t.Fatalf("Could not initialize client: %v", err)
 	}
 
 	// Try to create the default context if isn't done automatically.
-	if !instance.GetSupport().AutoInit {
+	if !d.GetSupport().AutoInit {
 		initCtxResp, err := client.InitializeContext(NewInitCtxIsDefault())
 		if err != nil {
 			t.Fatalf("Failed to initialize default context: %v", err)

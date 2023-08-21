@@ -5,6 +5,7 @@ package verification
 import (
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"log"
 	"testing"
@@ -14,26 +15,39 @@ import (
 	"github.com/zmap/zlint/v3/lint"
 )
 
-// This file is used to test the certify key command by using a simulator
+// This file is used to test the certify key command by using a simulator/emulator
 
-func TestCertifyKey(t *testing.T) {
+func GetTestTarget_CertifyKey() ([]TestDPEInstance, error) {
+
+	// Added dummy support for emulator
+	support_needed := []string{"AutoInit", "X509"}
+
 	var instances []TestDPEInstance
-	if *isEmulator {
-		//Added dummy support for emulator. Once the emulator is implemented, will add the actual enabled feature
-		instances = []TestDPEInstance{
-			&DpeInstance{exe_path: *socket_exe, supports: Support{AutoInit: true}},
-		}
-	} else {
+
+	if testTargetType == EMULATOR {
+		return GetEmulatorTarget(support_needed, instances)
+
+	} else if testTargetType == SIMULATOR {
 		instances = []TestDPEInstance{
 			// No extra options besides AutoInit.
-			&DpeInstance{exe_path: *socket_exe, supports: Support{AutoInit: true, X509: true}},
+			&DpeSimulator{exe_path: *socket_exe, supports: Support{AutoInit: true, X509: true}},
 			// Supports AutoInit and simulation contexts.
-			&DpeInstance{exe_path: *socket_exe, supports: Support{AutoInit: true, Simulation: true, X509: true}},
+			&DpeSimulator{exe_path: *socket_exe, supports: Support{AutoInit: true, Simulation: true, X509: true}},
 		}
 		for _, instance := range instances {
 			instance.SetLocality(DPE_SIMULATOR_AUTO_INIT_LOCALITY)
 		}
+		return instances, nil
+	}
 
+	return nil, errors.New("Error in creating dpe instances - supported feature is not enabled")
+}
+
+func TestCertifyKey(t *testing.T) {
+
+	instances, err := GetTestTarget_CertifyKey()
+	if err != nil {
+		log.Fatal(err)
 	}
 
 	for _, instance := range instances {

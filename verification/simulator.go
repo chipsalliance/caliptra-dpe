@@ -27,7 +27,7 @@ const (
 	DPE_SIMULATOR_VENDOR_SKU            uint32  = 0
 )
 
-type DpeInstance struct {
+type DpeSimulator struct {
 	exe_path        string
 	cmd             *exec.Cmd
 	supports        Support
@@ -36,12 +36,12 @@ type DpeInstance struct {
 }
 
 // Simulator can be started and stopped.
-func (s *DpeInstance) HasPowerControl() bool {
+func (s *DpeSimulator) HasPowerControl() bool {
 	return true
 }
 
 // Start the simulator.
-func (s *DpeInstance) PowerOn() error {
+func (s *DpeSimulator) PowerOn() error {
 	args := []string{}
 	if s.supports.Simulation {
 		args = append(args, "--supports-simulation")
@@ -90,7 +90,7 @@ func (s *DpeInstance) PowerOn() error {
 }
 
 // Kill the simulator in a way that it can cleanup before closing.
-func (s *DpeInstance) PowerOff() error {
+func (s *DpeSimulator) PowerOff() error {
 	if s.cmd != nil {
 		err := s.cmd.Process.Signal(syscall.SIGTERM)
 		if err != nil {
@@ -104,7 +104,7 @@ func (s *DpeInstance) PowerOff() error {
 }
 
 // Wait for the simulator to come alive. Timeout at 15 seconds.
-func (s *DpeInstance) waitForPower(on bool) bool {
+func (s *DpeSimulator) waitForPower(on bool) bool {
 	timeout_seconds := 15
 	checks_per_sec := 50
 
@@ -126,7 +126,7 @@ func fileExists(filename string) bool {
 	return !info.IsDir()
 }
 
-func (s *DpeInstance) SendCmd(buf []byte) ([]byte, error) {
+func (s *DpeSimulator) SendCmd(buf []byte) ([]byte, error) {
 	// Connect to DPE instance.
 	conn, err := net.Dial("unix", simulatorSocketPath)
 	if err != nil {
@@ -155,42 +155,42 @@ func (s *DpeInstance) SendCmd(buf []byte) ([]byte, error) {
 	return io.ReadAll(conn)
 }
 
-func (s *DpeInstance) GetSupport() *Support {
+func (s *DpeSimulator) GetSupport() *Support {
 	return &s.supports
 }
 
-func (s *DpeInstance) GetProfile() Profile {
+func (s *DpeSimulator) GetProfile() Profile {
 	return DPE_SIMULATOR_PROFILE
 }
 
-func (s *DpeInstance) GetSupportedLocalities() []uint32 {
+func (s *DpeSimulator) GetSupportedLocalities() []uint32 {
 	return []uint32{DPE_SIMULATOR_AUTO_INIT_LOCALITY, DPE_SIMULATOR_OTHER_LOCALITY}
 }
 
-func (s *DpeInstance) SetLocality(locality uint32) {
+func (s *DpeSimulator) SetLocality(locality uint32) {
 	s.currentLocality = locality
 }
 
-func (s *DpeInstance) GetLocality() uint32 {
+func (s *DpeSimulator) GetLocality() uint32 {
 	return s.currentLocality
 }
 
-func (s *DpeInstance) GetMaxTciNodes() uint32 {
+func (s *DpeSimulator) GetMaxTciNodes() uint32 {
 	return DPE_SIMULATOR_MAX_TCI_NODES
 }
 
-func (s *DpeInstance) GetProfileMajorVersion() uint16 {
+func (s *DpeSimulator) GetProfileMajorVersion() uint16 {
 	return DPE_SIMULATOR_MAJOR_PROFILE_VERSION
 }
 
-func (s *DpeInstance) GetProfileMinorVersion() uint16 {
+func (s *DpeSimulator) GetProfileMinorVersion() uint16 {
 	return DPE_SIMULATOR_MINOR_PROFILE_VERSION
 }
 
-func (s *DpeInstance) GetProfileVendorId() uint32 {
+func (s *DpeSimulator) GetProfileVendorId() uint32 {
 	return DPE_SIMULATOR_VENDOR_ID
 }
 
-func (s *DpeInstance) GetProfileVendorSku() uint32 {
+func (s *DpeSimulator) GetProfileVendorSku() uint32 {
 	return DPE_SIMULATOR_VENDOR_SKU
 }

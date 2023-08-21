@@ -10,19 +10,28 @@ import (
 
 // This file is used to test the initialize context command by using a simulator
 
+func GetTestTarget_InitializeContext(instances []TestDPEInstance) ([]TestDPEInstance, error) {
+	// Added dummy support for emulator
+	support_needed := []string{"AutoInit", "X509"}
+
+	return GetEmulatorTarget(support_needed, instances)
+
+}
+
 func TestInitializeContext(t *testing.T) {
 	var instances []TestDPEInstance
-	if *isEmulator {
-		//Added dummy support for emulator. Once the emulator is implemented, will add the actual enabled feature
-		instances = []TestDPEInstance{
-			&DpeInstance{exe_path: *socket_exe, supports: Support{AutoInit: true}},
+	var err error
+	if testTargetType == EMULATOR {
+		instances, err = GetTestTarget_InitializeContext(instances)
+		if err != nil {
+			log.Fatal(err)
 		}
-	} else {
+	} else if testTargetType == SIMULATOR {
 		instances = []TestDPEInstance{
 			// No extra options.
-			&DpeInstance{exe_path: *socket_exe},
+			&DpeSimulator{exe_path: *socket_exe},
 			// Supports simulation.
-			&DpeInstance{exe_path: *socket_exe, supports: Support{Simulation: true}},
+			&DpeSimulator{exe_path: *socket_exe, supports: Support{Simulation: true}},
 		}
 	}
 

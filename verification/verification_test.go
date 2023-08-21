@@ -3,21 +3,29 @@
 package verification
 
 import (
+	"errors"
 	"flag"
 	"os"
+	"reflect"
 	"testing"
 )
 
+const (
+	SIMULATOR string = "simulator"
+	EMULATOR  string = "emulator"
+)
+
 var socket_exe *string
-var isEmulator *bool
+var testTargetType string
 
 // This will be called before running tests, and it assigns the socket path based on command line flag.
 func TestMain(m *testing.M) {
-	isEmulator = flag.Bool("emulator", false, "socket type - emulator")
+	testTarget := flag.String("target", "simulator", "socket type - emulator")
 	flag.Parse()
-	if !*isEmulator {
+	testTargetType = *testTarget
+	if testTargetType == SIMULATOR {
 		socket_exe = flag.String("sim", "../simulator/target/debug/simulator", "path to simulator executable")
-	} else {
+	} else if testTargetType == EMULATOR {
 		socket_exe = flag.String("emu", "../simulator/target/debug/emulator", "path to emulator executable")
 	}
 
@@ -59,4 +67,22 @@ type TestDPEInstance interface {
 	GetProfileVendorId() uint32
 	// Returns the vendor's product SKU.
 	GetProfileVendorSku() uint32
+}
+
+// Get the emulator target
+func GetEmulatorTarget(support_needed []string, instances []TestDPEInstance) ([]TestDPEInstance, error) {
+
+	dpeEmulator := DpeEmulator{}
+	value := reflect.ValueOf(dpeEmulator.supports)
+	for i := 0; i < len(support_needed); i++ {
+		support := reflect.Indirect(value).FieldByName(support_needed[i])
+		if !support.Bool() {
+			return nil, errors.New("Error in creating dpe instances - supported feature is not enabled in emulator")
+		}
+	}
+	instances = []TestDPEInstance{
+		&DpeEmulator{exe_path: *socket_exe},
+	}
+	return instances, nil
+
 }
