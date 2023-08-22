@@ -13,20 +13,26 @@ import (
 	zx509 "github.com/zmap/zcrypto/x509"
 	zlint "github.com/zmap/zlint/v3"
 	"github.com/zmap/zlint/v3/lint"
+	"golang.org/x/exp/slices"
 )
 
 // This file is used to test the certify key command by using a simulator/emulator
 
-func GetTestTarget_CertifyKey() ([]TestDPEInstance, error) {
-
-	// Added dummy support for emulator
-	support_needed := []string{"AutoInit", "X509"}
+func GetTestTarget_CertifyKey(support_needed []string) ([]TestDPEInstance, error) {
 
 	var instances []TestDPEInstance
-
+	var err error
 	if testTargetType == EMULATOR {
-		return GetEmulatorTarget(support_needed, instances)
-
+		for i := 0; i < len(support_needed); i++ {
+			if !slices.Contains(emulator_supports, support_needed[i]) {
+				return nil, errors.New("Requested support is not supported in emulator")
+			}
+		}
+		instances, err = GetEmulatorTarget(support_needed, instances)
+		if err != nil {
+			return nil, err
+		}
+		return instances, nil
 	} else if testTargetType == SIMULATOR {
 		instances = []TestDPEInstance{
 			// No extra options besides AutoInit.
@@ -45,9 +51,17 @@ func GetTestTarget_CertifyKey() ([]TestDPEInstance, error) {
 
 func TestCertifyKey(t *testing.T) {
 
-	instances, err := GetTestTarget_CertifyKey()
+	// Added dummy support for emulator
+	support_needed := []string{"AutoInit", "X509"}
+
+	instances, err := GetTestTarget_CertifyKey(support_needed)
 	if err != nil {
-		log.Fatal(err)
+		if err.Error() == "Requested support is not supported in emulator" {
+			log.Print("Warning: Failed executing TestCertifyKey command due to unsupported request. Hence, skipping it")
+			t.Skipf("Skipping the command execution")
+		} else {
+			log.Fatal(err)
+		}
 	}
 
 	for _, instance := range instances {

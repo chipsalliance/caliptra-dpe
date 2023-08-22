@@ -28,6 +28,8 @@ const (
 	DPE_EMULATOR_VENDOR_SKU            uint32  = 0
 )
 
+var emulator_supports = []string{"AutoInit", "X509"}
+
 //TODO code for emulator to start, stop, getsupport
 
 type DpeEmulator struct {
