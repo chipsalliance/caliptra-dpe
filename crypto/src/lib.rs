@@ -198,18 +198,6 @@ pub trait Crypto {
         priv_key: &Self::PrivKey,
     ) -> Result<EcdsaSig, CryptoError>;
 
-    /// Compute the serial number string for the alias public key
-    ///
-    /// # Arguments
-    ///
-    /// * `algs` - Length of algorithm to use.
-    /// * `serial` - Output buffer to write serial number
-    fn get_ecdsa_alias_serial(
-        &mut self,
-        algs: AlgLen,
-        serial: &mut [u8],
-    ) -> Result<(), CryptoError>;
-
     /// Sign `digest` with a derived HMAC key from the CDI.
     ///
     /// # Arguments
