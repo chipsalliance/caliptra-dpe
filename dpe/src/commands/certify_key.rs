@@ -41,18 +41,18 @@ impl CommandExecution for CertifyKeyCmd {
         let idx = dpe.get_active_context_pos(&self.handle, locality)?;
         let context = &dpe.contexts[idx];
 
-        if self.uses_is_ca() && !dpe.support.is_ca {
+        if self.uses_is_ca() && !dpe.support.is_ca() {
             return Err(DpeErrorCode::ArgumentNotSupported);
         }
-        if self.uses_is_ca() && !context.allow_ca {
+        if self.uses_is_ca() && !context.allow_ca() {
             return Err(DpeErrorCode::InvalidArgument);
         }
 
         if self.format == Self::FORMAT_X509 {
-            if !dpe.support.x509 {
+            if !dpe.support.x509() {
                 return Err(DpeErrorCode::ArgumentNotSupported);
             }
-            if !context.allow_x509 {
+            if !context.allow_x509() {
                 return Err(DpeErrorCode::InvalidArgument);
             }
         }
@@ -135,7 +135,7 @@ impl CommandExecution for CertifyKeyCmd {
                 u32::try_from(bytes_written).map_err(|_| DpeErrorCode::InternalError)?
             }
             Self::FORMAT_CSR => {
-                if !dpe.support.csr {
+                if !dpe.support.csr() {
                     return Err(DpeErrorCode::ArgumentNotSupported);
                 }
                 return Err(DpeErrorCode::ArgumentNotSupported);
@@ -164,6 +164,7 @@ mod tests {
         commands::{Command, CommandHdr, InitCtxCmd},
         dpe_instance::tests::{TestTypes, SIMULATION_HANDLE, TEST_LOCALITIES},
         support::Support,
+        U8Bool,
     };
     use crypto::OpensslCrypto;
     use platform::DefaultPlatform;
@@ -200,7 +201,7 @@ mod tests {
         let mut dpe = DpeInstance::new(
             &mut env,
             Support {
-                x509: true,
+                x509: U8Bool::new(true),
                 ..Support::default()
             },
         )
@@ -247,8 +248,8 @@ mod tests {
         let mut dpe = DpeInstance::new(
             &mut env,
             Support {
-                x509: true,
-                is_ca: true,
+                x509: U8Bool::new(true),
+                is_ca: U8Bool::new(true),
                 ..Support::default()
             },
         )

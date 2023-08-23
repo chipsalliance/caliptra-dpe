@@ -188,4 +188,5 @@ pub enum DpeErrorCode {
     CryptoError = 0x1005,
     HashError = 0x1006,
     RandError = 0x1007,
+    InvalidInternalState = 0x1008,
 }

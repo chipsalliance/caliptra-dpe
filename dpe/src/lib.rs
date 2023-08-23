@@ -20,12 +20,47 @@ use response::GetProfileResp;
 pub mod tci;
 pub mod x509;
 
+use zerocopy::{AsBytes, FromBytes};
+
 const MAX_CERT_SIZE: usize = 2048;
 const MAX_HANDLES: usize = 24;
 const CURRENT_PROFILE_MAJOR_VERSION: u16 = 0;
 const CURRENT_PROFILE_MINOR_VERSION: u16 = 8;
 
 const INTERNAL_INPUT_INFO_SIZE: usize = size_of::<GetProfileResp>() + size_of::<u32>();
+
+/// A type with u8 backing memory but bool semantics
+/// This is needed to safely serialize booleans in the persisted DPE state
+/// using zerocopy.
+#[derive(Default, AsBytes, FromBytes)]
+#[repr(C, align(1))]
+pub struct U8Bool {
+    val: u8,
+}
+
+impl U8Bool {
+    pub const fn new(val: bool) -> Self {
+        Self { val: val as u8 }
+    }
+
+    pub fn get(&self) -> bool {
+        self.val != 0
+    }
+
+    pub fn set(&mut self, val: bool) {
+        self.val = val as u8;
+    }
+
+    pub fn is_bool(&self) -> bool {
+        self.val == 0 || self.val == 1
+    }
+}
+
+impl From<bool> for U8Bool {
+    fn from(item: bool) -> Self {
+        Self { val: item as u8 }
+    }
+}
 
 pub enum DpeProfile {
     P256Sha256 = 1,

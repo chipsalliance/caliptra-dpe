@@ -22,24 +22,28 @@ impl CommandExecution for TagTciCmd {
         locality: u32,
     ) -> Result<Response, DpeErrorCode> {
         // Make sure this command is supported.
-        if !dpe.support.tagging {
+        if !dpe.support.tagging() {
             return Err(DpeErrorCode::InvalidCommand);
         }
         // Make sure the tag isn't used by any other contexts.
-        if dpe.contexts.iter().any(|c| c.has_tag && c.tag == self.tag) {
+        if dpe
+            .contexts
+            .iter()
+            .any(|c| c.has_tag() && c.tag == self.tag)
+        {
             return Err(DpeErrorCode::BadTag);
         }
 
         let idx = dpe.get_active_context_pos(&self.handle, locality)?;
 
-        if dpe.contexts[idx].has_tag {
+        if dpe.contexts[idx].has_tag() {
             return Err(DpeErrorCode::BadTag);
         }
 
         // Because handles are one-time use, let's rotate the handle, if it isn't the default.
         dpe.roll_onetime_use_handle(env, idx)?;
         let context = &mut dpe.contexts[idx];
-        context.has_tag = true;
+        context.has_tag = true.into();
         context.tag = self.tag;
 
         Ok(Response::TagTci(NewHandleResp {
@@ -56,6 +60,7 @@ mod tests {
         commands::{Command, CommandHdr, InitCtxCmd},
         dpe_instance::tests::{TestTypes, SIMULATION_HANDLE, TEST_HANDLE, TEST_LOCALITIES},
         support::Support,
+        U8Bool,
     };
     use crypto::OpensslCrypto;
     use platform::DefaultPlatform;
@@ -99,8 +104,8 @@ mod tests {
         let mut dpe = DpeInstance::new(
             &mut env,
             Support {
-                tagging: true,
-                simulation: true,
+                tagging: U8Bool::new(true),
+                simulation: U8Bool::new(true),
                 ..Support::default()
             },
         )
