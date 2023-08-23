@@ -142,7 +142,7 @@ pub trait Crypto {
         info: &[u8],
     ) -> Result<Self::Cdi, CryptoError>;
 
-    /// Derives a private key using a cryptographically secure KDF
+    /// Derives a key pair using a cryptographically secure KDF
     ///
     /// # Arguments
     ///
@@ -151,26 +151,13 @@ pub trait Crypto {
     /// * `label` - Caller-supplied label to use in asymmetric key derivation
     /// * `info` - Caller-supplied info string to use in asymmetric key derivation
     ///
-    fn derive_private_key(
+    fn derive_key_pair(
         &mut self,
         algs: AlgLen,
         cdi: &Self::Cdi,
         label: &[u8],
         info: &[u8],
-    ) -> Result<Self::PrivKey, CryptoError>;
-
-    /// Derives and returns an ECDSA public key using the caller-supplied private key
-    ///
-    /// # Arguments
-    ///
-    /// * `algs` - Which length of algorithms to use.
-    /// * `priv_key` - Caller-supplied private key to use in public key derivation
-    /// Returns a derived public key
-    fn derive_ecdsa_pub(
-        &mut self,
-        algs: AlgLen,
-        priv_key: &Self::PrivKey,
-    ) -> Result<EcdsaPub, CryptoError>;
+    ) -> Result<(Self::PrivKey, EcdsaPub), CryptoError>;
 
     /// Sign `digest` with the platform Alias Key
     ///
@@ -191,11 +178,14 @@ pub trait Crypto {
     /// * `algs` - Which length of algorithms to use.
     /// * `digest` - Digest of data to be signed.
     /// * `priv_key` - Caller-supplied private key to use in public key derivation
+    /// * `pub_key` - The public key corresponding to `priv_key`. An implementation may
+    ///    optionally use pub_key to validate any generated signatures.
     fn ecdsa_sign_with_derived(
         &mut self,
         algs: AlgLen,
         digest: &Digest,
         priv_key: &Self::PrivKey,
+        pub_key: EcdsaPub,
     ) -> Result<EcdsaSig, CryptoError>;
 
     /// Sign `digest` with a derived HMAC key from the CDI.

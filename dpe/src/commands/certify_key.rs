@@ -68,14 +68,9 @@ impl CommandExecution for CertifyKeyCmd {
             .crypto
             .derive_cdi(DPE_PROFILE.alg_len(), &digest, b"DPE")
             .map_err(|_| DpeErrorCode::CryptoError)?;
-        let priv_key = env
+        let (_, pub_key) = env
             .crypto
-            .derive_private_key(algs, &cdi, &self.label, b"ECC")
-            .map_err(|_| DpeErrorCode::CryptoError)?;
-
-        let pub_key = env
-            .crypto
-            .derive_ecdsa_pub(DPE_PROFILE.alg_len(), &priv_key)
+            .derive_key_pair(algs, &cdi, &self.label, b"ECC")
             .map_err(|_| DpeErrorCode::CryptoError)?;
 
         let mut subject_name = Name {
