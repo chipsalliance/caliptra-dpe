@@ -126,14 +126,14 @@ impl Crypto for OpensslCrypto {
         }
     }
 
-    fn derive_private_key(
+    fn derive_key_pair(
         &mut self,
         algs: AlgLen,
         cdi: &Self::Cdi,
         label: &[u8],
         info: &[u8],
-    ) -> Result<Self::PrivKey, CryptoError> {
-        match algs {
+    ) -> Result<(Self::PrivKey, EcdsaPub), CryptoError> {
+        let priv_key = match algs {
             AlgLen::Bit256 => {
                 let hk = Hkdf::<Sha256>::new(Some(info), cdi);
                 let mut priv_key = [0u8; AlgLen::Bit256.size()];
@@ -150,15 +150,9 @@ impl Crypto for OpensslCrypto {
 
                 Ok(CryptoBuf::new(&priv_key, algs).unwrap())
             }
-        }
-    }
+        }?;
 
-    fn derive_ecdsa_pub(
-        &mut self,
-        algs: AlgLen,
-        priv_key: &Self::PrivKey,
-    ) -> Result<EcdsaPub, CryptoError> {
-        let ec_priv_key = OpensslCrypto::ec_key_from_priv_key(algs, priv_key)
+        let ec_priv_key = OpensslCrypto::ec_key_from_priv_key(algs, &priv_key)
             .map_err(|_| CryptoError::CryptoLibError)?;
         let nid = OpensslCrypto::get_curve(algs);
 
@@ -176,7 +170,7 @@ impl Crypto for OpensslCrypto {
         let x = CryptoBuf::new(&x.to_vec_padded(algs.size() as i32).unwrap(), algs).unwrap();
         let y = CryptoBuf::new(&y.to_vec_padded(algs.size() as i32).unwrap(), algs).unwrap();
 
-        Ok(EcdsaPub { x, y })
+        Ok((priv_key, EcdsaPub { x, y }))
     }
 
     fn ecdsa_sign_with_alias(
@@ -201,6 +195,7 @@ impl Crypto for OpensslCrypto {
         algs: AlgLen,
         digest: &Digest,
         priv_key: &Self::PrivKey,
+        _pub_key: EcdsaPub,
     ) -> Result<super::EcdsaSig, CryptoError> {
         let ec_priv_key = OpensslCrypto::ec_key_from_priv_key(algs, priv_key)
             .map_err(|_| CryptoError::CryptoLibError)?;
@@ -220,7 +215,7 @@ impl Crypto for OpensslCrypto {
         info: &[u8],
         digest: &Digest,
     ) -> Result<HmacSig, CryptoError> {
-        let symmetric_key = self.derive_private_key(algs, cdi, label, info)?;
+        let (symmetric_key, _) = self.derive_key_pair(algs, cdi, label, info)?;
         let hmac_key = PKey::hmac(symmetric_key.bytes()).unwrap();
 
         let sha_size = Self::get_digest(algs);
