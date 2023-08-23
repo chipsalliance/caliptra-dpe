@@ -10,13 +10,13 @@ import (
 
 // This file is used to test the initialize context command by using a simulator/emulator
 
-func TestInitializeContext_SupportSetOne(t *testing.T) {
+func TestInitializeContext_EmptySupportSet(t *testing.T) {
 
 	support_needed := []string{""}
 	instance, err := GetTestTarget(support_needed)
 	if err != nil {
 		if err.Error() == "Requested support is not supported in emulator" {
-			log.Print("Warning: Failed executing TestInitializeContext_SupportSetOne command due to unsupported request. Hence, skipping it")
+			log.Print("Warning: Failed executing TestInitializeContext_EmptySupportSet command due to unsupported request. Hence, skipping it")
 			t.Skipf("Skipping the command execution")
 		} else {
 			log.Fatal(err)
@@ -29,13 +29,13 @@ func TestInitializeContext_SupportSetOne(t *testing.T) {
 	}
 }
 
-func TestInitializeContext_SupportSetTwo(t *testing.T) {
+func TestInitializeContext_SupportSet_With_Simulation(t *testing.T) {
 
 	support_needed := []string{"Simulation"}
 	instance, err := GetTestTarget(support_needed)
 	if err != nil {
 		if err.Error() == "Requested support is not supported in emulator" {
-			log.Print("Warning: Failed executing TestInitializeContext_SupportSetTwo command due to unsupported request. Hence, skipping it")
+			log.Print("Warning: Failed executing TestInitializeContext_SupportSet_With_Simulation command due to unsupported request. Hence, skipping it")
 			t.Skipf("Skipping the command execution")
 		} else {
 			log.Fatal(err)
