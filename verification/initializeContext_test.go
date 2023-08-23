@@ -6,62 +6,45 @@ import (
 	"errors"
 	"log"
 	"testing"
-
-	"golang.org/x/exp/slices"
 )
 
 // This file is used to test the initialize context command by using a simulator/emulator
 
-func GetTestTarget_InitializeContext(support_needed []string) ([]TestDPEInstance, error) {
+func TestInitializeContext_EmptySupportSet(t *testing.T) {
 
-	var instances []TestDPEInstance
-	var err error
-
-	if testTargetType == EMULATOR {
-		for _, support := range support_needed {
-			if !slices.Contains(emulator_supports, support) {
-				return nil, errors.New("Requested support is not supported in emulator")
-			}
-		}
-		instances, err = GetEmulatorTarget(support_needed, instances)
-		if err != nil {
-			return nil, err
-		}
-		return instances, nil
-	} else if testTargetType == SIMULATOR {
-		instances = []TestDPEInstance{
-			// No extra options.
-			&DpeSimulator{exe_path: *socket_exe},
-			// Supports simulation.
-			&DpeSimulator{exe_path: *socket_exe, supports: Support{Simulation: true}},
-		}
-		return instances, nil
-	}
-
-	return nil, errors.New("Error in creating DPE instance")
-
-}
-
-func TestInitializeContext(t *testing.T) {
-
-	// Added dummy support for emulator
-	support_needed := []string{"AutoInit", "X509"}
-
-	instances, err := GetTestTarget_InitializeContext(support_needed)
+	support_needed := []string{""}
+	instance, err := GetTestTarget(support_needed)
 	if err != nil {
 		if err.Error() == "Requested support is not supported in emulator" {
-			log.Print("Warning: Failed executing TestCertifyKey command due to unsupported request. Hence, skipping it")
+			log.Print("Warning: Failed executing TestInitializeContext_EmptySupportSet command due to unsupported request. Hence, skipping it")
 			t.Skipf("Skipping the command execution")
 		} else {
 			log.Fatal(err)
 		}
 	}
 
-	for _, instance := range instances {
-		for _, locality := range instance.GetSupportedLocalities() {
-			instance.SetLocality(locality)
-			testInitContext(instance, t)
+	for _, locality := range instance.GetSupportedLocalities() {
+		instance.SetLocality(locality)
+		testInitContext(instance, t)
+	}
+}
+
+func TestInitializeContext_SupportSet_With_Simulation(t *testing.T) {
+
+	support_needed := []string{"Simulation"}
+	instance, err := GetTestTarget(support_needed)
+	if err != nil {
+		if err.Error() == "Requested support is not supported in emulator" {
+			log.Print("Warning: Failed executing TestInitializeContext_SupportSet_With_Simulation command due to unsupported request. Hence, skipping it")
+			t.Skipf("Skipping the command execution")
+		} else {
+			log.Fatal(err)
 		}
+	}
+
+	for _, locality := range instance.GetSupportedLocalities() {
+		instance.SetLocality(locality)
+		testInitContext(instance, t)
 	}
 }
 

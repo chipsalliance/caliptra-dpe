@@ -5,7 +5,6 @@ package verification
 import (
 	"crypto/x509"
 	"encoding/pem"
-	"errors"
 	"fmt"
 	"log"
 	"testing"
@@ -13,60 +12,38 @@ import (
 	zx509 "github.com/zmap/zcrypto/x509"
 	zlint "github.com/zmap/zlint/v3"
 	"github.com/zmap/zlint/v3/lint"
-	"golang.org/x/exp/slices"
 )
 
 // This file is used to test the certify key command by using a simulator/emulator
 
-func GetTestTarget_CertifyKey(support_needed []string) ([]TestDPEInstance, error) {
+func TestCertifyKey_SupportSet_Without_Simulation(t *testing.T) {
 
-	var instances []TestDPEInstance
-	var err error
-	if testTargetType == EMULATOR {
-		for i := 0; i < len(support_needed); i++ {
-			if !slices.Contains(emulator_supports, support_needed[i]) {
-				return nil, errors.New("Requested support is not supported in emulator")
-			}
-		}
-		instances, err = GetEmulatorTarget(support_needed, instances)
-		if err != nil {
-			return nil, err
-		}
-		return instances, nil
-	} else if testTargetType == SIMULATOR {
-		instances = []TestDPEInstance{
-			// No extra options besides AutoInit.
-			&DpeSimulator{exe_path: *socket_exe, supports: Support{AutoInit: true, X509: true}},
-			// Supports AutoInit and simulation contexts.
-			&DpeSimulator{exe_path: *socket_exe, supports: Support{AutoInit: true, Simulation: true, X509: true}},
-		}
-		for _, instance := range instances {
-			instance.SetLocality(DPE_SIMULATOR_AUTO_INIT_LOCALITY)
-		}
-		return instances, nil
-	}
-
-	return nil, errors.New("Error in creating dpe instances - supported feature is not enabled")
-}
-
-func TestCertifyKey(t *testing.T) {
-
-	// Added dummy support for emulator
 	support_needed := []string{"AutoInit", "X509"}
-
-	instances, err := GetTestTarget_CertifyKey(support_needed)
+	instance, err := GetTestTarget(support_needed)
 	if err != nil {
 		if err.Error() == "Requested support is not supported in emulator" {
-			log.Print("Warning: Failed executing TestCertifyKey command due to unsupported request. Hence, skipping it")
+			log.Print("Warning: Failed executing TestCertifyKey_SupportSet_Without_Simulation command due to unsupported request. Hence, skipping it")
 			t.Skipf("Skipping the command execution")
 		} else {
 			log.Fatal(err)
 		}
 	}
+	testCertifyKey(instance, t)
+}
 
-	for _, instance := range instances {
-		testCertifyKey(instance, t)
+func TestCertifyKey_SupportSet_With_Simulation(t *testing.T) {
+
+	support_needed := []string{"AutoInit", "Simulation", "X509"}
+	instance, err := GetTestTarget(support_needed)
+	if err != nil {
+		if err.Error() == "Requested support is not supported in emulator" {
+			log.Print("Warning: Failed executing TestCertifyKey_SupportSet_With_Simulation command due to unsupported request. Hence, skipping it")
+			t.Skipf("Skipping the command execution")
+		} else {
+			log.Fatal(err)
+		}
 	}
+	testCertifyKey(instance, t)
 }
 
 func checkCertificateStructure(t *testing.T, certData []byte) {

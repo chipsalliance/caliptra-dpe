@@ -28,6 +28,7 @@ const (
 	DPE_EMULATOR_VENDOR_SKU            uint32  = 0
 )
 
+// Added dummy support for emulator .This is to verify against the support_needed list
 var emulator_supports = []string{"AutoInit", "X509"}
 
 //TODO code for emulator to start, stop, getsupport
