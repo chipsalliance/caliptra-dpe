@@ -8,6 +8,8 @@ import (
 	"os"
 	"reflect"
 	"testing"
+
+	"golang.org/x/exp/slices"
 )
 
 const (
@@ -69,20 +71,60 @@ type TestDPEInstance interface {
 	GetProfileVendorSku() uint32
 }
 
-// Get the emulator target
-func GetEmulatorTarget(support_needed []string, instances []TestDPEInstance) ([]TestDPEInstance, error) {
+// Get the test target for simulator/emulator
+func GetTestTarget(support_needed []string) (TestDPEInstance, error) {
 
-	dpeEmulator := DpeEmulator{}
-	value := reflect.ValueOf(dpeEmulator.supports)
+	if testTargetType == EMULATOR {
+		for i := 0; i < len(support_needed); i++ {
+			if !slices.Contains(emulator_supports, support_needed[i]) {
+				return nil, errors.New("Requested support is not supported in emulator")
+			}
+		}
+		instance, err := GetEmulatorTarget(support_needed)
+		if err != nil {
+			return nil, err
+		}
+		return instance, nil
+	} else if testTargetType == SIMULATOR {
+		instance, err := GetSimulatorTarget(support_needed)
+		if err != nil {
+			return nil, err
+		}
+		instance.SetLocality(DPE_SIMULATOR_AUTO_INIT_LOCALITY)
+		return instance, nil
+	}
+	return nil, errors.New("Error in creating dpe instances - supported feature is not enabled")
+}
+
+// Get the emulator target
+func GetEmulatorTarget(support_needed []string) (TestDPEInstance, error) {
+
+	value := reflect.ValueOf(DpeEmulator{}.supports)
 	for i := 0; i < len(support_needed); i++ {
 		support := reflect.Indirect(value).FieldByName(support_needed[i])
 		if !support.Bool() {
 			return nil, errors.New("Error in creating dpe instances - supported feature is not enabled in emulator")
 		}
 	}
-	instances = []TestDPEInstance{
-		&DpeEmulator{exe_path: *socket_exe},
-	}
-	return instances, nil
+	var instance TestDPEInstance = &DpeEmulator{exe_path: *socket_exe}
+	return instance, nil
+}
 
+// Get the simulator target
+func GetSimulatorTarget(support_needed []string) (TestDPEInstance, error) {
+
+	value := reflect.ValueOf(DpeSimulator{}.supports)
+	fields := reflect.Indirect(value)
+	fVal := reflect.New(reflect.TypeOf(DpeSimulator{}.supports))
+
+	for i := 0; i < len(support_needed); i++ {
+		for j := 0; j < value.NumField(); j++ {
+			if fields.Type().Field(j).Name == support_needed[i] {
+				fVal.Elem().Field(j).SetBool(true)
+			}
+		}
+	}
+	support := fVal.Elem().Interface().(Support)
+	var instance TestDPEInstance = &DpeSimulator{exe_path: *socket_exe, supports: support}
+	return instance, nil
 }

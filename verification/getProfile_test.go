@@ -3,93 +3,250 @@
 package verification
 
 import (
-	"errors"
 	"log"
 	"testing"
-
-	"golang.org/x/exp/slices"
 )
 
 // This file is used to test the get profile command by using a simulator/emulator
 
-func GetTestTarget_GetProfile(support_needed []string) ([]TestDPEInstance, error) {
+func TestGetProfile_SupportSetOne(t *testing.T) {
 
-	var instances []TestDPEInstance
-	var err error
-
-	if testTargetType == EMULATOR {
-		for _, support := range support_needed {
-			if !slices.Contains(emulator_supports, support) {
-				return nil, errors.New("Requested support is not supported in emulator")
-			}
-		}
-		instances, err = GetEmulatorTarget(support_needed, instances)
-		if err != nil {
-			return nil, err
-		}
-		return instances, nil
-	} else if testTargetType == SIMULATOR {
-		instances = GetProfileMatrix(instances)
-		return instances, nil
-	}
-	return nil, errors.New("Error in creating DPE instances")
-}
-
-func TestGetProfile(t *testing.T) {
-
-	// Added dummy support for emulator
-	support_needed := []string{"AutoInit", "X509"}
-
-	instances, err := GetTestTarget_GetProfile(support_needed)
+	support_needed := []string{""}
+	instance, err := GetTestTarget(support_needed)
 	if err != nil {
 		if err.Error() == "Requested support is not supported in emulator" {
-			log.Print("Warning: Failed executing TestCertifyKey command due to unsupported request. Hence, skipping it")
+			log.Print("Warning: Failed executing TestGetProfile_SupportSetOne command due to unsupported request. Hence, skipping it")
 			t.Skipf("Skipping the command execution")
 		} else {
 			log.Fatal(err)
 		}
 	}
 
-	for _, instance := range instances {
-		testGetProfile(instance, t)
-	}
-
+	testGetProfile(instance, t)
 }
 
-func GetProfileMatrix(instances []TestDPEInstance) []TestDPEInstance {
-	instances = []TestDPEInstance{
-		// No extra options.
-		&DpeSimulator{exe_path: *socket_exe},
-		// Supports simulation.
-		&DpeSimulator{exe_path: *socket_exe, supports: Support{Simulation: true}},
-		// Supports extended TCI.
-		&DpeSimulator{exe_path: *socket_exe, supports: Support{ExtendTci: true}},
-		// Supports auto-init.
-		&DpeSimulator{exe_path: *socket_exe, supports: Support{AutoInit: true}},
-		// Supports tagging.
-		&DpeSimulator{exe_path: *socket_exe, supports: Support{Tagging: true}},
-		// Supports rotate context.
-		&DpeSimulator{exe_path: *socket_exe, supports: Support{RotateContext: true}},
-		// Supports certify key.
-		&DpeSimulator{exe_path: *socket_exe, supports: Support{X509: true}},
-		// Supports certify csr.
-		&DpeSimulator{exe_path: *socket_exe, supports: Support{Csr: true}},
-		// Supports symmetric derivation.
-		&DpeSimulator{exe_path: *socket_exe, supports: Support{IsSymmetric: true}},
-		// Supports internal info.
-		&DpeSimulator{exe_path: *socket_exe, supports: Support{InternalInfo: true}},
-		// Supports internal DICE.
-		&DpeSimulator{exe_path: *socket_exe, supports: Support{InternalDice: true}},
-		// Supports IsCA
-		&DpeSimulator{exe_path: *socket_exe, supports: Support{IsCA: true}},
-		// Supports a couple combos.
-		&DpeSimulator{exe_path: *socket_exe, supports: Support{Simulation: true, AutoInit: true, RotateContext: true, Csr: true, InternalDice: true, IsCA: true}},
-		&DpeSimulator{exe_path: *socket_exe, supports: Support{ExtendTci: true, Tagging: true, X509: true, InternalInfo: true}},
-		// Supports everything.
-		&DpeSimulator{exe_path: *socket_exe, supports: Support{Simulation: true, ExtendTci: true, AutoInit: true, Tagging: true, RotateContext: true, X509: true, Csr: true, IsSymmetric: true, InternalInfo: true, InternalDice: true, IsCA: true}},
+func TestGetProfile_SupportSetTwo(t *testing.T) {
+
+	support_needed := []string{"Simulation"}
+	instance, err := GetTestTarget(support_needed)
+	if err != nil {
+		if err.Error() == "Requested support is not supported in emulator" {
+			log.Print("Warning: Failed executing TestGetProfile_SupportSetTwo command due to unsupported request. Hence, skipping it")
+			t.Skipf("Skipping the command execution")
+		} else {
+			log.Fatal(err)
+		}
 	}
 
-	return instances
+	testGetProfile(instance, t)
+}
+
+func TestGetProfile_SupportSetThree(t *testing.T) {
+
+	support_needed := []string{"ExtendTci"}
+	instance, err := GetTestTarget(support_needed)
+	if err != nil {
+		if err.Error() == "Requested support is not supported in emulator" {
+			log.Print("Warning: Failed executing TestGetProfile_SupportSetThree command due to unsupported request. Hence, skipping it")
+			t.Skipf("Skipping the command execution")
+		} else {
+			log.Fatal(err)
+		}
+	}
+
+	testGetProfile(instance, t)
+}
+
+func TestGetProfile_SupportSetFour(t *testing.T) {
+
+	support_needed := []string{"AutoInit"}
+	instance, err := GetTestTarget(support_needed)
+	if err != nil {
+		if err.Error() == "Requested support is not supported in emulator" {
+			log.Print("Warning: Failed executing TestGetProfile_SupportSetFour command due to unsupported request. Hence, skipping it")
+			t.Skipf("Skipping the command execution")
+		} else {
+			log.Fatal(err)
+		}
+	}
+
+	testGetProfile(instance, t)
+}
+
+func TestGetProfile_SupportSetFive(t *testing.T) {
+
+	support_needed := []string{"Tagging"}
+	instance, err := GetTestTarget(support_needed)
+	if err != nil {
+		if err.Error() == "Requested support is not supported in emulator" {
+			log.Print("Warning: Failed executing TestGetProfile_SupportSetFive command due to unsupported request. Hence, skipping it")
+			t.Skipf("Skipping the command execution")
+		} else {
+			log.Fatal(err)
+		}
+	}
+
+	testGetProfile(instance, t)
+}
+
+func TestGetProfile_SupportSetSix(t *testing.T) {
+
+	support_needed := []string{"RotateContext"}
+	instance, err := GetTestTarget(support_needed)
+	if err != nil {
+		if err.Error() == "Requested support is not supported in emulator" {
+			log.Print("Warning: Failed executing TestGetProfile_SupportSetSix command due to unsupported request. Hence, skipping it")
+			t.Skipf("Skipping the command execution")
+		} else {
+			log.Fatal(err)
+		}
+	}
+
+	testGetProfile(instance, t)
+}
+
+func TestGetProfile_SupportSetSeven(t *testing.T) {
+
+	support_needed := []string{"X509"}
+	instance, err := GetTestTarget(support_needed)
+	if err != nil {
+		if err.Error() == "Requested support is not supported in emulator" {
+			log.Print("Warning: Failed executing TestGetProfile_SupportSetSeven command due to unsupported request. Hence, skipping it")
+			t.Skipf("Skipping the command execution")
+		} else {
+			log.Fatal(err)
+		}
+	}
+
+	testGetProfile(instance, t)
+}
+
+func TestGetProfile_SupportSetEight(t *testing.T) {
+
+	support_needed := []string{"Csr"}
+	instance, err := GetTestTarget(support_needed)
+	if err != nil {
+		if err.Error() == "Requested support is not supported in emulator" {
+			log.Print("Warning: Failed executing TestGetProfile_SupportSetEight command due to unsupported request. Hence, skipping it")
+			t.Skipf("Skipping the command execution")
+		} else {
+			log.Fatal(err)
+		}
+	}
+
+	testGetProfile(instance, t)
+}
+
+func TestGetProfile_SupportSetNine(t *testing.T) {
+
+	support_needed := []string{"IsSymmetric"}
+	instance, err := GetTestTarget(support_needed)
+	if err != nil {
+		if err.Error() == "Requested support is not supported in emulator" {
+			log.Print("Warning: Failed executing TestGetProfile_SupportSetNine command due to unsupported request. Hence, skipping it")
+			t.Skipf("Skipping the command execution")
+		} else {
+			log.Fatal(err)
+		}
+	}
+
+	testGetProfile(instance, t)
+}
+
+func TestGetProfile_SupportSetTen(t *testing.T) {
+
+	support_needed := []string{"InternalInfo"}
+	instance, err := GetTestTarget(support_needed)
+	if err != nil {
+		if err.Error() == "Requested support is not supported in emulator" {
+			log.Print("Warning: Failed executing TestGetProfile_SupportSetTen command due to unsupported request. Hence, skipping it")
+			t.Skipf("Skipping the command execution")
+		} else {
+			log.Fatal(err)
+		}
+	}
+
+	testGetProfile(instance, t)
+}
+
+func TestGetProfile_SupportSetEleven(t *testing.T) {
+
+	support_needed := []string{"InternalDice"}
+	instance, err := GetTestTarget(support_needed)
+	if err != nil {
+		if err.Error() == "Requested support is not supported in emulator" {
+			log.Print("Warning: Failed executing TestGetProfile_SupportSetEleven command due to unsupported request. Hence, skipping it")
+			t.Skipf("Skipping the command execution")
+		} else {
+			log.Fatal(err)
+		}
+	}
+
+	testGetProfile(instance, t)
+}
+
+func TestGetProfile_SupportSetTwelve(t *testing.T) {
+
+	support_needed := []string{"IsCA"}
+	instance, err := GetTestTarget(support_needed)
+	if err != nil {
+		if err.Error() == "Requested support is not supported in emulator" {
+			log.Print("Warning: Failed executing TestGetProfile_SupportSetTwelve command due to unsupported request. Hence, skipping it")
+			t.Skipf("Skipping the command execution")
+		} else {
+			log.Fatal(err)
+		}
+	}
+
+	testGetProfile(instance, t)
+}
+
+func TestGetProfile_SupportSetThirteen(t *testing.T) {
+
+	support_needed := []string{"Simulation", "AutoInit", "RotateContext", "Csr", "InternalDice", "IsCA"}
+	instance, err := GetTestTarget(support_needed)
+	if err != nil {
+		if err.Error() == "Requested support is not supported in emulator" {
+			log.Print("Warning: Failed executing TestGetProfile_SupportSetThirteen command due to unsupported request. Hence, skipping it")
+			t.Skipf("Skipping the command execution")
+		} else {
+			log.Fatal(err)
+		}
+	}
+
+	testGetProfile(instance, t)
+}
+
+func TestGetProfile_SupportSetFourteen(t *testing.T) {
+
+	support_needed := []string{"ExtendTci", "Tagging", "X509", "InternalInfo"}
+	instance, err := GetTestTarget(support_needed)
+	if err != nil {
+		if err.Error() == "Requested support is not supported in emulator" {
+			log.Print("Warning: Failed executing TestGetProfile_SupportSetFourteen command due to unsupported request. Hence, skipping it")
+			t.Skipf("Skipping the command execution")
+		} else {
+			log.Fatal(err)
+		}
+	}
+
+	testGetProfile(instance, t)
+}
+
+func TestGetProfile_SupportSetFifteen(t *testing.T) {
+
+	support_needed := []string{"Simulation", "ExtendTci", "AutoInit", "Tagging", "RotateContext", "X509", "Csr", "IsSymmetric", "InternalInfo", "InternalDice", "IsCA"}
+	instance, err := GetTestTarget(support_needed)
+	if err != nil {
+		if err.Error() == "Requested support is not supported in emulator" {
+			log.Print("Warning: Failed executing TestGetProfile_SupportSetFifteen command due to unsupported request. Hence, skipping it")
+			t.Skipf("Skipping the command execution")
+		} else {
+			log.Fatal(err)
+		}
+	}
+
+	testGetProfile(instance, t)
 }
 
 func testGetProfile(d TestDPEInstance, t *testing.T) {
