@@ -78,7 +78,7 @@ impl CommandExecution for SignCmd {
         locality: u32,
     ) -> Result<Response, DpeErrorCode> {
         // Make sure the operation is supported.
-        if !dpe.support.is_symmetric && self.uses_symmetric() {
+        if !dpe.support.is_symmetric() && self.uses_symmetric() {
             return Err(DpeErrorCode::InvalidArgument);
         }
 
@@ -121,6 +121,7 @@ mod tests {
         },
         dpe_instance::tests::{TestTypes, SIMULATION_HANDLE, TEST_LOCALITIES},
         support::{test::SUPPORT, Support},
+        U8Bool,
     };
     use crypto::OpensslCrypto;
     use openssl::x509::X509;
@@ -309,8 +310,8 @@ mod tests {
         let mut dpe = DpeInstance::new(
             &mut env,
             Support {
-                auto_init: true,
-                is_symmetric: true,
+                auto_init: U8Bool::new(true),
+                is_symmetric: U8Bool::new(true),
                 ..Support::default()
             },
         )

@@ -10,11 +10,11 @@ use crate::{
     response::{DpeErrorCode, GetProfileResp, Response, ResponseHdr},
     support::Support,
     tci::{TciMeasurement, TciNodeData},
-    DPE_PROFILE, INTERNAL_INPUT_INFO_SIZE, MAX_HANDLES,
+    U8Bool, DPE_PROFILE, INTERNAL_INPUT_INFO_SIZE, MAX_HANDLES,
 };
 use crypto::{Crypto, Digest, Hasher};
 use platform::{Platform, MAX_CHUNK_SIZE};
-use zerocopy::AsBytes;
+use zerocopy::{AsBytes, FromBytes};
 
 pub trait DpeTypes {
     type Crypto<'a>: Crypto
@@ -28,13 +28,15 @@ pub struct DpeEnv<'a, T: DpeTypes + 'a> {
     pub platform: T::Platform,
 }
 
+#[repr(C, align(4))]
+#[derive(AsBytes, FromBytes)]
 pub struct DpeInstance {
     pub(crate) contexts: [Context; MAX_HANDLES],
     pub(crate) support: Support,
 
     /// Can only successfully execute the initialize context command for non-simulation (i.e.
     /// `InitializeContext(simulation=false)`) once per reset cycle.
-    pub(crate) has_initialized: bool,
+    pub(crate) has_initialized: U8Bool,
 }
 
 impl DpeInstance {
@@ -54,10 +56,10 @@ impl DpeInstance {
         let mut dpe = DpeInstance {
             contexts: [CONTEXT_INITIALIZER; MAX_HANDLES],
             support,
-            has_initialized: false,
+            has_initialized: false.into(),
         };
 
-        if dpe.support.auto_init {
+        if dpe.support.auto_init() {
             let locality = env
                 .platform
                 .get_auto_init_locality()
@@ -65,6 +67,10 @@ impl DpeInstance {
             InitCtxCmd::new_use_default().execute(&mut dpe, env, locality)?;
         }
         Ok(dpe)
+    }
+
+    pub fn has_initialized(&self) -> bool {
+        self.has_initialized.get()
     }
 
     pub fn get_profile(
@@ -175,7 +181,7 @@ impl DpeInstance {
     /// Recursive function that will return all of a context's descendants. Returns a u32 that is
     /// a bitmap of the node indices.
     pub(crate) fn get_descendants(&self, context: &Context) -> Result<u32, DpeErrorCode> {
-        if matches!(context.state, ContextState::Inactive) {
+        if context.state == ContextState::Inactive {
             return Err(DpeErrorCode::InvalidHandle);
         }
 
@@ -345,8 +351,10 @@ impl DpeInstance {
                 .map_err(|_| DpeErrorCode::HashError)?;
 
             // Check if any context uses internal inputs
-            uses_internal_input_info = uses_internal_input_info || context.uses_internal_input_info;
-            uses_internal_input_dice = uses_internal_input_dice || context.uses_internal_input_dice;
+            uses_internal_input_info =
+                uses_internal_input_info || context.uses_internal_input_info();
+            uses_internal_input_dice =
+                uses_internal_input_dice || context.uses_internal_input_dice();
         }
 
         // Add internal input info to hash
@@ -414,7 +422,7 @@ pub mod tests {
     use crate::commands::DeriveChildCmd;
     use crate::response::NewHandleResp;
     use crate::support::test::SUPPORT;
-    use crate::{commands::CommandHdr, CURRENT_PROFILE_MAJOR_VERSION};
+    use crate::{commands::CommandHdr, U8Bool, CURRENT_PROFILE_MAJOR_VERSION};
     use crypto::OpensslCrypto;
     use platform::{DefaultPlatform, AUTO_INIT_LOCALITY, MAX_CHUNK_SIZE, TEST_CERT_CHAIN};
     use zerocopy::AsBytes;
@@ -529,7 +537,7 @@ pub mod tests {
         let mut dpe = DpeInstance::new(
             &mut env,
             Support {
-                auto_init: true,
+                auto_init: U8Bool::new(true),
                 ..Default::default()
             },
         )
@@ -696,7 +704,7 @@ pub mod tests {
         let mut dpe = DpeInstance::new(
             &mut env,
             Support {
-                internal_info: true,
+                internal_info: U8Bool::new(true),
                 ..SUPPORT
             },
         )
@@ -723,7 +731,7 @@ pub mod tests {
             .derive_cdi(DPE_PROFILE.alg_len(), &digest, b"DPE")
             .unwrap();
         let context = &dpe.contexts[parent_context_idx];
-        assert!(context.uses_internal_input_info);
+        assert!(context.uses_internal_input_info());
 
         let mut hasher = env.crypto.hash_initialize(DPE_PROFILE.alg_len()).unwrap();
 
@@ -753,7 +761,7 @@ pub mod tests {
         let mut dpe = DpeInstance::new(
             &mut env,
             Support {
-                internal_dice: true,
+                internal_dice: U8Bool::new(true),
                 ..SUPPORT
             },
         )
@@ -780,7 +788,7 @@ pub mod tests {
             .derive_cdi(DPE_PROFILE.alg_len(), &digest, b"DPE")
             .unwrap();
         let context = &dpe.contexts[parent_context_idx];
-        assert!(context.uses_internal_input_dice);
+        assert!(context.uses_internal_input_dice());
 
         let mut hasher = env.crypto.hash_initialize(DPE_PROFILE.alg_len()).unwrap();
 

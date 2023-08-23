@@ -141,17 +141,17 @@ fn main() -> std::io::Result<()> {
     .unwrap();
 
     let support = Support {
-        simulation: args.supports_simulation,
-        extend_tci: args.supports_extend_tci,
-        auto_init: args.supports_auto_init,
-        tagging: args.supports_tagging,
-        rotate_context: args.supports_rotate_context,
-        x509: args.supports_x509,
-        csr: args.supports_csr,
-        is_ca: args.supports_is_ca,
-        is_symmetric: args.supports_is_symmetric,
-        internal_info: args.supports_internal_info,
-        internal_dice: args.supports_internal_dice,
+        simulation: args.supports_simulation.into(),
+        extend_tci: args.supports_extend_tci.into(),
+        auto_init: args.supports_auto_init.into(),
+        tagging: args.supports_tagging.into(),
+        rotate_context: args.supports_rotate_context.into(),
+        x509: args.supports_x509.into(),
+        csr: args.supports_csr.into(),
+        is_ca: args.supports_is_ca.into(),
+        is_symmetric: args.supports_is_symmetric.into(),
+        internal_info: args.supports_internal_info.into(),
+        internal_dice: args.supports_internal_dice.into(),
     };
 
     let mut env = DpeEnv::<SimTypes> {

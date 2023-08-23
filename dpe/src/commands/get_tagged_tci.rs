@@ -20,7 +20,7 @@ impl CommandExecution for GetTaggedTciCmd {
         _: u32,
     ) -> Result<Response, DpeErrorCode> {
         // Make sure this command is supported.
-        if !dpe.support.tagging {
+        if !dpe.support.tagging() {
             return Err(DpeErrorCode::InvalidCommand);
         }
 
@@ -29,7 +29,7 @@ impl CommandExecution for GetTaggedTciCmd {
         let ctx = dpe
             .contexts
             .iter()
-            .find(|c| c.has_tag && c.tag == self.tag)
+            .find(|c| c.has_tag() && c.tag == self.tag)
             .ok_or(DpeErrorCode::BadTag)?;
 
         Ok(Response::GetTaggedTci(GetTaggedTciResp {
