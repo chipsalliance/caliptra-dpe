@@ -16,14 +16,13 @@ import (
 
 // This file is used to test the certify key command by using a simulator/emulator
 
-func TestCertifyKey_SupportSet_Without_Simulation(t *testing.T) {
+func TestCertifyKey(t *testing.T) {
 
 	support_needed := []string{"AutoInit", "X509"}
 	instance, err := GetTestTarget(support_needed)
 	if err != nil {
-		if err.Error() == "Requested support is not supported in emulator" {
-			log.Print("Warning: Failed executing TestCertifyKey_SupportSet_Without_Simulation command due to unsupported request. Hence, skipping it")
-			t.Skipf("Skipping the command execution")
+		if err.Error() == "Requested support is not supported in the emulator" {
+			t.Skipf("Warning: Failed executing TestCertifyKey command due to unsupported request. Hence, skipping the command execution")
 		} else {
 			log.Fatal(err)
 		}
@@ -31,14 +30,13 @@ func TestCertifyKey_SupportSet_Without_Simulation(t *testing.T) {
 	testCertifyKey(instance, t)
 }
 
-func TestCertifyKey_SupportSet_With_Simulation(t *testing.T) {
+func TestCertifyKey_SimulationMode(t *testing.T) {
 
 	support_needed := []string{"AutoInit", "Simulation", "X509"}
 	instance, err := GetTestTarget(support_needed)
 	if err != nil {
-		if err.Error() == "Requested support is not supported in emulator" {
-			log.Print("Warning: Failed executing TestCertifyKey_SupportSet_With_Simulation command due to unsupported request. Hence, skipping it")
-			t.Skipf("Skipping the command execution")
+		if err.Error() == "Requested support is not supported in the emulator" {
+			t.Skipf("Warning: Failed executing TestCertifyKey_SimulationMode command due to unsupported request. Hence, skipping the command execution")
 		} else {
 			log.Fatal(err)
 		}

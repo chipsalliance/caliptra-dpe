@@ -9,14 +9,13 @@ import (
 
 // This file is used to test the get profile command by using a simulator/emulator
 
-func TestGetProfile_EmptySupportSet(t *testing.T) {
+func TestGetProfile(t *testing.T) {
 
 	support_needed := []string{""}
 	instance, err := GetTestTarget(support_needed)
 	if err != nil {
-		if err.Error() == "Requested support is not supported in emulator" {
-			log.Print("Warning: Failed executing TestGetProfile_EmptySupportSet command due to unsupported request. Hence, skipping it")
-			t.Skipf("Skipping the command execution")
+		if err.Error() == "Requested support is not supported in the emulator" {
+			t.Skipf("Warning: Failed executing TestGetProfile command due to unsupported request. Hence, skipping the command execution")
 		} else {
 			log.Fatal(err)
 		}
@@ -25,14 +24,13 @@ func TestGetProfile_EmptySupportSet(t *testing.T) {
 	testGetProfile(instance, t)
 }
 
-func TestGetProfile_SupportSet_With_Simulation(t *testing.T) {
+func TestGetProfile_SimulationMode(t *testing.T) {
 
 	support_needed := []string{"Simulation"}
 	instance, err := GetTestTarget(support_needed)
 	if err != nil {
-		if err.Error() == "Requested support is not supported in emulator" {
-			log.Print("Warning: Failed executing TestGetProfile_SupportSet_With_Simulation command due to unsupported request. Hence, skipping it")
-			t.Skipf("Skipping the command execution")
+		if err.Error() == "Requested support is not supported in the emulator" {
+			t.Skipf("Warning: Failed executing TestGetProfile_SimulationMode command due to unsupported request. Hence, skipping the command execution")
 		} else {
 			log.Fatal(err)
 		}
@@ -41,14 +39,13 @@ func TestGetProfile_SupportSet_With_Simulation(t *testing.T) {
 	testGetProfile(instance, t)
 }
 
-func TestGetProfile_SupportSet_With_ExtendTci(t *testing.T) {
+func TestGetProfile_ExtendTciMode(t *testing.T) {
 
 	support_needed := []string{"ExtendTci"}
 	instance, err := GetTestTarget(support_needed)
 	if err != nil {
-		if err.Error() == "Requested support is not supported in emulator" {
-			log.Print("Warning: Failed executing TestGetProfile_SupportSet_With_ExtendTci command due to unsupported request. Hence, skipping it")
-			t.Skipf("Skipping the command execution")
+		if err.Error() == "Requested support is not supported in the emulator" {
+			t.Skipf("Warning: Failed executing TestGetProfile_ExtendTciMode command due to unsupported request. Hence, skipping the command execution")
 		} else {
 			log.Fatal(err)
 		}
@@ -57,14 +54,13 @@ func TestGetProfile_SupportSet_With_ExtendTci(t *testing.T) {
 	testGetProfile(instance, t)
 }
 
-func TestGetProfile_SupportSet_With_AutoInit(t *testing.T) {
+func TestGetProfile_AutoInitMode(t *testing.T) {
 
 	support_needed := []string{"AutoInit"}
 	instance, err := GetTestTarget(support_needed)
 	if err != nil {
-		if err.Error() == "Requested support is not supported in emulator" {
-			log.Print("Warning: Failed executing TestGetProfile_SupportSet_With_AutoInit command due to unsupported request. Hence, skipping it")
-			t.Skipf("Skipping the command execution")
+		if err.Error() == "Requested support is not supported in the emulator" {
+			t.Skipf("Warning: Failed executing TestGetProfile_AutoInitMode command due to unsupported request. Hence, skipping the command execution")
 		} else {
 			log.Fatal(err)
 		}
@@ -73,14 +69,13 @@ func TestGetProfile_SupportSet_With_AutoInit(t *testing.T) {
 	testGetProfile(instance, t)
 }
 
-func TestGetProfile_SupportSet_With_Tagging(t *testing.T) {
+func TestGetProfile_TaggingMode(t *testing.T) {
 
 	support_needed := []string{"Tagging"}
 	instance, err := GetTestTarget(support_needed)
 	if err != nil {
-		if err.Error() == "Requested support is not supported in emulator" {
-			log.Print("Warning: Failed executing TestGetProfile_SupportSet_With_Tagging command due to unsupported request. Hence, skipping it")
-			t.Skipf("Skipping the command execution")
+		if err.Error() == "Requested support is not supported in the emulator" {
+			t.Skipf("Warning: Failed executing TestGetProfile_TaggingMode command due to unsupported request. Hence, skipping the command execution")
 		} else {
 			log.Fatal(err)
 		}
@@ -89,14 +84,13 @@ func TestGetProfile_SupportSet_With_Tagging(t *testing.T) {
 	testGetProfile(instance, t)
 }
 
-func TestGetProfile_SupportSet_With_RotateContext(t *testing.T) {
+func TestGetProfile_RotateContextMode(t *testing.T) {
 
 	support_needed := []string{"RotateContext"}
 	instance, err := GetTestTarget(support_needed)
 	if err != nil {
-		if err.Error() == "Requested support is not supported in emulator" {
-			log.Print("Warning: Failed executing TestGetProfile_SupportSet_With_RotateContext command due to unsupported request. Hence, skipping it")
-			t.Skipf("Skipping the command execution")
+		if err.Error() == "Requested support is not supported in the emulator" {
+			t.Skipf("Warning: Failed executing TestGetProfile_RotateContextMode command due to unsupported request. Hence, skipping the command execution")
 		} else {
 			log.Fatal(err)
 		}
@@ -105,14 +99,13 @@ func TestGetProfile_SupportSet_With_RotateContext(t *testing.T) {
 	testGetProfile(instance, t)
 }
 
-func TestGetProfile_SupportSet_With_X509(t *testing.T) {
+func TestGetProfile_X509Mode(t *testing.T) {
 
 	support_needed := []string{"X509"}
 	instance, err := GetTestTarget(support_needed)
 	if err != nil {
-		if err.Error() == "Requested support is not supported in emulator" {
-			log.Print("Warning: Failed executing TestGetProfile_SupportSet_With_X509 command due to unsupported request. Hence, skipping it")
-			t.Skipf("Skipping the command execution")
+		if err.Error() == "Requested support is not supported in the emulator" {
+			t.Skipf("Warning: Failed executing TestGetProfile_X509Mode command due to unsupported request. Hence, skipping the command execution")
 		} else {
 			log.Fatal(err)
 		}
@@ -121,14 +114,13 @@ func TestGetProfile_SupportSet_With_X509(t *testing.T) {
 	testGetProfile(instance, t)
 }
 
-func TestGetProfile_SupportSet_With_Csr(t *testing.T) {
+func TestGetProfile_CsrMode(t *testing.T) {
 
 	support_needed := []string{"Csr"}
 	instance, err := GetTestTarget(support_needed)
 	if err != nil {
-		if err.Error() == "Requested support is not supported in emulator" {
-			log.Print("Warning: Failed executing TestGetProfile_SupportSet_With_Csr command due to unsupported request. Hence, skipping it")
-			t.Skipf("Skipping the command execution")
+		if err.Error() == "Requested support is not supported in the emulator" {
+			t.Skipf("Warning: Failed executing TestGetProfile_CsrMode command due to unsupported request. Hence, skipping the command execution")
 		} else {
 			log.Fatal(err)
 		}
@@ -137,14 +129,13 @@ func TestGetProfile_SupportSet_With_Csr(t *testing.T) {
 	testGetProfile(instance, t)
 }
 
-func TestGetProfile_SupportSet_With_IsSymmetric(t *testing.T) {
+func TestGetProfile_IsSymmetricMode(t *testing.T) {
 
 	support_needed := []string{"IsSymmetric"}
 	instance, err := GetTestTarget(support_needed)
 	if err != nil {
-		if err.Error() == "Requested support is not supported in emulator" {
-			log.Print("Warning: Failed executing TestGetProfile_SupportSet_With_IsSymmetric command due to unsupported request. Hence, skipping it")
-			t.Skipf("Skipping the command execution")
+		if err.Error() == "Requested support is not supported in the emulator" {
+			t.Skipf("Warning: Failed executing TestGetProfile_IsSymmetricMode command due to unsupported request. Hence, skipping the command execution")
 		} else {
 			log.Fatal(err)
 		}
@@ -153,14 +144,13 @@ func TestGetProfile_SupportSet_With_IsSymmetric(t *testing.T) {
 	testGetProfile(instance, t)
 }
 
-func TestGetProfile_SupportSet_With_InternalInfo(t *testing.T) {
+func TestGetProfile_InternalInfoMode(t *testing.T) {
 
 	support_needed := []string{"InternalInfo"}
 	instance, err := GetTestTarget(support_needed)
 	if err != nil {
-		if err.Error() == "Requested support is not supported in emulator" {
-			log.Print("Warning: Failed executing TestGetProfile_SupportSet_With_InternalInfo command due to unsupported request. Hence, skipping it")
-			t.Skipf("Skipping the command execution")
+		if err.Error() == "Requested support is not supported in the emulator" {
+			t.Skipf("Warning: Failed executing TestGetProfile_InternalInfoMode command due to unsupported request. Hence, skipping the command execution")
 		} else {
 			log.Fatal(err)
 		}
@@ -169,14 +159,13 @@ func TestGetProfile_SupportSet_With_InternalInfo(t *testing.T) {
 	testGetProfile(instance, t)
 }
 
-func TestGetProfile_SupportSet_With_InternalDice(t *testing.T) {
+func TestGetProfile_InternalDiceMode(t *testing.T) {
 
 	support_needed := []string{"InternalDice"}
 	instance, err := GetTestTarget(support_needed)
 	if err != nil {
-		if err.Error() == "Requested support is not supported in emulator" {
-			log.Print("Warning: Failed executing TestGetProfile_SupportSet_With_InternalDice command due to unsupported request. Hence, skipping it")
-			t.Skipf("Skipping the command execution")
+		if err.Error() == "Requested support is not supported in the emulator" {
+			t.Skipf("Warning: Failed executing TestGetProfile_InternalDiceMode command due to unsupported request. Hence, skipping the command execution")
 		} else {
 			log.Fatal(err)
 		}
@@ -185,14 +174,13 @@ func TestGetProfile_SupportSet_With_InternalDice(t *testing.T) {
 	testGetProfile(instance, t)
 }
 
-func TestGetProfile_SupportSet_With_IsCA(t *testing.T) {
+func TestGetProfile_IsCAMode(t *testing.T) {
 
 	support_needed := []string{"IsCA"}
 	instance, err := GetTestTarget(support_needed)
 	if err != nil {
-		if err.Error() == "Requested support is not supported in emulator" {
-			log.Print("Warning: Failed executing TestGetProfile_SupportSet_With_IsCA command due to unsupported request. Hence, skipping it")
-			t.Skipf("Skipping the command execution")
+		if err.Error() == "Requested support is not supported in the emulator" {
+			t.Skipf("Warning: Failed executing TestGetProfile_IsCAMode command due to unsupported request. Hence, skipping the command execution")
 		} else {
 			log.Fatal(err)
 		}
@@ -201,14 +189,13 @@ func TestGetProfile_SupportSet_With_IsCA(t *testing.T) {
 	testGetProfile(instance, t)
 }
 
-func TestGetProfile_SupportSet_One(t *testing.T) {
+func TestGetProfile_SupportMode_01(t *testing.T) {
 
 	support_needed := []string{"Simulation", "AutoInit", "RotateContext", "Csr", "InternalDice", "IsCA"}
 	instance, err := GetTestTarget(support_needed)
 	if err != nil {
-		if err.Error() == "Requested support is not supported in emulator" {
-			log.Print("Warning: Failed executing TestGetProfile_SupportSet_One command due to unsupported request. Hence, skipping it")
-			t.Skipf("Skipping the command execution")
+		if err.Error() == "Requested support is not supported in the emulator" {
+			t.Skipf("Warning: Failed executing TestGetProfile_SupportMode_01 command due to unsupported request. Hence, skipping the command execution")
 		} else {
 			log.Fatal(err)
 		}
@@ -217,14 +204,13 @@ func TestGetProfile_SupportSet_One(t *testing.T) {
 	testGetProfile(instance, t)
 }
 
-func TestGetProfile_SupportSet_Two(t *testing.T) {
+func TestGetProfile_SupportMode_02(t *testing.T) {
 
 	support_needed := []string{"ExtendTci", "Tagging", "X509", "InternalInfo"}
 	instance, err := GetTestTarget(support_needed)
 	if err != nil {
-		if err.Error() == "Requested support is not supported in emulator" {
-			log.Print("Warning: Failed executing TestGetProfile_SupportSet_Two command due to unsupported request. Hence, skipping it")
-			t.Skipf("Skipping the command execution")
+		if err.Error() == "Requested support is not supported in the emulator" {
+			t.Skipf("Warning: Failed executing TestGetProfile_SupportMode_02 command due to unsupported request. Hence, skipping the command execution")
 		} else {
 			log.Fatal(err)
 		}
@@ -233,14 +219,13 @@ func TestGetProfile_SupportSet_Two(t *testing.T) {
 	testGetProfile(instance, t)
 }
 
-func TestGetProfile_AllSupportSet(t *testing.T) {
+func TestGetProfile_AllSupportMode(t *testing.T) {
 
 	support_needed := []string{"Simulation", "ExtendTci", "AutoInit", "Tagging", "RotateContext", "X509", "Csr", "IsSymmetric", "InternalInfo", "InternalDice", "IsCA"}
 	instance, err := GetTestTarget(support_needed)
 	if err != nil {
-		if err.Error() == "Requested support is not supported in emulator" {
-			log.Print("Warning: Failed executing TestGetProfile_AllSupportSet command due to unsupported request. Hence, skipping it")
-			t.Skipf("Skipping the command execution")
+		if err.Error() == "Requested support is not supported in the emulator" {
+			t.Skipf("Warning: Failed executing TestGetProfile_AllSupportMode command due to unsupported request. Hence, skipping the command execution")
 		} else {
 			log.Fatal(err)
 		}

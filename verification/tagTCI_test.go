@@ -15,9 +15,8 @@ func TestTagTCI(t *testing.T) {
 	support_needed := []string{"AutoInit", "Tagging"}
 	instance, err := GetTestTarget(support_needed)
 	if err != nil {
-		if err.Error() == "Requested support is not supported in emulator" {
-			log.Print("Warning: Failed executing TestTagTCI command due to unsupported request. Hence, skipping it")
-			t.Skipf("Skipping the command execution")
+		if err.Error() == "Requested support is not supported in the emulator" {
+			t.Skipf("Warning: Failed executing TestTagTCI command due to unsupported request. Hence, skipping the command execution")
 		} else {
 			log.Fatal(err)
 		}

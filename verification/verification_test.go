@@ -77,7 +77,7 @@ func GetTestTarget(support_needed []string) (TestDPEInstance, error) {
 	if testTargetType == EMULATOR {
 		for i := 0; i < len(support_needed); i++ {
 			if !slices.Contains(emulator_supports, support_needed[i]) {
-				return nil, errors.New("Requested support is not supported in emulator")
+				return nil, errors.New("Requested support is not supported in the emulator")
 			}
 		}
 		instance, err := GetEmulatorTarget(support_needed)
