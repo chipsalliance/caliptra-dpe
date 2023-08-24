@@ -154,7 +154,11 @@ impl TryFrom<&[u8]> for ContextHandle {
             return Err(DpeErrorCode::InternalError);
         }
 
-        Ok(ContextHandle(raw[0..Self::SIZE].try_into().unwrap()))
+        Ok(ContextHandle(
+            raw[0..Self::SIZE]
+                .try_into()
+                .map_err(|_| DpeErrorCode::InternalError)?,
+        ))
     }
 }
 

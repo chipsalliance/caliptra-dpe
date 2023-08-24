@@ -417,11 +417,14 @@ impl X509CertWriter<'_> {
     fn encode_bytes(&mut self, bytes: &[u8]) -> Result<usize, DpeErrorCode> {
         let size = bytes.len();
 
-        if size > self.certificate.len().saturating_sub(self.offset) {
+        if self.offset >= self.certificate.len() || self.offset + size > self.certificate.len() {
             return Err(DpeErrorCode::InternalError);
         }
 
-        self.certificate[self.offset..self.offset + size].copy_from_slice(bytes);
+        self.certificate
+            .get_mut(self.offset..self.offset + size)
+            .ok_or(DpeErrorCode::InternalError)?
+            .copy_from_slice(bytes);
         self.offset += size;
 
         Ok(size)
@@ -476,6 +479,9 @@ impl X509CertWriter<'_> {
             bytes_written += self.encode_byte(0)?;
         }
 
+        if integer_offset >= integer.len() {
+            return Err(DpeErrorCode::InternalError);
+        }
         bytes_written += self.encode_bytes(&integer[integer_offset..])?;
 
         Ok(bytes_written)
@@ -786,9 +792,12 @@ impl X509CertWriter<'_> {
         bytes_written += self.encode_size_field(Self::BOOL_SIZE)?;
         bytes_written += self.encode_byte(crit)?;
 
-        let tcb_infos_size =
+        let tcb_infos_size = if !measurements.tci_nodes.is_empty() {
             Self::get_tcb_info_size(&measurements.tci_nodes[0], /*tagged=*/ true)?
-                * measurements.tci_nodes.len();
+                * measurements.tci_nodes.len()
+        } else {
+            0
+        };
         bytes_written += self.encode_byte(Self::OCTET_STRING_TAG)?;
         bytes_written += self.encode_size_field(Self::get_structure_size(
             tcb_infos_size,
