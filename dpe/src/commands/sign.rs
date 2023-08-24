@@ -104,8 +104,14 @@ impl CommandExecution for SignCmd {
 
         Ok(Response::Sign(SignResp {
             new_context_handle: dpe.contexts[idx].handle,
-            sig_r_or_hmac: r.bytes().try_into().unwrap(),
-            sig_s: s.bytes().try_into().unwrap(),
+            sig_r_or_hmac: r
+                .bytes()
+                .try_into()
+                .map_err(|_| DpeErrorCode::InternalError)?,
+            sig_s: s
+                .bytes()
+                .try_into()
+                .map_err(|_| DpeErrorCode::InternalError)?,
             resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
         }))
     }

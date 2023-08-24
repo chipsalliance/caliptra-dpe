@@ -85,7 +85,9 @@ impl CommandExecution for CertifyKeyCmd {
         const INITIALIZER: TciNodeData = TciNodeData::new();
         let mut nodes = [INITIALIZER; MAX_HANDLES];
         let tcb_count = dpe.get_tcb_nodes(idx, &mut nodes)?;
-
+        if tcb_count > MAX_HANDLES {
+            return Err(DpeErrorCode::InternalError);
+        }
         let measurements = MeasurementData {
             label: &self.label,
             tci_nodes: &nodes[..tcb_count],
@@ -106,6 +108,9 @@ impl CommandExecution for CertifyKeyCmd {
             Self::FORMAT_X509 => {
                 let mut tbs_buffer = [0u8; MAX_CERT_SIZE];
                 let mut tbs_writer = X509CertWriter::new(&mut tbs_buffer, true);
+                if issuer_len > MAX_CHUNK_SIZE {
+                    return Err(DpeErrorCode::InternalError);
+                }
                 let mut bytes_written = tbs_writer.encode_ecdsa_tbs(
                     /*serial=*/
                     &subject_name.serial[..20], // Serial number must be truncated to 20 bytes
@@ -114,6 +119,9 @@ impl CommandExecution for CertifyKeyCmd {
                     &pub_key,
                     &measurements,
                 )?;
+                if bytes_written > MAX_CERT_SIZE {
+                    return Err(DpeErrorCode::InternalError);
+                }
 
                 let tbs_digest = env
                     .crypto
@@ -143,8 +151,16 @@ impl CommandExecution for CertifyKeyCmd {
 
         Ok(Response::CertifyKey(CertifyKeyResp {
             new_context_handle: dpe.contexts[idx].handle,
-            derived_pubkey_x: pub_key.x.bytes().try_into().unwrap(),
-            derived_pubkey_y: pub_key.y.bytes().try_into().unwrap(),
+            derived_pubkey_x: pub_key
+                .x
+                .bytes()
+                .try_into()
+                .map_err(|_| DpeErrorCode::InternalError)?,
+            derived_pubkey_y: pub_key
+                .y
+                .bytes()
+                .try_into()
+                .map_err(|_| DpeErrorCode::InternalError)?,
             cert_size,
             cert,
             resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),

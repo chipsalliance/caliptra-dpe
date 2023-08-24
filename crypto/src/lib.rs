@@ -13,7 +13,6 @@ pub use signer::*;
 pub mod openssl;
 
 mod signer;
-use core::fmt::{Error, Write};
 
 #[derive(Debug, Clone, Copy)]
 #[cfg_attr(test, derive(strum_macros::EnumIter))]
@@ -103,7 +102,7 @@ pub trait Crypto {
         serial: &mut [u8],
     ) -> Result<(), CryptoError> {
         if serial.len() < algs.size() * 2 {
-            return Err(CryptoError::CryptoLibError);
+            return Err(CryptoError::Size);
         }
 
         let mut hasher = self.hash_initialize(algs)?;
@@ -112,11 +111,28 @@ pub trait Crypto {
         hasher.update(pub_key.y.bytes())?;
         let digest = hasher.finish()?;
 
-        let mut w = BufWriter {
-            buf: serial,
-            offset: 0,
-        };
-        w.write_hex_str(digest.bytes())
+        self.write_hex_str(digest.bytes(), serial)
+    }
+
+    fn write_hex_str(&mut self, src: &[u8], dest: &mut [u8]) -> Result<(), CryptoError> {
+        if dest.len() != src.len() * 2 {
+            return Err(CryptoError::Size);
+        }
+
+        let mut curr_idx = 0;
+        const HEX_CHARS: &[u8; 16] = b"0123456789abcdef";
+        for &b in src {
+            let h1 = (b >> 4) as usize;
+            let h2 = (b & 0xF) as usize;
+            if h1 >= HEX_CHARS.len() || h2 >= HEX_CHARS.len() || curr_idx + 1 >= dest.len() {
+                return Err(CryptoError::CryptoLibError);
+            }
+            dest[curr_idx] = HEX_CHARS[h1];
+            dest[curr_idx + 1] = HEX_CHARS[h2];
+            curr_idx += 2;
+        }
+
+        Ok(())
     }
 
     /// Initialize a running hash. Returns an object that will be able to complete the rest.
@@ -206,36 +222,6 @@ pub trait Crypto {
         digest: &Digest,
     ) -> Result<HmacSig, CryptoError>;
 }
-
-/// Writer for a static buffer
-struct BufWriter<'a> {
-    buf: &'a mut [u8],
-    offset: usize,
-}
-
-impl Write for BufWriter<'_> {
-    fn write_str(&mut self, s: &str) -> Result<(), Error> {
-        if s.len() > self.buf.len().saturating_sub(self.offset) {
-            return Err(Error);
-        }
-
-        self.buf[self.offset..self.offset + s.len()].copy_from_slice(s.as_bytes());
-        self.offset += s.len();
-
-        Ok(())
-    }
-}
-
-impl BufWriter<'_> {
-    fn write_hex_str(&mut self, src: &[u8]) -> Result<(), CryptoError> {
-        for &b in src {
-            write!(self, "{b:02x}").map_err(|_| CryptoError::CryptoLibError)?;
-        }
-
-        Ok(())
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
