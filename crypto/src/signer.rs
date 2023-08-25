@@ -1,6 +1,7 @@
 // Licensed under the Apache-2.0 license
 
 use crate::{AlgLen, CryptoError};
+use arrayvec::ArrayVec;
 
 /// An ECDSA signature
 pub struct EcdsaSig {
@@ -36,50 +37,37 @@ impl EcdsaPub {
 pub type HmacSig = CryptoBuf;
 
 /// A common base struct that can be used for all digests, signatures, and keys.
-#[derive(Debug, PartialEq)]
-pub struct CryptoBuf {
-    pub(crate) bytes: [u8; Self::MAX_SIZE],
-    pub(crate) len: usize,
-}
+pub struct CryptoBuf(ArrayVec<u8, { Self::MAX_SIZE }>);
 
 impl CryptoBuf {
     pub const MAX_SIZE: usize = AlgLen::MAX_ALG_LEN_BYTES;
 
-    pub fn new(bytes: &[u8], alg: AlgLen) -> Result<CryptoBuf, CryptoError> {
-        if bytes.len() < alg.size() {
-            return Err(CryptoError::Size);
-        }
-
-        let mut copied_bytes = [0; Self::MAX_SIZE];
-        copied_bytes[..alg.size()].copy_from_slice(&bytes[..alg.size()]);
-        Ok(CryptoBuf {
-            bytes: copied_bytes,
-            len: alg.size(),
-        })
+    pub fn new(bytes: &[u8], algs: AlgLen) -> Result<CryptoBuf, CryptoError> {
+        let mut vec = ArrayVec::new();
+        vec.try_extend_from_slice(bytes)
+            .map_err(|_| CryptoError::Size)?;
+        unsafe { vec.set_len(algs.size()) };
+        Ok(CryptoBuf(vec))
     }
 
-    pub fn default(alg: AlgLen) -> CryptoBuf {
-        CryptoBuf {
-            bytes: [0; Self::MAX_SIZE],
-            len: alg.size(),
+    pub fn default(algs: AlgLen) -> CryptoBuf {
+        let mut vec = ArrayVec::new();
+        for _ in 0..algs.size() {
+            vec.push(0);
         }
+        unsafe { vec.set_len(algs.size()) };
+        CryptoBuf(vec)
     }
 
     pub fn bytes(&self) -> &[u8] {
-        &self.bytes[..usize::min(self.len, self.bytes.len())]
+        self.0.as_slice()
     }
 
     pub fn len(&self) -> usize {
-        self.len
+        self.0.len()
     }
 
     pub fn is_empty(&self) -> bool {
-        false
-    }
-}
-
-impl AsRef<[u8]> for CryptoBuf {
-    fn as_ref(&self) -> &[u8] {
-        self.bytes()
+        self.0.len() == 0
     }
 }
