@@ -39,4 +39,10 @@ set -ex
   test -z "$(gofmt -l .)"
   go test
 )
+(
+  cd tools
+  cargo build
+  cargo fmt -- --check
+  cargo clippy -- --deny=warnings
+)
 ci-tools/file-header-fix.sh --check
