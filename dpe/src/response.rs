@@ -114,7 +114,7 @@ pub struct DeriveChildResp {
 }
 
 #[repr(C)]
-#[derive(Debug, PartialEq, Eq, zerocopy::AsBytes)]
+#[derive(Debug, PartialEq, Eq, zerocopy::AsBytes, zerocopy::FromBytes)]
 pub struct CertifyKeyResp {
     pub resp_hdr: ResponseHdr,
     pub new_context_handle: ContextHandle,

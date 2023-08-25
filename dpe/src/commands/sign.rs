@@ -9,13 +9,12 @@ use crate::{
 use crypto::{Crypto, CryptoBuf, Digest, EcdsaSig, HmacSig};
 
 #[repr(C)]
-#[derive(Debug, PartialEq, Eq, zerocopy::FromBytes)]
-#[cfg_attr(test, derive(zerocopy::AsBytes))]
+#[derive(Debug, PartialEq, Eq, zerocopy::AsBytes, zerocopy::FromBytes)]
 pub struct SignCmd {
-    handle: ContextHandle,
-    label: [u8; DPE_PROFILE.get_hash_size()],
-    flags: u32,
-    digest: [u8; DPE_PROFILE.get_hash_size()],
+    pub handle: ContextHandle,
+    pub label: [u8; DPE_PROFILE.get_hash_size()],
+    pub flags: u32,
+    pub digest: [u8; DPE_PROFILE.get_hash_size()],
 }
 
 impl SignCmd {
