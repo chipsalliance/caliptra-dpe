@@ -17,7 +17,7 @@ const (
 	EMULATOR  string = "emulator"
 )
 
-var socket_exe *string
+var target_exe *string
 var testTargetType string
 
 // This will be called before running tests, and it assigns the socket path based on command line flag.
@@ -26,9 +26,9 @@ func TestMain(m *testing.M) {
 	flag.Parse()
 	testTargetType = *testTarget
 	if testTargetType == SIMULATOR {
-		socket_exe = flag.String("sim", "../simulator/target/debug/simulator", "path to simulator executable")
+		target_exe = flag.String("sim", "../simulator/target/debug/simulator", "path to simulator executable")
 	} else if testTargetType == EMULATOR {
-		socket_exe = flag.String("emu", "../simulator/target/debug/emulator", "path to emulator executable")
+		target_exe = flag.String("emu", "../simulator/target/debug/emulator", "path to emulator executable")
 	}
 
 	exitVal := m.Run()
@@ -106,7 +106,7 @@ func GetEmulatorTarget(support_needed []string) (TestDPEInstance, error) {
 			return nil, errors.New("Error in creating dpe instances - supported feature is not enabled in emulator")
 		}
 	}
-	var instance TestDPEInstance = &DpeEmulator{exe_path: *socket_exe}
+	var instance TestDPEInstance = &DpeEmulator{exe_path: *target_exe}
 	return instance, nil
 }
 
@@ -125,6 +125,6 @@ func GetSimulatorTarget(support_needed []string) (TestDPEInstance, error) {
 		}
 	}
 	support := fVal.Elem().Interface().(Support)
-	var instance TestDPEInstance = &DpeSimulator{exe_path: *socket_exe, supports: support}
+	var instance TestDPEInstance = &DpeSimulator{exe_path: *target_exe, supports: support}
 	return instance, nil
 }
