@@ -30,7 +30,7 @@ impl CommandExecution for RotateCtxCmd {
         env: &mut DpeEnv<impl DpeTypes>,
         locality: u32,
     ) -> Result<Response, DpeErrorCode> {
-        if !dpe.support.rotate_context {
+        if !dpe.support.rotate_context() {
             return Err(DpeErrorCode::InvalidCommand);
         }
         let idx = dpe.get_active_context_pos(&self.handle, locality)?;
@@ -64,6 +64,7 @@ mod tests {
         commands::{Command, CommandHdr, InitCtxCmd},
         dpe_instance::tests::{TestTypes, SIMULATION_HANDLE, TEST_HANDLE, TEST_LOCALITIES},
         support::Support,
+        U8Bool,
     };
     use crypto::OpensslCrypto;
     use platform::DefaultPlatform;
@@ -109,7 +110,7 @@ mod tests {
         let mut dpe = DpeInstance::new(
             &mut env,
             Support {
-                rotate_context: true,
+                rotate_context: U8Bool::new(true),
                 ..Support::default()
             },
         )

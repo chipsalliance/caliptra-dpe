@@ -47,8 +47,8 @@ impl CommandExecution for InitCtxCmd {
         locality: u32,
     ) -> Result<Response, DpeErrorCode> {
         // This function can only be called once for non-simulation contexts.
-        if (self.flag_is_default() && dpe.has_initialized)
-            || (self.flag_is_simulation() && !dpe.support.simulation)
+        if (self.flag_is_default() && dpe.has_initialized())
+            || (self.flag_is_simulation() && !dpe.support.simulation())
         {
             return Err(DpeErrorCode::ArgumentNotSupported);
         }
@@ -64,7 +64,7 @@ impl CommandExecution for InitCtxCmd {
             .get_next_inactive_context_pos()
             .ok_or(DpeErrorCode::MaxTcis)?;
         let (context_type, handle) = if self.flag_is_default() {
-            dpe.has_initialized = true;
+            dpe.has_initialized = true.into();
             (ContextType::Normal, ContextHandle::default())
         } else {
             // Simulation.
@@ -95,6 +95,7 @@ mod tests {
         context::ContextState,
         dpe_instance::tests::{TestTypes, TEST_LOCALITIES},
         support::Support,
+        U8Bool,
     };
     use crypto::OpensslCrypto;
     use platform::DefaultPlatform;
@@ -154,7 +155,7 @@ mod tests {
         let mut dpe = DpeInstance::new(
             &mut env,
             Support {
-                simulation: true,
+                simulation: U8Bool::new(true),
                 ..Support::default()
             },
         )

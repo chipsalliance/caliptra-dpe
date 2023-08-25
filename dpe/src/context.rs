@@ -1,31 +1,40 @@
 // Licensed under the Apache-2.0 license.
-use crate::{response::DpeErrorCode, tci::TciNodeData, MAX_HANDLES};
+use crate::{response::DpeErrorCode, tci::TciNodeData, U8Bool, MAX_HANDLES};
 use core::mem::size_of;
+use zerocopy::{AsBytes, FromBytes};
 
 #[repr(C, align(4))]
+#[derive(AsBytes, FromBytes)]
 pub(crate) struct Context {
     pub handle: ContextHandle,
     pub tci: TciNodeData,
     /// Bitmap of the node indices that are children of this node
     pub children: u32,
-    /// Index in DPE instance of the parent context. 0xFF if this node is the root
-    pub parent_idx: u8,
-    pub context_type: ContextType,
-    pub state: ContextState,
+
     /// Which hardware locality owns the context.
     pub locality: u32,
-    /// Whether a tag has been assigned to the context.
-    pub has_tag: bool,
     /// Optional tag assigned to the context.
     pub tag: u32,
+
+    /// Whether a tag has been assigned to the context.
+    pub has_tag: U8Bool,
+
+    /// Index in DPE instance of the parent context. 0xFF if this node is the root
+    pub parent_idx: u8,
+
+    /// The type of this context
+    pub context_type: ContextType,
+
+    /// The current state of this context
+    pub state: ContextState,
     /// Whether we should hash internal input info consisting of major_version, minor_version, vendor_id, vendor_sku, max_tci_nodes, flags, and DPE_PROFILE when deriving the CDI
-    pub uses_internal_input_info: bool,
+    pub uses_internal_input_info: U8Bool,
     /// Whether we should hash internal dice info consisting of the certificate chain when deriving the CDI
-    pub uses_internal_input_dice: bool,
+    pub uses_internal_input_dice: U8Bool,
     /// Whether this context can emit certificates with IsCA = True
-    pub allow_ca: bool,
+    pub allow_ca: U8Bool,
     /// Whether this context can emit certificates in X.509 format
-    pub allow_x509: bool,
+    pub allow_x509: U8Bool,
 }
 
 impl Context {
@@ -40,13 +49,29 @@ impl Context {
             context_type: ContextType::Normal,
             state: ContextState::Inactive,
             locality: 0,
-            has_tag: false,
+            has_tag: U8Bool::new(false),
             tag: 0,
-            uses_internal_input_info: false,
-            uses_internal_input_dice: false,
-            allow_ca: false,
-            allow_x509: false,
+            uses_internal_input_info: U8Bool::new(false),
+            uses_internal_input_dice: U8Bool::new(false),
+            allow_ca: U8Bool::new(false),
+            allow_x509: U8Bool::new(false),
         }
+    }
+
+    pub fn has_tag(&self) -> bool {
+        self.has_tag.get()
+    }
+    pub fn uses_internal_input_info(&self) -> bool {
+        self.uses_internal_input_info.get()
+    }
+    pub fn uses_internal_input_dice(&self) -> bool {
+        self.uses_internal_input_dice.get()
+    }
+    pub fn allow_ca(&self) -> bool {
+        self.allow_ca.get()
+    }
+    pub fn allow_x509(&self) -> bool {
+        self.allow_x509.get()
     }
 
     /// Resets all values to a freshly initialized state.
@@ -67,19 +92,19 @@ impl Context {
         self.context_type = args.context_type;
         self.state = ContextState::Active;
         self.locality = args.locality;
-        self.allow_ca = args.allow_ca;
-        self.allow_x509 = args.allow_x509
+        self.allow_ca = args.allow_ca.into();
+        self.allow_x509 = args.allow_x509.into();
     }
 
     /// Destroy this context so it can no longer be used until it is re-initialized. The default
     /// context cannot be re-initialized.
     pub fn destroy(&mut self) {
         self.tci = TciNodeData::new();
-        self.has_tag = false;
+        self.has_tag = false.into();
         self.tag = 0;
         self.state = ContextState::Inactive;
-        self.uses_internal_input_info = false;
-        self.uses_internal_input_dice = false;
+        self.uses_internal_input_info = false.into();
+        self.uses_internal_input_dice = false.into();
     }
 
     /// Add a child to list of children in the context.
@@ -129,11 +154,17 @@ impl TryFrom<&[u8]> for ContextHandle {
             return Err(DpeErrorCode::InternalError);
         }
 
-        Ok(ContextHandle(raw[0..Self::SIZE].try_into().unwrap()))
+        Ok(ContextHandle(
+            raw[0..Self::SIZE]
+                .try_into()
+                .map_err(|_| DpeErrorCode::InternalError)?,
+        ))
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, AsBytes, FromBytes)]
+#[repr(u8, align(1))]
+#[rustfmt::skip]
 pub(crate) enum ContextState {
     /// Inactive or uninitialized.
     Inactive,
@@ -144,14 +175,50 @@ pub(crate) enum ContextState {
     /// TCI data, but the handle is no longer valid. Because the handle is no longer valid, a client
     /// cannot command it to be destroyed.
     Retired,
+    // These are unused values to allow AsBytes and FromBytes to be able to use the enum.
+    _03, _04, _05, _06, _07, _08, _09, _0a, _0b, _0c, _0d, _0e, _0f,
+    _10, _11, _12, _13, _14, _15, _16, _17, _18, _19, _1a, _1b, _1c, _1d, _1e, _1f,
+    _20, _21, _22, _23, _24, _25, _26, _27, _28, _29, _2a, _2b, _2c, _2d, _2e, _2f,
+    _30, _31, _32, _33, _34, _35, _36, _37, _38, _39, _3a, _3b, _3c, _3d, _3e, _3f,
+    _40, _41, _42, _43, _44, _45, _46, _47, _48, _49, _4a, _4b, _4c, _4d, _4e, _4f,
+    _50, _51, _52, _53, _54, _55, _56, _57, _58, _59, _5a, _5b, _5c, _5d, _5e, _5f,
+    _60, _61, _62, _63, _64, _65, _66, _67, _68, _69, _6a, _6b, _6c, _6d, _6e, _6f,
+    _70, _71, _72, _73, _74, _75, _76, _77, _78, _79, _7a, _7b, _7c, _7d, _7e, _7f,
+    _80, _81, _82, _83, _84, _85, _86, _87, _88, _89, _8a, _8b, _8c, _8d, _8e, _8f,
+    _90, _91, _92, _93, _94, _95, _96, _97, _98, _99, _9a, _9b, _9c, _9d, _9e, _9f,
+    _A0, _A1, _A2, _A3, _A4, _A5, _A6, _A7, _A8, _A9, _Aa, _Ab, _Ac, _Ad, _Ae, _Af,
+    _B0, _B1, _B2, _B3, _B4, _B5, _B6, _B7, _B8, _B9, _Ba, _Bb, _Bc, _Bd, _Be, _Bf,
+    _C0, _C1, _C2, _C3, _C4, _C5, _C6, _C7, _C8, _C9, _Ca, _Cb, _Cc, _Cd, _Ce, _Cf,
+    _D0, _D1, _D2, _D3, _D4, _D5, _D6, _D7, _D8, _D9, _Da, _Db, _Dc, _Dd, _De, _Df,
+    _E0, _E1, _E2, _E3, _E4, _E5, _E6, _E7, _E8, _E9, _Ea, _Eb, _Ec, _Ed, _Ee, _Ef,
+    _F0, _F1, _F2, _F3, _F4, _F5, _F6, _F7, _F8, _F9, _Fa, _Fb, _Fc, _Fd, _Fe, _Ff,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, AsBytes, FromBytes)]
+#[repr(u8, align(1))]
+#[rustfmt::skip]
 pub(crate) enum ContextType {
     /// Typical context.
     Normal,
     /// Has limitations on what operations can be done.
     Simulation,
+    // These are unused values to allow AsBytes and FromBytes to be able to use the enum.
+    _02, _03, _04, _05, _06, _07, _08, _09, _0a, _0b, _0c, _0d, _0e, _0f,
+    _10, _11, _12, _13, _14, _15, _16, _17, _18, _19, _1a, _1b, _1c, _1d, _1e, _1f,
+    _20, _21, _22, _23, _24, _25, _26, _27, _28, _29, _2a, _2b, _2c, _2d, _2e, _2f,
+    _30, _31, _32, _33, _34, _35, _36, _37, _38, _39, _3a, _3b, _3c, _3d, _3e, _3f,
+    _40, _41, _42, _43, _44, _45, _46, _47, _48, _49, _4a, _4b, _4c, _4d, _4e, _4f,
+    _50, _51, _52, _53, _54, _55, _56, _57, _58, _59, _5a, _5b, _5c, _5d, _5e, _5f,
+    _60, _61, _62, _63, _64, _65, _66, _67, _68, _69, _6a, _6b, _6c, _6d, _6e, _6f,
+    _70, _71, _72, _73, _74, _75, _76, _77, _78, _79, _7a, _7b, _7c, _7d, _7e, _7f,
+    _80, _81, _82, _83, _84, _85, _86, _87, _88, _89, _8a, _8b, _8c, _8d, _8e, _8f,
+    _90, _91, _92, _93, _94, _95, _96, _97, _98, _99, _9a, _9b, _9c, _9d, _9e, _9f,
+    _A0, _A1, _A2, _A3, _A4, _A5, _A6, _A7, _A8, _A9, _Aa, _Ab, _Ac, _Ad, _Ae, _Af,
+    _B0, _B1, _B2, _B3, _B4, _B5, _B6, _B7, _B8, _B9, _Ba, _Bb, _Bc, _Bd, _Be, _Bf,
+    _C0, _C1, _C2, _C3, _C4, _C5, _C6, _C7, _C8, _C9, _Ca, _Cb, _Cc, _Cd, _Ce, _Cf,
+    _D0, _D1, _D2, _D3, _D4, _D5, _D6, _D7, _D8, _D9, _Da, _Db, _Dc, _Dd, _De, _Df,
+    _E0, _E1, _E2, _E3, _E4, _E5, _E6, _E7, _E8, _E9, _Ea, _Eb, _Ec, _Ed, _Ee, _Ef,
+    _F0, _F1, _F2, _F3, _F4, _F5, _F6, _F7, _F8, _F9, _Fa, _Fb, _Fc, _Fd, _Fe, _Ff,
 }
 
 pub(crate) struct ActiveContextArgs<'a> {

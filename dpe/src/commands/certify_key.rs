@@ -41,18 +41,18 @@ impl CommandExecution for CertifyKeyCmd {
         let idx = dpe.get_active_context_pos(&self.handle, locality)?;
         let context = &dpe.contexts[idx];
 
-        if self.uses_is_ca() && !dpe.support.is_ca {
+        if self.uses_is_ca() && !dpe.support.is_ca() {
             return Err(DpeErrorCode::ArgumentNotSupported);
         }
-        if self.uses_is_ca() && !context.allow_ca {
+        if self.uses_is_ca() && !context.allow_ca() {
             return Err(DpeErrorCode::InvalidArgument);
         }
 
         if self.format == Self::FORMAT_X509 {
-            if !dpe.support.x509 {
+            if !dpe.support.x509() {
                 return Err(DpeErrorCode::ArgumentNotSupported);
             }
-            if !context.allow_x509 {
+            if !context.allow_x509() {
                 return Err(DpeErrorCode::InvalidArgument);
             }
         }
@@ -68,14 +68,9 @@ impl CommandExecution for CertifyKeyCmd {
             .crypto
             .derive_cdi(DPE_PROFILE.alg_len(), &digest, b"DPE")
             .map_err(|_| DpeErrorCode::CryptoError)?;
-        let priv_key = env
+        let (_, pub_key) = env
             .crypto
-            .derive_private_key(algs, &cdi, &self.label, b"ECC")
-            .map_err(|_| DpeErrorCode::CryptoError)?;
-
-        let pub_key = env
-            .crypto
-            .derive_ecdsa_pub(DPE_PROFILE.alg_len(), &priv_key)
+            .derive_key_pair(algs, &cdi, &self.label, b"ECC")
             .map_err(|_| DpeErrorCode::CryptoError)?;
 
         let mut subject_name = Name {
@@ -90,7 +85,9 @@ impl CommandExecution for CertifyKeyCmd {
         const INITIALIZER: TciNodeData = TciNodeData::new();
         let mut nodes = [INITIALIZER; MAX_HANDLES];
         let tcb_count = dpe.get_tcb_nodes(idx, &mut nodes)?;
-
+        if tcb_count > MAX_HANDLES {
+            return Err(DpeErrorCode::InternalError);
+        }
         let measurements = MeasurementData {
             label: &self.label,
             tci_nodes: &nodes[..tcb_count],
@@ -111,6 +108,9 @@ impl CommandExecution for CertifyKeyCmd {
             Self::FORMAT_X509 => {
                 let mut tbs_buffer = [0u8; MAX_CERT_SIZE];
                 let mut tbs_writer = X509CertWriter::new(&mut tbs_buffer, true);
+                if issuer_len > MAX_CHUNK_SIZE {
+                    return Err(DpeErrorCode::InternalError);
+                }
                 let mut bytes_written = tbs_writer.encode_ecdsa_tbs(
                     /*serial=*/
                     &subject_name.serial[..20], // Serial number must be truncated to 20 bytes
@@ -119,6 +119,9 @@ impl CommandExecution for CertifyKeyCmd {
                     &pub_key,
                     &measurements,
                 )?;
+                if bytes_written > MAX_CERT_SIZE {
+                    return Err(DpeErrorCode::InternalError);
+                }
 
                 let tbs_digest = env
                     .crypto
@@ -135,7 +138,7 @@ impl CommandExecution for CertifyKeyCmd {
                 u32::try_from(bytes_written).map_err(|_| DpeErrorCode::InternalError)?
             }
             Self::FORMAT_CSR => {
-                if !dpe.support.csr {
+                if !dpe.support.csr() {
                     return Err(DpeErrorCode::ArgumentNotSupported);
                 }
                 return Err(DpeErrorCode::ArgumentNotSupported);
@@ -148,8 +151,16 @@ impl CommandExecution for CertifyKeyCmd {
 
         Ok(Response::CertifyKey(CertifyKeyResp {
             new_context_handle: dpe.contexts[idx].handle,
-            derived_pubkey_x: pub_key.x.bytes().try_into().unwrap(),
-            derived_pubkey_y: pub_key.y.bytes().try_into().unwrap(),
+            derived_pubkey_x: pub_key
+                .x
+                .bytes()
+                .try_into()
+                .map_err(|_| DpeErrorCode::InternalError)?,
+            derived_pubkey_y: pub_key
+                .y
+                .bytes()
+                .try_into()
+                .map_err(|_| DpeErrorCode::InternalError)?,
             cert_size,
             cert,
             resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
@@ -164,6 +175,7 @@ mod tests {
         commands::{Command, CommandHdr, InitCtxCmd},
         dpe_instance::tests::{TestTypes, SIMULATION_HANDLE, TEST_LOCALITIES},
         support::Support,
+        U8Bool,
     };
     use crypto::OpensslCrypto;
     use platform::DefaultPlatform;
@@ -200,7 +212,7 @@ mod tests {
         let mut dpe = DpeInstance::new(
             &mut env,
             Support {
-                x509: true,
+                x509: U8Bool::new(true),
                 ..Support::default()
             },
         )
@@ -247,8 +259,8 @@ mod tests {
         let mut dpe = DpeInstance::new(
             &mut env,
             Support {
-                x509: true,
-                is_ca: true,
+                x509: U8Bool::new(true),
+                is_ca: U8Bool::new(true),
                 ..Support::default()
             },
         )

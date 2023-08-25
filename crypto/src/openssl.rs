@@ -126,14 +126,14 @@ impl Crypto for OpensslCrypto {
         }
     }
 
-    fn derive_private_key(
+    fn derive_key_pair(
         &mut self,
         algs: AlgLen,
         cdi: &Self::Cdi,
         label: &[u8],
         info: &[u8],
-    ) -> Result<Self::PrivKey, CryptoError> {
-        match algs {
+    ) -> Result<(Self::PrivKey, EcdsaPub), CryptoError> {
+        let priv_key = match algs {
             AlgLen::Bit256 => {
                 let hk = Hkdf::<Sha256>::new(Some(info), cdi);
                 let mut priv_key = [0u8; AlgLen::Bit256.size()];
@@ -150,15 +150,9 @@ impl Crypto for OpensslCrypto {
 
                 Ok(CryptoBuf::new(&priv_key, algs).unwrap())
             }
-        }
-    }
+        }?;
 
-    fn derive_ecdsa_pub(
-        &mut self,
-        algs: AlgLen,
-        priv_key: &Self::PrivKey,
-    ) -> Result<EcdsaPub, CryptoError> {
-        let ec_priv_key = OpensslCrypto::ec_key_from_priv_key(algs, priv_key)
+        let ec_priv_key = OpensslCrypto::ec_key_from_priv_key(algs, &priv_key)
             .map_err(|_| CryptoError::CryptoLibError)?;
         let nid = OpensslCrypto::get_curve(algs);
 
@@ -176,7 +170,7 @@ impl Crypto for OpensslCrypto {
         let x = CryptoBuf::new(&x.to_vec_padded(algs.size() as i32).unwrap(), algs).unwrap();
         let y = CryptoBuf::new(&y.to_vec_padded(algs.size() as i32).unwrap(), algs).unwrap();
 
-        Ok(EcdsaPub { x, y })
+        Ok((priv_key, EcdsaPub { x, y }))
     }
 
     fn ecdsa_sign_with_alias(
@@ -201,6 +195,7 @@ impl Crypto for OpensslCrypto {
         algs: AlgLen,
         digest: &Digest,
         priv_key: &Self::PrivKey,
+        _pub_key: EcdsaPub,
     ) -> Result<super::EcdsaSig, CryptoError> {
         let ec_priv_key = OpensslCrypto::ec_key_from_priv_key(algs, priv_key)
             .map_err(|_| CryptoError::CryptoLibError)?;
@@ -212,35 +207,6 @@ impl Crypto for OpensslCrypto {
         Ok(super::EcdsaSig { r, s })
     }
 
-    fn get_ecdsa_alias_serial(
-        &mut self,
-        algs: AlgLen,
-        serial: &mut [u8],
-    ) -> Result<(), CryptoError> {
-        let nid = Self::get_curve(algs);
-        let pem = include_bytes!(concat!(env!("OUT_DIR"), "/alias_priv.pem"));
-        let ec_priv: EcKey<Private> = EcKey::private_key_from_pem(pem).unwrap();
-
-        let group = EcGroup::from_curve_name(nid).map_err(|_| CryptoError::CryptoLibError)?;
-
-        let mut pub_point = EcPoint::new(&group).map_err(|_| CryptoError::CryptoLibError)?;
-        let mut bn_ctx = BigNumContext::new().map_err(|_| CryptoError::CryptoLibError)?;
-        pub_point
-            .mul_generator(&group, ec_priv.private_key(), &bn_ctx)
-            .unwrap();
-
-        let mut x = BigNum::new().map_err(|_| CryptoError::CryptoLibError)?;
-        let mut y = BigNum::new().map_err(|_| CryptoError::CryptoLibError)?;
-        pub_point
-            .affine_coordinates(&group, &mut x, &mut y, &mut bn_ctx)
-            .map_err(|_| CryptoError::CryptoLibError)?;
-
-        let x = CryptoBuf::new(&x.to_vec_padded(algs.size() as i32).unwrap(), algs).unwrap();
-        let y = CryptoBuf::new(&y.to_vec_padded(algs.size() as i32).unwrap(), algs).unwrap();
-
-        self.get_pubkey_serial(algs, &EcdsaPub { x, y }, serial)
-    }
-
     fn hmac_sign_with_derived(
         &mut self,
         algs: AlgLen,
@@ -249,7 +215,7 @@ impl Crypto for OpensslCrypto {
         info: &[u8],
         digest: &Digest,
     ) -> Result<HmacSig, CryptoError> {
-        let symmetric_key = self.derive_private_key(algs, cdi, label, info)?;
+        let (symmetric_key, _) = self.derive_key_pair(algs, cdi, label, info)?;
         let hmac_key = PKey::hmac(symmetric_key.bytes()).unwrap();
 
         let sha_size = Self::get_digest(algs);

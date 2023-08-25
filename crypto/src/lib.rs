@@ -13,7 +13,6 @@ pub use signer::*;
 pub mod openssl;
 
 mod signer;
-use core::fmt::{Error, Write};
 
 #[derive(Debug, Clone, Copy)]
 #[cfg_attr(test, derive(strum_macros::EnumIter))]
@@ -103,7 +102,7 @@ pub trait Crypto {
         serial: &mut [u8],
     ) -> Result<(), CryptoError> {
         if serial.len() < algs.size() * 2 {
-            return Err(CryptoError::CryptoLibError);
+            return Err(CryptoError::Size);
         }
 
         let mut hasher = self.hash_initialize(algs)?;
@@ -112,11 +111,28 @@ pub trait Crypto {
         hasher.update(pub_key.y.bytes())?;
         let digest = hasher.finish()?;
 
-        let mut w = BufWriter {
-            buf: serial,
-            offset: 0,
-        };
-        w.write_hex_str(digest.bytes())
+        self.write_hex_str(digest.bytes(), serial)
+    }
+
+    fn write_hex_str(&mut self, src: &[u8], dest: &mut [u8]) -> Result<(), CryptoError> {
+        if dest.len() != src.len() * 2 {
+            return Err(CryptoError::Size);
+        }
+
+        let mut curr_idx = 0;
+        const HEX_CHARS: &[u8; 16] = b"0123456789abcdef";
+        for &b in src {
+            let h1 = (b >> 4) as usize;
+            let h2 = (b & 0xF) as usize;
+            if h1 >= HEX_CHARS.len() || h2 >= HEX_CHARS.len() || curr_idx + 1 >= dest.len() {
+                return Err(CryptoError::CryptoLibError);
+            }
+            dest[curr_idx] = HEX_CHARS[h1];
+            dest[curr_idx + 1] = HEX_CHARS[h2];
+            curr_idx += 2;
+        }
+
+        Ok(())
     }
 
     /// Initialize a running hash. Returns an object that will be able to complete the rest.
@@ -142,7 +158,7 @@ pub trait Crypto {
         info: &[u8],
     ) -> Result<Self::Cdi, CryptoError>;
 
-    /// Derives a private key using a cryptographically secure KDF
+    /// Derives a key pair using a cryptographically secure KDF
     ///
     /// # Arguments
     ///
@@ -151,26 +167,13 @@ pub trait Crypto {
     /// * `label` - Caller-supplied label to use in asymmetric key derivation
     /// * `info` - Caller-supplied info string to use in asymmetric key derivation
     ///
-    fn derive_private_key(
+    fn derive_key_pair(
         &mut self,
         algs: AlgLen,
         cdi: &Self::Cdi,
         label: &[u8],
         info: &[u8],
-    ) -> Result<Self::PrivKey, CryptoError>;
-
-    /// Derives and returns an ECDSA public key using the caller-supplied private key
-    ///
-    /// # Arguments
-    ///
-    /// * `algs` - Which length of algorithms to use.
-    /// * `priv_key` - Caller-supplied private key to use in public key derivation
-    /// Returns a derived public key
-    fn derive_ecdsa_pub(
-        &mut self,
-        algs: AlgLen,
-        priv_key: &Self::PrivKey,
-    ) -> Result<EcdsaPub, CryptoError>;
+    ) -> Result<(Self::PrivKey, EcdsaPub), CryptoError>;
 
     /// Sign `digest` with the platform Alias Key
     ///
@@ -191,24 +194,15 @@ pub trait Crypto {
     /// * `algs` - Which length of algorithms to use.
     /// * `digest` - Digest of data to be signed.
     /// * `priv_key` - Caller-supplied private key to use in public key derivation
+    /// * `pub_key` - The public key corresponding to `priv_key`. An implementation may
+    ///    optionally use pub_key to validate any generated signatures.
     fn ecdsa_sign_with_derived(
         &mut self,
         algs: AlgLen,
         digest: &Digest,
         priv_key: &Self::PrivKey,
+        pub_key: EcdsaPub,
     ) -> Result<EcdsaSig, CryptoError>;
-
-    /// Compute the serial number string for the alias public key
-    ///
-    /// # Arguments
-    ///
-    /// * `algs` - Length of algorithm to use.
-    /// * `serial` - Output buffer to write serial number
-    fn get_ecdsa_alias_serial(
-        &mut self,
-        algs: AlgLen,
-        serial: &mut [u8],
-    ) -> Result<(), CryptoError>;
 
     /// Sign `digest` with a derived HMAC key from the CDI.
     ///
@@ -228,36 +222,6 @@ pub trait Crypto {
         digest: &Digest,
     ) -> Result<HmacSig, CryptoError>;
 }
-
-/// Writer for a static buffer
-struct BufWriter<'a> {
-    buf: &'a mut [u8],
-    offset: usize,
-}
-
-impl Write for BufWriter<'_> {
-    fn write_str(&mut self, s: &str) -> Result<(), Error> {
-        if s.len() > self.buf.len().saturating_sub(self.offset) {
-            return Err(Error);
-        }
-
-        self.buf[self.offset..self.offset + s.len()].copy_from_slice(s.as_bytes());
-        self.offset += s.len();
-
-        Ok(())
-    }
-}
-
-impl BufWriter<'_> {
-    fn write_hex_str(&mut self, src: &[u8]) -> Result<(), CryptoError> {
-        for &b in src {
-            write!(self, "{b:02x}").map_err(|_| CryptoError::CryptoLibError)?;
-        }
-
-        Ok(())
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

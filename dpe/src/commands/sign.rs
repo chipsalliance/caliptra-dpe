@@ -38,14 +38,14 @@ impl SignCmd {
             .crypto
             .derive_cdi(DPE_PROFILE.alg_len(), &cdi_digest, b"DPE")
             .map_err(|_| DpeErrorCode::CryptoError)?;
-        let priv_key = env
+        let (priv_key, pub_key) = env
             .crypto
-            .derive_private_key(algs, &cdi, &self.label, b"ECC")
+            .derive_key_pair(algs, &cdi, &self.label, b"ECC")
             .map_err(|_| DpeErrorCode::CryptoError)?;
 
         let sig = env
             .crypto
-            .ecdsa_sign_with_derived(algs, digest, &priv_key)
+            .ecdsa_sign_with_derived(algs, digest, &priv_key, pub_key)
             .map_err(|_| DpeErrorCode::CryptoError)?;
 
         Ok(sig)
@@ -78,7 +78,7 @@ impl CommandExecution for SignCmd {
         locality: u32,
     ) -> Result<Response, DpeErrorCode> {
         // Make sure the operation is supported.
-        if !dpe.support.is_symmetric && self.uses_symmetric() {
+        if !dpe.support.is_symmetric() && self.uses_symmetric() {
             return Err(DpeErrorCode::InvalidArgument);
         }
 
@@ -104,8 +104,14 @@ impl CommandExecution for SignCmd {
 
         Ok(Response::Sign(SignResp {
             new_context_handle: dpe.contexts[idx].handle,
-            sig_r_or_hmac: r.bytes().try_into().unwrap(),
-            sig_s: s.bytes().try_into().unwrap(),
+            sig_r_or_hmac: r
+                .bytes()
+                .try_into()
+                .map_err(|_| DpeErrorCode::InternalError)?,
+            sig_s: s
+                .bytes()
+                .try_into()
+                .map_err(|_| DpeErrorCode::InternalError)?,
             resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
         }))
     }
@@ -121,6 +127,7 @@ mod tests {
         },
         dpe_instance::tests::{TestTypes, SIMULATION_HANDLE, TEST_LOCALITIES},
         support::{test::SUPPORT, Support},
+        U8Bool,
     };
     use crypto::OpensslCrypto;
     use openssl::x509::X509;
@@ -309,8 +316,8 @@ mod tests {
         let mut dpe = DpeInstance::new(
             &mut env,
             Support {
-                auto_init: true,
-                is_symmetric: true,
+                auto_init: U8Bool::new(true),
+                is_symmetric: U8Bool::new(true),
                 ..Support::default()
             },
         )

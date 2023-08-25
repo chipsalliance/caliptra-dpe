@@ -88,19 +88,20 @@ impl CommandExecution for DeriveChildCmd {
         locality: u32,
     ) -> Result<Response, DpeErrorCode> {
         // Make sure the operation is supported.
-        if (!dpe.support.internal_info && self.uses_internal_info_input())
-            || (!dpe.support.internal_dice && self.uses_internal_dice_input())
+        if (!dpe.support.internal_info() && self.uses_internal_info_input())
+            || (!dpe.support.internal_dice() && self.uses_internal_dice_input())
         {
             return Err(DpeErrorCode::ArgumentNotSupported);
         }
 
-        if (!dpe.support.is_ca && self.allows_ca()) || (!dpe.support.x509 && self.allows_x509()) {
+        if (!dpe.support.is_ca() && self.allows_ca()) || (!dpe.support.x509() && self.allows_x509())
+        {
             return Err(DpeErrorCode::ArgumentNotSupported);
         }
 
         let parent_idx = dpe.get_active_context_pos(&self.handle, locality)?;
-        if (!dpe.contexts[parent_idx].allow_ca && self.allows_ca())
-            || (!dpe.contexts[parent_idx].allow_x509 && self.allows_x509())
+        if (!dpe.contexts[parent_idx].allow_ca() && self.allows_ca())
+            || (!dpe.contexts[parent_idx].allow_x509() && self.allows_x509())
         {
             return Err(DpeErrorCode::InvalidArgument);
         }
@@ -109,8 +110,8 @@ impl CommandExecution for DeriveChildCmd {
             .get_next_inactive_context_pos()
             .ok_or(DpeErrorCode::MaxTcis)?;
 
-        dpe.contexts[parent_idx].uses_internal_input_info = self.uses_internal_info_input();
-        dpe.contexts[parent_idx].uses_internal_input_dice = self.uses_internal_dice_input();
+        dpe.contexts[parent_idx].uses_internal_input_info = self.uses_internal_info_input().into();
+        dpe.contexts[parent_idx].uses_internal_input_dice = self.uses_internal_dice_input().into();
 
         let target_locality = if !self.changes_locality() {
             locality
@@ -171,7 +172,7 @@ mod tests {
         commands::{tests::TEST_DIGEST, Command, CommandHdr, InitCtxCmd},
         dpe_instance::tests::{TestTypes, SIMULATION_HANDLE, TEST_LOCALITIES},
         support::Support,
-        MAX_HANDLES,
+        U8Bool, MAX_HANDLES,
     };
     use crypto::OpensslCrypto;
     use platform::DefaultPlatform;
@@ -232,7 +233,7 @@ mod tests {
         let mut dpe = DpeInstance::new(
             &mut env,
             Support {
-                auto_init: true,
+                auto_init: U8Bool::new(true),
                 ..Support::default()
             },
         )
@@ -274,7 +275,7 @@ mod tests {
         let mut dpe = DpeInstance::new(
             &mut env,
             Support {
-                auto_init: true,
+                auto_init: U8Bool::new(true),
                 ..Support::default()
             },
         )
@@ -315,7 +316,7 @@ mod tests {
         let mut dpe = DpeInstance::new(
             &mut env,
             Support {
-                auto_init: true,
+                auto_init: U8Bool::new(true),
                 ..Support::default()
             },
         )
@@ -349,7 +350,7 @@ mod tests {
         let mut dpe = DpeInstance::new(
             &mut env,
             Support {
-                auto_init: true,
+                auto_init: U8Bool::new(true),
                 ..Support::default()
             },
         )
@@ -399,7 +400,7 @@ mod tests {
         let mut dpe = DpeInstance::new(
             &mut env,
             Support {
-                auto_init: true,
+                auto_init: U8Bool::new(true),
                 ..Support::default()
             },
         )
