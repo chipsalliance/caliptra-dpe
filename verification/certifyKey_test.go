@@ -14,20 +14,34 @@ import (
 	"github.com/zmap/zlint/v3/lint"
 )
 
-// This file is used to test the certify key command by using a simulator
+// This file is used to test the certify key command by using a simulator/emulator
 
 func TestCertifyKey(t *testing.T) {
-	simulators := []TestDPEInstance{
-		// No extra options besides AutoInit.
-		&DpeSimulator{exe_path: *sim_exe, supports: Support{AutoInit: true, X509: true}},
-		// Supports AutoInit and simulation contexts.
-		&DpeSimulator{exe_path: *sim_exe, supports: Support{AutoInit: true, Simulation: true, X509: true}},
-	}
 
-	for _, s := range simulators {
-		s.SetLocality(DPE_SIMULATOR_AUTO_INIT_LOCALITY)
-		testCertifyKey(s, t)
+	support_needed := []string{"AutoInit", "X509"}
+	instance, err := GetTestTarget(support_needed)
+	if err != nil {
+		if err.Error() == "Requested support is not supported in the emulator" {
+			t.Skipf("Warning: Failed executing TestCertifyKey command due to unsupported request. Hence, skipping the command execution")
+		} else {
+			log.Fatal(err)
+		}
 	}
+	testCertifyKey(instance, t)
+}
+
+func TestCertifyKey_SimulationMode(t *testing.T) {
+
+	support_needed := []string{"AutoInit", "Simulation", "X509"}
+	instance, err := GetTestTarget(support_needed)
+	if err != nil {
+		if err.Error() == "Requested support is not supported in the emulator" {
+			t.Skipf("Warning: Failed executing TestCertifyKey_SimulationMode command due to unsupported request. Hence, skipping the command execution")
+		} else {
+			log.Fatal(err)
+		}
+	}
+	testCertifyKey(instance, t)
 }
 
 func checkCertificateStructure(t *testing.T, certData []byte) {

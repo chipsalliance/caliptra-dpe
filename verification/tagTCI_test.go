@@ -8,26 +8,40 @@ import (
 	"testing"
 )
 
-// This file is used to test the tagTCI command by using a simulator
+// This file is used to test the tagTCI command by using a simulator/emulator
 
 func TestTagTCI(t *testing.T) {
-	s := &DpeSimulator{exe_path: *sim_exe, supports: Support{AutoInit: true, Tagging: true}}
-	s.SetLocality(DPE_SIMULATOR_AUTO_INIT_LOCALITY)
-	if s.HasPowerControl() {
-		err := s.PowerOn()
+
+	support_needed := []string{"AutoInit", "Tagging"}
+	instance, err := GetTestTarget(support_needed)
+	if err != nil {
+		if err.Error() == "Requested support is not supported in the emulator" {
+			t.Skipf("Warning: Failed executing TestTagTCI command due to unsupported request. Hence, skipping the command execution")
+		} else {
+			log.Fatal(err)
+		}
+	}
+
+	testtagTCI(instance, t)
+}
+
+func testtagTCI(d TestDPEInstance, t *testing.T) {
+
+	if d.HasPowerControl() {
+		err := d.PowerOn()
 		if err != nil {
 			log.Fatal(err)
 		}
-		defer s.PowerOff()
+		defer d.PowerOff()
 	}
 
-	client, err := NewClient256(s)
+	client, err := NewClient256(d)
 	if err != nil {
 		t.Fatalf("Could not initialize client: %v", err)
 	}
 
 	// Try to create the default context if isn't done automatically.
-	if !s.GetSupport().AutoInit {
+	if !d.GetSupport().AutoInit {
 		initCtxResp, err := client.InitializeContext(NewInitCtxIsDefault())
 		if err != nil {
 			t.Fatalf("Failed to initialize default context: %v", err)

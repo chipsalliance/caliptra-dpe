@@ -14,20 +14,26 @@ import (
 	"time"
 )
 
+// Added the dummy path and flags
 const (
-	simulatorSocketPath = "/tmp/dpe-sim.socket"
+	emulatorSocketPath = "/tmp/dpe-emu.socket"
 
-	DPE_SIMULATOR_AUTO_INIT_LOCALITY    uint32  = 0
-	DPE_SIMULATOR_OTHER_LOCALITY        uint32  = 0x4f544852
-	DPE_SIMULATOR_PROFILE               Profile = ProfileP256SHA256
-	DPE_SIMULATOR_MAX_TCI_NODES         uint32  = 24
-	DPE_SIMULATOR_MAJOR_PROFILE_VERSION uint16  = CURRENT_PROFILE_MAJOR_VERSION
-	DPE_SIMULATOR_MINOR_PROFILE_VERSION uint16  = CURRENT_PROFILE_MINOR_VERSION
-	DPE_SIMULATOR_VENDOR_ID             uint32  = 0
-	DPE_SIMULATOR_VENDOR_SKU            uint32  = 0
+	DPE_EMULATOR_AUTO_INIT_LOCALITY    uint32  = 0
+	DPE_EMULATOR_OTHER_LOCALITY        uint32  = 0
+	DPE_EMULATOR_PROFILE               Profile = 0
+	DPE_EMULATOR_MAX_TCI_NODES         uint32  = 0
+	DPE_EMULATOR_MAJOR_PROFILE_VERSION uint16  = 0
+	DPE_EMULATOR_MINOR_PROFILE_VERSION uint16  = 0
+	DPE_EMULATOR_VENDOR_ID             uint32  = 0
+	DPE_EMULATOR_VENDOR_SKU            uint32  = 0
 )
 
-type DpeSimulator struct {
+// Added dummy support for emulator .This is to verify against the support_needed list
+var emulator_supports = []string{"AutoInit", "X509"}
+
+//TODO code for emulator to start, stop, getsupport
+
+type DpeEmulator struct {
 	exe_path        string
 	cmd             *exec.Cmd
 	supports        Support
@@ -35,13 +41,13 @@ type DpeSimulator struct {
 	Transport
 }
 
-// Simulator can be started and stopped.
-func (s *DpeSimulator) HasPowerControl() bool {
+// Emulator can be started and stopped.
+func (s *DpeEmulator) HasPowerControl() bool {
 	return true
 }
 
-// Start the simulator.
-func (s *DpeSimulator) PowerOn() error {
+// Start the Emulator.
+func (s *DpeEmulator) PowerOn() error {
 	args := []string{}
 	if s.supports.Simulation {
 		args = append(args, "--supports-simulation")
@@ -89,22 +95,22 @@ func (s *DpeSimulator) PowerOn() error {
 	return nil
 }
 
-// Kill the simulator in a way that it can cleanup before closing.
-func (s *DpeSimulator) PowerOff() error {
+// Kill the emulator in a way that it can cleanup before closing.
+func (s *DpeEmulator) PowerOff() error {
 	if s.cmd != nil {
 		err := s.cmd.Process.Signal(syscall.SIGTERM)
 		if err != nil {
 			return err
 		}
 		if !s.waitForPower( /*on=*/ false) {
-			return errors.New("the simulator never stopped")
+			return errors.New("the emulator never stopped")
 		}
 	}
 	return nil
 }
 
-// Wait for the simulator to come alive. Timeout at 15 seconds.
-func (s *DpeSimulator) waitForPower(on bool) bool {
+// Wait for the emulator to come alive. Timeout at 15 seconds.
+func (s *DpeEmulator) waitForPower(on bool) bool {
 	timeout_seconds := 15
 	checks_per_sec := 50
 
@@ -118,15 +124,7 @@ func (s *DpeSimulator) waitForPower(on bool) bool {
 	return false
 }
 
-func fileExists(filename string) bool {
-	info, err := os.Stat(filename)
-	if os.IsNotExist(err) {
-		return false
-	}
-	return !info.IsDir()
-}
-
-func (s *DpeSimulator) SendCmd(buf []byte) ([]byte, error) {
+func (s *DpeEmulator) SendCmd(buf []byte) ([]byte, error) {
 	// Connect to DPE instance.
 	conn, err := net.Dial("unix", simulatorSocketPath)
 	if err != nil {
@@ -155,42 +153,42 @@ func (s *DpeSimulator) SendCmd(buf []byte) ([]byte, error) {
 	return io.ReadAll(conn)
 }
 
-func (s *DpeSimulator) GetSupport() *Support {
+func (s *DpeEmulator) GetSupport() *Support {
 	return &s.supports
 }
 
-func (s *DpeSimulator) GetProfile() Profile {
+func (s *DpeEmulator) GetProfile() Profile {
 	return DPE_SIMULATOR_PROFILE
 }
 
-func (s *DpeSimulator) GetSupportedLocalities() []uint32 {
+func (s *DpeEmulator) GetSupportedLocalities() []uint32 {
 	return []uint32{DPE_SIMULATOR_AUTO_INIT_LOCALITY, DPE_SIMULATOR_OTHER_LOCALITY}
 }
 
-func (s *DpeSimulator) SetLocality(locality uint32) {
+func (s *DpeEmulator) SetLocality(locality uint32) {
 	s.currentLocality = locality
 }
 
-func (s *DpeSimulator) GetLocality() uint32 {
+func (s *DpeEmulator) GetLocality() uint32 {
 	return s.currentLocality
 }
 
-func (s *DpeSimulator) GetMaxTciNodes() uint32 {
-	return DPE_SIMULATOR_MAX_TCI_NODES
+func (s *DpeEmulator) GetMaxTciNodes() uint32 {
+	return DPE_EMULATOR_MAX_TCI_NODES
 }
 
-func (s *DpeSimulator) GetProfileMajorVersion() uint16 {
-	return DPE_SIMULATOR_MAJOR_PROFILE_VERSION
+func (s *DpeEmulator) GetProfileMajorVersion() uint16 {
+	return DPE_EMULATOR_MAJOR_PROFILE_VERSION
 }
 
-func (s *DpeSimulator) GetProfileMinorVersion() uint16 {
-	return DPE_SIMULATOR_MINOR_PROFILE_VERSION
+func (s *DpeEmulator) GetProfileMinorVersion() uint16 {
+	return DPE_EMULATOR_MINOR_PROFILE_VERSION
 }
 
-func (s *DpeSimulator) GetProfileVendorId() uint32 {
-	return DPE_SIMULATOR_VENDOR_ID
+func (s *DpeEmulator) GetProfileVendorId() uint32 {
+	return DPE_EMULATOR_VENDOR_ID
 }
 
-func (s *DpeSimulator) GetProfileVendorSku() uint32 {
-	return DPE_SIMULATOR_VENDOR_SKU
+func (s *DpeEmulator) GetProfileVendorSku() uint32 {
+	return DPE_EMULATOR_VENDOR_SKU
 }

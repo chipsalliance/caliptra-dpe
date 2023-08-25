@@ -8,21 +8,41 @@ import (
 	"testing"
 )
 
-// This file is used to test the initialize context command by using a simulator
+// This file is used to test the initialize context command by using a simulator/emulator
 
 func TestInitializeContext(t *testing.T) {
-	simulators := []TestDPEInstance{
-		// No extra options.
-		&DpeSimulator{exe_path: *sim_exe},
-		// Supports simulation.
-		&DpeSimulator{exe_path: *sim_exe, supports: Support{Simulation: true}},
+
+	support_needed := []string{""}
+	instance, err := GetTestTarget(support_needed)
+	if err != nil {
+		if err.Error() == "Requested support is not supported in the emulator" {
+			t.Skipf("Warning: Failed executing TestInitializeContext command due to unsupported request. Hence, skipping the command execution")
+		} else {
+			log.Fatal(err)
+		}
 	}
 
-	for _, s := range simulators {
-		for _, l := range s.GetSupportedLocalities() {
-			s.SetLocality(l)
-			testInitContext(s, t)
+	for _, locality := range instance.GetSupportedLocalities() {
+		instance.SetLocality(locality)
+		testInitContext(instance, t)
+	}
+}
+
+func TestInitializeContext_SimulationMode(t *testing.T) {
+
+	support_needed := []string{"Simulation"}
+	instance, err := GetTestTarget(support_needed)
+	if err != nil {
+		if err.Error() == "Requested support is not supported in the emulator" {
+			t.Skipf("Warning: Failed executing TestInitializeContext_SimulationMode command due to unsupported request. Hence, skipping the command execution")
+		} else {
+			log.Fatal(err)
 		}
+	}
+
+	for _, locality := range instance.GetSupportedLocalities() {
+		instance.SetLocality(locality)
+		testInitContext(instance, t)
 	}
 }
 

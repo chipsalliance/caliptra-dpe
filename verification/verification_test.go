@@ -3,10 +3,37 @@
 package verification
 
 import (
+	"errors"
 	"flag"
+	"os"
+	"reflect"
+	"testing"
+
+	"golang.org/x/exp/slices"
 )
 
-var sim_exe = flag.String("sim", "../simulator/target/debug/simulator", "path to simulator executable")
+const (
+	SIMULATOR string = "simulator"
+	EMULATOR  string = "emulator"
+)
+
+var target_exe *string
+var testTargetType string
+
+// This will be called before running tests, and it assigns the socket path based on command line flag.
+func TestMain(m *testing.M) {
+	testTarget := flag.String("target", "simulator", "socket type - emulator")
+	flag.Parse()
+	testTargetType = *testTarget
+	if testTargetType == SIMULATOR {
+		target_exe = flag.String("sim", "../simulator/target/debug/simulator", "path to simulator executable")
+	} else if testTargetType == EMULATOR {
+		target_exe = flag.String("emu", "../simulator/target/debug/emulator", "path to emulator executable")
+	}
+
+	exitVal := m.Run()
+	os.Exit(exitVal)
+}
 
 // An extension to the main DPE transport interface with test hooks.
 type TestDPEInstance interface {
@@ -42,4 +69,62 @@ type TestDPEInstance interface {
 	GetProfileVendorId() uint32
 	// Returns the vendor's product SKU.
 	GetProfileVendorSku() uint32
+}
+
+// Get the test target for simulator/emulator
+func GetTestTarget(support_needed []string) (TestDPEInstance, error) {
+
+	if testTargetType == EMULATOR {
+		for i := 0; i < len(support_needed); i++ {
+			if !slices.Contains(emulator_supports, support_needed[i]) {
+				return nil, errors.New("Requested support is not supported in the emulator")
+			}
+		}
+		instance, err := GetEmulatorTarget(support_needed)
+		if err != nil {
+			return nil, err
+		}
+		return instance, nil
+	} else if testTargetType == SIMULATOR {
+		instance, err := GetSimulatorTarget(support_needed)
+		if err != nil {
+			return nil, err
+		}
+		instance.SetLocality(DPE_SIMULATOR_AUTO_INIT_LOCALITY)
+		return instance, nil
+	}
+	return nil, errors.New("Error in creating dpe instances - supported feature is not enabled")
+}
+
+// Get the emulator target
+func GetEmulatorTarget(support_needed []string) (TestDPEInstance, error) {
+
+	value := reflect.ValueOf(DpeEmulator{}.supports)
+	for i := 0; i < len(support_needed); i++ {
+		support := reflect.Indirect(value).FieldByName(support_needed[i])
+		if !support.Bool() {
+			return nil, errors.New("Error in creating dpe instances - supported feature is not enabled in emulator")
+		}
+	}
+	var instance TestDPEInstance = &DpeEmulator{exe_path: *target_exe}
+	return instance, nil
+}
+
+// Get the simulator target
+func GetSimulatorTarget(support_needed []string) (TestDPEInstance, error) {
+
+	value := reflect.ValueOf(DpeSimulator{}.supports)
+	fields := reflect.Indirect(value)
+	fVal := reflect.New(reflect.TypeOf(DpeSimulator{}.supports))
+
+	for i := 0; i < len(support_needed); i++ {
+		for j := 0; j < value.NumField(); j++ {
+			if fields.Type().Field(j).Name == support_needed[i] {
+				fVal.Elem().Field(j).SetBool(true)
+			}
+		}
+	}
+	support := fVal.Elem().Interface().(Support)
+	var instance TestDPEInstance = &DpeSimulator{exe_path: *target_exe, supports: support}
+	return instance, nil
 }
