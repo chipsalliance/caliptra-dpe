@@ -84,11 +84,11 @@ impl X509CertWriter<'_> {
     // tcg-dice-Ueid 2.23.133.5.4.4
     const UEID_OID: &[u8] = &[0x67, 0x81, 0x05, 0x05, 0x04, 0x04];
 
-    // id-tcg-kp-identityLoc 2.23.133.8.7
-    const IDENTITY_LOC_OID: &[u8] = &[0x67, 0x81, 0x05, 0x08, 0x07];
+    // tcg-dice-kp-identityLoc 2.23.133.5.4.100.7
+    const IDENTITY_LOC_OID: &[u8] = &[0x67, 0x81, 0x05, 0x05, 0x04, 0x64, 0x07];
 
-    // id-tcg-kp-attestLoc 2.23.133.8.9
-    const ATTEST_LOC_OID: &[u8] = &[0x67, 0x81, 0x05, 0x08, 0x09];
+    // tcg-dice-kp-attestLoc 2.23.133.5.4.100.9
+    const ATTEST_LOC_OID: &[u8] = &[0x67, 0x81, 0x05, 0x05, 0x04, 0x64, 0x09];
 
     // RFC 5280 2.5.29.19
     const BASIC_CONSTRAINTS_OID: &[u8] = &[0x55, 0x1D, 0x13];
@@ -1445,8 +1445,8 @@ mod tests {
         match cert.extended_key_usage() {
             Ok(Some(ext_key_usage)) => {
                 assert!(ext_key_usage.critical);
-                // Expect id-tcg-kp-identityLoc OID (2.23.133.8.7)
-                assert_eq!(ext_key_usage.value.other, [oid!(2.23.133 .8 .7)]);
+                // Expect tcg-dice-kp-identityLoc OID (2.23.133.5.4.100.7)
+                assert_eq!(ext_key_usage.value.other, [oid!(2.23.133 .5 .4 .100 .7)]);
             }
             Ok(None) => panic!("extended key usage extension not found"),
             Err(_) => panic!("multiple extended key usage extensions found"),
