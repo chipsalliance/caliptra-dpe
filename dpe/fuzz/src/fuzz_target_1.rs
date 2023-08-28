@@ -17,23 +17,11 @@ use std::fs::OpenOptions;
 
 use crypto::OpensslCrypto;
 use dpe::dpe_instance::{DpeEnv, DpeTypes};
-use dpe::{commands::Command, response::Response, DpeInstance, Support};
+use dpe::{commands::Command, response::Response, DpeInstance, support::Support};
 use platform::{DefaultPlatform, AUTO_INIT_LOCALITY};
 
 // https://github.com/chipsalliance/caliptra-sw/issues/624 will consider matrix fuzzing.
-const SUPPORT: Support = Support {
-    simulation: true,
-    extend_tci: true,
-    auto_init: true,
-    tagging: true,
-    rotate_context: true,
-    x509: true,
-    csr: true,
-    is_ca: true,
-    is_symmetric: true,
-    internal_info: true,
-    internal_dice: true,
-};
+const SUPPORT: Support = Support::all();
 
 struct SimTypes {}
 

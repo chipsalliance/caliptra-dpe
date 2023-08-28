@@ -8,26 +8,35 @@ use crate::{
     x509::{MeasurementData, Name, X509CertWriter},
     DPE_PROFILE, MAX_CERT_SIZE, MAX_HANDLES,
 };
+use bitflags::bitflags;
 use crypto::Crypto;
 use platform::{Platform, PlatformError, MAX_CHUNK_SIZE};
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, zerocopy::FromBytes, zerocopy::AsBytes)]
+pub struct CertifyKeyFlags(u32);
+
+bitflags! {
+    impl CertifyKeyFlags: u32 {
+        const IS_CA = 1u32 << 31;
+    }
+}
+
+#[repr(C)]
+#[derive(Debug, PartialEq, Eq, zerocopy::FromBytes, zerocopy::AsBytes)]
 pub struct CertifyKeyCmd {
     pub handle: ContextHandle,
-    pub flags: u32,
+    pub flags: CertifyKeyFlags,
     pub label: [u8; DPE_PROFILE.get_hash_size()],
     pub format: u32,
 }
 
 impl CertifyKeyCmd {
-    pub const IS_CA: u32 = 1 << 31;
-
     pub const FORMAT_X509: u32 = 0;
     pub const FORMAT_CSR: u32 = 1;
 
     const fn uses_is_ca(&self) -> bool {
-        self.flags & Self::IS_CA != 0
+        self.flags.contains(CertifyKeyFlags::IS_CA)
     }
 }
 
@@ -175,7 +184,6 @@ mod tests {
         commands::{Command, CommandHdr, InitCtxCmd},
         dpe_instance::tests::{TestTypes, SIMULATION_HANDLE, TEST_LOCALITIES},
         support::Support,
-        U8Bool,
     };
     use crypto::OpensslCrypto;
     use platform::DefaultPlatform;
@@ -186,7 +194,7 @@ mod tests {
 
     const TEST_CERTIFY_KEY_CMD: CertifyKeyCmd = CertifyKeyCmd {
         handle: SIMULATION_HANDLE,
-        flags: 0x1234_5678,
+        flags: CertifyKeyFlags(0x1234_5678),
         label: [0xaa; DPE_PROFILE.get_hash_size()],
         format: CertifyKeyCmd::FORMAT_X509,
     };
@@ -209,14 +217,7 @@ mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe = DpeInstance::new(
-            &mut env,
-            Support {
-                x509: U8Bool::new(true),
-                ..Support::default()
-            },
-        )
-        .unwrap();
+        let mut dpe = DpeInstance::new(&mut env, Support::X509).unwrap();
 
         let init_resp = match InitCtxCmd::new_use_default()
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
@@ -227,7 +228,7 @@ mod tests {
         };
         let certify_cmd = CertifyKeyCmd {
             handle: init_resp.handle,
-            flags: 0,
+            flags: CertifyKeyFlags::empty(),
             label: [0; DPE_PROFILE.get_hash_size()],
             format: CertifyKeyCmd::FORMAT_X509,
         };
@@ -256,15 +257,7 @@ mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe = DpeInstance::new(
-            &mut env,
-            Support {
-                x509: U8Bool::new(true),
-                is_ca: U8Bool::new(true),
-                ..Support::default()
-            },
-        )
-        .unwrap();
+        let mut dpe = DpeInstance::new(&mut env, Support::X509 | Support::IS_CA).unwrap();
 
         let init_resp = match InitCtxCmd::new_use_default()
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
@@ -275,7 +268,7 @@ mod tests {
         };
         let certify_cmd_ca = CertifyKeyCmd {
             handle: init_resp.handle,
-            flags: CertifyKeyCmd::IS_CA,
+            flags: CertifyKeyFlags::IS_CA,
             label: [0; DPE_PROFILE.get_hash_size()],
             format: CertifyKeyCmd::FORMAT_X509,
         };
@@ -302,7 +295,7 @@ mod tests {
 
         let certify_cmd_non_ca = CertifyKeyCmd {
             handle: init_resp.handle,
-            flags: 0,
+            flags: CertifyKeyFlags::empty(),
             label: [0; DPE_PROFILE.get_hash_size()],
             format: CertifyKeyCmd::FORMAT_X509,
         };

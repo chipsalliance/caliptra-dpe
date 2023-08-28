@@ -11,6 +11,7 @@ dpe_profile_p256_sha256 = []
 dpe_profile_p384_sha384 = []
 
 [dependencies]
+bitflags = "2.4.0"
 crypto = {path = "../crypto"}
 platform = {path = "../platform"}
 zerocopy = "0.6.1"

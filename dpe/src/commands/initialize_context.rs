@@ -5,37 +5,36 @@ use crate::{
     dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
     response::{DpeErrorCode, NewHandleResp, Response, ResponseHdr},
 };
+use bitflags::bitflags;
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, zerocopy::FromBytes)]
 #[cfg_attr(test, derive(zerocopy::AsBytes))]
-pub struct InitCtxCmd {
-    flags: u32,
+pub struct InitCtxCmd(u32);
+
+bitflags! {
+    impl InitCtxCmd: u32 {
+        const SIMULATION_FLAG_MASK = 1u32 << 31;
+        const DEFAULT_FLAG_MASK = 1u32 << 30;
+    }
 }
 
 impl InitCtxCmd {
-    const SIMULATION_FLAG_MASK: u32 = 1 << 31;
-    const DEFAULT_FLAG_MASK: u32 = 1 << 30;
-
     pub const fn new_use_default() -> InitCtxCmd {
-        InitCtxCmd {
-            flags: Self::DEFAULT_FLAG_MASK,
-        }
+        Self::DEFAULT_FLAG_MASK
     }
 
     const fn flag_is_simulation(&self) -> bool {
-        self.flags & Self::SIMULATION_FLAG_MASK != 0
+        self.contains(Self::SIMULATION_FLAG_MASK)
     }
 
     const fn flag_is_default(&self) -> bool {
-        self.flags & Self::DEFAULT_FLAG_MASK != 0
+        self.contains(Self::DEFAULT_FLAG_MASK)
     }
 
     #[cfg(test)]
     pub const fn new_simulation() -> InitCtxCmd {
-        InitCtxCmd {
-            flags: Self::SIMULATION_FLAG_MASK,
-        }
+        Self::SIMULATION_FLAG_MASK
     }
 }
 
@@ -95,13 +94,12 @@ mod tests {
         context::ContextState,
         dpe_instance::tests::{TestTypes, TEST_LOCALITIES},
         support::Support,
-        U8Bool,
     };
     use crypto::OpensslCrypto;
     use platform::DefaultPlatform;
     use zerocopy::AsBytes;
 
-    const TEST_INIT_CTX_CMD: InitCtxCmd = InitCtxCmd { flags: 0x1234_5678 };
+    const TEST_INIT_CTX_CMD: InitCtxCmd = InitCtxCmd(0x1234_5678);
 
     #[test]
     fn test_deserialize_init_ctx() {
@@ -142,7 +140,7 @@ mod tests {
         // Try not setting any flags.
         assert_eq!(
             Err(DpeErrorCode::InvalidArgument),
-            InitCtxCmd { flags: 0 }.execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
+            InitCtxCmd::empty().execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         );
 
         // Try simulation when not supported.
@@ -152,19 +150,16 @@ mod tests {
         );
 
         // Change to support simulation.
-        let mut dpe = DpeInstance::new(
-            &mut env,
-            Support {
-                simulation: U8Bool::new(true),
-                ..Support::default()
-            },
-        )
-        .unwrap();
+        let mut dpe = DpeInstance::new(&mut env, Support::SIMULATION).unwrap();
 
         // Try setting both flags.
         assert_eq!(
             Err(DpeErrorCode::InvalidArgument),
-            InitCtxCmd { flags: 3 << 30 }.execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
+            (InitCtxCmd::DEFAULT_FLAG_MASK | InitCtxCmd::SIMULATION_FLAG_MASK).execute(
+                &mut dpe,
+                &mut env,
+                TEST_LOCALITIES[0]
+            )
         );
 
         // Set all handles as active.

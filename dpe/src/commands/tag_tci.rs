@@ -60,7 +60,6 @@ mod tests {
         commands::{Command, CommandHdr, InitCtxCmd},
         dpe_instance::tests::{TestTypes, SIMULATION_HANDLE, TEST_HANDLE, TEST_LOCALITIES},
         support::Support,
-        U8Bool,
     };
     use crypto::OpensslCrypto;
     use platform::DefaultPlatform;
@@ -101,15 +100,7 @@ mod tests {
         );
 
         // Make a new instance that supports tagging.
-        let mut dpe = DpeInstance::new(
-            &mut env,
-            Support {
-                tagging: U8Bool::new(true),
-                simulation: U8Bool::new(true),
-                ..Support::default()
-            },
-        )
-        .unwrap();
+        let mut dpe = DpeInstance::new(&mut env, Support::TAGGING | Support::SIMULATION).unwrap();
         InitCtxCmd::new_use_default()
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
             .unwrap();

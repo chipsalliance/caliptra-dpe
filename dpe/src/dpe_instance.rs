@@ -37,6 +37,9 @@ pub struct DpeInstance {
     /// Can only successfully execute the initialize context command for non-simulation (i.e.
     /// `InitializeContext(simulation=false)`) once per reset cycle.
     pub(crate) has_initialized: U8Bool,
+
+    // unused buffer added to make DpeInstance word aligned and remove padding
+    reserved: [u8; 3],
 }
 
 impl DpeInstance {
@@ -57,6 +60,7 @@ impl DpeInstance {
             contexts: [CONTEXT_INITIALIZER; MAX_HANDLES],
             support,
             has_initialized: false.into(),
+            reserved: [0u8; 3],
         };
 
         if dpe.support.auto_init() {
@@ -84,7 +88,7 @@ impl DpeInstance {
             .get_vendor_sku()
             .map_err(|_| DpeErrorCode::PlatformError)?;
         Ok(GetProfileResp::new(
-            self.support.get_flags(),
+            self.support.bits(),
             vendor_id,
             vendor_sku,
         ))
@@ -419,10 +423,10 @@ impl Iterator for FlagsIter {
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::commands::DeriveChildCmd;
+    use crate::commands::{DeriveChildCmd, DeriveChildFlags};
     use crate::response::NewHandleResp;
     use crate::support::test::SUPPORT;
-    use crate::{commands::CommandHdr, U8Bool, CURRENT_PROFILE_MAJOR_VERSION};
+    use crate::{commands::CommandHdr, CURRENT_PROFILE_MAJOR_VERSION};
     use crypto::OpensslCrypto;
     use platform::{DefaultPlatform, AUTO_INIT_LOCALITY, MAX_CHUNK_SIZE, TEST_CERT_CHAIN};
     use zerocopy::AsBytes;
@@ -450,7 +454,7 @@ pub mod tests {
 
         assert_eq!(
             Response::GetProfile(GetProfileResp::new(
-                SUPPORT.get_flags(),
+                SUPPORT.bits(),
                 env.platform.get_vendor_id().unwrap(),
                 env.platform.get_vendor_sku().unwrap()
             )),
@@ -487,7 +491,7 @@ pub mod tests {
         let dpe = DpeInstance::new(&mut env, SUPPORT).unwrap();
         let profile = dpe.get_profile(&mut env.platform).unwrap();
         assert_eq!(profile.major_version, CURRENT_PROFILE_MAJOR_VERSION);
-        assert_eq!(profile.flags, SUPPORT.get_flags());
+        assert_eq!(profile.flags, SUPPORT.bits());
     }
 
     #[test]
@@ -534,14 +538,7 @@ pub mod tests {
             platform: DefaultPlatform,
         };
 
-        let mut dpe = DpeInstance::new(
-            &mut env,
-            Support {
-                auto_init: U8Bool::new(true),
-                ..Default::default()
-            },
-        )
-        .unwrap();
+        let mut dpe = DpeInstance::new(&mut env, Support::AUTO_INIT).unwrap();
 
         // Verify bounds checking.
         assert_eq!(
@@ -654,7 +651,7 @@ pub mod tests {
             DeriveChildCmd {
                 handle: ContextHandle::default(),
                 data: [i; DPE_PROFILE.get_hash_size()],
-                flags: DeriveChildCmd::MAKE_DEFAULT,
+                flags: DeriveChildFlags::MAKE_DEFAULT,
                 tci_type: i as u32,
                 target_locality: 0,
             }
@@ -701,14 +698,7 @@ pub mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe = DpeInstance::new(
-            &mut env,
-            Support {
-                internal_info: U8Bool::new(true),
-                ..SUPPORT
-            },
-        )
-        .unwrap();
+        let mut dpe = DpeInstance::new(&mut env, SUPPORT | Support::INTERNAL_INFO).unwrap();
 
         let parent_context_idx = dpe
             .get_active_context_pos(&ContextHandle::default(), TEST_LOCALITIES[0])
@@ -716,7 +706,7 @@ pub mod tests {
         DeriveChildCmd {
             handle: ContextHandle::default(),
             data: [0; DPE_PROFILE.get_hash_size()],
-            flags: DeriveChildCmd::MAKE_DEFAULT | DeriveChildCmd::INTERNAL_INPUT_INFO,
+            flags: DeriveChildFlags::MAKE_DEFAULT | DeriveChildFlags::INTERNAL_INPUT_INFO,
             tci_type: 0u32,
             target_locality: 0,
         }
@@ -758,14 +748,7 @@ pub mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe = DpeInstance::new(
-            &mut env,
-            Support {
-                internal_dice: U8Bool::new(true),
-                ..SUPPORT
-            },
-        )
-        .unwrap();
+        let mut dpe = DpeInstance::new(&mut env, SUPPORT | Support::INTERNAL_DICE).unwrap();
 
         let parent_context_idx = dpe
             .get_active_context_pos(&ContextHandle::default(), TEST_LOCALITIES[0])
@@ -773,7 +756,7 @@ pub mod tests {
         DeriveChildCmd {
             handle: ContextHandle::default(),
             data: [0; DPE_PROFILE.get_hash_size()],
-            flags: DeriveChildCmd::MAKE_DEFAULT | DeriveChildCmd::INTERNAL_INPUT_DICE,
+            flags: DeriveChildFlags::MAKE_DEFAULT | DeriveChildFlags::INTERNAL_INPUT_DICE,
             tci_type: 0u32,
             target_locality: 0,
         }

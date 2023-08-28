@@ -7,6 +7,24 @@ use crate::{
     tci::TciMeasurement,
     DPE_PROFILE,
 };
+use bitflags::bitflags;
+
+#[repr(C)]
+#[derive(Debug, PartialEq, Eq, zerocopy::FromBytes)]
+#[cfg_attr(test, derive(zerocopy::AsBytes))]
+pub struct DeriveChildFlags(u32);
+
+bitflags! {
+    impl DeriveChildFlags: u32 {
+        const INTERNAL_INPUT_INFO = 1u32 << 31;
+        const INTERNAL_INPUT_DICE = 1u32 << 30;
+        const RETAIN_PARENT = 1u32 << 29;
+        const MAKE_DEFAULT = 1u32 << 28;
+        const CHANGE_LOCALITY = 1u32 << 27;
+        const INPUT_ALLOW_CA = 1u32 << 26;
+        const INPUT_ALLOW_X509 = 1u32 << 25;
+    }
+}
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, zerocopy::FromBytes)]
@@ -14,46 +32,38 @@ use crate::{
 pub struct DeriveChildCmd {
     pub handle: ContextHandle,
     pub data: [u8; DPE_PROFILE.get_hash_size()],
-    pub flags: u32,
+    pub flags: DeriveChildFlags,
     pub tci_type: u32,
     pub target_locality: u32,
 }
 
 impl DeriveChildCmd {
-    pub const INTERNAL_INPUT_INFO: u32 = 1 << 31;
-    pub const INTERNAL_INPUT_DICE: u32 = 1 << 30;
-    pub const RETAIN_PARENT: u32 = 1 << 29;
-    pub const MAKE_DEFAULT: u32 = 1 << 28;
-    pub const CHANGE_LOCALITY: u32 = 1 << 27;
-    pub const INPUT_ALLOW_CA: u32 = 1 << 26;
-    pub const INPUT_ALLOW_X509: u32 = 1 << 25;
-
     const fn uses_internal_info_input(&self) -> bool {
-        self.flags & Self::INTERNAL_INPUT_INFO != 0
+        self.flags.contains(DeriveChildFlags::INTERNAL_INPUT_INFO)
     }
 
     const fn uses_internal_dice_input(&self) -> bool {
-        self.flags & Self::INTERNAL_INPUT_DICE != 0
+        self.flags.contains(DeriveChildFlags::INTERNAL_INPUT_DICE)
     }
 
     const fn retains_parent(&self) -> bool {
-        self.flags & Self::RETAIN_PARENT != 0
+        self.flags.contains(DeriveChildFlags::RETAIN_PARENT)
     }
 
     const fn makes_default(&self) -> bool {
-        self.flags & Self::MAKE_DEFAULT != 0
+        self.flags.contains(DeriveChildFlags::MAKE_DEFAULT)
     }
 
     const fn changes_locality(&self) -> bool {
-        self.flags & Self::CHANGE_LOCALITY != 0
+        self.flags.contains(DeriveChildFlags::CHANGE_LOCALITY)
     }
 
     const fn allows_ca(&self) -> bool {
-        self.flags & Self::INPUT_ALLOW_CA != 0
+        self.flags.contains(DeriveChildFlags::INPUT_ALLOW_CA)
     }
 
     const fn allows_x509(&self) -> bool {
-        self.flags & Self::INPUT_ALLOW_X509 != 0
+        self.flags.contains(DeriveChildFlags::INPUT_ALLOW_X509)
     }
 
     /// Check if this will result in two default contexts in the same locality.
@@ -172,7 +182,7 @@ mod tests {
         commands::{tests::TEST_DIGEST, Command, CommandHdr, InitCtxCmd},
         dpe_instance::tests::{TestTypes, SIMULATION_HANDLE, TEST_LOCALITIES},
         support::Support,
-        U8Bool, MAX_HANDLES,
+        MAX_HANDLES,
     };
     use crypto::OpensslCrypto;
     use platform::DefaultPlatform;
@@ -181,7 +191,7 @@ mod tests {
     const TEST_DERIVE_CHILD_CMD: DeriveChildCmd = DeriveChildCmd {
         handle: SIMULATION_HANDLE,
         data: TEST_DIGEST,
-        flags: 0x1234_5678,
+        flags: DeriveChildFlags(0x1234_5678),
         tci_type: 0x9876_5432,
         target_locality: 0x10CA_1171,
     };
@@ -216,7 +226,7 @@ mod tests {
             DeriveChildCmd {
                 handle: ContextHandle::default(),
                 data: [0; DPE_PROFILE.get_tci_size()],
-                flags: 0,
+                flags: DeriveChildFlags::empty(),
                 tci_type: 0,
                 target_locality: 0
             }
@@ -230,21 +240,14 @@ mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe = DpeInstance::new(
-            &mut env,
-            Support {
-                auto_init: U8Bool::new(true),
-                ..Support::default()
-            },
-        )
-        .unwrap();
+        let mut dpe = DpeInstance::new(&mut env, Support::AUTO_INIT).unwrap();
 
         // Fill all contexts with children (minus the auto-init context).
         for _ in 0..MAX_HANDLES - 1 {
             DeriveChildCmd {
                 handle: ContextHandle::default(),
                 data: [0; DPE_PROFILE.get_tci_size()],
-                flags: DeriveChildCmd::MAKE_DEFAULT,
+                flags: DeriveChildFlags::MAKE_DEFAULT,
                 tci_type: 0,
                 target_locality: 0,
             }
@@ -258,7 +261,7 @@ mod tests {
             DeriveChildCmd {
                 handle: ContextHandle::default(),
                 data: [0; DPE_PROFILE.get_tci_size()],
-                flags: 0,
+                flags: DeriveChildFlags::empty(),
                 tci_type: 0,
                 target_locality: 0
             }
@@ -272,14 +275,7 @@ mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe = DpeInstance::new(
-            &mut env,
-            Support {
-                auto_init: U8Bool::new(true),
-                ..Support::default()
-            },
-        )
-        .unwrap();
+        let mut dpe = DpeInstance::new(&mut env, Support::AUTO_INIT).unwrap();
 
         let parent_idx = dpe
             .get_active_context_pos(&ContextHandle::default(), TEST_LOCALITIES[0])
@@ -287,7 +283,7 @@ mod tests {
         DeriveChildCmd {
             handle: ContextHandle::default(),
             data: [0; DPE_PROFILE.get_tci_size()],
-            flags: DeriveChildCmd::MAKE_DEFAULT | DeriveChildCmd::CHANGE_LOCALITY,
+            flags: DeriveChildFlags::MAKE_DEFAULT | DeriveChildFlags::CHANGE_LOCALITY,
             tci_type: 7,
             target_locality: TEST_LOCALITIES[1],
         }
@@ -313,19 +309,12 @@ mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe = DpeInstance::new(
-            &mut env,
-            Support {
-                auto_init: U8Bool::new(true),
-                ..Support::default()
-            },
-        )
-        .unwrap();
+        let mut dpe = DpeInstance::new(&mut env, Support::AUTO_INIT).unwrap();
 
         DeriveChildCmd {
             handle: ContextHandle::default(),
             data: [0; DPE_PROFILE.get_tci_size()],
-            flags: DeriveChildCmd::MAKE_DEFAULT | DeriveChildCmd::CHANGE_LOCALITY,
+            flags: DeriveChildFlags::MAKE_DEFAULT | DeriveChildFlags::CHANGE_LOCALITY,
             tci_type: 7,
             target_locality: TEST_LOCALITIES[1],
         }
@@ -347,14 +336,7 @@ mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe = DpeInstance::new(
-            &mut env,
-            Support {
-                auto_init: U8Bool::new(true),
-                ..Support::default()
-            },
-        )
-        .unwrap();
+        let mut dpe = DpeInstance::new(&mut env, Support::AUTO_INIT).unwrap();
 
         // Make sure child handle is default when creating default child.
         assert_eq!(
@@ -366,7 +348,7 @@ mod tests {
             DeriveChildCmd {
                 handle: ContextHandle::default(),
                 data: [0; DPE_PROFILE.get_tci_size()],
-                flags: DeriveChildCmd::MAKE_DEFAULT,
+                flags: DeriveChildFlags::MAKE_DEFAULT,
                 tci_type: 0,
                 target_locality: 0,
             }
@@ -383,7 +365,7 @@ mod tests {
             DeriveChildCmd {
                 handle: ContextHandle::default(),
                 data: [0; DPE_PROFILE.get_tci_size()],
-                flags: 0,
+                flags: DeriveChildFlags::empty(),
                 tci_type: 0,
                 target_locality: 0,
             }
@@ -397,14 +379,7 @@ mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe = DpeInstance::new(
-            &mut env,
-            Support {
-                auto_init: U8Bool::new(true),
-                ..Support::default()
-            },
-        )
-        .unwrap();
+        let mut dpe = DpeInstance::new(&mut env, Support::AUTO_INIT).unwrap();
 
         // Make sure the parent handle is non-sense when not retaining.
         assert_eq!(
@@ -416,7 +391,7 @@ mod tests {
             DeriveChildCmd {
                 handle: ContextHandle::default(),
                 data: [0; DPE_PROFILE.get_tci_size()],
-                flags: DeriveChildCmd::MAKE_DEFAULT,
+                flags: DeriveChildFlags::MAKE_DEFAULT,
                 tci_type: 0,
                 target_locality: 0,
             }
@@ -433,9 +408,9 @@ mod tests {
             DeriveChildCmd {
                 handle: ContextHandle::default(),
                 data: [0; DPE_PROFILE.get_tci_size()],
-                flags: DeriveChildCmd::RETAIN_PARENT
-                    | DeriveChildCmd::MAKE_DEFAULT
-                    | DeriveChildCmd::CHANGE_LOCALITY,
+                flags: DeriveChildFlags::RETAIN_PARENT
+                    | DeriveChildFlags::MAKE_DEFAULT
+                    | DeriveChildFlags::CHANGE_LOCALITY,
                 tci_type: 0,
                 target_locality: TEST_LOCALITIES[1],
             }
@@ -461,7 +436,7 @@ mod tests {
             DeriveChildCmd {
                 handle: dpe.contexts[old_default_idx].handle,
                 data: [0; DPE_PROFILE.get_tci_size()],
-                flags: DeriveChildCmd::RETAIN_PARENT | DeriveChildCmd::MAKE_DEFAULT,
+                flags: DeriveChildFlags::RETAIN_PARENT | DeriveChildFlags::MAKE_DEFAULT,
                 tci_type: 0,
                 target_locality: 0,
             }
@@ -480,7 +455,7 @@ mod tests {
         let mut make_default_in_0 = DeriveChildCmd {
             handle: ContextHandle::default(),
             data: TciMeasurement::default().0,
-            flags: DeriveChildCmd::MAKE_DEFAULT,
+            flags: DeriveChildFlags::MAKE_DEFAULT,
             tci_type: 0,
             target_locality: 0,
         };
@@ -494,7 +469,7 @@ mod tests {
         // Make default in a different locality that already has a default.
         assert!(!make_default_in_0.safe_to_make_default(parent_idx, Ok(1)));
 
-        make_default_in_0.flags |= DeriveChildCmd::RETAIN_PARENT;
+        make_default_in_0.flags |= DeriveChildFlags::RETAIN_PARENT;
 
         // Retain parent and make default in another locality that doesn't have a default.
         assert!(
