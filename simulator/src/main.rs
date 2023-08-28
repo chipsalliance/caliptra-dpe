@@ -14,7 +14,8 @@ use dpe::{
     commands::Command,
     dpe_instance::{DpeEnv, DpeTypes},
     response::Response,
-    DpeInstance, Support,
+    support::Support,
+    DpeInstance,
 };
 
 const SOCKET_PATH: &str = "/tmp/dpe-sim.socket";
@@ -140,19 +141,18 @@ fn main() -> std::io::Result<()> {
     })
     .unwrap();
 
-    let support = Support {
-        simulation: args.supports_simulation.into(),
-        extend_tci: args.supports_extend_tci.into(),
-        auto_init: args.supports_auto_init.into(),
-        tagging: args.supports_tagging.into(),
-        rotate_context: args.supports_rotate_context.into(),
-        x509: args.supports_x509.into(),
-        csr: args.supports_csr.into(),
-        is_ca: args.supports_is_ca.into(),
-        is_symmetric: args.supports_is_symmetric.into(),
-        internal_info: args.supports_internal_info.into(),
-        internal_dice: args.supports_internal_dice.into(),
-    };
+    let mut support = Support::default();
+    support.set(Support::SIMULATION, args.supports_simulation);
+    support.set(Support::AUTO_INIT, args.supports_auto_init);
+    support.set(Support::X509, args.supports_x509);
+    support.set(Support::CSR, args.supports_csr);
+    support.set(Support::EXTEND_TCI, args.supports_extend_tci);
+    support.set(Support::ROTATE_CONTEXT, args.supports_rotate_context);
+    support.set(Support::INTERNAL_DICE, args.supports_internal_dice);
+    support.set(Support::INTERNAL_INFO, args.supports_internal_info);
+    support.set(Support::IS_CA, args.supports_is_ca);
+    support.set(Support::IS_SYMMETRIC, args.supports_is_symmetric);
+    support.set(Support::TAGGING, args.supports_tagging);
 
     let mut env = DpeEnv::<SimTypes> {
         crypto: OpensslCrypto::new(),

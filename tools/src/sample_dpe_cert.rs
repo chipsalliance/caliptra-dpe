@@ -2,11 +2,11 @@
 
 use {
     crypto::OpensslCrypto,
-    dpe::commands::{self, CertifyKeyCmd, CommandHdr},
+    dpe::commands::{self, CertifyKeyCmd, CertifyKeyFlags, CommandHdr},
     dpe::context::ContextHandle,
     dpe::dpe_instance::{DpeEnv, DpeTypes},
     dpe::response::Response,
-    dpe::{DpeInstance, Support, DPE_PROFILE},
+    dpe::{support::Support, DpeInstance, DPE_PROFILE},
     pem::{encode_config, EncodeConfig, LineEnding, Pem},
     platform::DefaultPlatform,
     zerocopy::AsBytes,
@@ -20,11 +20,7 @@ impl DpeTypes for TestTypes {
 }
 
 fn main() {
-    let support = Support {
-        auto_init: true.into(),
-        x509: true.into(),
-        ..Support::default()
-    };
+    let support = Support::AUTO_INIT | Support::X509;
 
     let mut env = DpeEnv::<TestTypes> {
         crypto: OpensslCrypto::new(),
@@ -35,7 +31,7 @@ fn main() {
 
     let certify_key_cmd: CertifyKeyCmd = commands::CertifyKeyCmd {
         handle: ContextHandle::default(),
-        flags: 0,
+        flags: CertifyKeyFlags::empty(),
         label: [0; DPE_PROFILE.get_hash_size()],
         format: commands::CertifyKeyCmd::FORMAT_X509,
     };

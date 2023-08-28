@@ -7,7 +7,6 @@ Abstract:
 #![cfg_attr(not(test), no_std)]
 
 pub use dpe_instance::DpeInstance;
-pub use support::Support;
 
 pub mod commands;
 pub mod context;

@@ -6,20 +6,31 @@ use crate::{
     response::{DpeErrorCode, Response, ResponseHdr},
     MAX_HANDLES,
 };
+use bitflags::bitflags;
+
+#[repr(C)]
+#[derive(Debug, PartialEq, Eq, zerocopy::FromBytes)]
+#[cfg_attr(test, derive(zerocopy::AsBytes))]
+pub struct DestroyCtxFlags(u32);
+
+bitflags! {
+    impl DestroyCtxFlags: u32 {
+        const DESTROY_CHILDREN_FLAG_MASK = 1u32 << 31;
+    }
+}
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, zerocopy::FromBytes)]
 #[cfg_attr(test, derive(zerocopy::AsBytes))]
 pub struct DestroyCtxCmd {
     pub handle: ContextHandle,
-    pub flags: u32,
+    pub flags: DestroyCtxFlags,
 }
 
 impl DestroyCtxCmd {
-    const DESTROY_CHILDREN_FLAG_MASK: u32 = 1 << 31;
-
     const fn flag_is_destroy_descendants(&self) -> bool {
-        self.flags & Self::DESTROY_CHILDREN_FLAG_MASK != 0
+        self.flags
+            .contains(DestroyCtxFlags::DESTROY_CHILDREN_FLAG_MASK)
     }
 }
 
@@ -66,7 +77,7 @@ mod tests {
 
     const TEST_DESTROY_CTX_CMD: DestroyCtxCmd = DestroyCtxCmd {
         handle: SIMULATION_HANDLE,
-        flags: 0x1234_5678,
+        flags: DestroyCtxFlags(0x1234_5678),
     };
 
     #[test]
