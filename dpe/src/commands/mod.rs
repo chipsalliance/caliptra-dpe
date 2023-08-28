@@ -14,7 +14,7 @@ pub use self::certify_key::{CertifyKeyCmd, CertifyKeyFlags};
 use self::extend_tci::ExtendTciCmd;
 use self::get_tagged_tci::GetTaggedTciCmd;
 use self::rotate_context::RotateCtxCmd;
-pub use self::sign::SignCmd;
+pub use self::sign::{SignCmd, SignFlags};
 use self::tag_tci::TagTciCmd;
 
 use crate::{
