@@ -192,6 +192,24 @@ func (c *Client[CurveParameter, Digest]) CertifyKey(cmd *CertifyKeyReq[Digest]) 
 	}, nil
 }
 
+// GetCertificateChain calls the DPE GetCertificateChain command.
+func (c *Client[_, _]) GetCertificateChain(cmd *GetCertificateChainReq) (*GetCertificateChainResp, error) {
+	respStruct := struct {
+		CertificateSize  uint32
+		CertificateChain [2048]byte
+	}{}
+
+	_, err := execCommand(c.transport, CommandGetCertificateChain, c.Profile, cmd, &respStruct)
+	if err != nil {
+		return nil, err
+	}
+
+	return &GetCertificateChainResp{
+		CertificateSize:  respStruct.CertificateSize,
+		CertificateChain: respStruct.CertificateChain[:],
+	}, nil
+}
+
 // TagTCI calls the DPE TagTCI command.
 func (c *Client[_, _]) TagTCI(cmd *TagTCIReq) (*TagTCIResp, error) {
 	var respStruct TagTCIResp

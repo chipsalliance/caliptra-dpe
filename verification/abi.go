@@ -13,12 +13,13 @@ const (
 type CommandCode uint32
 
 const (
-	CommandGetProfile        CommandCode = 0x1
-	CommandInitializeContext CommandCode = 0x7
-	CommandCertifyKey        CommandCode = 0x9
-	CommandDestroyContext    CommandCode = 0xf
-	CommandTagTCI            CommandCode = 0x82
-	CommandGetTaggedTCI      CommandCode = 0x83
+	CommandGetProfile          CommandCode = 0x1
+	CommandInitializeContext   CommandCode = 0x7
+	CommandCertifyKey          CommandCode = 0x9
+	CommandDestroyContext      CommandCode = 0xf
+	CommandGetCertificateChain CommandCode = 0x80
+	CommandTagTCI              CommandCode = 0x82
+	CommandGetTaggedTCI        CommandCode = 0x83
 )
 
 type CommandHdr struct {
@@ -95,6 +96,15 @@ type CertifyKeyResp[CurveParameter Curve, Digest DigestAlgorithm] struct {
 	DerivedPublicKeyX CurveParameter
 	DerivedPublicKeyY CurveParameter
 	Certificate       []byte
+}
+
+type GetCertificateChainReq struct {
+	Offset uint32
+	Size   uint32
+}
+type GetCertificateChainResp struct {
+	CertificateSize  uint32
+	CertificateChain []byte
 }
 
 type TCITag uint32
