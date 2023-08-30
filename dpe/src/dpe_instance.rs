@@ -430,7 +430,7 @@ pub mod tests {
     use crate::support::test::SUPPORT;
     use crate::{commands::CommandHdr, CURRENT_PROFILE_MAJOR_VERSION};
     use crypto::OpensslCrypto;
-    use platform::{DefaultPlatform, AUTO_INIT_LOCALITY, MAX_CHUNK_SIZE, TEST_CERT_CHAIN};
+    use platform::{DefaultPlatform, AUTO_INIT_LOCALITY, TEST_CERT_CHAIN};
     use zerocopy::AsBytes;
 
     pub struct TestTypes;
@@ -778,7 +778,9 @@ pub mod tests {
         let mut hasher = env.crypto.hash_initialize(DPE_PROFILE.alg_len()).unwrap();
 
         hasher.update(context.tci.as_bytes()).unwrap();
-        hasher.update(&TEST_CERT_CHAIN[..MAX_CHUNK_SIZE]).unwrap();
+        hasher
+            .update(&TEST_CERT_CHAIN[..TEST_CERT_CHAIN.len()])
+            .unwrap();
 
         let digest = hasher.finish().unwrap();
         let answer = env
