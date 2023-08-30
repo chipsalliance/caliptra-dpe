@@ -70,4 +70,26 @@ impl CryptoBuf {
     pub fn is_empty(&self) -> bool {
         self.0.len() == 0
     }
+
+    pub fn write_hex_str(&self, dest: &mut [u8]) -> Result<(), CryptoError> {
+        let src = self.bytes();
+        if dest.len() != src.len() * 2 {
+            return Err(CryptoError::Size);
+        }
+
+        let mut curr_idx = 0;
+        const HEX_CHARS: &[u8; 16] = b"0123456789abcdef";
+        for &b in src {
+            let h1 = (b >> 4) as usize;
+            let h2 = (b & 0xF) as usize;
+            if h1 >= HEX_CHARS.len() || h2 >= HEX_CHARS.len() || curr_idx + 1 >= dest.len() {
+                return Err(CryptoError::CryptoLibError);
+            }
+            dest[curr_idx] = HEX_CHARS[h1];
+            dest[curr_idx + 1] = HEX_CHARS[h2];
+            curr_idx += 2;
+        }
+
+        Ok(())
+    }
 }
