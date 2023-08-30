@@ -527,7 +527,7 @@ impl X509CertWriter<'_> {
     ///     printableString   PrintableString (SIZE (1..ub-common-name)),
     ///     ...
     ///     }
-    fn encode_rdn(&mut self, name: &Name) -> Result<usize, DpeErrorCode> {
+    pub fn encode_rdn(&mut self, name: &Name) -> Result<usize, DpeErrorCode> {
         let cn_size =
             Self::get_structure_size(Self::RDN_COMMON_NAME_OID.len(), /*tagged=*/ true)?
                 + Self::get_structure_size(name.cn.len(), /*tagged=*/ true)?;
