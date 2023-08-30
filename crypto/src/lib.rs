@@ -111,28 +111,7 @@ pub trait Crypto {
         hasher.update(pub_key.y.bytes())?;
         let digest = hasher.finish()?;
 
-        self.write_hex_str(digest.bytes(), serial)
-    }
-
-    fn write_hex_str(&mut self, src: &[u8], dest: &mut [u8]) -> Result<(), CryptoError> {
-        if dest.len() != src.len() * 2 {
-            return Err(CryptoError::Size);
-        }
-
-        let mut curr_idx = 0;
-        const HEX_CHARS: &[u8; 16] = b"0123456789abcdef";
-        for &b in src {
-            let h1 = (b >> 4) as usize;
-            let h2 = (b & 0xF) as usize;
-            if h1 >= HEX_CHARS.len() || h2 >= HEX_CHARS.len() || curr_idx + 1 >= dest.len() {
-                return Err(CryptoError::CryptoLibError);
-            }
-            dest[curr_idx] = HEX_CHARS[h1];
-            dest[curr_idx + 1] = HEX_CHARS[h2];
-            curr_idx += 2;
-        }
-
-        Ok(())
+        CryptoBuf::write_hex_str(&digest, serial)
     }
 
     /// Initialize a running hash. Returns an object that will be able to complete the rest.
