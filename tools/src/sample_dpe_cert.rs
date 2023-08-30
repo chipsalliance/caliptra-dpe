@@ -16,7 +16,7 @@ pub struct TestTypes {}
 
 impl DpeTypes for TestTypes {
     type Crypto<'a> = OpensslCrypto;
-    type Platform = DefaultPlatform;
+    type Platform<'a> = DefaultPlatform;
 }
 
 fn main() {

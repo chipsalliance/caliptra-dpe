@@ -20,12 +20,14 @@ pub trait DpeTypes {
     type Crypto<'a>: Crypto
     where
         Self: 'a;
-    type Platform: Platform;
+    type Platform<'a>: Platform
+    where
+        Self: 'a;
 }
 
 pub struct DpeEnv<'a, T: DpeTypes + 'a> {
     pub crypto: T::Crypto<'a>,
-    pub platform: T::Platform,
+    pub platform: T::Platform<'a>,
 }
 
 #[repr(C, align(4))]
@@ -434,7 +436,7 @@ pub mod tests {
     pub struct TestTypes;
     impl DpeTypes for TestTypes {
         type Crypto<'a> = OpensslCrypto;
-        type Platform = DefaultPlatform;
+        type Platform<'a> = DefaultPlatform;
     }
 
     pub const TEST_HANDLE: ContextHandle =

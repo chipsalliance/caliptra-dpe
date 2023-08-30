@@ -120,7 +120,7 @@ struct SimTypes {}
 
 impl DpeTypes for SimTypes {
     type Crypto<'a> = OpensslCrypto;
-    type Platform = DefaultPlatform;
+    type Platform<'a> = DefaultPlatform;
 }
 
 fn main() -> std::io::Result<()> {
