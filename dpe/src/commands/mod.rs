@@ -6,7 +6,7 @@ Abstract:
 --*/
 pub use self::derive_child::{DeriveChildCmd, DeriveChildFlags};
 pub(crate) use self::destroy_context::DestroyCtxCmd;
-pub(crate) use self::get_certificate_chain::GetCertificateChainCmd;
+pub use self::get_certificate_chain::GetCertificateChainCmd;
 pub use self::initialize_context::InitCtxCmd;
 
 pub use self::certify_key::{CertifyKeyCmd, CertifyKeyFlags};
