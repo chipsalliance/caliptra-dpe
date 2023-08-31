@@ -4,6 +4,7 @@ package verification
 
 import (
 	"crypto/x509"
+	"encoding/asn1"
 	"encoding/pem"
 	"fmt"
 	"log"
@@ -12,9 +13,13 @@ import (
 	zx509 "github.com/zmap/zcrypto/x509"
 	zlint "github.com/zmap/zlint/v3"
 	"github.com/zmap/zlint/v3/lint"
+
+	"golang.org/x/exp/slices"
 )
 
 // This file is used to test the certify key command by using a simulator/emulator
+
+var UNHANDLED_CRITICAL_EXTENSIONS = [...]string{"2.23.133.5.4.5", "2.23.133.5.4.4", "2.23.133.5.4.100.7", "2.23.133.5.4.100.9"}
 
 func TestCertifyKey(t *testing.T) {
 
@@ -42,6 +47,20 @@ func TestCertifyKey_SimulationMode(t *testing.T) {
 		}
 	}
 	testCertifyKey(instance, t)
+}
+
+func removeUnhandledCriticalExtensions(t *testing.T, certs []*x509.Certificate) {
+	for _, cert := range certs {
+		if len(cert.UnhandledCriticalExtensions) > 0 {
+			for _, extn := range cert.UnhandledCriticalExtensions {
+				if !slices.Contains(UNHANDLED_CRITICAL_EXTENSIONS[:], extn.String()) {
+					// Fatal because certificate chain validation cannot happen with unknown critical extensions
+					t.Fatalf("Unknown critical extension %s found in cert %s", extn.String(), cert.Subject)
+				}
+			}
+			cert.UnhandledCriticalExtensions = []asn1.ObjectIdentifier{}
+		}
+	}
 }
 
 func checkCertificateStructure(t *testing.T, certData []byte) {
@@ -133,6 +152,53 @@ func testCertifyKey(d TestDPEInstance, t *testing.T) {
 		t.Fatalf("Could not certify key: %v", err)
 	}
 	checkCertificateStructure(t, certifyKeyResp.Certificate)
+
+	// Validate certificate chain of DPE leaf certificate
+	getCertificateChainReq := GetCertificateChainReq{
+		Offset: 0,
+		Size:   MAX_CHUNK_SIZE,
+	}
+
+	getCertificateChainResp, err := client.GetCertificateChain(&getCertificateChainReq)
+	if err != nil {
+		t.Fatalf("Could not get Certificate Chain: %v", err)
+	}
+
+	checkCertificateChain(t, getCertificateChainResp.CertificateChain)
+
+	roots := x509.NewCertPool()
+	intermediates := x509.NewCertPool()
+	leafcert, _ := x509.ParseCertificate(certifyKeyResp.Certificate)
+	certs, _ := x509.ParseCertificates(getCertificateChainResp.CertificateChain)
+
+	// Remove critical extensions that are classified by x509 package as UnhandledCrticalExtensions
+	removeUnhandledCriticalExtensions(t, certs)
+	removeUnhandledCriticalExtensions(t, []*x509.Certificate{leafcert})
+	for _, cert := range certs {
+		if cert.Subject.String() == cert.Issuer.String() {
+			roots.AddCert(cert)
+			continue
+		} else {
+			intermediates.AddCert(cert)
+		}
+	}
+
+	opts := x509.VerifyOptions{
+		Roots:         roots,
+		Intermediates: intermediates,
+	}
+
+	chain, err := leafcert.Verify(opts)
+	if err != nil {
+		t.Fatalf("Could not establish a Certificate Chain: %v", err)
+	}
+
+	t.Logf("DPE leaf certificate chain validation is done")
+	for _, ch := range chain {
+		for idx, item := range ch {
+			t.Logf("%d %s", idx, (*item).Subject)
+		}
+	}
 
 	// TODO: When DeriveChild is implemented, call it here to add more TCIs and call CertifyKey again.
 }
