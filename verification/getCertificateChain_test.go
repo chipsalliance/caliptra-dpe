@@ -61,10 +61,7 @@ func testGetCertificateChain(d TestDPEInstance, t *testing.T) {
 		t.Fatalf("Could not get Certificate Chain: %v", err)
 	}
 
-	//fmt.Println(getCertificateChainResp)
 	checkCertificateChain(t, getCertificateChainResp.CertificateChain)
-
-	// TODO: When DeriveChild is implemented, call it here to add more TCIs and call GetCertificateChain again.
 }
 
 func checkCertificateChain(t *testing.T, certData []byte) {
