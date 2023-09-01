@@ -186,7 +186,7 @@ mod tests {
         support::Support,
     };
     use crypto::OpensslCrypto;
-    use platform::DefaultPlatform;
+    use platform::default::DefaultPlatform;
     use x509_parser::nom::Parser;
     use x509_parser::prelude::X509CertificateParser;
     use x509_parser::prelude::*;
@@ -201,7 +201,7 @@ mod tests {
 
     #[test]
     fn test_deserialize_certify_key() {
-        let mut command = CommandHdr::new_for_test(Command::CertifyKey(TEST_CERTIFY_KEY_CMD))
+        let mut command = CommandHdr::new_for_test(Command::CERTIFY_KEY)
             .as_bytes()
             .to_vec();
         command.extend(TEST_CERTIFY_KEY_CMD.as_bytes());

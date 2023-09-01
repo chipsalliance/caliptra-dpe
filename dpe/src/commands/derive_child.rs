@@ -185,7 +185,7 @@ mod tests {
         MAX_HANDLES,
     };
     use crypto::OpensslCrypto;
-    use platform::DefaultPlatform;
+    use platform::default::DefaultPlatform;
     use zerocopy::AsBytes;
 
     const TEST_DERIVE_CHILD_CMD: DeriveChildCmd = DeriveChildCmd {
@@ -198,7 +198,7 @@ mod tests {
 
     #[test]
     fn test_deserialize_derive_child() {
-        let mut command = CommandHdr::new_for_test(Command::DeriveChild(TEST_DERIVE_CHILD_CMD))
+        let mut command = CommandHdr::new_for_test(Command::DERIVE_CHILD)
             .as_bytes()
             .to_vec();
         command.extend(TEST_DERIVE_CHILD_CMD.as_bytes());

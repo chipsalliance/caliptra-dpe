@@ -78,7 +78,7 @@ mod tests {
         support::Support,
     };
     use crypto::OpensslCrypto;
-    use platform::DefaultPlatform;
+    use platform::default::DefaultPlatform;
     use zerocopy::AsBytes;
 
     const TEST_ROTATE_CTX_CMD: RotateCtxCmd = RotateCtxCmd {
@@ -89,7 +89,7 @@ mod tests {
 
     #[test]
     fn test_deserialize_rotate_context() {
-        let mut command = CommandHdr::new_for_test(Command::RotateCtx(TEST_ROTATE_CTX_CMD))
+        let mut command = CommandHdr::new_for_test(Command::ROTATE_CONTEXT_HANDLE)
             .as_bytes()
             .to_vec();
         command.extend(TEST_ROTATE_CTX_CMD.as_bytes());

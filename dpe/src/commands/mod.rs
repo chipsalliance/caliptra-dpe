@@ -52,17 +52,17 @@ pub enum Command {
 }
 
 impl Command {
-    const GET_PROFILE: u32 = 0x01;
-    const INITIALIZE_CONTEXT: u32 = 0x07;
-    const DERIVE_CHILD: u32 = 0x08;
-    const CERTIFY_KEY: u32 = 0x09;
-    const SIGN: u32 = 0x0A;
-    const ROTATE_CONTEXT_HANDLE: u32 = 0x0e;
-    const DESTROY_CONTEXT: u32 = 0x0f;
-    const GET_CERTIFICATE_CHAIN: u32 = 0x80;
-    const EXTEND_TCI: u32 = 0x81;
-    const TAG_TCI: u32 = 0x82;
-    const GET_TAGGED_TCI: u32 = 0x83;
+    pub const GET_PROFILE: u32 = 0x01;
+    pub const INITIALIZE_CONTEXT: u32 = 0x07;
+    pub const DERIVE_CHILD: u32 = 0x08;
+    pub const CERTIFY_KEY: u32 = 0x09;
+    pub const SIGN: u32 = 0x0A;
+    pub const ROTATE_CONTEXT_HANDLE: u32 = 0x0e;
+    pub const DESTROY_CONTEXT: u32 = 0x0f;
+    pub const GET_CERTIFICATE_CHAIN: u32 = 0x80;
+    pub const EXTEND_TCI: u32 = 0x81;
+    pub const TAG_TCI: u32 = 0x82;
+    pub const GET_TAGGED_TCI: u32 = 0x83;
 
     /// Returns the command with its parameters given a slice of bytes.
     ///
@@ -141,10 +141,10 @@ pub struct CommandHdr {
 impl CommandHdr {
     const DPE_COMMAND_MAGIC: u32 = u32::from_be_bytes(*b"DPEC");
 
-    pub fn new_for_test(command: Command) -> CommandHdr {
+    pub fn new_for_test(cmd_id: u32) -> CommandHdr {
         CommandHdr {
             magic: Self::DPE_COMMAND_MAGIC,
-            cmd_id: command.into(),
+            cmd_id,
             profile: DPE_PROFILE as u32,
         }
     }
@@ -195,7 +195,7 @@ pub mod tests {
         // Commands that can be deserialized.
         assert_eq!(
             Ok(Command::GetProfile),
-            Command::deserialize(CommandHdr::new_for_test(Command::GetProfile).as_bytes())
+            Command::deserialize(CommandHdr::new_for_test(Command::GET_PROFILE).as_bytes())
         );
     }
 

@@ -96,14 +96,14 @@ mod tests {
         support::Support,
     };
     use crypto::OpensslCrypto;
-    use platform::DefaultPlatform;
+    use platform::default::DefaultPlatform;
     use zerocopy::AsBytes;
 
     const TEST_INIT_CTX_CMD: InitCtxCmd = InitCtxCmd(0x1234_5678);
 
     #[test]
     fn test_deserialize_init_ctx() {
-        let mut command = CommandHdr::new_for_test(Command::InitCtx(TEST_INIT_CTX_CMD))
+        let mut command = CommandHdr::new_for_test(Command::INITIALIZE_CONTEXT)
             .as_bytes()
             .to_vec();
         command.extend(TEST_INIT_CTX_CMD.as_bytes());
