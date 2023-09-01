@@ -56,13 +56,7 @@ func testGetCertificateChain(d TestDPEInstance, t *testing.T) {
 		t.Fatalf("Could not initialize client: %v", err)
 	}
 
-	// Initialize request input parameters
-	getCertificateChainReq := GetCertificateChainReq{
-		Offset: 0,
-		Size:   MAX_CHUNK_SIZE,
-	}
-
-	getCertificateChainResp, err := client.GetCertificateChain(&getCertificateChainReq)
+	getCertificateChainResp, err := client.GetCertificateChain()
 	if err != nil {
 		t.Fatalf("Could not get Certificate Chain: %v", err)
 	}
@@ -77,8 +71,7 @@ func checkCertificateChain(t *testing.T, certData []byte) {
 	t.Helper()
 	failed := false
 
-	x509_certs, err := x509.ParseCertificates(certData)
-	if err != nil {
+	if _, err := x509.ParseCertificates(certData); err != nil {
 		t.Fatalf("Could not parse certificate using crypto/x509: %v", err)
 		failed = true
 	}
@@ -138,35 +131,5 @@ func checkCertificateChain(t *testing.T, certData []byte) {
 		}
 	}
 
-	roots := x509.NewCertPool()
-	intermediates := x509.NewCertPool()
-	removeUnhandledCriticalExtensions(t, x509_certs)
-
-	for _, cert := range x509_certs {
-		if cert.Subject.String() == cert.Issuer.String() {
-			roots.AddCert(cert)
-			continue
-		} else {
-			intermediates.AddCert(cert)
-		}
-	}
-
-	opts := x509.VerifyOptions{
-		Roots:         roots,
-		Intermediates: intermediates,
-	}
-
-	for _, cert := range x509_certs {
-		chain, err := cert.Verify(opts)
-		if err != nil {
-			// Fail the test with Errorf here once we expect it to pass.
-			t.Logf("Could not establish a Certificate Chain: %v for %s", err, cert.Subject)
-		}
-
-		for _, ch := range chain {
-			for idx, item := range ch {
-				t.Logf("%d %s", idx, (*item).Subject)
-			}
-		}
-	}
+	validateCertChain(t, certData, nil)
 }

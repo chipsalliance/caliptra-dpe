@@ -198,8 +198,14 @@ func (c *Client[CurveParameter, Digest]) CertifyKey(cmd *CertifyKeyReq[Digest]) 
 }
 
 // GetCertificateChain calls the DPE GetCertificateChain command.
-func (c *Client[_, _]) GetCertificateChain(cmd *GetCertificateChainReq) (*GetCertificateChainResp, error) {
+func (c *Client[_, _]) GetCertificateChain() (*GetCertificateChainResp, error) {
 	var certs GetCertificateChainResp
+
+	// Initialize request input parameters
+	cmd := GetCertificateChainReq{
+		Offset: 0,
+		Size:   MAX_CHUNK_SIZE,
+	}
 
 	for {
 		respStruct := struct {

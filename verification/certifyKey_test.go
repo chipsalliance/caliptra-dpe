@@ -49,18 +49,31 @@ func TestCertifyKey_SimulationMode(t *testing.T) {
 	testCertifyKey(instance, t)
 }
 
-func removeUnhandledCriticalExtensions(t *testing.T, certs []*x509.Certificate) {
+// Ignores critical extensions that are unknown to x509 package
+// but atleast defined in DPE certificate profile specification.
+// UnhandledCriticalExtensions may have only custom extensions mentioned in spec
+// unknown_ext_map collects extensions unknown to both x59 and the spec.
+// positive case expects the unknown_ext_map to be empty.
+func removeUnhandledCriticalExtensions(certs []*x509.Certificate) map[string][]string {
+	unknown_extn_map := map[string][]string{}
 	for _, cert := range certs {
 		if len(cert.UnhandledCriticalExtensions) > 0 {
+			unhandled_extn := []string{}
 			for _, extn := range cert.UnhandledCriticalExtensions {
 				if !slices.Contains(UNHANDLED_CRITICAL_EXTENSIONS[:], extn.String()) {
-					// Fatal because certificate chain validation cannot happen with unknown critical extensions
-					t.Fatalf("Unknown critical extension %s found in cert %s", extn.String(), cert.Subject)
+					unhandled_extn = append(unhandled_extn, extn.String())
 				}
 			}
-			cert.UnhandledCriticalExtensions = []asn1.ObjectIdentifier{}
+
+			if len(unhandled_extn) == 0 {
+				cert.UnhandledCriticalExtensions = []asn1.ObjectIdentifier{}
+			} else {
+				unknown_extn_map[cert.Subject.String()] = unhandled_extn
+			}
 		}
 	}
+	// The error details in thi map will be logged for convenience
+	return unknown_extn_map
 }
 
 func checkCertificateStructure(t *testing.T, certData []byte) {
@@ -147,59 +160,160 @@ func testCertifyKey(d TestDPEInstance, t *testing.T) {
 		Format:        CertifyKeyX509,
 	}
 
+	// Get DPE leaf certificate from CertifyKey
 	certifyKeyResp, err := client.CertifyKey(&certifyKeyReq)
 	if err != nil {
 		t.Fatalf("Could not certify key: %v", err)
 	}
-	checkCertificateStructure(t, certifyKeyResp.Certificate)
 
-	// Validate certificate chain of DPE leaf certificate
-	getCertificateChainReq := GetCertificateChainReq{
-		Offset: 0,
-		Size:   MAX_CHUNK_SIZE,
-	}
-
-	getCertificateChainResp, err := client.GetCertificateChain(&getCertificateChainReq)
+	// Get root and intermediate certificates to validate certificate chain of leaf cert
+	getCertificateChainResp, err := client.GetCertificateChain()
 	if err != nil {
-		// Fail the test with Errorf here once we expect it to pass.
-		t.Logf("Could not get Certificate Chain: %v", err)
+		t.Fatalf("Could not get Certificate Chain: %v", err)
 	}
 
-	checkCertificateChain(t, getCertificateChainResp.CertificateChain)
+	leaf := certifyKeyResp.Certificate
+	certchain := getCertificateChainResp.CertificateChain
+
+	// Parse and lint certificates
+	checkCertificateStructure(t, leaf)
+	checkCertificateChain(t, certchain)
+
+	validateCertChain(t, certchain, leaf)
+
+	// TODO: When DeriveChild is implemented, call it here to add more TCIs and call CertifyKey again.
+}
+
+// Validate signature of certificates
+func validateSignature(certchain []*x509.Certificate) map[string]string {
+	err_map := map[string]string{}
+	for _, cert := range certchain {
+		err := cert.CheckSignature(cert.SignatureAlgorithm, cert.RawTBSCertificate, cert.Signature)
+		if err != nil {
+			msg := fmt.Sprintf("Signature validation failed for certificate %s in chain with error %s", cert.Subject.String(), err.Error())
+			err_map[cert.Subject.String()] = msg
+		}
+	}
+	return err_map
+}
+
+// Validate certificate chain
+func validateCertChain(t *testing.T, certchain []byte, leaf []byte) {
+	var err error
 
 	roots := x509.NewCertPool()
 	intermediates := x509.NewCertPool()
-	leafcert, _ := x509.ParseCertificate(certifyKeyResp.Certificate)
-	certs, _ := x509.ParseCertificates(getCertificateChainResp.CertificateChain)
 
-	// Remove critical extensions that are classified by x509 package as UnhandledCrticalExtensions
-	removeUnhandledCriticalExtensions(t, certs)
-	removeUnhandledCriticalExtensions(t, []*x509.Certificate{leafcert})
-	for _, cert := range certs {
-		if cert.Subject.String() == cert.Issuer.String() {
-			roots.AddCert(cert)
-			continue
-		} else {
-			intermediates.AddCert(cert)
-		}
-	}
-
-	opts := x509.VerifyOptions{
-		Roots:         roots,
-		Intermediates: intermediates,
-	}
-
-	chain, err := leafcert.Verify(opts)
+	certs, _ := x509.ParseCertificates(certchain)
 	if err != nil {
-		t.Logf("Could not establish a Certificate Chain: %v", err)
+		t.Fatalf("Could not parse certificate chain with error %s", err.Error())
 	}
 
-	t.Logf("DPE leaf certificate chain validation is done")
-	for _, ch := range chain {
-		for idx, item := range ch {
-			t.Logf("%d %s", idx, (*item).Subject)
+	if leaf != nil {
+		leafcert, err := x509.ParseCertificate(leaf)
+		if err != nil {
+			t.Fatalf("Could not parse leaf certificate with error %s", err.Error())
 		}
-	}
 
-	// TODO: When DeriveChild is implemented, call it here to add more TCIs and call CertifyKey again.
+		// Remove unhandled critical extensions reported by x509 but defined in spec
+		unknown_ext_map := removeUnhandledCriticalExtensions([]*x509.Certificate{leafcert})
+		if len(unknown_ext_map) > 0 {
+			for cert_name, ext := range unknown_ext_map {
+				t.Errorf("Certificate \"%s\" has unknown UnhandledCriticalExtension \"%s\"", cert_name, ext)
+			}
+			t.Fatalf("Cannot proceed leaf certificate chain validation with non-empty unhandled critical extensions list")
+		}
+
+		// Build certificate pool for chain validation
+		for _, cert := range certs {
+			if cert.Subject.String() == cert.Issuer.String() {
+				roots.AddCert(cert)
+				continue
+			} else {
+				intermediates.AddCert(cert)
+			}
+		}
+		opts := x509.VerifyOptions{
+			Roots:         roots,
+			Intermediates: intermediates,
+		}
+
+		// Certificate chain validation for leaf
+		chains, err := leafcert.Verify(opts)
+		if err != nil {
+			// TODO: Fail the test with Errorf here once we expect it to pass.
+			t.Logf("Could not establish a Certificate Chain: %v", err)
+		}
+
+		// Log certificate chains linked to leaf
+		for _, chain := range chains {
+			for i, cert := range chain {
+				t.Logf("%d %s", i, (*cert).Subject)
+			}
+		}
+
+		// Validate signature of all certificates
+		all_certs := append(certs, leafcert)
+		err_map := validateSignature(all_certs)
+		if len(err_map) > 0 {
+			for cert_name, msg := range err_map {
+				// TODO: Fail the test when the certificate is expected to pass
+				// At present moment signature validation ails for cert returned by CertifyKey command.
+				t.Logf("Certificate \"%s\" signature validation failed \"%s\"", cert_name, msg)
+			}
+			t.Logf("Found certificates with mismatching signature")
+		}
+
+		t.Logf("DPE leaf certificate chain validation is done")
+
+	} else {
+		// Remove unhandled critical extensions reported by x509 but defined in spec
+		unknown_ext_map := removeUnhandledCriticalExtensions(certs)
+		if len(unknown_ext_map) > 0 {
+			for cert_name, ext := range unknown_ext_map {
+				t.Errorf("Certificate \"%s\" has unknown UnhandledCriticalExtension \"%s\"", cert_name, ext)
+			}
+			t.Fatalf("Cannot proceed certificate chain validation with non-empty unhahndled critical extensions list")
+		}
+
+		// Build certificate pool for chain validation
+		for _, cert := range certs {
+			if cert.Subject.String() == cert.Issuer.String() {
+				roots.AddCert(cert)
+				continue
+			} else {
+				intermediates.AddCert(cert)
+			}
+		}
+		opts := x509.VerifyOptions{
+			Roots:         roots,
+			Intermediates: intermediates,
+		}
+
+		// Certificate chain validation for each intermediate certificate
+		for _, cert := range certs {
+			chains, err := cert.Verify(opts)
+			if err != nil {
+				// TODO: Fail the test with Errorf here once we expect it to pass.
+				t.Logf("Could not establish a Certificate Chain: %v for %s", err, cert.Subject)
+			}
+
+			// Log certificate chains linked to each cetificate in chain
+			for _, chain := range chains {
+				for i, cert := range chain {
+					t.Logf("%d %s", i, (*cert).Subject)
+				}
+			}
+		}
+		// Validate signature of all certificates
+		err_map := validateSignature(certs)
+		if len(err_map) > 0 {
+			for cert_name, msg := range err_map {
+				t.Errorf("Certificate \"%s\" signature validation failed \"%s\"", cert_name, msg)
+			}
+			t.Fatalf("Found certificates with mismatching signature")
+		}
+
+		t.Logf("Intermediate certificates chain validation is done")
+	}
 }
