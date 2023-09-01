@@ -3,10 +3,13 @@ Licensed under the Apache-2.0 license.
 Abstract:
     Generic trait definition of platform.
 --*/
-#![cfg_attr(not(test), no_std)]
+#![cfg_attr(not(any(feature = "openssl", test)), no_std)]
 
-pub use default::*;
-mod default;
+#[cfg(feature = "openssl")]
+pub use openssl::x509::X509;
+
+#[cfg(feature = "openssl")]
+pub mod default;
 
 pub const MAX_CHUNK_SIZE: usize = 2048;
 

@@ -15,4 +15,4 @@ log = "0.4.17"
 env_logger = "0.10.0"
 dpe = { path = "../dpe" }
 crypto = { path = "../crypto", features = ["openssl"] }
-platform = { path = "../platform" }
+platform = { path = "../platform", features = ["openssl"] }

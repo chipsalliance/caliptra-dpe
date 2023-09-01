@@ -24,6 +24,7 @@ features = ["openssl"]
 
 [dependencies.platform]
 path = "../../platform"
+features = ["openssl"]
 
 # Prevent this from interfering with workspaces
 [workspace]

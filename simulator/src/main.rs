@@ -3,7 +3,7 @@
 use clap::Parser;
 use crypto::OpensslCrypto;
 use log::{error, info, trace, warn};
-use platform::DefaultPlatform;
+use platform::default::DefaultPlatform;
 use std::fs;
 use std::io::{Error, ErrorKind, Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};

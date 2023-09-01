@@ -430,7 +430,7 @@ pub mod tests {
     use crate::support::test::SUPPORT;
     use crate::{commands::CommandHdr, CURRENT_PROFILE_MAJOR_VERSION};
     use crypto::OpensslCrypto;
-    use platform::{DefaultPlatform, AUTO_INIT_LOCALITY, TEST_CERT_CHAIN};
+    use platform::default::{DefaultPlatform, AUTO_INIT_LOCALITY, TEST_CERT_CHAIN};
     use zerocopy::AsBytes;
 
     pub struct TestTypes;
@@ -463,14 +463,14 @@ pub mod tests {
             dpe.execute_serialized_command(
                 &mut env,
                 TEST_LOCALITIES[0],
-                CommandHdr::new_for_test(Command::GetProfile).as_bytes(),
+                CommandHdr::new_for_test(Command::GET_PROFILE).as_bytes(),
             )
             .unwrap()
         );
 
         // The default context was initialized while creating the instance. Now lets create a
         // simulation context.
-        let mut command = CommandHdr::new_for_test(Command::InitCtx(InitCtxCmd::new_simulation()))
+        let mut command = CommandHdr::new_for_test(Command::INITIALIZE_CONTEXT)
             .as_bytes()
             .to_vec();
         command.extend(InitCtxCmd::new_simulation().as_bytes());
