@@ -16,7 +16,6 @@ crypto = {path = "../crypto", features = ["deterministic_rand"]}
 pem = "2"
 platform = {path = "../platform"}
 zerocopy = "0.6.1"
-clap = { version = "4.3.17", features = ["derive"] }
 
 [[bin]]
 name = "sample_dpe_cert"

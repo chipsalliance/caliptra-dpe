@@ -47,7 +47,6 @@ mod tests {
         commands::{tests::TEST_DIGEST, Command, CommandHdr, InitCtxCmd},
         dpe_instance::tests::{TestTypes, SIMULATION_HANDLE, TEST_LOCALITIES},
         support::Support,
-        U8Bool,
     };
     use crypto::OpensslCrypto;
     use platform::{DefaultPlatform, AUTO_INIT_LOCALITY};
@@ -88,7 +87,7 @@ mod tests {
         );
 
         // Turn on support.
-        dpe.support.extend_tci = U8Bool::new(true);
+        dpe.support = dpe.support | Support::EXTEND_TCI;
         InitCtxCmd::new_use_default()
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
             .unwrap();
@@ -127,7 +126,7 @@ mod tests {
         // Make sure cached private key is invalidated
 
         let sim_local = TEST_LOCALITIES[1];
-        dpe.support.simulation = U8Bool::new(true);
+        dpe.support = dpe.support | Support::SIMULATION;
         InitCtxCmd::new_simulation()
             .execute(&mut dpe, &mut env, sim_local)
             .unwrap();

@@ -6,23 +6,31 @@ use crate::{
     response::{DpeErrorCode, Response, ResponseHdr, SignResp},
     DPE_PROFILE,
 };
+use bitflags::bitflags;
 use crypto::{Crypto, CryptoBuf, Digest, EcdsaSig, HmacSig};
 
 #[repr(C)]
-#[derive(Debug, PartialEq, Eq, zerocopy::FromBytes)]
-#[cfg_attr(test, derive(zerocopy::AsBytes))]
+#[derive(Debug, PartialEq, Eq, zerocopy::AsBytes, zerocopy::FromBytes)]
+pub struct SignFlags(u32);
+
+bitflags! {
+    impl SignFlags: u32 {
+        const IS_SYMMETRIC = 1u32 << 31;
+    }
+}
+
+#[repr(C)]
+#[derive(Debug, PartialEq, Eq, zerocopy::AsBytes, zerocopy::FromBytes)]
 pub struct SignCmd {
-    handle: ContextHandle,
-    label: [u8; DPE_PROFILE.get_hash_size()],
-    flags: u32,
-    digest: [u8; DPE_PROFILE.get_hash_size()],
+    pub handle: ContextHandle,
+    pub label: [u8; DPE_PROFILE.get_hash_size()],
+    pub flags: SignFlags,
+    pub digest: [u8; DPE_PROFILE.get_hash_size()],
 }
 
 impl SignCmd {
-    const IS_SYMMETRIC: u32 = 1 << 31;
-
     const fn uses_symmetric(&self) -> bool {
-        self.flags & Self::IS_SYMMETRIC != 0
+        self.flags.contains(SignFlags::IS_SYMMETRIC)
     }
 
     fn ecdsa_sign(
@@ -122,12 +130,12 @@ mod tests {
     use super::*;
     use crate::{
         commands::{
-            certify_key::CertifyKeyCmd, tests::TEST_DIGEST, Command, CommandHdr, DeriveChildCmd,
-            InitCtxCmd,
+            certify_key::CertifyKeyCmd, certify_key::CertifyKeyFlags,
+            derive_child::DeriveChildFlags, tests::TEST_DIGEST, Command, CommandHdr,
+            DeriveChildCmd, InitCtxCmd,
         },
         dpe_instance::tests::{TestTypes, SIMULATION_HANDLE, TEST_LOCALITIES},
         support::{test::SUPPORT, Support},
-        U8Bool,
     };
     use crypto::OpensslCrypto;
     use openssl::x509::X509;
@@ -149,7 +157,7 @@ mod tests {
     const TEST_SIGN_CMD: SignCmd = SignCmd {
         handle: SIMULATION_HANDLE,
         label: TEST_LABEL,
-        flags: 0x1234_5678,
+        flags: SignFlags(0x1234_5678),
         digest: TEST_DIGEST,
     };
 
@@ -169,14 +177,14 @@ mod tests {
     fn test_uses_symmetric() {
         // No flags set.
         assert!(!SignCmd {
-            flags: 0,
+            flags: SignFlags::empty(),
             ..TEST_SIGN_CMD
         }
         .uses_symmetric());
 
         // Just is-symmetric flag set.
         assert!(SignCmd {
-            flags: SignCmd::IS_SYMMETRIC,
+            flags: SignFlags::IS_SYMMETRIC,
             ..TEST_SIGN_CMD
         }
         .uses_symmetric());
@@ -196,7 +204,7 @@ mod tests {
             SignCmd {
                 handle: ContextHandle([0xff; ContextHandle::SIZE]),
                 label: TEST_LABEL,
-                flags: SignCmd::IS_SYMMETRIC,
+                flags: SignFlags::IS_SYMMETRIC,
                 digest: TEST_DIGEST
             }
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
@@ -208,7 +216,7 @@ mod tests {
             SignCmd {
                 handle: ContextHandle([0xff; ContextHandle::SIZE]),
                 label: TEST_LABEL,
-                flags: 0,
+                flags: SignFlags::empty(),
                 digest: TEST_DIGEST
             }
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
@@ -223,7 +231,7 @@ mod tests {
             SignCmd {
                 handle: ContextHandle::default(),
                 label: TEST_LABEL,
-                flags: 0,
+                flags: SignFlags::empty(),
                 digest: TEST_DIGEST
             }
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[1])
@@ -241,7 +249,7 @@ mod tests {
             SignCmd {
                 handle: SIMULATION_HANDLE,
                 label: TEST_LABEL,
-                flags: 0,
+                flags: SignFlags::empty(),
                 digest: TEST_DIGEST
             }
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
@@ -260,7 +268,7 @@ mod tests {
             DeriveChildCmd {
                 handle: ContextHandle::default(),
                 data: [i; DPE_PROFILE.get_hash_size()],
-                flags: DeriveChildCmd::MAKE_DEFAULT | DeriveChildCmd::INPUT_ALLOW_X509,
+                flags: DeriveChildFlags::MAKE_DEFAULT | DeriveChildFlags::INPUT_ALLOW_X509,
                 tci_type: i as u32,
                 target_locality: 0,
             }
@@ -272,7 +280,7 @@ mod tests {
             let cmd = SignCmd {
                 handle: ContextHandle::default(),
                 label: TEST_LABEL,
-                flags: 0,
+                flags: SignFlags::empty(),
                 digest: TEST_DIGEST,
             };
             let resp = match cmd.execute(&mut dpe, &mut env, TEST_LOCALITIES[0]).unwrap() {
@@ -290,7 +298,7 @@ mod tests {
         let ec_pub_key = {
             let cmd = CertifyKeyCmd {
                 handle: ContextHandle::default(),
-                flags: 0,
+                flags: CertifyKeyFlags::empty(),
                 label: TEST_LABEL,
                 format: CertifyKeyCmd::FORMAT_X509,
             };
@@ -313,20 +321,13 @@ mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe = DpeInstance::new(
-            &mut env,
-            Support {
-                auto_init: U8Bool::new(true),
-                is_symmetric: U8Bool::new(true),
-                ..Support::default()
-            },
-        )
-        .unwrap();
+        let mut dpe =
+            DpeInstance::new(&mut env, Support::AUTO_INIT | Support::IS_SYMMETRIC).unwrap();
 
         let cmd = SignCmd {
             handle: ContextHandle::default(),
             label: TEST_LABEL,
-            flags: SignCmd::IS_SYMMETRIC,
+            flags: SignFlags::IS_SYMMETRIC,
             digest: TEST_DIGEST,
         };
         let resp = match cmd.execute(&mut dpe, &mut env, TEST_LOCALITIES[0]).unwrap() {

@@ -5,13 +5,25 @@ use crate::{
     dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
     response::{DpeErrorCode, NewHandleResp, Response, ResponseHdr},
 };
+use bitflags::bitflags;
+
+#[repr(C)]
+#[derive(Debug, PartialEq, Eq, zerocopy::FromBytes)]
+#[cfg_attr(test, derive(zerocopy::AsBytes))]
+pub struct RotateCtxFlags(u32);
+
+bitflags! {
+    impl RotateCtxFlags: u32 {
+        const TARGET_IS_DEFAULT = 1u32 << 31;
+    }
+}
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, zerocopy::FromBytes)]
 #[cfg_attr(test, derive(zerocopy::AsBytes))]
 pub struct RotateCtxCmd {
     handle: ContextHandle,
-    flags: u32,
+    flags: RotateCtxFlags,
     target_locality: u32,
 }
 
@@ -19,7 +31,7 @@ impl RotateCtxCmd {
     pub const TARGET_IS_DEFAULT: u32 = 1 << 31;
 
     const fn uses_target_is_default(&self) -> bool {
-        self.flags & Self::TARGET_IS_DEFAULT != 0
+        self.flags.contains(RotateCtxFlags::TARGET_IS_DEFAULT)
     }
 }
 
@@ -64,14 +76,13 @@ mod tests {
         commands::{Command, CommandHdr, InitCtxCmd},
         dpe_instance::tests::{TestTypes, SIMULATION_HANDLE, TEST_HANDLE, TEST_LOCALITIES},
         support::Support,
-        U8Bool,
     };
     use crypto::OpensslCrypto;
     use platform::DefaultPlatform;
     use zerocopy::AsBytes;
 
     const TEST_ROTATE_CTX_CMD: RotateCtxCmd = RotateCtxCmd {
-        flags: 0x1234_5678,
+        flags: RotateCtxFlags(0x1234_5678),
         handle: TEST_HANDLE,
         target_locality: 0x9876_5432,
     };
@@ -100,21 +111,14 @@ mod tests {
             Err(DpeErrorCode::InvalidCommand),
             RotateCtxCmd {
                 handle: ContextHandle::default(),
-                flags: 0,
+                flags: RotateCtxFlags::empty(),
                 target_locality: 0
             }
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         );
 
         // Make a new instance that supports RotateContext.
-        let mut dpe = DpeInstance::new(
-            &mut env,
-            Support {
-                rotate_context: U8Bool::new(true),
-                ..Support::default()
-            },
-        )
-        .unwrap();
+        let mut dpe = DpeInstance::new(&mut env, Support::ROTATE_CONTEXT).unwrap();
         InitCtxCmd::new_use_default()
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
             .unwrap();
@@ -124,7 +128,7 @@ mod tests {
             Err(DpeErrorCode::InvalidHandle),
             RotateCtxCmd {
                 handle: TEST_HANDLE,
-                flags: 0,
+                flags: RotateCtxFlags::empty(),
                 target_locality: 0
             }
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
@@ -135,7 +139,7 @@ mod tests {
             Err(DpeErrorCode::InvalidLocality),
             RotateCtxCmd {
                 handle: ContextHandle::default(),
-                flags: 0,
+                flags: RotateCtxFlags::empty(),
                 target_locality: 0
             }
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[1])
@@ -146,7 +150,7 @@ mod tests {
             Err(DpeErrorCode::InvalidArgument),
             RotateCtxCmd {
                 handle: ContextHandle::default(),
-                flags: RotateCtxCmd::TARGET_IS_DEFAULT,
+                flags: RotateCtxFlags::TARGET_IS_DEFAULT,
                 target_locality: 0
             }
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
@@ -160,7 +164,7 @@ mod tests {
             })),
             RotateCtxCmd {
                 handle: ContextHandle::default(),
-                flags: 0,
+                flags: RotateCtxFlags::empty(),
                 target_locality: 0
             }
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
@@ -174,7 +178,7 @@ mod tests {
             })),
             RotateCtxCmd {
                 handle: SIMULATION_HANDLE,
-                flags: RotateCtxCmd::TARGET_IS_DEFAULT,
+                flags: RotateCtxFlags::TARGET_IS_DEFAULT,
                 target_locality: 0
             }
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])

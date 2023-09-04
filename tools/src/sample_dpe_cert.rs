@@ -1,72 +1,37 @@
 // Licensed under the Apache-2.0 license
 
 use {
-    clap::Parser,
     crypto::OpensslCrypto,
-    dpe::commands::{self, CertifyKeyCmd, CommandHdr},
+    dpe::commands::{self, CertifyKeyCmd, CertifyKeyFlags, CommandHdr},
     dpe::context::ContextHandle,
-    dpe::dpe_instance::DpeEnv,
+    dpe::dpe_instance::{DpeEnv, DpeTypes},
     dpe::response::Response,
-    dpe::{DpeInstance, Support, DPE_PROFILE},
+    dpe::{support::Support, DpeInstance, DPE_PROFILE},
     pem::{encode_config, EncodeConfig, LineEnding, Pem},
     platform::DefaultPlatform,
-    std::fs,
     zerocopy::AsBytes,
 };
 
-pub struct TestEnv {
-    pub crypto: OpensslCrypto,
-    pub platform: DefaultPlatform,
-}
+pub struct TestTypes {}
 
-impl DpeEnv for TestEnv {
-    type Crypto = OpensslCrypto;
-    type Platform = DefaultPlatform;
-
-    fn crypto(&mut self) -> &mut OpensslCrypto {
-        &mut self.crypto
-    }
-
-    fn platform(&mut self) -> &mut DefaultPlatform {
-        &mut self.platform
-    }
-}
-
-/// Tool to generate sample DPE leaf certificate
-#[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
-struct Args {
-    /// File containg DER encoded issuer name
-    #[arg(short, long)]
-    issuer_name_der_file: Option<String>,
+impl DpeTypes for TestTypes {
+    type Crypto<'a> = OpensslCrypto;
+    type Platform<'a> = DefaultPlatform;
 }
 
 fn main() {
-    let args = Args::parse();
+    let support = Support::AUTO_INIT | Support::X509;
 
-    let support = Support {
-        auto_init: true,
-        x509: true,
-        ..Support::default()
-    };
-
-    let mut env = TestEnv {
+    let mut env = DpeEnv::<TestTypes> {
         crypto: OpensslCrypto::new(),
         platform: DefaultPlatform,
     };
 
-    let der;
-    let mut dpe = match args.issuer_name_der_file {
-        Some(file) => {
-            der = fs::read(file).unwrap();
-            DpeInstance::new(&mut env, support, &der).unwrap()
-        }
-        None => DpeInstance::new(&mut env, support).unwrap(),
-    };
+    let mut dpe = DpeInstance::new(&mut env, support).unwrap();
 
     let certify_key_cmd: CertifyKeyCmd = commands::CertifyKeyCmd {
         handle: ContextHandle::default(),
-        flags: 0,
+        flags: CertifyKeyFlags::empty(),
         label: [0; DPE_PROFILE.get_hash_size()],
         format: commands::CertifyKeyCmd::FORMAT_X509,
     };
