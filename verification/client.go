@@ -3,7 +3,12 @@
 package verification
 
 import (
+	"errors"
 	"fmt"
+)
+
+const (
+	MAX_CHUNK_SIZE = 2048
 )
 
 type Support struct {
@@ -190,6 +195,47 @@ func (c *Client[CurveParameter, Digest]) CertifyKey(cmd *CertifyKeyReq[Digest]) 
 		DerivedPublicKeyY: respStruct.DerivedPublicKeyY,
 		Certificate:       respStruct.Certificate[:respStruct.CertificateSize],
 	}, nil
+}
+
+// GetCertificateChain calls the DPE GetCertificateChain command.
+func (c *Client[_, _]) GetCertificateChain() (*GetCertificateChainResp, error) {
+	var certs GetCertificateChainResp
+
+	// Initialize request input parameters
+	cmd := GetCertificateChainReq{
+		Offset: 0,
+		Size:   MAX_CHUNK_SIZE,
+	}
+
+	for {
+		respStruct := struct {
+			CertificateSize  uint32
+			CertificateChain [2048]byte
+		}{}
+
+		_, err := execCommand(c.transport, CommandGetCertificateChain, c.Profile, cmd, &respStruct)
+		if err == StatusInvalidArgument {
+			// This indicates that there are no more bytes to be read in certificate chain
+			break
+		} else if err != nil {
+			// This indicates error in processing GetCertificateChain command
+			return nil, err
+		}
+		// fmt.Println(respStruct.CertificateChain[:])
+		// fmt.Println(string(respStruct.CertificateChain[:]))
+
+		certs.CertificateChain = append(certs.CertificateChain, respStruct.CertificateChain[:respStruct.CertificateSize]...)
+		if MAX_CHUNK_SIZE > respStruct.CertificateSize {
+			break
+		}
+		// Increment offset in steps of 2048 bytes till end of cert chain
+		cmd.Offset += MAX_CHUNK_SIZE
+	}
+
+	if len(certs.CertificateChain) == 0 {
+		return nil, errors.New("empty certificate chain")
+	}
+	return &certs, nil
 }
 
 // TagTCI calls the DPE TagTCI command.
