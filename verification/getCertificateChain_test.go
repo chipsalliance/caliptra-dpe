@@ -64,13 +64,16 @@ func testGetCertificateChain(d TestDPEInstance, t *testing.T) {
 	checkCertificateChain(t, getCertificateChainResp.CertificateChain)
 }
 
-func checkCertificateChain(t *testing.T, certData []byte) {
+func checkCertificateChain(t *testing.T, certData []byte) []*x509.Certificate {
 	t.Helper()
 	failed := false
 
-	if _, err := x509.ParseCertificates(certData); err != nil {
+	var x509Certs []*x509.Certificate
+	var err error
+
+	// Check whether certificate chain is DER encoded.
+	if x509Certs, err = x509.ParseCertificates(certData); err != nil {
 		t.Fatalf("Could not parse certificate using crypto/x509: %v", err)
-		failed = true
 	}
 
 	// Parse the cert with zcrypto so we can lint it.
@@ -128,5 +131,6 @@ func checkCertificateChain(t *testing.T, certData []byte) {
 		}
 	}
 
-	validateCertChain(t, certData, nil)
+	validateCertChain(t, x509Certs, nil)
+	return x509Certs
 }
