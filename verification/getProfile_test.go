@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// This file is used to test the get profile command by using a simulator/emulator
+// This file is used to test the get profile command.
 
 func TestGetProfile(t *testing.T) {
 

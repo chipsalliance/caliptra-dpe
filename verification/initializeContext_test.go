@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// This file is used to test the initialize context command by using a simulator/emulator
+// This file is used to test the initialize context command.
 
 func TestInitializeContext(t *testing.T) {
 

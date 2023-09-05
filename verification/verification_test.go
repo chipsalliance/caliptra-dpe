@@ -7,6 +7,7 @@ import (
 	"flag"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 
 	"golang.org/x/exp/slices"
@@ -22,9 +23,8 @@ var testTargetType string
 
 // This will be called before running tests, and it assigns the socket path based on command line flag.
 func TestMain(m *testing.M) {
-	testTarget := flag.String("target", "simulator", "socket type - emulator")
-	flag.Parse()
-	testTargetType = *testTarget
+	flag.StringVar(&testTargetType, "target", "simulator", "allowed target types - emulator, simulator, by default target is simulator")
+	testTargetType = strings.ToLower(testTargetType)
 	if testTargetType == SIMULATOR {
 		target_exe = flag.String("sim", "../simulator/target/debug/simulator", "path to simulator executable")
 	} else if testTargetType == EMULATOR {
@@ -93,7 +93,7 @@ func GetTestTarget(support_needed []string) (TestDPEInstance, error) {
 		instance.SetLocality(DPE_SIMULATOR_AUTO_INIT_LOCALITY)
 		return instance, nil
 	}
-	return nil, errors.New("Error in creating dpe instances - supported feature is not enabled")
+	return nil, errors.New("Error in creating dpe instances - invalid test target type.")
 }
 
 // Get the emulator target
