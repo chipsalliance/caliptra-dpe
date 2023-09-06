@@ -10,7 +10,6 @@ import (
 	"encoding/pem"
 	"fmt"
 	"log"
-	"strings"
 	"testing"
 	"time"
 
@@ -25,7 +24,7 @@ type CertifyKeyFlag int
 
 const (
 	// RESERVED_0 CertifyKeyFlag = 31
-	ADD_IS_CA CertifyKeyFlag = 30
+	AddIsCA CertifyKeyFlag = 30
 	// RESERVED_1 CertifyKeyFlag     = 29:0   for future use
 
 )
@@ -46,14 +45,12 @@ var (
 	ExtensionTcgDiceKpEca           = "2.23.133.5.4.100.12" // OID for tcg-dice-kp-eca
 )
 
-var TCG_DICE_CRITICAL_EXTENSIONS = [...]string{
+var TcgDiceCriticalExtensions = [...]string{
 	ExtensionTcgDiceMultiTcbInfo,
 	ExtensionTcgDiceUeid,
 	ExtensionTcgDiceKpIdentityLoc,
 	ExtensionTcgDiceKpAttestLoc,
 }
-
-var certifyKeyReq CertifyKeyReq[SHA256Digest]
 
 type FWID struct {
 	HashAlg asn1.ObjectIdentifier `asn1:"hashAlg,tag:0,implicit,optional"`
@@ -112,7 +109,7 @@ func removeTcgDiceCriticalExtensions(t *testing.T, certs []*x509.Certificate) {
 		if len(cert.UnhandledCriticalExtensions) > 0 {
 			unknownExtns := []string{}
 			for _, extn := range cert.UnhandledCriticalExtensions {
-				if !slices.Contains(TCG_DICE_CRITICAL_EXTENSIONS[:], extn.String()) {
+				if !slices.Contains(TcgDiceCriticalExtensions[:], extn.String()) {
 					unknownExtns = append(unknownExtns, extn.String())
 				}
 			}
@@ -129,24 +126,14 @@ func removeTcgDiceCriticalExtensions(t *testing.T, certs []*x509.Certificate) {
 		for certSubject, ext := range unknownExtnMap {
 			t.Errorf("Certificate \"%s\" has unhandled critical extension \"%s\"", certSubject, ext)
 		}
-		t.Fatalf("Cannot proceed certificate chain validation with non-empty unhandled critical extensions list")
+		t.Errorf("Cannot proceed certificate chain validation with non-empty unhandled critical extensions list")
 	}
-}
-
-func checkCertifyKeyTcgDiceExtensions(t *testing.T, c *x509.Certificate) {
-	t.Helper()
-
-	// Check UEID extension
-	checkCertifyKeyTcgUeidExtension(t, c)
-
-	// Check MultiTcbInfo Extension
-	checkCertifyKeyMultiTcbInfoExtension(t, c)
 }
 
 // A tcg-dice-Ueid extension MUST be added
 // This SHALL be populated by the LABEL input parameter to CertifyKey
 // The extension SHOULD be marked as critical
-func checkCertifyKeyTcgUeidExtension(t *testing.T, c *x509.Certificate) {
+func checkCertifyKeyTcgUeidExtension(t *testing.T, c *x509.Certificate, label []byte) {
 	t.Helper()
 
 	isFound := false
@@ -155,23 +142,21 @@ func checkCertifyKeyTcgUeidExtension(t *testing.T, c *x509.Certificate) {
 		if ext.Id.String() == ExtensionTcgDiceUeid {
 			isFound = true
 			if !ext.Critical {
-				t.Fatalf("tcg-dice-Ueid extension is NOT marked as CRITICAL")
+				t.Errorf("tcg-dice-Ueid extension is NOT marked as CRITICAL")
 			}
-			tcgDiceUEIDString := string(ext.Value)
-			stringSlice := make([]string, len(certifyKeyReq.Label))
-			for i, v := range certifyKeyReq.Label {
-				stringSlice[i] = fmt.Sprintf("%v", v)
-			}
-			certifyKeyReqString := strings.Join(stringSlice, ", ")
-			if tcgDiceUEIDString != certifyKeyReqString {
-				// TODO: Fail when it is exected to pass
+			tcgDiceUeidString := string(ext.Value)
+			labelString := string(label)
+			if tcgDiceUeidString != labelString {
+				// TODO: Fail when it is exected to pass,
+				// Ueid extn value doen not match the label
+				// Spec mentions that label populates UEID extension
 				t.Logf("tcg-dice-Ueid value does not match with the \"Label\" passed in CertifyKeyRequest")
 			}
 			break
 		}
 	}
 	if !isFound {
-		t.Fatalf("tcg-dice-Ueid extension is missing")
+		t.Errorf("tcg-dice-Ueid extension is missing")
 	}
 }
 
@@ -186,11 +171,12 @@ func checkCertifyKeyMultiTcbInfoExtension(t *testing.T, c *x509.Certificate) {
 	for _, ext := range c.Extensions {
 		if ext.Id.String() == ExtensionTcgDiceMultiTcbInfo { // OID for Tcg Dice MultiTcbInfo
 			if !ext.Critical {
-				t.Fatalf("TCG DICE MultiTcbInfo extension is not marked as CRITICAL")
+				t.Errorf("TCG DICE MultiTcbInfo extension is not marked as CRITICAL")
 			}
 			_, err := asn1.Unmarshal(ext.Value, &multiTcbInfo)
 			if err != nil {
 				// TODO: Fail when expected to pass
+				// multiTcb info is not provided in leaf
 				t.Logf("Failed to unmarshal MultiTcbInfo field: %v", err)
 			}
 			break
@@ -213,11 +199,12 @@ func checkCertifyKeyExtendedKeyUsages(t *testing.T, c *x509.Certificate) {
 			// Extract the OID value from the extension
 			_, err := asn1.Unmarshal(ext.Value, &extKeyUsage)
 			if err != nil {
-				t.Fatalf("Failed to unmarshal the Extended Key Usage extension: %v", err)
+				t.Errorf("Failed to unmarshal the Extended Key Usage extension: %v", err)
+				continue
 			}
 
 			if !ext.Critical {
-				t.Fatalf("The Extended Key Usage extension IS NOT CRITICAL, MUST BE CRITICAL")
+				t.Errorf("The Extended Key Usage extension IS NOT CRITICAL, MUST BE CRITICAL")
 			} else {
 				t.Logf("The Extended Key Usage extension is marked CRITICAL")
 			}
@@ -226,33 +213,30 @@ func checkCertifyKeyExtendedKeyUsages(t *testing.T, c *x509.Certificate) {
 	}
 
 	if len(extKeyUsage) == 0 {
-		t.Fatalf("The Extended Key Usage extension is empty")
+		t.Errorf("The Extended Key Usage extension is empty")
 	}
 
 	// Iterate over the OIDs in the ExtKeyUsage extension
 	isExtendedKeyUsageValid := false
+	expectedKeyUsage := ""
+	expectedKeyUsageName := ""
 	if c.IsCA {
-		for _, oid := range extKeyUsage {
-			if oid.String() == ExtensionTcgDiceKpEca {
-				isExtendedKeyUsageValid = true
-				t.Logf("CA Certificate contains tcg-dice-kp-eca extended key usage")
-				break
-			}
-		}
-		if !isExtendedKeyUsageValid {
-			t.Fatalf("CA Certificate does not contain tcg-dice-kp-eca extended key usage")
-		}
+		expectedKeyUsage = ExtensionTcgDiceKpEca
+		expectedKeyUsageName = "tcg-dice-kp-eca"
 	} else {
-		for _, oid := range extKeyUsage {
-			if oid.String() == ExtensionTcgDiceKpAttestLoc {
-				isExtendedKeyUsageValid = true
-				t.Logf("Certificate contains tcg-dice-kp-attestLoc extended key usage")
-				break
-			}
+		expectedKeyUsage = ExtensionTcgDiceKpAttestLoc
+		expectedKeyUsageName = "tcg-dice-kp-attest-loc"
+	}
+
+	for _, oid := range extKeyUsage {
+		if oid.String() == expectedKeyUsage {
+			isExtendedKeyUsageValid = true
+			t.Logf("Certificate has IsCA: %v and contains specified key usage: %s", c.IsCA, expectedKeyUsageName)
+			break
 		}
-		if !isExtendedKeyUsageValid {
-			t.Fatalf("Certificate does not contain tcg-dice-kp-attestLoc extended key usage")
-		}
+	}
+	if !isExtendedKeyUsageValid {
+		t.Errorf("Certificate has IsCA: %v  and does not contain specified key usage: %s", c.IsCA, expectedKeyUsageName)
 	}
 }
 
@@ -263,71 +247,67 @@ func checkCertificateValidity(t *testing.T, c *x509.Certificate) {
 	// Check if the certificate is currently valid - this is checked internally in x509.Verify()
 	now := time.Now().UTC()
 	if now.Before(c.NotBefore) {
-		t.Fatalf("Certificate is not valid yet, current time : %s, not before: %s", now, c.NotBefore)
+		t.Errorf("Certificate is not valid yet, current time : %s, not before: %s", now, c.NotBefore)
 	} else if now.After(c.NotAfter) {
-		t.Fatalf("Certificate is expired, current time : %s, not after: %s", now, c.NotAfter)
+		t.Errorf("Certificate is expired, current time : %s, not after: %s", now, c.NotAfter)
 	}
 }
 
-// The KeyUsage extension MUST contain only DigitalSignature
-// If IsCA, KeyUsage extension MUST contain DigitalSignature and KeyCertSign
+// Check for KeyUsage Extension as per spec
+// If IsCA = true, KeyUsage extension MUST contain DigitalSignature and KeyCertSign
+// If IsCA = false, KeyUsage extension MUST contain  only DigitalSignature
 func checkCertifyKeyExtensions(t *testing.T, c *x509.Certificate) {
 	t.Helper()
 
 	//Check for keyusage extension
+	var allowedKeyUsages x509.KeyUsage
 	if c.IsCA {
-		allowedKeyUsages := x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment
-		certKeyUsageList := getKeyUsageNames(c.KeyUsage)
-		allowedKeyUsageList := getKeyUsageNames(allowedKeyUsages)
-
-		if c.KeyUsage == allowedKeyUsages {
-			t.Logf("The CA Certificate has ONLY the expected key usage %v ", certKeyUsageList)
-		} else {
-			t.Fatalf("The CA Certificate has got %v but want %v ", certKeyUsageList, allowedKeyUsageList)
-		}
+		allowedKeyUsages = x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment
 	} else {
-		allowedKeyUsages := x509.KeyUsageDigitalSignature
-		certKeyUsageList := getKeyUsageNames(c.KeyUsage)
-		allowedKeyUsageList := getKeyUsageNames(allowedKeyUsages)
-
-		if c.KeyUsage == allowedKeyUsages {
-			t.Logf("The leaf Certificate has ONLY the expected key usage %v ", certKeyUsageList)
-		} else {
-			t.Fatalf("The leaf Certificate has got %v but want %v ", certKeyUsageList, allowedKeyUsageList)
-		}
+		allowedKeyUsages = x509.KeyUsageDigitalSignature
 	}
+
+	certKeyUsageList := getKeyUsageNames(c.KeyUsage)
+	allowedKeyUsageList := getKeyUsageNames(allowedKeyUsages)
+
+	if c.KeyUsage == allowedKeyUsages {
+		t.Logf("Certificate has IsCA: %v and has the expected key usage %v ", c.IsCA, certKeyUsageList)
+	} else {
+		t.Errorf("Certificate has IsCA: %v and has got %v but want %v ", c.IsCA, certKeyUsageList, allowedKeyUsageList)
+	}
+
 }
 
 // Validate basic constraints in certificate returned by CertifyKey command
 // against the flag set for input parameter.
 // The BasicConstraints extension MUST be included
-// If CertifyKey ADD_IS_CA is set, IsCA MUST be set to true.
-// If CertifyKey ADD_IS_CA is NOT set, IsCA MUST be set to false
-func checkCertifyKeyBasicConstraints(t *testing.T, c *x509.Certificate) {
+// If CertifyKey AddIsCA is set, IsCA MUST be set to true.
+// If CertifyKey AddIsCA is NOT set, IsCA MUST be set to false
+func checkCertifyKeyBasicConstraints(t *testing.T, c *x509.Certificate, flags uint32) {
 	t.Helper()
 
 	flagsBuf := &bytes.Buffer{}
-	binary.Write(flagsBuf, binary.LittleEndian, certifyKeyReq.Flags)
+	binary.Write(flagsBuf, binary.LittleEndian, flags)
 
-	flagIsCA := extractFlagBit(int(ADD_IS_CA), uint32(certifyKeyReq.Flags))
+	flagIsCA := extractFlagBit(int(AddIsCA), uint32(flags))
 
 	if flagIsCA == c.IsCA {
 		t.Logf("ADD_IS_CA is set to %v and the basic constraint IsCA is set to %v", flagIsCA, c.IsCA)
 	} else {
 		// Fail when ADD_IS_CA flag is set properly in input parameters
-		t.Logf("ADD_IS_CA is set to %v but the basic constraint IsCA is set to %v", flagIsCA, c.IsCA)
+		t.Errorf("ADD_IS_CA is set to %v but the basic constraint IsCA is set to %v", flagIsCA, c.IsCA)
 	}
 }
 
 // Validate X509 fields in certificate returned by CertifyKey command.
-func validateCertifyKeyFields(t *testing.T, c *x509.Certificate) {
+func validateCertifyKeyCert(t *testing.T, c *x509.Certificate, flags uint32, label []byte) {
 	t.Helper()
 
 	// Check certificate lifetime
 	checkCertificateValidity(t, c)
 
 	// Check for basic constraints extension
-	checkCertifyKeyBasicConstraints(t, c)
+	checkCertifyKeyBasicConstraints(t, c, flags)
 
 	// Check key usage extensions - DigitalSignature, KeyCertSign
 	checkCertifyKeyExtensions(t, c)
@@ -336,8 +316,11 @@ func validateCertifyKeyFields(t *testing.T, c *x509.Certificate) {
 	checkCertifyKeyExtendedKeyUsages(t, c)
 
 	// Check critical TCG extensions
-	checkCertifyKeyTcgDiceExtensions(t, c)
+	// Check UEID extension
+	checkCertifyKeyTcgUeidExtension(t, c, label)
 
+	// Check MultiTcbInfo Extension
+	checkCertifyKeyMultiTcbInfoExtension(t, c)
 }
 
 func checkCertificateStructure(t *testing.T, certBytes []byte) *x509.Certificate {
@@ -423,7 +406,7 @@ func testCertifyKey(d TestDPEInstance, t *testing.T) {
 	certifyKeyReq := CertifyKeyReq[SHA256Digest]{
 		ContextHandle: [16]byte{0},
 		Flags:         0,
-		Label:         [32]byte{1, 2, 3, 4, 5},
+		Label:         [32]byte{},
 		Format:        CertifyKeyX509,
 	}
 
@@ -444,23 +427,13 @@ func testCertifyKey(d TestDPEInstance, t *testing.T) {
 
 	// Run X.509 linter on full certificate chain and file issues for errors
 	leafCert := checkCertificateStructure(t, leafCertBytes)
-	if leafCert == nil {
-		t.Fatalf("Could not obtain leaf certificate from CertifyKey command.")
-	}
 	t.Logf("Leaf certificate is DER encoded")
 
 	certChain := checkCertificateChain(t, certChainBytes)
-	if certChain == nil || len(certChain) == 0 {
-		t.Fatalf("Could not obtain certificate chain from GetCertificateChain command.")
-	}
 	t.Logf("Certificate chain is DER encoded")
 
 	// Validate that all X.509 fields conform with the format defined in the DPE iRoT profile
-	validateCertifyKeyFields(t, leafCert)
-
-	// Validate that proper TcbInfo extensions are populated with expected measurements and values as defined in the DPE iRoT profile
-
-	// Validate correct KeyUsage and BasicConstraints extensions for all DICE certificates
+	validateCertifyKeyCert(t, leafCert, uint32(certifyKeyReq.Flags), certifyKeyReq.Label[:])
 
 	// Ensure full certificate chain has valid signatures
 	validateCertChain(t, certChain, leafCert)
@@ -494,6 +467,7 @@ func validateSignature(t *testing.T, certchain []*x509.Certificate) {
 
 	if foundError {
 		// TODO: Fail the test when the certificate is expected to pass
+		// Signature validation of leaf certificate fails
 		t.Logf("Found certificates with mismatching signature")
 	}
 }
@@ -501,19 +475,28 @@ func validateSignature(t *testing.T, certchain []*x509.Certificate) {
 // Build certificate chain and calls to validateSignature on each chain.
 func validateCertChain(t *testing.T, certChain []*x509.Certificate, leafCert *x509.Certificate) {
 	t.Helper()
+	var certsToProcess []*x509.Certificate
 	if leafCert != nil {
-		// Remove unhandled critical extensions reported by x509 but defined in spec
 		t.Log("Validating leaf certificate chain...")
-		t.Log("Checking for unhandled critical certificate extensions unknown to DPE certificates profile spec...")
-		removeTcgDiceCriticalExtensions(t, []*x509.Certificate{leafCert})
+		certsToProcess = []*x509.Certificate{leafCert}
+	} else {
+		t.Log("Validating intermediate certificates chains...")
+		certsToProcess = certChain
+	}
 
-		// Build verify options
-		opts := buildVerifyOptions(certChain)
+	// Remove unhandled critical extensions reported by x509 but defined in spec
+	t.Log("Checking for unhandled critical certificate extensions unknown to DPE certificates profile spec...")
+	removeTcgDiceCriticalExtensions(t, certsToProcess)
 
+	// Build verify options
+	opts := buildVerifyOptions(t, certChain)
+
+	if leafCert != nil {
 		// Certificate chain validation for leaf
 		chains, err := leafCert.Verify(opts)
 		if err != nil {
 			// TODO: Fail the test with Errorf here once we expect it to pass.
+			// Certificate chain cannot be built from leaf to root
 			t.Logf("Error in certificate chain %s: ", err.Error())
 		}
 
@@ -531,20 +514,11 @@ func validateCertChain(t *testing.T, certChain []*x509.Certificate, leafCert *x5
 		t.Logf("DPE leaf certificate chain validation is done")
 
 	} else {
-		// Remove unhandled critical extensions reported by x509 but defined in spec
-		t.Log("Validating intermediate certificates chains...")
-		t.Log("Checking for unhandled critical certificate extensions unknown to DPE certificates profile spec...")
-		removeTcgDiceCriticalExtensions(t, certChain)
-
-		// Build verify options
-		opts := buildVerifyOptions(certChain)
-
 		// Certificate chain validation for each intermediate certificate
 		for _, cert := range certChain {
 			chains, err := cert.Verify(opts)
 			if err != nil {
-				// TODO: Fail the test with Errorf here once we expect it to pass.
-				t.Logf("Error in Certificate Chain of %s: %s", cert.Subject, err.Error())
+				t.Errorf("Error in Certificate Chain of %s: %s", cert.Subject, err.Error())
 			}
 
 			// Log certificate chains linked to each cetificate in chain
@@ -563,17 +537,24 @@ func validateCertChain(t *testing.T, certChain []*x509.Certificate, leafCert *x5
 	}
 }
 
-func buildVerifyOptions(certChain []*x509.Certificate) x509.VerifyOptions {
+func buildVerifyOptions(t *testing.T, certChain []*x509.Certificate) x509.VerifyOptions {
 	roots := x509.NewCertPool()
 	intermediates := x509.NewCertPool()
 
-	for _, cert := range certChain {
+	if certChain[0].Subject.String() != certChain[0].Issuer.String() {
+		t.Errorf("Found a non-root certificate in beginning of certificate chain returned by GetCertificateChain.")
+		t.Logf("Root certificate is expected to be in the beginning of the chain, the rest are expected to be intermediates.")
+	} else {
+		roots.AddCert(certChain[0])
+	}
+
+	for _, cert := range certChain[1:] {
 		if cert.Subject.String() == cert.Issuer.String() {
-			roots.AddCert(cert)
+			t.Errorf("Found a Root certificate in middle of certificate chain returned by GetCertificateChain.")
+			t.Logf("Root certificate is expected to be the first certificate in the chain, the rest are expected to be intermediates.")
 			continue
-		} else {
-			intermediates.AddCert(cert)
 		}
+		intermediates.AddCert(cert)
 	}
 	opts := x509.VerifyOptions{
 		Roots:         roots,
