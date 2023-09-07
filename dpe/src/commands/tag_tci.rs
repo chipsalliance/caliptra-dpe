@@ -62,7 +62,7 @@ mod tests {
         support::Support,
     };
     use crypto::OpensslCrypto;
-    use platform::DefaultPlatform;
+    use platform::default::DefaultPlatform;
     use zerocopy::AsBytes;
 
     const TEST_TAG_TCI_CMD: TagTciCmd = TagTciCmd {
@@ -72,7 +72,7 @@ mod tests {
 
     #[test]
     fn test_deserialize_tag_tci() {
-        let mut command = CommandHdr::new_for_test(Command::TagTci(TEST_TAG_TCI_CMD))
+        let mut command = CommandHdr::new_for_test(Command::TAG_TCI)
             .as_bytes()
             .to_vec();
         command.extend(TEST_TAG_TCI_CMD.as_bytes());

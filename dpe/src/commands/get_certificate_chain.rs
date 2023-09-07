@@ -8,8 +8,7 @@ use crate::{
 use platform::{Platform, PlatformError, MAX_CHUNK_SIZE};
 
 #[repr(C)]
-#[derive(Debug, PartialEq, Eq, zerocopy::FromBytes)]
-#[cfg_attr(test, derive(zerocopy::AsBytes))]
+#[derive(Debug, PartialEq, Eq, zerocopy::FromBytes, zerocopy::AsBytes)]
 pub struct GetCertificateChainCmd {
     pub offset: u32,
     pub size: u32,
@@ -52,7 +51,7 @@ mod tests {
         support::test::SUPPORT,
     };
     use crypto::OpensslCrypto;
-    use platform::DefaultPlatform;
+    use platform::default::DefaultPlatform;
     use zerocopy::AsBytes;
 
     const TEST_GET_CERTIFICATE_CHAIN_CMD: GetCertificateChainCmd = GetCertificateChainCmd {
@@ -62,10 +61,9 @@ mod tests {
 
     #[test]
     fn test_deserialize_get_certificate_chain() {
-        let mut command =
-            CommandHdr::new_for_test(Command::GetCertificateChain(TEST_GET_CERTIFICATE_CHAIN_CMD))
-                .as_bytes()
-                .to_vec();
+        let mut command = CommandHdr::new_for_test(Command::GET_CERTIFICATE_CHAIN)
+            .as_bytes()
+            .to_vec();
         command.extend(TEST_GET_CERTIFICATE_CHAIN_CMD.as_bytes());
         assert_eq!(
             Ok(Command::GetCertificateChain(TEST_GET_CERTIFICATE_CHAIN_CMD)),
