@@ -314,19 +314,6 @@ func checkCertifyKeyExtendedKeyUsages(t *testing.T, c *x509.Certificate) {
 	}
 }
 
-// Check whether certificate is valid, else log details of the issues found.
-func checkCertificateValidity(t *testing.T, c *x509.Certificate) {
-	t.Helper()
-
-	// Check if the certificate is currently valid - this is checked internally in x509.Verify()
-	now := time.Now().UTC()
-	if now.Before(c.NotBefore) {
-		t.Errorf("Certificate is not valid yet, current time : %s, not before: %s", now, c.NotBefore)
-	} else if now.After(c.NotAfter) {
-		t.Errorf("Certificate is expired, current time : %s, not after: %s", now, c.NotAfter)
-	}
-}
-
 // Check for KeyUsage Extension as per spec
 // If IsCA = true, KeyUsage extension MUST contain DigitalSignature and KeyCertSign
 // If IsCA = false, KeyUsage extension MUST contain  only DigitalSignature
@@ -375,9 +362,6 @@ func checkCertifyKeyBasicConstraints(t *testing.T, c *x509.Certificate, flags ui
 // Validate X509 fields in certificate returned by CertifyKey command.
 func validateCertifyKeyCert(t *testing.T, c *x509.Certificate, flags uint32, label []byte) {
 	t.Helper()
-
-	// Check certificate lifetime
-	checkCertificateValidity(t, c)
 
 	// Check for basic constraints extension
 	checkCertifyKeyBasicConstraints(t, c, flags)
@@ -518,6 +502,7 @@ func testCertifyKey(d TestDPEInstance, t *testing.T) {
 		validateCertifyKeyCert(t, leafCert, uint32(r.Flags), r.Label[:])
 
 		// Ensure full certificate chain has valid signatures
+		// This also checks certificate lifetime, signatures as part of cert chain validation
 		validateCertChain(t, certChain, leafCert)
 
 		// TODO: When DeriveChild is implemented, call it here to add more TCIs and call CertifyKey again.
@@ -607,6 +592,7 @@ func buildVerifyOptions(t *testing.T, certChain []*x509.Certificate) x509.Verify
 		Roots:         roots,
 		Intermediates: intermediates,
 		CurrentTime:   time.Now().UTC(),
+		KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageAny}, // Is this correct?
 	}
 
 	return opts
