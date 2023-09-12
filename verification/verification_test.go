@@ -99,13 +99,14 @@ func GetTestTarget(support_needed []string) (TestDPEInstance, error) {
 // Get the emulator target
 func GetEmulatorTarget(support_needed []string) (TestDPEInstance, error) {
 
-	value := reflect.ValueOf(DpeEmulator{}.supports)
+	/*value := reflect.ValueOf(DpeEmulator{}.supports)
 	for i := 0; i < len(support_needed); i++ {
 		support := reflect.Indirect(value).FieldByName(support_needed[i])
 		if !support.Bool() {
 			return nil, errors.New("Error in creating dpe instances - supported feature is not enabled in emulator")
 		}
-	}
+	}*/
+	// TODO : Get the supported modes from emulator and then check.
 	var instance TestDPEInstance = &DpeEmulator{exe_path: *target_exe}
 	return instance, nil
 }
