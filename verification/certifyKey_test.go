@@ -10,6 +10,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"log"
+	"reflect"
 	"testing"
 	"time"
 
@@ -31,42 +32,110 @@ const (
 
 // This file is used to test the certify key command by using a simulator/emulator
 var (
-	ExtensionAuthorityKeyIdentifier = "2.5.29.35"           // OID for authority key identifier extension
-	ExtensionBasicConstraints       = "2.5.29.19"           // OID for Basic Constraints extension
-	ExtensionExtKeyUsage            = "2.5.29.37"           // OID for ExtKeyUsage extension
-	ExtensionTcgDiceUeid            = "2.23.133.5.4.4"      // OID for tcg-dice-Ueid extension
-	ExtensionTcgDiceMultiTcbInfo    = "2.23.133.5.4.5"      // OID for tcg-dice-MultiTcbInfo extension
-	ExtensionTcgDiceKpIdentityInit  = "2.23.133.5.4.100.6"  // OID for tcg-dice-kp-identityInit
-	ExtensionTcgDiceKpIdentityLoc   = "2.23.133.5.4.100.7"  // OID for tcg-dice-kp-identityLoc
-	ExtensionTcgDiceKpAttestInit    = "2.23.133.5.4.100.8"  // OID for tcg-dice-kp-attestInit
-	ExtensionTcgDiceKpAttestLoc     = "2.23.133.5.4.100.9"  // OID for tcg-dice-kp-attestLoc
-	ExtensionTcgDiceKpAssertInit    = "2.23.133.5.4.100.10" // OID for tcg-dice-kp-assertInit
-	ExtensionTcgDiceKpAssertLoc     = "2.23.133.5.4.100.11" // OID for tcg-dice-kp-assertLoc
-	ExtensionTcgDiceKpEca           = "2.23.133.5.4.100.12" // OID for tcg-dice-kp-eca
+	OidExtensionAuthorityKeyIdentifier = asn1.ObjectIdentifier{2, 5, 29, 35}
+	OidExtensionBasicConstraints       = asn1.ObjectIdentifier{2, 5, 29, 19}
+	OidExtensionExtKeyUsage            = asn1.ObjectIdentifier{2, 5, 29, 37}
+	OidExtensionTcgDiceUeid            = asn1.ObjectIdentifier{2, 23, 133, 5, 4, 4}
+	OidExtensionTcgDiceMultiTcbInfo    = asn1.ObjectIdentifier{2, 23, 133, 5, 4, 5}
+	OidExtensionTcgDiceKpIdentityInit  = asn1.ObjectIdentifier{2, 23, 133, 5, 4, 100, 6}
+	OidExtensionTcgDiceKpIdentityLoc   = asn1.ObjectIdentifier{2, 23, 133, 5, 4, 100, 7}
+	OidExtensionTcgDiceKpAttestInit    = asn1.ObjectIdentifier{2, 23, 133, 5, 4, 100, 8}
+	OidExtensionTcgDiceKpAttestLoc     = asn1.ObjectIdentifier{2, 23, 133, 5, 4, 100, 9}
+	OidExtensionTcgDiceKpAssertInit    = asn1.ObjectIdentifier{2, 23, 133, 5, 4, 100, 10}
+	OidExtensionTcgDiceKpAssertLoc     = asn1.ObjectIdentifier{2, 23, 133, 5, 4, 100, 11}
+	OidExtensionTcgDiceKpEca           = asn1.ObjectIdentifier{2, 23, 133, 5, 4, 100, 12}
 )
 
 var TcgDiceCriticalExtensions = [...]string{
-	ExtensionTcgDiceMultiTcbInfo,
-	ExtensionTcgDiceUeid,
-	ExtensionTcgDiceKpIdentityLoc,
-	ExtensionTcgDiceKpAttestLoc,
+	OidExtensionTcgDiceMultiTcbInfo.String(),
+	OidExtensionTcgDiceUeid.String(),
+	OidExtensionTcgDiceKpIdentityLoc.String(),
+	OidExtensionTcgDiceKpAttestLoc.String(),
 }
 
-type FWID struct {
-	HashAlg asn1.ObjectIdentifier `asn1:"hashAlg,tag:0,implicit,optional"`
-	Digest  []byte                `asn1:"digest,tag:1,implicit,optional"`
+// tcg-dice-Ueid OBJECT IDENTIFIER ::= {tcg-dice 4}
+//
+//	TcgUeid ::== SEQUENCE {
+//			ueid OCTET STRING
+//	}
+type TcgUeidExtension struct {
+	Ueid []byte `asn1:"ueid,implicit"`
 }
+
+// tcg-dice-MultiTcbInfo OBJECT IDENTIFIER ::= {tcg-dice 5}
+// DiceTcbInfoSeq ::= SEQUENCE SIZE (1..MAX) OF DiceTcbInfo
+//
+// tcg-dice-TcbInfo OBJECT IDENTIFIER ::= {tcg-dice 1}
+//
+// DiceTcbInfo 	::== SEQUENCE {
+// 		vendor		[0] IMPLICIT UTF8String OPTIONAL,
+// 		model 		[1] IMPLICIT UTF8String OPTIONAL,
+// 		version 	[2] IMPLICIT UTF8String OPTIONAL,
+// 		svn 		[3] IMPLICIT INTEGER OPTIONAL,
+// 		layer 		[4] IMPLICIT INTEGER OPTIONAL,
+// 		index 		[5] IMPLICIT INTEGER OPTIONAL,
+// 		fwids 		[6] IMPLICIT FWIDLIST OPTIONAL,
+// 		flags 		[7] IMPLICIT OperationalFlags OPTIONAL,
+//		vendorInfo 	[8] IMPLICIT OCTET STRING OPTIONAL,
+// 		type 		[9] IMPLICIT OCTET STRING OPTIONAL
+// }
+//
+// FWIDLIST ::== SEQUENCE SIZE (1..MAX) OF FWID
+// FWID ::== SEQUENCE {
+// 		hashAlg 	OBJECT IDENTIFIER,
+// 		digest 		OCTET STRING
+// }
+//
+// OperationalFlags ::= BIT STRING {
+// 		notConfigured (0),
+// 		notSecure (1),
+// 		recovery (2),
+//  	debug (3)
+// }
+
+// type Fwid struct {
+// 	HashAlg asn1.ObjectIdentifier `asn1:"hashAlg"`
+// 	Digest  []byte                `asn1:"digest"`
+// }
+
+// type DiceTcbInfo struct {
+// 	Vendor     string         `asn1:"vendor,tag:0,implicit,optional"`
+// 	Model      string         `asn1:"model,tag:1,implicit,optional"`
+// 	Version    string         `asn1:"model,tag:2,implicit,optional"`
+// 	SVN        int            `asn1:"svn,tag:3,implicit,optional"`
+// 	Layer      int            `asn1:"layer,tag:4,implicit,optional"`
+// 	Index      int            `asn1:"index,tag:5,implicit,optional"`
+// 	Fwids      []Fwid         `asn1:"fwids,tag:6,implicit,optional"`
+// 	Flags      asn1.BitString `asn1:"flags,tag:7,implicit,optional"`
+// 	VendorInfo []byte         `asn1:"vendorInfo,tag:8,implicit,optional"`
+// 	Type       []byte         `asn1:"type,tag:9,implicit,optional"`
+// }
+
+// type TcgMultiTcbInfo struct {
+// 	DiceTcbInfos []DiceTcbInfo `asn1:"sequence"`
+// }
 
 type DiceTcbInfo struct {
-	Vendor string `asn1:"vendor,tag:0,implicit,optional"`
-	Model  string `asn1:"model,tag:1,implicit,optional"`
-	SVN    int    `asn1:"svn,tag:2,implicit,optional"`
-	FWIDs  []FWID `asn1:"fwids,tag:3,implicit,optional"`
-	Flags  int    `asn1:"flags,tag:4,implicit,optional"`
+	Vendor     string         `asn1:"tag:0,implicit,optional"`
+	Model      string         `asn1:"tag:1,implicit,optional"`
+	Version    string         `asn1:"tag:2,implicit,optional"`
+	SVN        int            `asn1:"tag:3,implicit,optional"`
+	Layer      int            `asn1:"tag:4,implicit,optional"`
+	Index      int            `asn1:"tag:5,implicit,optional"`
+	Fwids      []Fwid         `asn1:"tag:6,implicit,optional"`
+	Flags      asn1.BitString `asn1:"tag:7,implicit,optional"`
+	VendorInfo []byte         `asn1:"tag:8,implicit,optional"`
+	Type       []byte         `asn1:"tag:9,implicit,optional"`
 }
 
-type MultiTcbInfo struct {
-	DiceTcbInfos []DiceTcbInfo `asn1:"set"`
+// type DiceTcbSeq []DiceTcbInfo
+
+//	type TcgMultiTcbInfo struct {
+//		DiceTcbInfos []DiceTcbInfo `asn1:"sequence"`
+//	}
+type Fwid struct {
+	HashAlg asn1.ObjectIdentifier `asn1:"hashAlg"`
+	Digest  []byte                `asn1:"digest"`
 }
 
 func TestCertifyKey(t *testing.T) {
@@ -139,18 +208,24 @@ func checkCertifyKeyTcgUeidExtension(t *testing.T, c *x509.Certificate, label []
 	isFound := false
 	// Check UEID extension
 	for _, ext := range c.Extensions {
-		if ext.Id.String() == ExtensionTcgDiceUeid {
+		if ext.Id.Equal(OidExtensionTcgDiceUeid) {
 			isFound = true
 			if !ext.Critical {
 				t.Errorf("tcg-dice-Ueid extension is NOT marked as CRITICAL")
 			}
-			tcgDiceUeidString := string(ext.Value)
-			labelString := string(label)
-			if tcgDiceUeidString != labelString {
-				// TODO: Fail when it is exected to pass,
+			var ueid TcgUeidExtension = TcgUeidExtension{}
+			_, err := asn1.Unmarshal(ext.Value, &ueid)
+			if err != nil {
+				t.Errorf("Error encountered while unmarshalling value of UEID extension, %s", err.Error())
+			}
+
+			t.Logf("Value of UEID extension is %s", ueid.Ueid)
+			t.Logf("Value of Label passed as input parameter is %s", label)
+			if !reflect.DeepEqual(ueid.Ueid, label) {
 				// Ueid extn value doen not match the label
-				// Spec mentions that label populates UEID extension
-				t.Logf("tcg-dice-Ueid value does not match with the \"Label\" passed in CertifyKeyRequest")
+				t.Errorf("tcg-dice-Ueid value does not match with the \"Label\" passed in CertifyKeyRequest")
+			} else {
+				t.Logf("tcg-dice-Ueid value matches with the \"Label\" passed in CertifyKeyRequest")
 			}
 			break
 		}
@@ -167,17 +242,16 @@ func checkCertifyKeyMultiTcbInfoExtension(t *testing.T, c *x509.Certificate) {
 
 	// Check MultiTcbInfo Extension
 	//tcg-dice-MultiTcbInfo extension
-	var multiTcbInfo MultiTcbInfo
+	var multiTcbInfo DiceTcbInfo
 	for _, ext := range c.Extensions {
-		if ext.Id.String() == ExtensionTcgDiceMultiTcbInfo { // OID for Tcg Dice MultiTcbInfo
+		if ext.Id.Equal(OidExtensionTcgDiceMultiTcbInfo) { // OID for Tcg Dice MultiTcbInfo
 			if !ext.Critical {
 				t.Errorf("TCG DICE MultiTcbInfo extension is not marked as CRITICAL")
 			}
 			_, err := asn1.Unmarshal(ext.Value, &multiTcbInfo)
 			if err != nil {
-				// TODO: Fail when expected to pass
 				// multiTcb info is not provided in leaf
-				t.Logf("Failed to unmarshal MultiTcbInfo field: %v", err)
+				t.Errorf("Failed to unmarshal MultiTcbInfo field: %v", err)
 			}
 			break
 		}
@@ -195,7 +269,7 @@ func checkCertifyKeyExtendedKeyUsages(t *testing.T, c *x509.Certificate) {
 	extKeyUsage := []asn1.ObjectIdentifier{}
 
 	for _, ext := range c.Extensions {
-		if ext.Id.String() == ExtensionExtKeyUsage { // OID for ExtKeyUsage extension
+		if ext.Id.Equal(OidExtensionExtKeyUsage) { // OID for ExtKeyUsage extension
 			// Extract the OID value from the extension
 			_, err := asn1.Unmarshal(ext.Value, &extKeyUsage)
 			if err != nil {
@@ -218,18 +292,18 @@ func checkCertifyKeyExtendedKeyUsages(t *testing.T, c *x509.Certificate) {
 
 	// Iterate over the OIDs in the ExtKeyUsage extension
 	isExtendedKeyUsageValid := false
-	expectedKeyUsage := ""
+	var expectedKeyUsage asn1.ObjectIdentifier
 	expectedKeyUsageName := ""
 	if c.IsCA {
-		expectedKeyUsage = ExtensionTcgDiceKpEca
+		expectedKeyUsage = OidExtensionTcgDiceKpEca
 		expectedKeyUsageName = "tcg-dice-kp-eca"
 	} else {
-		expectedKeyUsage = ExtensionTcgDiceKpAttestLoc
+		expectedKeyUsage = OidExtensionTcgDiceKpAttestLoc
 		expectedKeyUsageName = "tcg-dice-kp-attest-loc"
 	}
 
 	for _, oid := range extKeyUsage {
-		if oid.String() == expectedKeyUsage {
+		if oid.Equal(expectedKeyUsage) {
 			isExtendedKeyUsageValid = true
 			t.Logf("Certificate has IsCA: %v and contains specified key usage: %s", c.IsCA, expectedKeyUsageName)
 			break
@@ -294,8 +368,7 @@ func checkCertifyKeyBasicConstraints(t *testing.T, c *x509.Certificate, flags ui
 	if flagIsCA == c.IsCA {
 		t.Logf("ADD_IS_CA is set to %v and the basic constraint IsCA is set to %v", flagIsCA, c.IsCA)
 	} else {
-		// Fail when ADD_IS_CA flag is set properly in input parameters
-		// TODO: Added logf instead of Errorf as certificate returned always contains isCA=False
+		// TODO: Fail when ADD_IS_CA flag is set properly in input parameters
 		t.Logf("ADD_IS_CA is set to %v but the basic constraint IsCA is set to %v", flagIsCA, c.IsCA)
 	}
 }
@@ -452,37 +525,6 @@ func testCertifyKey(d TestDPEInstance, t *testing.T) {
 	}
 }
 
-// Validate signature of certificates in certificate chain passed.
-func validateSignature(t *testing.T, certchain []*x509.Certificate) {
-	t.Helper()
-	foundError := false
-	for i := 0; i < len(certchain)-1; i++ {
-		err := certchain[i].CheckSignatureFrom(certchain[i+1])
-		if err != nil {
-			t.Logf("Signature validation failed for certificate %s in chain with error %s", certchain[i].Subject.String(), err.Error())
-			foundError = true
-		} else {
-			t.Logf("Signature validation passed %s", certchain[i].Subject.String())
-		}
-
-	}
-
-	root := certchain[len(certchain)-1]
-	//err := root.CheckSignatureFrom(root)
-	err := root.CheckSignature(root.SignatureAlgorithm, root.RawTBSCertificate, root.Signature)
-	if err != nil {
-		t.Logf("Root certificate  %s Signature validation failed with error %s", root.Subject.String(), err.Error())
-		foundError = true
-	}
-	t.Logf("Root certificate Signature validation passed %s\n", root.Subject.String())
-
-	if foundError {
-		// TODO: Fail the test when the certificate is expected to pass
-		// Signature validation of leaf certificate fails
-		t.Logf("Found certificates with mismatching signature")
-	}
-}
-
 // Build certificate chain and calls to validateSignature on each chain.
 func validateCertChain(t *testing.T, certChain []*x509.Certificate, leafCert *x509.Certificate) {
 	t.Helper()
@@ -506,9 +548,8 @@ func validateCertChain(t *testing.T, certChain []*x509.Certificate, leafCert *x5
 		// Certificate chain validation for leaf
 		chains, err := leafCert.Verify(opts)
 		if err != nil {
-			// TODO: Fail the test with Errorf here once we expect it to pass.
 			// Certificate chain cannot be built from leaf to root
-			t.Logf("Error in certificate chain %s: ", err.Error())
+			t.Errorf("Error in certificate chain %s: ", err.Error())
 		}
 
 		// Log certificate chains linked to leaf
@@ -517,8 +558,6 @@ func validateCertChain(t *testing.T, certChain []*x509.Certificate, leafCert *x5
 				t.Logf("%d %s", i, (*cert).Subject)
 			}
 
-			// Validate signature of all certificate chains
-			validateSignature(t, chain)
 		}
 
 		// This indicates that signature validation found no errors in the DPE leaf cert chain
@@ -537,8 +576,6 @@ func validateCertChain(t *testing.T, certChain []*x509.Certificate, leafCert *x5
 				for i, cert := range chain {
 					t.Logf("%d %s", i, (*cert).Subject)
 				}
-				// Validate signature of all certificate chains
-				validateSignature(t, chain)
 			}
 		}
 
