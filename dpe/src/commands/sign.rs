@@ -140,7 +140,7 @@ mod tests {
     use crypto::OpensslCrypto;
     use openssl::x509::X509;
     use openssl::{bn::BigNum, ecdsa::EcdsaSig};
-    use platform::DefaultPlatform;
+    use platform::default::DefaultPlatform;
     use zerocopy::AsBytes;
 
     #[cfg(feature = "dpe_profile_p256_sha256")]
@@ -163,9 +163,7 @@ mod tests {
 
     #[test]
     fn test_deserialize_sign() {
-        let mut command = CommandHdr::new_for_test(Command::Sign(TEST_SIGN_CMD))
-            .as_bytes()
-            .to_vec();
+        let mut command = CommandHdr::new_for_test(Command::SIGN).as_bytes().to_vec();
         command.extend(TEST_SIGN_CMD.as_bytes());
         assert_eq!(
             Ok(Command::Sign(TEST_SIGN_CMD)),

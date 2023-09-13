@@ -12,7 +12,18 @@ fn main() {
             std::path::Path,
         };
 
-        const ALIAS_PRIV: &str = "data/alias_priv.pem";
+        #[cfg(feature = "dpe_profile_p256_sha256")]
+        const ALIAS_PRIV: &str = "../platform/src/test_data/key_256.pem";
+
+        #[cfg(feature = "dpe_profile_p384_sha384")]
+        const ALIAS_PRIV: &str = "../platform/src/test_data/key_384.pem";
+
+        #[cfg(feature = "dpe_profile_p256_sha256")]
+        const CURVE_ID: nid::Nid = nid::Nid::X9_62_PRIME256V1;
+
+        #[cfg(feature = "dpe_profile_p384_sha384")]
+        const CURVE_ID: nid::Nid = nid::Nid::SECP384R1;
+
         println!("cargo:rerun-if-changed={ALIAS_PRIV}");
 
         let out_dir = env::var_os("OUT_DIR").unwrap();
@@ -23,7 +34,7 @@ fn main() {
                 ec::EcKey::private_key_from_pem(&input_pem).unwrap();
             ec_priv.private_key_to_pem().unwrap()
         } else {
-            let group = ec::EcGroup::from_curve_name(nid::Nid::X9_62_PRIME256V1).unwrap();
+            let group = ec::EcGroup::from_curve_name(CURVE_ID).unwrap();
             let ec_key = ec::EcKey::generate(&group).unwrap();
             ec_key.private_key_to_pem().unwrap()
         };

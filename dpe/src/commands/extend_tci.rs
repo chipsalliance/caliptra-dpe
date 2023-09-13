@@ -49,7 +49,7 @@ mod tests {
         support::Support,
     };
     use crypto::OpensslCrypto;
-    use platform::{DefaultPlatform, AUTO_INIT_LOCALITY};
+    use platform::default::{DefaultPlatform, AUTO_INIT_LOCALITY};
     use zerocopy::AsBytes;
 
     const TEST_EXTEND_TCI_CMD: ExtendTciCmd = ExtendTciCmd {
@@ -59,7 +59,7 @@ mod tests {
 
     #[test]
     fn test_deserialize_extend_tci() {
-        let mut command = CommandHdr::new_for_test(Command::ExtendTci(TEST_EXTEND_TCI_CMD))
+        let mut command = CommandHdr::new_for_test(Command::EXTEND_TCI)
             .as_bytes()
             .to_vec();
         command.extend(TEST_EXTEND_TCI_CMD.as_bytes());

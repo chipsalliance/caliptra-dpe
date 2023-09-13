@@ -23,15 +23,20 @@ set -ex
   cargo build
   cargo build --features=openssl
   cargo build --features=deterministic_rand
+  cargo build --no-default-features --features=dpe_profile_p384_sha384
   cargo build --release
   cargo test
+  cargo test --no-default-features --features=dpe_profile_p384_sha384
   cargo fmt -- --check
   cargo clippy -- --deny=warnings
 )
 ( cd platform
   cargo build
+  cargo build --features=openssl
+  cargo build --no-default-features --features=dpe_profile_p384_sha384
   cargo build --release
   cargo test
+  cargo test --no-default-features --features=dpe_profile_p384_sha384
   cargo fmt -- --check
   cargo clippy -- --deny=warnings
 )
