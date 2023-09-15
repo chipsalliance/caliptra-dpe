@@ -215,6 +215,9 @@ func (c *Client[_, _]) GetCertificateChain() (*GetCertificateChainResp, error) {
 
 		_, err := execCommand(c.transport, CommandGetCertificateChain, c.Profile, cmd, &respStruct)
 		if err == StatusInvalidArgument {
+			if int(cmd.Size) > MaxChunkSize {
+				return nil, StatusInvalidArgument
+			}
 			// This indicates that there are no more bytes to be read in certificate chain
 			break
 		} else if err != nil {

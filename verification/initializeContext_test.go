@@ -92,7 +92,7 @@ func testInitContext(d TestDPEInstance, t *testing.T) {
 		// Try to initialize a simulation context when they aren't supported.
 		_, err = client.InitializeContext(NewInitCtxIsSimulation())
 		if err == nil {
-			t.Fatal("The instance should return an error when trying to initialize another default context.")
+			t.Fatal("The instance should return an error when trying to initialize a simulation context when they aren't supported.")
 		} else if !errors.Is(err, StatusArgumentNotSupported) {
 			t.Fatalf("Incorrect error type. Should return %q, but returned %q", StatusArgumentNotSupported, err)
 		}
@@ -107,6 +107,9 @@ func testInitContext(d TestDPEInstance, t *testing.T) {
 		for i := uint32(0); i < getProfileRsp.MaxTciNodes-1; i++ {
 			initCtxResp, err := client.InitializeContext(NewInitCtxIsSimulation())
 			if err != nil {
+				if !errors.Is(err, StatusArgumentNotSupported) {
+					t.Fatalf("Incorrect error type. Should return %q, but returned %q", StatusArgumentNotSupported, err)
+				}
 				t.Fatal("The instance should be able to create a simulation context.")
 			}
 			// Could prove difficult to prove it is a cryptographically secure random.
