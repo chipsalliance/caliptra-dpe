@@ -21,9 +21,9 @@ func TestGetCertificateChain(t *testing.T) {
 	instance, err := GetTestTarget(support_needed)
 	if err != nil {
 		if err.Error() == "Requested support is not supported in the emulator" {
-			t.Skipf("Warning: Failed executing TestGetCertificateChain command due to unsupported request. Hence, skipping the command execution")
+			t.Skipf("[WARNING]: Failed executing TestGetCertificateChain command due to unsupported request. Hence, skipping the command execution")
 		} else {
-			log.Fatal(err)
+			log.Fatalf("[ERROR]: %s", err.Error())
 		}
 	}
 	testGetCertificateChain(instance, t)
@@ -35,9 +35,9 @@ func TestGetCertificateChain_SimulationMode(t *testing.T) {
 	instance, err := GetTestTarget(support_needed)
 	if err != nil {
 		if err.Error() == "Requested support is not supported in the emulator" {
-			t.Skipf("Warning: Failed executing TestGetCertificateChain_SimulationMode command due to unsupported request. Hence, skipping the command execution")
+			t.Skipf("[WARNING]: Failed executing TestGetCertificateChain_SimulationMode command due to unsupported request. Hence, skipping the command execution")
 		} else {
-			log.Fatal(err)
+			log.Fatalf("[ERROR]: %s", err.Error())
 		}
 	}
 	testGetCertificateChain(instance, t)
@@ -53,12 +53,12 @@ func testGetCertificateChain(d TestDPEInstance, t *testing.T) {
 	}
 	client, err := NewClient256(d)
 	if err != nil {
-		t.Fatalf("Could not initialize client: %v", err)
+		t.Fatalf("[FATAL]: Could not initialize client: %v", err)
 	}
 
 	getCertificateChainResp, err := client.GetCertificateChain()
 	if err != nil {
-		t.Fatalf("Could not get Certificate Chain: %v", err)
+		t.Fatalf("[FATAL]: Could not get Certificate Chain: %v", err)
 	}
 
 	checkCertificateChain(t, getCertificateChainResp.CertificateChain)
@@ -71,15 +71,16 @@ func checkCertificateChain(t *testing.T, certData []byte) []*x509.Certificate {
 	var x509Certs []*x509.Certificate
 	var err error
 
+	t.Log("[LOG]: Parse the obtained certificate chain...")
 	// Check whether certificate chain is DER encoded.
 	if x509Certs, err = x509.ParseCertificates(certData); err != nil {
-		t.Fatalf("Could not parse certificate using crypto/x509: %v", err)
+		t.Fatalf("[FATAL]: Could not parse certificate using crypto/x509: %v", err)
 	}
 
 	// Parse the cert with zcrypto so we can lint it.
 	certs, err := zx509.ParseCertificates(certData)
 	if err != nil {
-		t.Errorf("Could not parse certificate using zcrypto/x509: %v", err)
+		t.Errorf("[ERROR]: Could not parse certificate using zcrypto/x509: %v", err)
 		failed = true
 	}
 
@@ -94,7 +95,7 @@ func checkCertificateChain(t *testing.T, certData []byte) []*x509.Certificate {
 			lint.RFC8813,
 		}})
 	if err != nil {
-		t.Fatalf("Could not set up zlint registry: %v", err)
+		t.Fatalf("[FATAL]: Could not set up zlint registry: %v", err)
 	}
 
 	for _, cert := range certs {
@@ -123,11 +124,11 @@ func checkCertificateChain(t *testing.T, certData []byte) []*x509.Certificate {
 
 		if failed {
 			// Dump the cert in PEM and hex for use with various tools
-			t.Logf("Offending certificate (PEM):\n%s", (string)(pem.EncodeToMemory(&pem.Block{
+			t.Logf("[LOG]: Offending certificate (PEM):\n%s", (string)(pem.EncodeToMemory(&pem.Block{
 				Type:  "CERTIFICATE",
 				Bytes: certData,
 			})))
-			t.Logf("Offending certificate (DER):\n%x", certData)
+			t.Logf("[LOG]: Offending certificate (DER):\n%x", certData)
 		}
 	}
 
