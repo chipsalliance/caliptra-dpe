@@ -392,6 +392,49 @@ impl DpeInstance {
 
         hasher.finish().map_err(|_| DpeErrorCode::HashError)
     }
+
+    /// Determines if the context array represents a valid tree by checking that
+    /// there is only 1 connected component and that all nodes lead up to
+    /// the root node.
+    ///
+    /// # Arguments
+    ///
+    /// * `root_idx` - The index of the root context
+    pub fn validate_context_tree(&self, root_idx: usize) -> bool {
+        let mut seen = [false; MAX_HANDLES];
+
+        // dfs from the root node and try to discover invalid subtrees
+        if self.detect_invalid_subtree(root_idx, &mut seen) {
+            return false;
+        }
+
+        for (i, node_visited) in seen.iter().enumerate().take(MAX_HANDLES) {
+            // If a node was not seen when doing a dfs from the root, there must be multiple
+            // connected components or the root is not actually the root
+            if i != root_idx && self.contexts[i].state != ContextState::Inactive && !node_visited {
+                return false;
+            }
+        }
+        true
+    }
+
+    fn detect_invalid_subtree(&self, curr_idx: usize, seen: &mut [bool; MAX_HANDLES]) -> bool {
+        // if the current node was already visited we have a cycle
+        if curr_idx >= MAX_HANDLES
+            || self.contexts[curr_idx].state == ContextState::Inactive
+            || seen[curr_idx]
+        {
+            return true;
+        }
+        seen[curr_idx] = true;
+        // dfs on all child nodes
+        for child_idx in flags_iter(self.contexts[curr_idx].children, MAX_HANDLES) {
+            if child_idx >= MAX_HANDLES || self.detect_invalid_subtree(child_idx, seen) {
+                return true;
+            }
+        }
+        false
+    }
 }
 
 /// Iterate over all of the bits set to 1 in a u32. Each iteration returns the bit index 0 being the
@@ -806,5 +849,43 @@ pub mod tests {
             .derive_cdi(DPE_PROFILE.alg_len(), &digest, b"DPE")
             .unwrap();
         assert_eq!(answer, cdi_with_internal_input_dice)
+    }
+
+    #[test]
+    fn test_validate_context_tree() {
+        let mut env = DpeEnv::<TestTypes> {
+            crypto: OpensslCrypto::new(),
+            platform: DefaultPlatform,
+        };
+        let mut dpe = DpeInstance::new(&mut env, SUPPORT).unwrap();
+
+        dpe.contexts[0].state = ContextState::Active;
+        dpe.contexts[0].children = 0b100;
+        dpe.contexts[1].state = ContextState::Active;
+        dpe.contexts[1].children = 0b100;
+        dpe.contexts[2].state = ContextState::Active;
+        // validation fails on graph where child has multiple parents
+        assert_eq!(dpe.validate_context_tree(0), false);
+
+        dpe.contexts[0].children = 0b10;
+        // validation passes on a tree in the shape of a linked-list
+        assert_eq!(dpe.validate_context_tree(0), true);
+
+        dpe.contexts[2].children = 0b1;
+        // validation fails on circle graph
+        assert_eq!(dpe.validate_context_tree(0), false);
+
+        dpe.contexts[0].children |= 0b100;
+        dpe.contexts[1].children = 0;
+        dpe.contexts[2].children = 0;
+        // validation passes on a complete binary tree of size 2
+        assert_eq!(dpe.validate_context_tree(0), true);
+
+        dpe.contexts[10].state = ContextState::Active;
+        dpe.contexts[10].children = 1 << 11 | 1 << 12;
+        dpe.contexts[11].state = ContextState::Active;
+        dpe.contexts[12].state = ContextState::Active;
+        // validation fails on a graph with multiple connected components
+        assert_eq!(dpe.validate_context_tree(0), false);
     }
 }
