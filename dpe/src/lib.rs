@@ -45,14 +45,6 @@ impl U8Bool {
     pub fn get(&self) -> bool {
         self.val != 0
     }
-
-    pub fn set(&mut self, val: bool) {
-        self.val = val as u8;
-    }
-
-    pub fn is_bool(&self) -> bool {
-        self.val == 0 || self.val == 1
-    }
 }
 
 impl From<bool> for U8Bool {
@@ -72,9 +64,6 @@ impl DpeProfile {
             DpeProfile::P256Sha256 => 32,
             DpeProfile::P384Sha384 => 48,
         }
-    }
-    pub const fn get_cdi_size(&self) -> usize {
-        self.get_tci_size()
     }
     pub const fn get_ecc_int_size(&self) -> usize {
         self.get_tci_size()

@@ -9,15 +9,6 @@ pub struct EcdsaSig {
     pub s: CryptoBuf,
 }
 
-impl EcdsaSig {
-    pub fn default(alg: AlgLen) -> EcdsaSig {
-        EcdsaSig {
-            r: CryptoBuf::default(alg),
-            s: CryptoBuf::default(alg),
-        }
-    }
-}
-
 /// An ECDSA public key
 pub struct EcdsaPub {
     pub x: CryptoBuf,
