@@ -140,7 +140,6 @@ impl DpeInstance {
     ) -> Result<usize, DpeErrorCode> {
         let idx = self.get_active_context_pos_internal(handle, locality)?;
         if idx >= self.contexts.len() {
-            // No idea if this is the correct error code
             return Err(DpeErrorCode::InternalError);
         }
         Ok(idx)
