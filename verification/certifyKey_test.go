@@ -116,15 +116,15 @@ func testCertifyKey(d TestDPEInstance, t *testing.T) {
 		}
 		defer d.PowerOff()
 	}
-	client, err := NewClient256(d)
+	client, err := NewClient384(d)
 	if err != nil {
 		t.Fatalf("Could not initialize client: %v", err)
 	}
 
-	certifyKeyReq := CertifyKeyReq[SHA256Digest]{
+	certifyKeyReq := CertifyKeyReq[SHA384Digest]{
 		ContextHandle: [16]byte{0},
 		Flags:         0,
-		Label:         [32]byte{0},
+		Label:         [48]byte{0},
 		Format:        CertifyKeyX509,
 	}
 

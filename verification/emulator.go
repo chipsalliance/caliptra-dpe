@@ -29,7 +29,7 @@ const (
 )
 
 // Added dummy support for emulator .This is to verify against the support_needed list
-var emulator_supports = []string{"AutoInit", "X509"}
+var emulator_supports = []string{"AutoInit", "X509", "Simulation"}
 
 //TODO code for emulator to start, stop, getsupport
 
