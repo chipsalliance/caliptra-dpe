@@ -1,7 +1,7 @@
 // Licensed under the Apache-2.0 license.
 use super::CommandExecution;
 use crate::{
-    context::ContextHandle,
+    context::{Context, ContextHandle},
     dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
     response::{DpeErrorCode, NewHandleResp, Response, ResponseHdr},
     tci::TciMeasurement,
@@ -29,10 +29,18 @@ impl CommandExecution for ExtendTciCmd {
         }
 
         let idx = dpe.get_active_context_pos(&self.handle, locality)?;
-        dpe.add_tci_measurement(env, idx, &TciMeasurement(self.data), locality)?;
+
+        let mut tmp_context = dpe.contexts[idx];
+        dpe.add_tci_measurement(env, &mut tmp_context, &TciMeasurement(self.data), locality)?;
 
         // Rotate the handle if it isn't the default context.
         dpe.roll_onetime_use_handle(env, idx)?;
+
+        dpe.contexts[idx] = Context {
+            handle: dpe.contexts[idx].handle,
+            ..tmp_context
+        };
+
         Ok(Response::ExtendTci(NewHandleResp {
             handle: dpe.contexts[idx].handle,
             resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),

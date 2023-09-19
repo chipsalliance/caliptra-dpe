@@ -155,21 +155,26 @@ impl CommandExecution for CertifyKeyCmd {
             _ => return Err(DpeErrorCode::InvalidArgument),
         };
 
+        let derived_pubkey_x: [u8; DPE_PROFILE.get_ecc_int_size()] =
+            pub_key
+                .x
+                .bytes()
+                .try_into()
+                .map_err(|_| DpeErrorCode::InternalError)?;
+        let derived_pubkey_y: [u8; DPE_PROFILE.get_ecc_int_size()] =
+            pub_key
+                .y
+                .bytes()
+                .try_into()
+                .map_err(|_| DpeErrorCode::InternalError)?;
+
         // Rotate handle if it isn't the default
         dpe.roll_onetime_use_handle(env, idx)?;
 
         Ok(Response::CertifyKey(CertifyKeyResp {
             new_context_handle: dpe.contexts[idx].handle,
-            derived_pubkey_x: pub_key
-                .x
-                .bytes()
-                .try_into()
-                .map_err(|_| DpeErrorCode::InternalError)?,
-            derived_pubkey_y: pub_key
-                .y
-                .bytes()
-                .try_into()
-                .map_err(|_| DpeErrorCode::InternalError)?,
+            derived_pubkey_x,
+            derived_pubkey_y,
             cert_size,
             cert,
             resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),

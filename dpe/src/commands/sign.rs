@@ -108,18 +108,23 @@ impl CommandExecution for SignCmd {
             EcdsaSig { r, s }
         };
 
+        let sig_r_or_hmac: [u8; DPE_PROFILE.get_ecc_int_size()] = r
+            .bytes()
+            .try_into()
+            .map_err(|_| DpeErrorCode::InternalError)?;
+
+        let sig_s: [u8; DPE_PROFILE.get_ecc_int_size()] = s
+            .bytes()
+            .try_into()
+            .map_err(|_| DpeErrorCode::InternalError)?;
+
+        // Rotate the handle if it isn't the default context.
         dpe.roll_onetime_use_handle(env, idx)?;
 
         Ok(Response::Sign(SignResp {
             new_context_handle: dpe.contexts[idx].handle,
-            sig_r_or_hmac: r
-                .bytes()
-                .try_into()
-                .map_err(|_| DpeErrorCode::InternalError)?,
-            sig_s: s
-                .bytes()
-                .try_into()
-                .map_err(|_| DpeErrorCode::InternalError)?,
+            sig_r_or_hmac,
+            sig_s,
             resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
         }))
     }

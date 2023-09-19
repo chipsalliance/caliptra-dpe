@@ -34,7 +34,7 @@ pub struct DpeEnv<'a, T: DpeTypes + 'a> {
 #[repr(C, align(4))]
 #[derive(AsBytes, FromBytes)]
 pub struct DpeInstance {
-    pub(crate) contexts: [Context; MAX_HANDLES],
+    pub contexts: [Context; MAX_HANDLES],
     pub(crate) support: Support,
 
     /// Can only successfully execute the initialize context command for non-simulation (i.e.
@@ -274,18 +274,12 @@ impl DpeInstance {
     }
 
     pub(crate) fn add_tci_measurement(
-        &mut self,
+        &self,
         env: &mut DpeEnv<impl DpeTypes>,
-        idx: usize,
+        context: &mut Context,
         measurement: &TciMeasurement,
         locality: u32,
     ) -> Result<(), DpeErrorCode> {
-        if idx >= MAX_HANDLES {
-            return Err(DpeErrorCode::MaxTcis);
-        }
-
-        let context = &mut self.contexts[idx];
-
         if context.state != ContextState::Active {
             return Err(DpeErrorCode::InvalidHandle);
         }
@@ -554,21 +548,16 @@ pub mod tests {
 
         let mut dpe = DpeInstance::new(&mut env, Support::AUTO_INIT).unwrap();
 
-        // Verify bounds checking.
-        assert_eq!(
-            Err(DpeErrorCode::MaxTcis),
-            dpe.add_tci_measurement(
-                &mut env,
-                MAX_HANDLES,
-                &TciMeasurement::default(),
-                TEST_LOCALITIES[0],
-            )
-        );
-
         let data = [1; DPE_PROFILE.get_hash_size()];
-        dpe.add_tci_measurement(&mut env, 0, &TciMeasurement(data), TEST_LOCALITIES[0])
-            .unwrap();
-        let context = &dpe.contexts[0];
+        let mut context = dpe.contexts[0];
+        dpe.add_tci_measurement(
+            &mut env,
+            &mut context,
+            &TciMeasurement(data),
+            TEST_LOCALITIES[0],
+        )
+        .unwrap();
+        dpe.contexts[0] = context;
         assert_eq!(data, context.tci.tci_current.0);
 
         // Compute cumulative.
@@ -581,10 +570,15 @@ pub mod tests {
         assert_eq!(first_cumulative.bytes(), context.tci.tci_cumulative.0);
 
         let data = [2; DPE_PROFILE.get_hash_size()];
-        dpe.add_tci_measurement(&mut env, 0, &TciMeasurement(data), TEST_LOCALITIES[0])
-            .unwrap();
+        dpe.add_tci_measurement(
+            &mut env,
+            &mut context,
+            &TciMeasurement(data),
+            TEST_LOCALITIES[0],
+        )
+        .unwrap();
         // Make sure the current TCI was updated correctly.
-        let context = &dpe.contexts[0];
+        dpe.contexts[0] = context;
         assert_eq!(data, context.tci.tci_current.0);
 
         let mut hasher = env.crypto.hash_initialize(DPE_PROFILE.alg_len()).unwrap();

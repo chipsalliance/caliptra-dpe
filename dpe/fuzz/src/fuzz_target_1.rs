@@ -5,6 +5,7 @@
 #[cfg(all(not(feature = "libfuzzer-sys"), not(feature = "afl")))]
 compile_error!("Either feature \"libfuzzer-sys\" or \"afl\" must be enabled!");
 
+use dpe::response::DpeErrorCode;
 #[cfg(feature = "libfuzzer-sys")]
 use libfuzzer_sys::fuzz_target;
 
@@ -65,6 +66,7 @@ fn harness(data: &[u8]) {
         platform: DefaultPlatform,
     };
     let mut dpe = DpeInstance::new(&mut env, SUPPORT).unwrap();
+    let prev_contexts = dpe.contexts;
 
     // Hard-code working locality
     let response = dpe
@@ -87,6 +89,12 @@ fn harness(data: &[u8]) {
     };
     // There are a few vendor error codes starting at 0x1000, so this can be a 2 bytes.
     trace!("| Response Code {response_code:#06x}");
+    if dpe.contexts != prev_contexts && response_code != 0 {
+        panic!("Error: DPE state changes upon a failed DPE command.");
+    }
+    if response_code == DpeErrorCode::InternalError as u32 {
+        panic!("Error: DPE reached a state that should be unreachable.");
+    }
     trace!("----------------------------------");
 }
 
