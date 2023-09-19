@@ -1,7 +1,7 @@
 // Licensed under the Apache-2.0 license.
 use super::CommandExecution;
 use crate::{
-    context::{Context, ContextHandle},
+    context::ContextHandle,
     dpe_instance::{flags_iter, DpeEnv, DpeInstance, DpeTypes},
     response::{DpeErrorCode, Response, ResponseHdr},
     MAX_HANDLES,
@@ -54,16 +54,41 @@ impl CommandExecution for DestroyCtxCmd {
             1 << idx
         };
 
+        // contexts_to_destroy[i] == true implies dpe.contexts[i] must be destroyed
+        let mut contexts_to_destroy = [false; MAX_HANDLES];
+        // updated_children[i] holds i's non-destroyed children.
+        let mut updated_children = [0u32; MAX_HANDLES];
+        // This loop collects updates to DPE state so that updates to DPE are atomic
+        // and so that we don't need to copy every context.
         for idx in flags_iter(to_destroy, MAX_HANDLES) {
             if idx >= dpe.contexts.len() {
                 return Err(DpeErrorCode::InternalError);
             }
-            dpe.contexts[idx].destroy();
-            let parent = dpe.contexts[idx].parent_idx;
-            if parent != Context::ROOT_INDEX {
-                dpe.contexts[parent as usize].remove_child(idx)?;
+            contexts_to_destroy[idx] = true;
+            let parent = dpe.contexts[idx].parent_idx as usize;
+            // If parent is the root, we cannot update it's children.
+            if parent < MAX_HANDLES {
+                let children_without_idx = dpe.contexts[parent].remove_child(idx)?;
+                // Need to take intersection because multiple children of the same parent could be destroyed.
+                updated_children[parent] &= children_without_idx;
             }
         }
+
+        // At this point, we cannot error out anymore so it is safe to mutate DPE state
+        for (idx, context_to_destroy) in contexts_to_destroy
+            .iter()
+            .enumerate()
+            .take(contexts_to_destroy.len())
+        {
+            if *context_to_destroy {
+                dpe.contexts[idx].destroy();
+                let parent = dpe.contexts[idx].parent_idx as usize;
+                if parent < MAX_HANDLES {
+                    dpe.contexts[parent].children = updated_children[parent];
+                }
+            }
+        }
+
         Ok(Response::DestroyCtx(ResponseHdr::new(
             DpeErrorCode::NoError,
         )))
@@ -75,7 +100,7 @@ mod tests {
     use super::*;
     use crate::{
         commands::{Command, CommandHdr, InitCtxCmd},
-        context::ContextState,
+        context::{Context, ContextState},
         dpe_instance::tests::{TestTypes, SIMULATION_HANDLE, TEST_HANDLE, TEST_LOCALITIES},
         support::Support,
     };
@@ -236,7 +261,8 @@ mod tests {
         dpe.contexts[idx].handle = *handle;
         dpe.contexts[idx].parent_idx = parent_idx;
         for i in children {
-            dpe.contexts[idx].add_child(*i as usize).unwrap();
+            let children = dpe.contexts[idx].add_child(*i as usize).unwrap();
+            dpe.contexts[idx].children = children;
         }
     }
 }

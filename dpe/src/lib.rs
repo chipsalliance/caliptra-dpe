@@ -31,7 +31,7 @@ const INTERNAL_INPUT_INFO_SIZE: usize = size_of::<GetProfileResp>() + size_of::<
 /// A type with u8 backing memory but bool semantics
 /// This is needed to safely serialize booleans in the persisted DPE state
 /// using zerocopy.
-#[derive(Default, AsBytes, FromBytes)]
+#[derive(Default, AsBytes, FromBytes, Copy, Clone, PartialEq, Eq)]
 #[repr(C, align(1))]
 pub struct U8Bool {
     val: u8,

@@ -4,8 +4,8 @@ use constant_time_eq::constant_time_eq;
 use zerocopy::{AsBytes, FromBytes};
 
 #[repr(C, align(4))]
-#[derive(AsBytes, FromBytes)]
-pub(crate) struct Context {
+#[derive(AsBytes, FromBytes, Copy, Clone, PartialEq, Eq)]
+pub struct Context {
     pub handle: ContextHandle,
     pub tci: TciNodeData,
     /// Bitmap of the node indices that are children of this node
@@ -107,22 +107,24 @@ impl Context {
         self.uses_internal_input_dice = false.into();
     }
 
-    /// Add a child to list of children in the context.
-    pub fn add_child(&mut self, idx: usize) -> Result<(), DpeErrorCode> {
+    /// Return the list of children of the context with idx added.
+    /// This function does not mutate DPE state.
+    pub fn add_child(&mut self, idx: usize) -> Result<u32, DpeErrorCode> {
         if idx >= MAX_HANDLES {
             return Err(DpeErrorCode::InternalError);
         }
-        self.children |= 1 << idx;
-        Ok(())
+        let children_with_idx = self.children | 1 << idx;
+        Ok(children_with_idx)
     }
 
-    /// Remove a child from list of children in the context.
-    pub fn remove_child(&mut self, idx: usize) -> Result<(), DpeErrorCode> {
+    /// Return the list of children of the context with idx removed.
+    /// This function does not mutate DPE state.
+    pub fn remove_child(&mut self, idx: usize) -> Result<u32, DpeErrorCode> {
         if idx >= MAX_HANDLES {
             return Err(DpeErrorCode::InternalError);
         }
-        self.children &= !(1 << idx);
-        Ok(())
+        let children_without_idx = self.children & !(1 << idx);
+        Ok(children_without_idx)
     }
 }
 
@@ -145,10 +147,10 @@ impl ContextHandle {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, AsBytes, FromBytes)]
+#[derive(Debug, PartialEq, Eq, AsBytes, FromBytes, Copy, Clone)]
 #[repr(u8, align(1))]
 #[rustfmt::skip]
-pub(crate) enum ContextState {
+pub enum ContextState {
     /// Inactive or uninitialized.
     Inactive,
     /// Context is initialized and ready to be used.
@@ -180,7 +182,7 @@ pub(crate) enum ContextState {
 #[derive(Debug, PartialEq, Eq, Clone, Copy, AsBytes, FromBytes)]
 #[repr(u8, align(1))]
 #[rustfmt::skip]
-pub(crate) enum ContextType {
+pub enum ContextType {
     /// Typical context.
     Normal,
     /// Has limitations on what operations can be done.
@@ -204,7 +206,7 @@ pub(crate) enum ContextType {
     _F0, _F1, _F2, _F3, _F4, _F5, _F6, _F7, _F8, _F9, _Fa, _Fb, _Fc, _Fd, _Fe, _Ff,
 }
 
-pub(crate) struct ActiveContextArgs<'a> {
+pub struct ActiveContextArgs<'a> {
     pub context_type: ContextType,
     pub locality: u32,
     pub handle: &'a ContextHandle,

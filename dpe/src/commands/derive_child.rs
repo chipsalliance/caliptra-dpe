@@ -1,7 +1,7 @@
 // Licensed under the Apache-2.0 license.
 use super::CommandExecution;
 use crate::{
-    context::{ActiveContextArgs, ContextHandle, ContextState, ContextType},
+    context::{ActiveContextArgs, Context, ContextHandle, ContextState, ContextType},
     dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
     response::{DeriveChildResp, DpeErrorCode, Response, ResponseHdr},
     tci::TciMeasurement,
@@ -142,14 +142,9 @@ impl CommandExecution for DeriveChildCmd {
             dpe.generate_new_handle(env)?
         };
 
-        if !self.retains_parent() {
-            dpe.contexts[parent_idx].state = ContextState::Retired;
-            dpe.contexts[parent_idx].handle = ContextHandle([0xff; ContextHandle::SIZE]);
-        } else if !dpe.contexts[parent_idx].handle.is_default() {
-            dpe.contexts[parent_idx].handle = dpe.generate_new_handle(env)?;
-        }
-
-        dpe.contexts[child_idx].activate(&ActiveContextArgs {
+        // Create a temporary context to mutate so that we avoid mutating internal state upon an error.
+        let mut tmp_child_context = Context::new();
+        tmp_child_context.activate(&ActiveContextArgs {
             context_type: ContextType::Normal,
             locality: target_locality,
             handle: &child_handle,
@@ -159,13 +154,32 @@ impl CommandExecution for DeriveChildCmd {
             allow_x509: self.allows_x509(),
         });
 
-        dpe.add_tci_measurement(env, child_idx, &TciMeasurement(self.data), target_locality)?;
+        dpe.add_tci_measurement(
+            env,
+            &mut tmp_child_context,
+            &TciMeasurement(self.data),
+            target_locality,
+        )?;
+
+        tmp_child_context.uses_internal_input_info = self.uses_internal_info_input().into();
+        tmp_child_context.uses_internal_input_dice = self.uses_internal_dice_input().into();
+
+        // Copy the parent context to mutate so that we avoid mutating internal state upon an error.
+        let mut tmp_parent_context = dpe.contexts[parent_idx];
+        if !self.retains_parent() {
+            tmp_parent_context.state = ContextState::Retired;
+            tmp_parent_context.handle = ContextHandle([0xff; ContextHandle::SIZE]);
+        } else if !tmp_parent_context.handle.is_default() {
+            tmp_parent_context.handle = dpe.generate_new_handle(env)?;
+        }
 
         // Add child to the parent's list of children.
-        dpe.contexts[parent_idx].add_child(child_idx)?;
+        let children_with_child_idx = tmp_parent_context.add_child(child_idx)?;
+        tmp_parent_context.children = children_with_child_idx;
 
-        dpe.contexts[child_idx].uses_internal_input_info = self.uses_internal_info_input().into();
-        dpe.contexts[child_idx].uses_internal_input_dice = self.uses_internal_dice_input().into();
+        // At this point we cannot error out anymore, so it is safe to set the updated child and parent contexts.
+        dpe.contexts[child_idx] = tmp_child_context;
+        dpe.contexts[parent_idx] = tmp_parent_context;
 
         Ok(Response::DeriveChild(DeriveChildResp {
             handle: child_handle,
