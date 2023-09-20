@@ -24,7 +24,7 @@ import (
 
 const (
 	// RESERVED_0 CertifyKeyFlag = 31
-	AddIsCA CertifyKeyFlags = 31
+	AddIsCA CertifyKeyFlags = 30
 	// RESERVED_1 CertifyKeyFlag     = 29:0   for future use
 
 )
