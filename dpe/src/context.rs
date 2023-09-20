@@ -235,6 +235,7 @@ impl<'a> Iterator for ChildToRootIter<'a> {
             return Some(Err(DpeErrorCode::MaxTcis));
         }
         if self.idx >= self.contexts.len() {
+            self.done = true;
             return Some(Err(DpeErrorCode::InternalError));
         }
 
@@ -353,6 +354,19 @@ mod tests {
         contexts[0].parent_idx = Context::ROOT_INDEX;
         let mut iter = ChildToRootIter::new(0, &contexts);
         assert!(iter.next().unwrap().is_ok());
+    }
+
+    #[test]
+    fn test_child_to_root_iter_infinite_loop() {
+        let contexts = [CONTEXT_INITIALIZER; MAX_HANDLES];
+        let mut i = 0;
+        for _ in ChildToRootIter::new(30, &contexts) {
+            i += 1;
+            // fail test if we iterate over all nodes without terminating, meaning we are in infinite loop
+            if i > MAX_HANDLES {
+                panic!("child to root iterator loops without termination")
+            }
+        }
     }
 
     /// This is intended for testing a list of parent to children relationships. These are indices of contexts within a DPE instance.
