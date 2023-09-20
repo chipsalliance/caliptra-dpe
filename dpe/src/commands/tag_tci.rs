@@ -106,6 +106,17 @@ mod tests {
         InitCtxCmd::new_use_default()
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
             .unwrap();
+
+        // Wrong locality.
+        assert_eq!(
+            Err(DpeErrorCode::InvalidLocality),
+            TagTciCmd {
+                handle: ContextHandle::default(),
+                tag: 0,
+            }
+            .execute(&mut dpe, &mut env, TEST_LOCALITIES[1])
+        );
+
         let sim_local = TEST_LOCALITIES[1];
         // Make a simulation context to test against.
         InitCtxCmd::new_simulation()
@@ -120,16 +131,6 @@ mod tests {
                 tag: 0,
             }
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
-        );
-
-        // Wrong locality.
-        assert_eq!(
-            Err(DpeErrorCode::InvalidLocality),
-            TagTciCmd {
-                handle: ContextHandle::default(),
-                tag: 0,
-            }
-            .execute(&mut dpe, &mut env, TEST_LOCALITIES[1])
         );
 
         // Tag default handle.

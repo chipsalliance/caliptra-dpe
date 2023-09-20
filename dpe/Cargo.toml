@@ -12,6 +12,7 @@ dpe_profile_p384_sha384 = []
 
 [dependencies]
 bitflags = "2.4.0"
+constant_time_eq = "0.3.0"
 crypto = {path = "../crypto", default-features = false}
 platform = {path = "../platform", default-features = false}
 zerocopy = "0.6.1"
