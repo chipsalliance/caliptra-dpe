@@ -1,6 +1,5 @@
 // Licensed under the Apache-2.0 license.
 use crate::{response::DpeErrorCode, tci::TciNodeData, U8Bool, MAX_HANDLES};
-use core::mem::size_of;
 use zerocopy::{AsBytes, FromBytes};
 
 #[repr(C, align(4))]
@@ -133,32 +132,6 @@ impl ContextHandle {
     /// Whether the handle is the default context handle.
     pub fn is_default(&self) -> bool {
         self.0 == Self::DEFAULT
-    }
-
-    /// Serializes a handle to the given destination and returns the length copied.
-    pub fn serialize(&self, dst: &mut [u8]) -> Result<usize, DpeErrorCode> {
-        if dst.len() < size_of::<Self>() {
-            return Err(DpeErrorCode::InternalError);
-        }
-
-        dst[..ContextHandle::SIZE].copy_from_slice(&self.0);
-        Ok(ContextHandle::SIZE)
-    }
-}
-
-impl TryFrom<&[u8]> for ContextHandle {
-    type Error = DpeErrorCode;
-
-    fn try_from(raw: &[u8]) -> Result<Self, Self::Error> {
-        if raw.len() < size_of::<ContextHandle>() {
-            return Err(DpeErrorCode::InternalError);
-        }
-
-        Ok(ContextHandle(
-            raw[0..Self::SIZE]
-                .try_into()
-                .map_err(|_| DpeErrorCode::InternalError)?,
-        ))
     }
 }
 

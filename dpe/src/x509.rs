@@ -10,6 +10,7 @@ use crate::{
     tci::{TciMeasurement, TciNodeData},
     DpeProfile, DPE_PROFILE,
 };
+use bitflags::bitflags;
 use crypto::{EcdsaPub, EcdsaSig};
 
 /// Type for specifying an X.509 RelativeDistinguisedName
@@ -30,6 +31,15 @@ pub struct X509CertWriter<'a> {
     certificate: &'a mut [u8],
     offset: usize,
     crit_dice: bool,
+}
+
+pub struct KeyUsageFlags(u8);
+
+bitflags! {
+    impl KeyUsageFlags: u8 {
+        const DIGITAL_SIGNATURE = 0b1000_0000;
+        const KEY_CERT_SIGN = 0b0000_0100;
+    }
 }
 
 impl X509CertWriter<'_> {
@@ -331,12 +341,8 @@ impl X509CertWriter<'_> {
     /// Get the size of a keyUsage extension, including the extension
     /// OID and critical bits.
     fn get_key_usage_size(tagged: bool) -> Result<usize, DpeErrorCode> {
-        // Extension data is sequence -> octet string. To compute size, wrap
-        // in tagging twice.
-        let ext_size = Self::get_structure_size(
-            Self::get_structure_size(1, /*tagged=*/ true)?,
-            /*tagged=*/ true,
-        )?;
+        // Extension data is a 2-byte BIT STRING
+        let ext_size = Self::get_structure_size(2, /*tagged=*/ true)?;
         let size = Self::get_structure_size(Self::KEY_USAGE_OID.len(), /*tagged=*/true)? // Extension OID
             + Self::get_structure_size(Self::BOOL_SIZE, /*tagged=*/true)? // Critical bool
             + Self::get_structure_size(ext_size, /*tagged=*/true)?; // OCTET STRING
@@ -894,7 +900,7 @@ impl X509CertWriter<'_> {
         bytes_written += self.encode_byte(Self::BOOL_TAG)?;
         bytes_written += self.encode_size_field(Self::BOOL_SIZE)?;
         if measurements.is_ca {
-            bytes_written += self.encode_byte(0x01)?;
+            bytes_written += self.encode_byte(0xFF)?;
         } else {
             bytes_written += self.encode_byte(0x00)?;
         }
@@ -905,7 +911,7 @@ impl X509CertWriter<'_> {
     /// Encode a KeyUsage extension
     ///
     /// https://datatracker.ietf.org/doc/html/rfc5280
-    fn encode_key_usage(&mut self) -> Result<usize, DpeErrorCode> {
+    fn encode_key_usage(&mut self, is_ca: bool) -> Result<usize, DpeErrorCode> {
         let key_usage_size = Self::get_key_usage_size(/*tagged=*/ false)?;
 
         // Encode Extension
@@ -920,21 +926,29 @@ impl X509CertWriter<'_> {
         // Extension data is sequence -> octet string. To compute size, wrap
         // in tagging twice.
         bytes_written += self.encode_byte(Self::OCTET_STRING_TAG)?;
-        bytes_written += self.encode_size_field(Self::get_structure_size(
-            Self::get_structure_size(1, /*tagged=*/ true)?,
-            /*tagged=*/ true,
-        )?)?;
+        bytes_written +=
+            self.encode_size_field(Self::get_structure_size(2, /*tagged=*/ true)?)?;
 
         bytes_written += self.encode_byte(Self::BIT_STRING_TAG)?;
-        bytes_written +=
-            self.encode_size_field(Self::get_structure_size(1, /*tagged=*/ true)?)?;
-        // First byte of BIT STRING is the number of unused bits. But all bits
-        // are used.
+
+        // Bit string is 2 bytes:
+        // * Unused bits
+        // * KeyUsage bits
+        //
+        // To simplify encoding, no bits are marked as unused, they are just
+        // set to zero.
+        bytes_written += self.encode_size_field(2)?;
+
+        // Unused bits
         bytes_written += self.encode_byte(0)?;
 
-        // Set digitalSignature bit
-        bytes_written += self.encode_byte(0x80)?;
-        bytes_written += self.encode_size_field(1)?;
+        let key_usage = if is_ca {
+            KeyUsageFlags::DIGITAL_SIGNATURE | KeyUsageFlags::KEY_CERT_SIGN
+        } else {
+            KeyUsageFlags::DIGITAL_SIGNATURE
+        };
+
+        bytes_written += self.encode_byte(key_usage.0)?;
 
         Ok(bytes_written)
     }
@@ -1010,7 +1024,7 @@ impl X509CertWriter<'_> {
         bytes_written += self.encode_multi_tcb_info(measurements)?;
         bytes_written += self.encode_ueid(measurements)?;
         bytes_written += self.encode_basic_constraints(measurements)?;
-        bytes_written += self.encode_key_usage()?;
+        bytes_written += self.encode_key_usage(measurements.is_ca)?;
         bytes_written += self.encode_extended_key_usage(measurements)?;
 
         Ok(bytes_written)
@@ -1303,6 +1317,33 @@ mod tests {
         );
     }
 
+    fn get_key_usage(is_ca: bool) -> KeyUsage {
+        let mut cert = [0u8; 32];
+        let mut w = X509CertWriter::new(&mut cert, true);
+        let bytes_written = w.encode_key_usage(is_ca).unwrap();
+        assert_eq!(
+            bytes_written,
+            X509CertWriter::get_key_usage_size(/*tagged=*/ true).unwrap()
+        );
+
+        let mut parser = X509ExtensionParser::new().with_deep_parse_extensions(false);
+        let ext = parser.parse(&cert[..bytes_written]).unwrap().1;
+        KeyUsage::from_der(ext.value).unwrap().1
+    }
+
+    #[test]
+    fn test_key_usage() {
+        // Make sure leaf keyUsage is only digitalSignature
+        let leaf_key_usage = get_key_usage(/*is_ca=*/ false);
+        let expected = 1u16;
+        assert!(leaf_key_usage.flags | expected == expected);
+
+        // Make sure leaf keyUsage is digitalSignature | keyCertSign
+        let ca_key_usage = get_key_usage(/*is_ca=*/ true);
+        let expected = (1u16 << 5) | 1u16;
+        assert!(ca_key_usage.flags | expected == expected);
+    }
+
     #[test]
     fn test_tbs() {
         let mut cert = [0u8; 4096];
@@ -1360,31 +1401,27 @@ mod tests {
         assert_eq!(parsed_ueid.ueid, measurements.label);
     }
 
-    #[test]
-    fn test_full_cert() {
-        let test_serial = [0x1F; 20];
-        let test_issuer_name = Name {
-            cn: b"Caliptra Alias",
-            serial: [0x00; DPE_PROFILE.get_hash_size() * 2],
-        };
+    const TEST_SERIAL: &[u8] = &[0x1F; 20];
+    const TEST_ISSUER_NAME: Name = Name {
+        cn: b"Caliptra Alias",
+        serial: [0x00; DPE_PROFILE.get_hash_size() * 2],
+    };
+    const TEST_SUBJECT_NAME: Name = Name {
+        cn: b"DPE Leaf",
+        serial: [0x00; DPE_PROFILE.get_hash_size() * 2],
+    };
+
+    const ECC_INT_SIZE: usize = DPE_PROFILE.get_ecc_int_size();
+    const ALG_LEN: AlgLen = DPE_PROFILE.alg_len();
+
+    fn build_test_tbs<'a>(is_ca: bool, cert_buf: &'a mut [u8]) -> (usize, TbsCertificate<'a>) {
         let mut issuer_der = [0u8; 1024];
         let mut issuer_writer = X509CertWriter::new(&mut issuer_der, true);
-        let issuer_len = issuer_writer.encode_rdn(&test_issuer_name).unwrap();
+        let issuer_len = issuer_writer.encode_rdn(&TEST_ISSUER_NAME).unwrap();
 
-        let test_subject_name = Name {
-            cn: b"DPE Leaf",
-            serial: [0x00; DPE_PROFILE.get_hash_size() * 2],
-        };
-
-        const ECC_INT_SIZE: usize = DPE_PROFILE.get_ecc_int_size();
-        const ALG_LEN: AlgLen = DPE_PROFILE.alg_len();
         let test_pub = EcdsaPub {
             x: CryptoBuf::new(&[0xAA; ECC_INT_SIZE], ALG_LEN).unwrap(),
             y: CryptoBuf::new(&[0xBB; ECC_INT_SIZE], ALG_LEN).unwrap(),
-        };
-        let test_sig = EcdsaSig {
-            r: CryptoBuf::new(&[0xCC; ECC_INT_SIZE], ALG_LEN).unwrap(),
-            s: CryptoBuf::new(&[0xDD; ECC_INT_SIZE], ALG_LEN).unwrap(),
         };
 
         let node = TciNodeData::new();
@@ -1392,36 +1429,92 @@ mod tests {
         let measurements = MeasurementData {
             label: &[0; DPE_PROFILE.get_hash_size()],
             tci_nodes: &[node],
-            is_ca: true,
+            is_ca: is_ca,
         };
 
-        let mut tbs = [0u8; 1024];
-        let mut tbs_writer = X509CertWriter::new(&mut tbs, true);
-        let mut bytes_written = tbs_writer
+        let mut tbs_writer = X509CertWriter::new(cert_buf, true);
+        let bytes_written = tbs_writer
             .encode_ecdsa_tbs(
-                &test_serial,
+                &TEST_SERIAL,
                 &issuer_der[..issuer_len],
-                &test_subject_name,
+                &TEST_SUBJECT_NAME,
                 &test_pub,
                 &measurements,
             )
             .unwrap();
 
-        let mut cert = [0u8; 1024];
-        let mut w = X509CertWriter::new(&mut cert, true);
-        bytes_written = w
-            .encode_ecdsa_certificate(&tbs[..bytes_written], &test_sig)
+        let mut parser = TbsCertificateParser::new().with_deep_parse_extensions(true);
+        (
+            bytes_written,
+            parser.parse(&cert_buf[..bytes_written]).unwrap().1,
+        )
+    }
+
+    fn build_test_cert<'a>(is_ca: bool, cert_buf: &'a mut [u8]) -> (usize, X509Certificate<'a>) {
+        let mut tbs_buf = [0u8; 1024];
+        let (tbs_written, _) = build_test_tbs(is_ca, &mut tbs_buf);
+
+        let test_sig = EcdsaSig {
+            r: CryptoBuf::new(&[0xCC; ECC_INT_SIZE], ALG_LEN).unwrap(),
+            s: CryptoBuf::new(&[0xDD; ECC_INT_SIZE], ALG_LEN).unwrap(),
+        };
+
+        let mut w = X509CertWriter::new(cert_buf, true);
+        let bytes_written = w
+            .encode_ecdsa_certificate(&mut tbs_buf[..tbs_written], &test_sig)
             .unwrap();
 
         let mut parser = X509CertificateParser::new().with_deep_parse_extensions(true);
-        let cert = match parser.parse(&cert) {
-            Ok((rem, parsed_cert)) => {
+        let cert = match parser.parse(&cert_buf[..bytes_written]) {
+            Ok((_, parsed_cert)) => {
                 assert_eq!(parsed_cert.version(), X509Version::V3);
-                assert_eq!(rem.len(), cert.len() - bytes_written);
                 parsed_cert
             }
             Err(e) => panic!("x509 parsing failed: {:?}", e),
         };
+
+        (bytes_written, cert)
+    }
+
+    #[test]
+    fn test_full_leaf() {
+        let mut cert_buf = [0u8; 1024];
+        let (_, cert) = build_test_cert(false, &mut cert_buf);
+
+        match cert.basic_constraints() {
+            Ok(Some(basic_constraints)) => {
+                assert!(basic_constraints.critical);
+                assert!(!basic_constraints.value.ca);
+            }
+            Ok(None) => panic!("basic constraints extension not found"),
+            Err(_) => panic!("multiple basic constraints extensions found"),
+        }
+
+        match cert.key_usage() {
+            Ok(Some(key_usage)) => {
+                assert!(key_usage.critical);
+                assert!(key_usage.value.digital_signature());
+                assert!(!key_usage.value.key_cert_sign());
+            }
+            Ok(None) => panic!("key usage extension not found"),
+            Err(_) => panic!("multiple key usage extensions found"),
+        }
+
+        match cert.extended_key_usage() {
+            Ok(Some(ext_key_usage)) => {
+                assert!(ext_key_usage.critical);
+                // Expect tcg-dice-kp-eca OID (2.23.133.5.4.100.9)
+                assert_eq!(ext_key_usage.value.other, [oid!(2.23.133 .5 .4 .100 .9)]);
+            }
+            Ok(None) => panic!("extended key usage extension not found"),
+            Err(_) => panic!("multiple extended key usage extensions found"),
+        };
+    }
+
+    #[test]
+    fn test_full_ca() {
+        let mut cert_buf = [0u8; 1024];
+        let (_, cert) = build_test_cert(/*is_ca=*/ true, &mut cert_buf);
 
         match cert.basic_constraints() {
             Ok(Some(basic_constraints)) => {
@@ -1437,6 +1530,7 @@ mod tests {
             Ok(Some(key_usage)) => {
                 assert!(key_usage.critical);
                 assert!(key_usage.value.digital_signature());
+                assert!(key_usage.value.key_cert_sign());
             }
             Ok(None) => panic!("key usage extension not found"),
             Err(_) => panic!("multiple key usage extensions found"),
