@@ -109,9 +109,18 @@ impl Context {
     /// Add a child to list of children in the context.
     pub fn add_child(&mut self, idx: usize) -> Result<(), DpeErrorCode> {
         if idx >= MAX_HANDLES {
-            return Err(DpeErrorCode::MaxTcis);
+            return Err(DpeErrorCode::InternalError);
         }
         self.children |= 1 << idx;
+        Ok(())
+    }
+
+    /// Remove a child from list of children in the context.
+    pub fn remove_child(&mut self, idx: usize) -> Result<(), DpeErrorCode> {
+        if idx >= MAX_HANDLES {
+            return Err(DpeErrorCode::InternalError);
+        }
+        self.children &= !(1 << idx);
         Ok(())
     }
 }
