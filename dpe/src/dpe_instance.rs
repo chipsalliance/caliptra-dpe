@@ -12,6 +12,7 @@ use crate::{
     tci::{TciMeasurement, TciNodeData},
     U8Bool, DPE_PROFILE, INTERNAL_INPUT_INFO_SIZE, MAX_HANDLES,
 };
+use constant_time_eq::constant_time_eq;
 use crypto::{Crypto, Digest, Hasher};
 use platform::{Platform, MAX_CHUNK_SIZE};
 use zerocopy::{AsBytes, FromBytes};
@@ -150,27 +151,31 @@ impl DpeInstance {
         handle: &ContextHandle,
         locality: u32,
     ) -> Result<usize, DpeErrorCode> {
-        let mut valid_handles = self
+        // find all active contexts whose localities match the locality parameter
+        let mut valid_localities = self
             .contexts
             .iter()
             .enumerate()
             .filter(|(_, context)| {
-                context.state == ContextState::Active && &context.handle == handle
+                context.state == ContextState::Active && context.locality == locality
             })
             .peekable();
-        if valid_handles.peek().is_none() {
-            return Err(DpeErrorCode::InvalidHandle);
+        if valid_localities.peek().is_none() {
+            return Err(DpeErrorCode::InvalidLocality);
         }
-        let mut valid_handles_and_localities = valid_handles
-            .filter(|(_, context)| context.locality == locality)
+
+        // filter down the contexts with valid localities based on their context handle matching the input context handle
+        // the locality and handle filters are separated so that we can return InvalidHandle or InvalidLocality upon getting no valid contexts accordingly
+        let mut valid_handles_and_localities = valid_localities
+            .filter(|(_, context)| constant_time_eq(&context.handle.0, &handle.0))
             .peekable();
         if valid_handles_and_localities.peek().is_none() {
-            return Err(DpeErrorCode::InvalidLocality);
+            return Err(DpeErrorCode::InvalidHandle);
         }
         let (i, _) = valid_handles_and_localities
             .find(|(_, context)| {
                 context.state == ContextState::Active
-                    && &context.handle == handle
+                    && constant_time_eq(&context.handle.0, &handle.0)
                     && context.locality == locality
             })
             .ok_or(DpeErrorCode::InternalError)?;
@@ -209,7 +214,12 @@ impl DpeInstance {
             env.crypto
                 .rand_bytes(&mut handle.0)
                 .map_err(|_| DpeErrorCode::RandError)?;
-            if !handle.is_default() && !self.contexts.iter().any(|c| c.handle == handle) {
+            if !handle.is_default()
+                && !self
+                    .contexts
+                    .iter()
+                    .any(|c| constant_time_eq(&c.handle.0, &handle.0))
+            {
                 return Ok(handle);
             }
         }

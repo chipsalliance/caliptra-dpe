@@ -1,5 +1,6 @@
 // Licensed under the Apache-2.0 license.
 use crate::{response::DpeErrorCode, tci::TciNodeData, U8Bool, MAX_HANDLES};
+use constant_time_eq::constant_time_eq;
 use zerocopy::{AsBytes, FromBytes};
 
 #[repr(C, align(4))]
@@ -140,7 +141,7 @@ impl ContextHandle {
 
     /// Whether the handle is the default context handle.
     pub fn is_default(&self) -> bool {
-        self.0 == Self::DEFAULT
+        constant_time_eq(&self.0, &Self::DEFAULT)
     }
 }
 
