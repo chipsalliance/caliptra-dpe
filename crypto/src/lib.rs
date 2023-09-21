@@ -33,7 +33,7 @@ impl AlgLen {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum CryptoError {
     AbstractionLayer,
     CryptoLibError,
