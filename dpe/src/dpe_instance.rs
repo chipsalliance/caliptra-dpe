@@ -442,6 +442,9 @@ pub mod tests {
         ContextHandle([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
     pub const SIMULATION_HANDLE: ContextHandle =
         ContextHandle([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
+    pub const RANDOM_HANDLE: ContextHandle = ContextHandle([
+        51, 1, 232, 215, 231, 84, 219, 44, 245, 123, 10, 76, 167, 63, 37, 60,
+    ]);
 
     pub const TEST_LOCALITIES: [u32; 2] = [AUTO_INIT_LOCALITY, u32::from_be_bytes(*b"OTHR")];
 
@@ -475,7 +478,7 @@ pub mod tests {
         command.extend(InitCtxCmd::new_simulation().as_bytes());
         assert_eq!(
             Response::InitCtx(NewHandleResp {
-                handle: SIMULATION_HANDLE,
+                handle: RANDOM_HANDLE,
                 resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
             }),
             dpe.execute_serialized_command(&mut env, TEST_LOCALITIES[0], &command)
@@ -714,19 +717,25 @@ pub mod tests {
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         .unwrap();
 
+        let child_context_idx = dpe
+            .get_active_context_pos(&ContextHandle::default(), TEST_LOCALITIES[0])
+            .unwrap();
         let digest = dpe
-            .compute_measurement_hash(&mut env, parent_context_idx)
+            .compute_measurement_hash(&mut env, child_context_idx)
             .unwrap();
         let cdi_with_internal_input_info = env
             .crypto
             .derive_cdi(DPE_PROFILE.alg_len(), &digest, b"DPE")
             .unwrap();
-        let context = &dpe.contexts[parent_context_idx];
-        assert!(context.uses_internal_input_info());
+        let parent_context = &dpe.contexts[parent_context_idx];
+        let child_context = &dpe.contexts[child_context_idx];
+        assert!(child_context.uses_internal_input_info());
+        assert!(!parent_context.uses_internal_input_info());
 
         let mut hasher = env.crypto.hash_initialize(DPE_PROFILE.alg_len()).unwrap();
 
-        hasher.update(context.tci.as_bytes()).unwrap();
+        hasher.update(child_context.tci.as_bytes()).unwrap();
+        hasher.update(parent_context.tci.as_bytes()).unwrap();
         let mut internal_input_info = [0u8; INTERNAL_INPUT_INFO_SIZE];
         dpe.serialize_internal_input_info(&mut env.platform, &mut internal_input_info)
             .unwrap();
@@ -764,19 +773,25 @@ pub mod tests {
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         .unwrap();
 
+        let child_context_idx = dpe
+            .get_active_context_pos(&ContextHandle::default(), TEST_LOCALITIES[0])
+            .unwrap();
         let digest = dpe
-            .compute_measurement_hash(&mut env, parent_context_idx)
+            .compute_measurement_hash(&mut env, child_context_idx)
             .unwrap();
         let cdi_with_internal_input_dice = env
             .crypto
             .derive_cdi(DPE_PROFILE.alg_len(), &digest, b"DPE")
             .unwrap();
-        let context = &dpe.contexts[parent_context_idx];
-        assert!(context.uses_internal_input_dice());
+        let parent_context = &dpe.contexts[parent_context_idx];
+        let child_context = &dpe.contexts[child_context_idx];
+        assert!(child_context.uses_internal_input_dice());
+        assert!(!parent_context.uses_internal_input_dice());
 
         let mut hasher = env.crypto.hash_initialize(DPE_PROFILE.alg_len()).unwrap();
 
-        hasher.update(context.tci.as_bytes()).unwrap();
+        hasher.update(child_context.tci.as_bytes()).unwrap();
+        hasher.update(parent_context.tci.as_bytes()).unwrap();
         hasher
             .update(&TEST_CERT_CHAIN[..TEST_CERT_CHAIN.len()])
             .unwrap();
