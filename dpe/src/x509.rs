@@ -1142,7 +1142,7 @@ mod tests {
     use crate::tci::{TciMeasurement, TciNodeData};
     use crate::x509::{MeasurementData, Name, X509CertWriter};
     use crate::DPE_PROFILE;
-    use crypto::{AlgLen, CryptoBuf, EcdsaPub, EcdsaSig};
+    use crypto::{CryptoBuf, EcdsaPub, EcdsaSig};
     use std::str;
     use x509_parser::certificate::X509CertificateParser;
     use x509_parser::nom::Parser;
@@ -1358,10 +1358,9 @@ mod tests {
         };
 
         const ECC_INT_SIZE: usize = DPE_PROFILE.get_ecc_int_size();
-        const ALG_LEN: AlgLen = DPE_PROFILE.alg_len();
         let test_pub = EcdsaPub {
-            x: CryptoBuf::new(&[0xAA; ECC_INT_SIZE], ALG_LEN).unwrap(),
-            y: CryptoBuf::new(&[0xBB; ECC_INT_SIZE], ALG_LEN).unwrap(),
+            x: CryptoBuf::new(&[0xAA; ECC_INT_SIZE]).unwrap(),
+            y: CryptoBuf::new(&[0xBB; ECC_INT_SIZE]).unwrap(),
         };
 
         let node = TciNodeData::new();
@@ -1412,7 +1411,6 @@ mod tests {
     };
 
     const ECC_INT_SIZE: usize = DPE_PROFILE.get_ecc_int_size();
-    const ALG_LEN: AlgLen = DPE_PROFILE.alg_len();
 
     fn build_test_tbs<'a>(is_ca: bool, cert_buf: &'a mut [u8]) -> (usize, TbsCertificate<'a>) {
         let mut issuer_der = [0u8; 1024];
@@ -1420,8 +1418,8 @@ mod tests {
         let issuer_len = issuer_writer.encode_rdn(&TEST_ISSUER_NAME).unwrap();
 
         let test_pub = EcdsaPub {
-            x: CryptoBuf::new(&[0xAA; ECC_INT_SIZE], ALG_LEN).unwrap(),
-            y: CryptoBuf::new(&[0xBB; ECC_INT_SIZE], ALG_LEN).unwrap(),
+            x: CryptoBuf::new(&[0xAA; ECC_INT_SIZE]).unwrap(),
+            y: CryptoBuf::new(&[0xBB; ECC_INT_SIZE]).unwrap(),
         };
 
         let node = TciNodeData::new();
@@ -1455,8 +1453,8 @@ mod tests {
         let (tbs_written, _) = build_test_tbs(is_ca, &mut tbs_buf);
 
         let test_sig = EcdsaSig {
-            r: CryptoBuf::new(&[0xCC; ECC_INT_SIZE], ALG_LEN).unwrap(),
-            s: CryptoBuf::new(&[0xDD; ECC_INT_SIZE], ALG_LEN).unwrap(),
+            r: CryptoBuf::new(&[0xCC; ECC_INT_SIZE]).unwrap(),
+            s: CryptoBuf::new(&[0xDD; ECC_INT_SIZE]).unwrap(),
         };
 
         let mut w = X509CertWriter::new(cert_buf, true);

@@ -98,7 +98,7 @@ impl CommandExecution for SignCmd {
         }
 
         let algs = DPE_PROFILE.alg_len();
-        let digest = Digest::new(&self.digest, algs).map_err(|_| DpeErrorCode::InternalError)?;
+        let digest = Digest::new(&self.digest).map_err(|_| DpeErrorCode::InternalError)?;
 
         let EcdsaSig { r, s } = if !self.uses_symmetric() {
             self.ecdsa_sign(dpe, env, idx, &digest)?
@@ -339,14 +339,9 @@ mod tests {
         // Check that r is equal to the HMAC over the digest
         assert_eq!(
             resp.sig_r_or_hmac,
-            cmd.hmac_sign(
-                &mut dpe,
-                &mut env,
-                idx,
-                &Digest::new(&TEST_DIGEST, DPE_PROFILE.alg_len()).unwrap(),
-            )
-            .unwrap()
-            .bytes()
+            cmd.hmac_sign(&mut dpe, &mut env, idx, &Digest::new(&TEST_DIGEST).unwrap(),)
+                .unwrap()
+                .bytes()
         );
         // Check that s is a buffer of all 0s
         assert!(&resp.sig_s.iter().all(|&b| b == 0x0));
