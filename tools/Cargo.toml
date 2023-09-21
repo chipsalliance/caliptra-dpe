@@ -12,7 +12,7 @@ dpe_profile_p384_sha384 = ["dpe/dpe_profile_p384_sha384"]
 
 [dependencies]
 dpe = {path = "../dpe"}
-crypto = {path = "../crypto", features = ["deterministic_rand"]}
+crypto = {path = "../crypto", features = ["deterministic_rand", "openssl"]}
 pem = "2"
 platform = {path = "../platform", features = ["openssl"]}
 zerocopy = "0.6.1"

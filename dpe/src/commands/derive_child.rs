@@ -120,9 +120,6 @@ impl CommandExecution for DeriveChildCmd {
             .get_next_inactive_context_pos()
             .ok_or(DpeErrorCode::MaxTcis)?;
 
-        dpe.contexts[parent_idx].uses_internal_input_info = self.uses_internal_info_input().into();
-        dpe.contexts[parent_idx].uses_internal_input_dice = self.uses_internal_dice_input().into();
-
         let target_locality = if !self.changes_locality() {
             locality
         } else {
@@ -167,6 +164,9 @@ impl CommandExecution for DeriveChildCmd {
         // Add child to the parent's list of children.
         dpe.contexts[parent_idx].add_child(child_idx)?;
 
+        dpe.contexts[child_idx].uses_internal_input_info = self.uses_internal_info_input().into();
+        dpe.contexts[child_idx].uses_internal_input_dice = self.uses_internal_dice_input().into();
+
         Ok(Response::DeriveChild(DeriveChildResp {
             handle: child_handle,
             parent_handle: dpe.contexts[parent_idx].handle,
@@ -179,12 +179,17 @@ impl CommandExecution for DeriveChildCmd {
 mod tests {
     use super::*;
     use crate::{
-        commands::{tests::TEST_DIGEST, Command, CommandHdr, InitCtxCmd},
-        dpe_instance::tests::{TestTypes, SIMULATION_HANDLE, TEST_LOCALITIES},
+        commands::{
+            tests::{TEST_DIGEST, TEST_LABEL},
+            CertifyKeyCmd, CertifyKeyFlags, Command, CommandHdr, InitCtxCmd, SignCmd, SignFlags,
+        },
+        dpe_instance::tests::{TestTypes, RANDOM_HANDLE, SIMULATION_HANDLE, TEST_LOCALITIES},
         support::Support,
         MAX_HANDLES,
     };
     use crypto::OpensslCrypto;
+    use openssl::x509::X509;
+    use openssl::{bn::BigNum, ecdsa::EcdsaSig};
     use platform::default::DefaultPlatform;
     use zerocopy::AsBytes;
 
@@ -358,7 +363,7 @@ mod tests {
         // Make sure child has a random handle when not creating default.
         assert_eq!(
             Ok(Response::DeriveChild(DeriveChildResp {
-                handle: SIMULATION_HANDLE,
+                handle: RANDOM_HANDLE,
                 parent_handle: ContextHandle([0xff; ContextHandle::SIZE]),
                 resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
             })),
@@ -371,6 +376,77 @@ mod tests {
             }
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         );
+    }
+
+    #[test]
+    fn test_full_attestation_flow() {
+        let mut env = DpeEnv::<TestTypes> {
+            crypto: OpensslCrypto::new(),
+            platform: DefaultPlatform,
+        };
+        let mut dpe = DpeInstance::new(
+            &mut env,
+            Support::AUTO_INIT | Support::INTERNAL_INFO | Support::X509,
+        )
+        .unwrap();
+
+        DeriveChildCmd {
+            handle: ContextHandle::default(),
+            data: [0; DPE_PROFILE.get_tci_size()],
+            flags: DeriveChildFlags::RETAIN_PARENT,
+            tci_type: 0,
+            target_locality: 0,
+        }
+        .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
+        .unwrap();
+
+        let sig = {
+            let cmd = SignCmd {
+                handle: ContextHandle::default(),
+                label: TEST_LABEL,
+                flags: SignFlags::empty(),
+                digest: TEST_DIGEST,
+            };
+            let resp = match cmd.execute(&mut dpe, &mut env, TEST_LOCALITIES[0]).unwrap() {
+                Response::Sign(resp) => resp,
+                _ => panic!("Incorrect response type"),
+            };
+
+            EcdsaSig::from_private_components(
+                BigNum::from_slice(&resp.sig_r_or_hmac).unwrap(),
+                BigNum::from_slice(&resp.sig_s).unwrap(),
+            )
+            .unwrap()
+        };
+
+        DeriveChildCmd {
+            handle: ContextHandle::default(),
+            data: [0; DPE_PROFILE.get_tci_size()],
+            flags: DeriveChildFlags::RETAIN_PARENT | DeriveChildFlags::INTERNAL_INPUT_INFO,
+            tci_type: 0,
+            target_locality: 0,
+        }
+        .execute(&mut dpe, &mut env, 0)
+        .unwrap();
+
+        let ec_pub_key = {
+            let cmd = CertifyKeyCmd {
+                handle: ContextHandle::default(),
+                flags: CertifyKeyFlags::empty(),
+                label: TEST_LABEL,
+                format: CertifyKeyCmd::FORMAT_X509,
+            };
+            let certify_resp = match cmd.execute(&mut dpe, &mut env, TEST_LOCALITIES[0]).unwrap() {
+                Response::CertifyKey(resp) => resp,
+                _ => panic!("Incorrect response type"),
+            };
+            let x509 =
+                X509::from_der(&certify_resp.cert[..certify_resp.cert_size.try_into().unwrap()])
+                    .unwrap();
+            x509.public_key().unwrap().ec_key().unwrap()
+        };
+
+        assert!(sig.verify(&TEST_DIGEST, &ec_pub_key).unwrap());
     }
 
     #[test]
@@ -418,36 +494,34 @@ mod tests {
         );
 
         // The next test case is to make sure the parent handle rotates when not the default and
-        // parent is retained. For this to work, we need the child to be created as the default (see
-        // note below). Right now both localities have a default. We need to mutate one of them so
+        // parent is retained. Right now both localities have a default. We need to mutate one of them so
         // we can create a new child as the default in the locality.
         let old_default_idx = dpe
             .get_active_context_pos(&ContextHandle::default(), TEST_LOCALITIES[0])
             .unwrap();
         dpe.contexts[old_default_idx].handle = ContextHandle([0x1; ContextHandle::SIZE]);
 
-        // Make sure the parent handle is regenerated when being retained.
-        assert_eq!(
-            Ok(Response::DeriveChild(DeriveChildResp {
-                handle: ContextHandle::default(),
-                parent_handle: SIMULATION_HANDLE,
-                resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
-            })),
-            DeriveChildCmd {
-                handle: dpe.contexts[old_default_idx].handle,
-                data: [0; DPE_PROFILE.get_tci_size()],
-                flags: DeriveChildFlags::RETAIN_PARENT | DeriveChildFlags::MAKE_DEFAULT,
-                tci_type: 0,
-                target_locality: 0,
-            }
-            .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
-        );
-
-        // NOTE: The deterministic RNG we use in tests will create the same value every time. This
-        // makes it so we can't test the case where neither parent or child are default and the
-        // parent will be retained. It would try to generate two new handles, but they would be the
-        // same value and throw an error. We either need to change the RNG or test this test case
-        // outside of unit tests.
+        // Make sure neither the parent nor the child handles are default.
+        let Response::DeriveChild(DeriveChildResp {
+            handle,
+            parent_handle,
+            resp_hdr,
+        }) = DeriveChildCmd {
+            handle: dpe.contexts[old_default_idx].handle,
+            data: [0; DPE_PROFILE.get_tci_size()],
+            flags: DeriveChildFlags::RETAIN_PARENT,
+            tci_type: 0,
+            target_locality: 0,
+        }
+        .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
+        .unwrap()
+        else {
+            panic!("Derive Child Failed");
+        };
+        assert_eq!(handle, RANDOM_HANDLE);
+        assert_eq!(handle, RANDOM_HANDLE);
+        assert_ne!(parent_handle, ContextHandle::default());
+        assert_eq!(resp_hdr, ResponseHdr::new(DpeErrorCode::NoError));
     }
 
     #[test]

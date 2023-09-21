@@ -7,7 +7,7 @@ edition = "2021"
 
 [features]
 openssl = ["dep:openssl", "dep:hkdf", "dep:sha2"]
-deterministic_rand = ["openssl"]
+deterministic_rand = ["dep:rand"]
 default = ["dpe_profile_p256_sha256"]
 dpe_profile_p256_sha256 = []
 dpe_profile_p384_sha384 = []
@@ -16,6 +16,7 @@ dpe_profile_p384_sha384 = []
 arrayvec = { version = "0.7.4", default-features = false }
 hkdf = {version = "0.12.3", optional = true}
 openssl = {version = "0.10", optional = true}
+rand = {version = "0.8.5", optional = true}
 sha2 = {version = "0.10.6", optional = true}
 
 [dev-dependencies]
@@ -24,3 +25,4 @@ strum_macros = "0.24"
 
 [build-dependencies]
 openssl = {version = "0.10", optional = true}
+rand = {version = "0.8.5", optional = true}

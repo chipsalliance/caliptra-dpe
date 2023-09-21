@@ -12,6 +12,8 @@ use openssl::{
     pkey::{PKey, Private},
     sign::Signer,
 };
+#[cfg(feature = "deterministic_rand")]
+use rand::{rngs::StdRng, RngCore, SeedableRng};
 use sha2::{Sha256, Sha384};
 
 pub struct OpensslHasher(openssl::hash::Hasher, AlgLen);
@@ -31,9 +33,21 @@ impl Hasher for OpensslHasher {
     }
 }
 
+#[cfg(feature = "deterministic_rand")]
+pub struct OpensslCrypto(StdRng);
+
+#[cfg(not(feature = "deterministic_rand"))]
 pub struct OpensslCrypto;
 
 impl OpensslCrypto {
+    #[cfg(feature = "deterministic_rand")]
+    pub fn new() -> Self {
+        const SEED: [u8; 32] = [1; 32];
+        let seeded_rng = StdRng::from_seed(SEED);
+        OpensslCrypto(seeded_rng)
+    }
+
+    #[cfg(not(feature = "deterministic_rand"))]
     pub fn new() -> Self {
         Self {}
     }
@@ -81,9 +95,7 @@ impl Crypto for OpensslCrypto {
 
     #[cfg(feature = "deterministic_rand")]
     fn rand_bytes(&mut self, dst: &mut [u8]) -> Result<(), CryptoError> {
-        for (i, char) in dst.iter_mut().enumerate() {
-            *char = (i + 1) as u8;
-        }
+        StdRng::fill_bytes(&mut self.0, dst);
         Ok(())
     }
 

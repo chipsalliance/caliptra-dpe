@@ -130,11 +130,13 @@ mod tests {
     use super::*;
     use crate::{
         commands::{
-            certify_key::CertifyKeyCmd, certify_key::CertifyKeyFlags,
-            derive_child::DeriveChildFlags, tests::TEST_DIGEST, Command, CommandHdr,
-            DeriveChildCmd, InitCtxCmd,
+            certify_key::CertifyKeyCmd,
+            certify_key::CertifyKeyFlags,
+            derive_child::DeriveChildFlags,
+            tests::{TEST_DIGEST, TEST_LABEL},
+            Command, CommandHdr, DeriveChildCmd, InitCtxCmd,
         },
-        dpe_instance::tests::{TestTypes, SIMULATION_HANDLE, TEST_LOCALITIES},
+        dpe_instance::tests::{TestTypes, RANDOM_HANDLE, SIMULATION_HANDLE, TEST_LOCALITIES},
         support::{test::SUPPORT, Support},
     };
     use crypto::OpensslCrypto;
@@ -142,17 +144,6 @@ mod tests {
     use openssl::{bn::BigNum, ecdsa::EcdsaSig};
     use platform::default::DefaultPlatform;
     use zerocopy::AsBytes;
-
-    #[cfg(feature = "dpe_profile_p256_sha256")]
-    const TEST_LABEL: [u8; DPE_PROFILE.get_hash_size()] = [
-        32, 31, 30, 29, 28, 27, 26, 25, 24, 23, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10,
-        9, 8, 7, 6, 5, 4, 3, 2, 1,
-    ];
-    #[cfg(feature = "dpe_profile_p384_sha384")]
-    const TEST_LABEL: [u8; DPE_PROFILE.get_hash_size()] = [
-        48, 47, 46, 45, 44, 43, 42, 41, 40, 39, 38, 37, 36, 35, 34, 33, 32, 31, 30, 29, 28, 27, 26,
-        25, 24, 23, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1,
-    ];
 
     const TEST_SIGN_CMD: SignCmd = SignCmd {
         handle: SIMULATION_HANDLE,
@@ -240,12 +231,12 @@ mod tests {
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
             .unwrap();
         assert!(dpe
-            .get_active_context_pos(&SIMULATION_HANDLE, TEST_LOCALITIES[0])
+            .get_active_context_pos(&RANDOM_HANDLE, TEST_LOCALITIES[0])
             .is_ok());
         assert_eq!(
             Err(DpeErrorCode::InvalidArgument),
             SignCmd {
-                handle: SIMULATION_HANDLE,
+                handle: RANDOM_HANDLE,
                 label: TEST_LABEL,
                 flags: SignFlags::empty(),
                 digest: TEST_DIGEST
