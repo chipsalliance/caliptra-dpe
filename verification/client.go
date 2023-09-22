@@ -253,3 +253,40 @@ func (s *Support) ToFlags() uint32 {
 	}
 	return flags
 }
+
+func (s *Support) ToSupport(flag uint32) *Support {
+	if flag&(1<<31) != 0 {
+		s.Simulation = true
+	}
+	if flag&(1<<30) != 0 {
+		s.ExtendTci = true
+	}
+	if flag&(1<<29) != 0 {
+		s.AutoInit = true
+	}
+	if flag&(1<<28) != 0 {
+		s.Tagging = true
+	}
+	if flag&(1<<27) != 0 {
+		s.RotateContext = true
+	}
+	if flag&(1<<26) != 0 {
+		s.X509 = true
+	}
+	if flag&(1<<25) != 0 {
+		s.Csr = true
+	}
+	if flag&(1<<24) != 0 {
+		s.IsSymmetric = true
+	}
+	if flag&(1<<23) != 0 {
+		s.InternalInfo = true
+	}
+	if flag&(1<<22) != 0 {
+		s.InternalDice = true
+	}
+	if flag&(1<<21) != 0 {
+		s.IsCA = true
+	}
+	return s
+}
