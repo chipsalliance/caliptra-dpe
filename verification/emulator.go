@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -129,6 +130,12 @@ func (s *DpeEmulator) SendCmd(buf []byte) ([]byte, error) {
 	conn, err := net.Dial("unix", emulatorSocketPath)
 	if err != nil {
 		return nil, err
+	}
+
+	var i int
+	for i = 0; i < len(buf); i++ {
+		fmt.Print(buf[i])
+		fmt.Print(",")
 	}
 
 	// Prepend the command with the locality.
