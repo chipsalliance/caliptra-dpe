@@ -171,6 +171,10 @@ impl CommandExecution for DeriveChildCmd {
             tmp_parent_context.handle = ContextHandle([0xff; ContextHandle::SIZE]);
         } else if !tmp_parent_context.handle.is_default() {
             tmp_parent_context.handle = dpe.generate_new_handle(env)?;
+        } else if locality == target_locality {
+            // The default context cannot be retained because a locality cannot
+            // support the default context and random context handles at the same time.
+            return Err(DpeErrorCode::InvalidArgument);
         }
 
         // Add child to the parent's list of children.
@@ -194,6 +198,7 @@ mod tests {
     use super::*;
     use crate::{
         commands::{
+            rotate_context::{RotateCtxCmd, RotateCtxFlags},
             tests::{TEST_DIGEST, TEST_LABEL},
             CertifyKeyCmd, CertifyKeyFlags, Command, CommandHdr, InitCtxCmd, SignCmd, SignFlags,
         },
@@ -400,52 +405,72 @@ mod tests {
         };
         let mut dpe = DpeInstance::new(
             &mut env,
-            Support::AUTO_INIT | Support::INTERNAL_INFO | Support::X509,
+            Support::INTERNAL_INFO | Support::X509 | Support::AUTO_INIT | Support::ROTATE_CONTEXT,
         )
         .unwrap();
 
-        DeriveChildCmd {
+        let handle = match (RotateCtxCmd {
             handle: ContextHandle::default(),
+            flags: RotateCtxFlags::empty(),
+        })
+        .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
+        {
+            Ok(Response::RotateCtx(resp)) => resp.handle,
+            Ok(_) => panic!("Invalid response type"),
+            Err(e) => Err(e).unwrap(),
+        };
+
+        let parent_handle = match (DeriveChildCmd {
+            handle,
             data: [0; DPE_PROFILE.get_tci_size()],
             flags: DeriveChildFlags::RETAIN_PARENT,
             tci_type: 0,
             target_locality: 0,
-        }
+        })
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
-        .unwrap();
-
-        let sig = {
-            let cmd = SignCmd {
-                handle: ContextHandle::default(),
-                label: TEST_LABEL,
-                flags: SignFlags::empty(),
-                digest: TEST_DIGEST,
-            };
-            let resp = match cmd.execute(&mut dpe, &mut env, TEST_LOCALITIES[0]).unwrap() {
-                Response::Sign(resp) => resp,
-                _ => panic!("Incorrect response type"),
-            };
-
-            EcdsaSig::from_private_components(
-                BigNum::from_slice(&resp.sig_r_or_hmac).unwrap(),
-                BigNum::from_slice(&resp.sig_s).unwrap(),
-            )
-            .unwrap()
+        {
+            Ok(Response::DeriveChild(resp)) => resp.parent_handle,
+            Ok(_) => panic!("Invalid response type"),
+            Err(e) => Err(e).unwrap(),
         };
 
-        DeriveChildCmd {
-            handle: ContextHandle::default(),
+        let (new_context_handle, sig) = match (SignCmd {
+            handle: parent_handle,
+            label: TEST_LABEL,
+            flags: SignFlags::empty(),
+            digest: TEST_DIGEST,
+        })
+        .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
+        {
+            Ok(Response::Sign(resp)) => (
+                resp.new_context_handle,
+                EcdsaSig::from_private_components(
+                    BigNum::from_slice(&resp.sig_r_or_hmac).unwrap(),
+                    BigNum::from_slice(&resp.sig_s).unwrap(),
+                )
+                .unwrap(),
+            ),
+            Ok(_) => panic!("Invalid response type"),
+            Err(e) => Err(e).unwrap(),
+        };
+
+        let parent_handle = match (DeriveChildCmd {
+            handle: new_context_handle,
             data: [0; DPE_PROFILE.get_tci_size()],
             flags: DeriveChildFlags::RETAIN_PARENT | DeriveChildFlags::INTERNAL_INPUT_INFO,
             tci_type: 0,
             target_locality: 0,
-        }
+        })
         .execute(&mut dpe, &mut env, 0)
-        .unwrap();
+        {
+            Ok(Response::DeriveChild(resp)) => resp.parent_handle,
+            Ok(_) => panic!("Invalid response type"),
+            Err(e) => Err(e).unwrap(),
+        };
 
         let ec_pub_key = {
             let cmd = CertifyKeyCmd {
-                handle: ContextHandle::default(),
+                handle: parent_handle,
                 flags: CertifyKeyFlags::empty(),
                 label: TEST_LABEL,
                 format: CertifyKeyCmd::FORMAT_X509,
@@ -567,5 +592,26 @@ mod tests {
         assert!(!make_default_in_0.safe_to_make_default(parent_idx, Ok(1)));
         // Retain default parent.
         assert!(!make_default_in_0.safe_to_make_default(parent_idx, Ok(parent_idx)));
+    }
+
+    #[test]
+    fn test_default_context_cannot_be_retained() {
+        let mut env = DpeEnv::<TestTypes> {
+            crypto: OpensslCrypto::new(),
+            platform: DefaultPlatform,
+        };
+        let mut dpe = DpeInstance::new(&mut env, Support::AUTO_INIT).unwrap();
+
+        assert_eq!(
+            DeriveChildCmd {
+                handle: ContextHandle::default(),
+                data: TciMeasurement::default().0,
+                flags: DeriveChildFlags::RETAIN_PARENT,
+                tci_type: 0,
+                target_locality: 0,
+            }
+            .execute(&mut dpe, &mut env, TEST_LOCALITIES[0]),
+            Err(DpeErrorCode::InvalidArgument)
+        );
     }
 }
