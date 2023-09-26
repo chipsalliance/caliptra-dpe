@@ -8,6 +8,7 @@ import (
 	"encoding/asn1"
 	"encoding/binary"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"log"
 	"reflect"
@@ -19,6 +20,8 @@ import (
 	zlint "github.com/zmap/zlint/v3"
 	"github.com/zmap/zlint/v3/lint"
 
+	"golang.org/x/crypto/cryptobyte"
+	cryptobyte_asn1 "golang.org/x/crypto/cryptobyte/asn1"
 	"golang.org/x/exp/slices"
 )
 
@@ -79,7 +82,7 @@ type TcgUeidExtension struct {
 // 		fwids 		[6] IMPLICIT FWIDLIST OPTIONAL,
 // 		flags 		[7] IMPLICIT OperationalFlags OPTIONAL,
 //		vendorInfo 	[8] IMPLICIT OCTET STRING OPTIONAL,
-// 		type 		[9] IMPLICIT OCTET STRING OPTIONAL
+// 		type 		[9] IMPLICIT OCTET STRING OPTIONAL,
 // }
 //
 // FWIDLIST ::== SEQUENCE SIZE (1..MAX) OF FWID
@@ -95,32 +98,19 @@ type TcgUeidExtension struct {
 //  	debug (3)
 // }
 
-type TcgMultiTcbInfo struct {
-	DiceTcbInfos []DiceTcbInfo `asn1:"sequence"`
+type Fwid struct {
+	HashAlg string
+	Digest  string
 }
 
 type DiceTcbInfo struct {
-	Vendor     string         `asn1:"tag:0,implicit,optional"`
-	Model      string         `asn1:"tag:1,implicit,optional"`
-	Version    string         `asn1:"tag:2,implicit,optional"`
-	SVN        int            `asn1:"tag:3,implicit,optional"`
-	Layer      int            `asn1:"tag:4,implicit,optional"`
-	Index      int            `asn1:"tag:5,implicit,optional"`
-	Fwids      []Fwid         `asn1:"tag:6,implicit,optional"`
-	Flags      asn1.BitString `asn1:"tag:7,implicit,optional"`
-	VendorInfo []byte         `asn1:"tag:8,implicit,optional"`
-	Type       []byte         `asn1:"tag:9,implicit,optional"`
+	Fwids      []Fwid
+	VendorInfo string
+	Type       string
 }
 
-type DiceTcbSeq []DiceTcbInfo
-
-//	type TcgMultiTcbInfo struct {
-//		DiceTcbInfos []DiceTcbInfo `asn1:"sequence"`
-//	}
-
-type Fwid struct {
-	HashAlg asn1.ObjectIdentifier `asn1:"hashAlg"`
-	Digest  []byte                `asn1:"digest"`
+type TcgMultiTcbInfo struct {
+	DiceTcbInfos []DiceTcbInfo
 }
 
 func TestCertifyKey(t *testing.T) {
@@ -232,8 +222,8 @@ func checkCertifyKeyTcgUeidExtension(t *testing.T, c *x509.Certificate, label []
 				t.Errorf("[ERROR]: Error encountered while unmarshalling value of UEID extension, %s", err.Error())
 			}
 
-			t.Logf("[LOG]: Value of UEID extension is %s", ueid.Ueid)
-			t.Logf("[LOG]: Value of Label passed as input parameter is %s", label)
+			t.Logf("[LOG]: Value of UEID extension is %v", ueid.Ueid)
+			t.Logf("[LOG]: Value of Label passed as input parameter is %v", label)
 			if !reflect.DeepEqual(ueid.Ueid, label) {
 				// Ueid extn value doen not match the label
 				t.Errorf("[ERROR]: tcg-dice-Ueid value does not match with the \"Label\" passed in CertifyKeyRequest")
@@ -255,20 +245,138 @@ func checkCertifyKeyMultiTcbInfoExtension(t *testing.T, c *x509.Certificate) {
 
 	// Check MultiTcbInfo Extension
 	//tcg-dice-MultiTcbInfo extension
-	var multiTcbInfo DiceTcbInfo
 	for _, ext := range c.Extensions {
 		if ext.Id.Equal(OidExtensionTcgDiceMultiTcbInfo) { // OID for Tcg Dice MultiTcbInfo
 			if !ext.Critical {
 				t.Errorf("[ERROR]: TCG DICE MultiTcbInfo extension is not marked as CRITICAL")
 			}
-			_, err := asn1.Unmarshal(ext.Value, &multiTcbInfo)
+			multiTcbInfo, err := parseMultiTcbInfo(ext.Value)
 			if err != nil {
 				// multiTcb info is not provided in leaf
 				t.Errorf("[ERROR]: Failed to unmarshal MultiTcbInfo field: %v", err)
+			} else {
+				t.Logf("[LOG]: MultiTcb extension %v", multiTcbInfo)
 			}
 			break
 		}
 	}
+}
+
+func parseMultiTcbInfo(der []byte) (*TcgMultiTcbInfo, error) {
+	multiTcbInfo := TcgMultiTcbInfo{DiceTcbInfos: []DiceTcbInfo{}}
+	input := cryptobyte.String(der)
+
+	// Unwrap outer most layer of input containing DiceTcbInfo array
+	if !input.ReadASN1Element(&input, cryptobyte_asn1.SEQUENCE) {
+		return nil, errors.New("tcb-dice-multi-info is malformed")
+	}
+	if !input.ReadASN1(&input, cryptobyte_asn1.SEQUENCE) {
+		return nil, errors.New("tcb-dice-multi-info is malformed")
+	}
+
+	for {
+		d := DiceTcbInfo{Fwids: []Fwid{}}
+		dindex := 0
+		// Read DiceTcb info elements
+		var diceTcbRaw cryptobyte.String
+		if !input.ReadASN1Element(&diceTcbRaw, cryptobyte_asn1.SEQUENCE) {
+			return nil, errors.New("dice tcb data is malformed")
+		}
+		if !diceTcbRaw.ReadASN1(&diceTcbRaw, cryptobyte_asn1.SEQUENCE) {
+			return nil, errors.New("dice tcb data is malformed")
+		}
+
+		for {
+			unknownTag := !(diceTcbRaw.PeekASN1Tag(cryptobyte_asn1.Tag(6).Constructed().ContextSpecific()) || diceTcbRaw.PeekASN1Tag(cryptobyte_asn1.Tag(8).ContextSpecific()) || diceTcbRaw.PeekASN1Tag(cryptobyte_asn1.Tag(9).ContextSpecific()))
+			if unknownTag {
+				return nil, errors.New("Unknown tag encountered.")
+			}
+			// Implicit tags from 0-5 and 7 are ignored and their values are not set in Rust code
+			// 	fwids 	[6] IMPLICIT FWIDLIST OPTIONAL,
+			if diceTcbRaw.PeekASN1Tag(cryptobyte_asn1.Tag(6).Constructed().ContextSpecific()) {
+				var fwidsArray cryptobyte.String
+				if !diceTcbRaw.ReadASN1Element(&fwidsArray, cryptobyte_asn1.Tag(6).ContextSpecific().Constructed()) {
+					return nil, errors.New("fwid array is malformed")
+				}
+				if !fwidsArray.ReadASN1(&fwidsArray, cryptobyte_asn1.Tag(6).ContextSpecific().Constructed()) {
+					return nil, errors.New("fwid array is malformed")
+				}
+				for {
+					findex := 0
+					var fwidsElem cryptobyte.String
+					if !fwidsArray.ReadASN1Element(&fwidsElem, cryptobyte_asn1.SEQUENCE) {
+						msg := fmt.Sprintf("fwid element %d data in dice tcb element %d is malformed", findex, dindex)
+						return nil, errors.New(msg)
+					}
+					if !fwidsElem.ReadASN1(&fwidsElem, cryptobyte_asn1.SEQUENCE) {
+						msg := fmt.Sprintf("fwid element %d data in dice tcb element %d is malformed", findex, dindex)
+						return nil, errors.New(msg)
+					}
+
+					var hashAlg asn1.ObjectIdentifier
+					if !fwidsElem.ReadASN1ObjectIdentifier(&hashAlg) {
+						msg := fmt.Sprintf("hash algorithm in fwid element %d data in dice tcb element %d is malformed", findex, dindex)
+						return nil, errors.New(msg)
+					}
+
+					var digest cryptobyte.String
+					if !fwidsElem.ReadASN1Element(&digest, cryptobyte_asn1.OCTET_STRING) {
+						msg := fmt.Sprintf("digest in fwid element %d data in dice tcb element %d is malformed", findex, dindex)
+						return nil, errors.New(msg)
+					}
+					if !digest.ReadASN1(&digest, cryptobyte_asn1.OCTET_STRING) {
+						msg := fmt.Sprintf("digest in fwid element %d data in dice tcb element %d is malformed", findex, dindex)
+						return nil, errors.New(msg)
+					}
+
+					fwid := Fwid{HashAlg: hashAlg.String(), Digest: fmt.Sprintf("%x", digest)}
+
+					d.Fwids = append(d.Fwids, fwid)
+
+					if len(fwidsArray) == 0 {
+						break
+					}
+					findex++
+				}
+
+			} else if diceTcbRaw.PeekASN1Tag(cryptobyte_asn1.Tag(8).ContextSpecific()) {
+				//	vendorInfo 	[8] IMPLICIT OCTET STRING OPTIONAL,
+				var vendorInfo cryptobyte.String
+				if !diceTcbRaw.ReadASN1Element(&vendorInfo, cryptobyte_asn1.Tag(8).ContextSpecific()) {
+					msg := fmt.Sprintf("vendor info in dice tcb element %d is malformed", dindex)
+					return nil, errors.New(msg)
+				}
+				if !vendorInfo.ReadASN1(&vendorInfo, cryptobyte_asn1.Tag(8).ContextSpecific()) {
+					msg := fmt.Sprintf("vendor info in dice tcb element %d is malformed", dindex)
+					return nil, errors.New(msg)
+				}
+				d.VendorInfo = fmt.Sprintf("%x", vendorInfo)
+			} else if diceTcbRaw.PeekASN1Tag(cryptobyte_asn1.Tag(9).ContextSpecific()) {
+				// 	type 		[9] IMPLICIT OCTET STRING OPTIONAL,
+				var typeInfo cryptobyte.String
+				if !diceTcbRaw.ReadASN1Element(&typeInfo, cryptobyte_asn1.Tag(9).ContextSpecific()) {
+					msg := fmt.Sprintf("type info in dice tcb element %d is malformed", dindex)
+					return nil, errors.New(msg)
+				}
+				if !typeInfo.ReadASN1(&typeInfo, cryptobyte_asn1.Tag(9).ContextSpecific()) {
+					msg := fmt.Sprintf("type info in dice tcb element %d is malformed", dindex)
+					return nil, errors.New(msg)
+				}
+				d.Type = fmt.Sprintf("%x", typeInfo)
+			}
+
+			if len(diceTcbRaw) == 0 {
+				multiTcbInfo.DiceTcbInfos = append(multiTcbInfo.DiceTcbInfos, d)
+				break
+			}
+		}
+		if len(input) == 0 {
+			break
+		}
+		dindex++
+
+	}
+	return &multiTcbInfo, nil
 }
 
 // Check whether certificate extended key usage is as per spec
@@ -336,14 +444,13 @@ func checkCertifyKeyExtensions(t *testing.T, c *x509.Certificate) {
 	//Check for keyusage extension
 	var allowedKeyUsages x509.KeyUsage
 	if c.IsCA {
-		allowedKeyUsages = x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment
+		allowedKeyUsages = x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign
 	} else {
 		allowedKeyUsages = x509.KeyUsageDigitalSignature
 	}
 
 	certKeyUsageList := getKeyUsageNames(c.KeyUsage)
 	allowedKeyUsageList := getKeyUsageNames(allowedKeyUsages)
-
 	if c.KeyUsage == allowedKeyUsages {
 		t.Logf("[LOG]: Certificate has IsCA: %v and has the expected key usage %v ", c.IsCA, certKeyUsageList)
 	} else {
@@ -381,7 +488,7 @@ func validateCertifyKeyCert(t *testing.T, c *x509.Certificate, flags uint32, lab
 	// Check for basic constraints extension
 	checkCertifyKeyBasicConstraints(t, c, flags)
 
-	// Check key usage extensions - DigitalSignature, KeyCertSign
+	// Check key usage extensions - DigitalSignature, CertSign
 	checkCertifyKeyExtensions(t, c)
 
 	// Check extended key usage extensions
@@ -486,8 +593,8 @@ func testCertifyKey(d TestDPEInstance, t *testing.T) {
 		{
 			ContextHandle: [16]byte{0},
 			//	Flags:         64, // Set the 31st bit: LITTLE ENDIAN 01000000 00000000 00000000 00000000
-			Flags:  1 << 30, // This doesnt return a CA cert, Setting the 31st bit counted from 0 returns CA cert but has parse errors: 10000000 00000000 00000000 00000000
-			Label:  [32]byte{},
+			Flags:  1 << AddIsCA, // This doesnt return a CA cert, Setting the 31st bit counted from 0 returns CA cert but has parse errors: 10000000 00000000 00000000 00000000
+			Label:  [32]byte{143, 67, 67, 70, 100, 143, 107, 150, 223, 137, 221, 169, 1, 197, 23, 107, 16, 166, 216, 57, 97, 221, 60, 26, 200, 139, 89, 178, 220, 50, 122, 164},
 			Format: CertifyKeyX509,
 		},
 	}
@@ -627,39 +734,39 @@ func extractFlagBit(pos int, flags uint32) bool {
 func getKeyUsageNames(keyUsage x509.KeyUsage) []string {
 	keyUsageNames := []string{}
 
-	if keyUsage&x509.KeyUsageDigitalSignature == 1 {
+	if keyUsage&x509.KeyUsageDigitalSignature != 0 {
 		keyUsageNames = append(keyUsageNames, "DigitalSignature")
 	}
 
-	if keyUsage&x509.KeyUsageContentCommitment == 1 {
+	if keyUsage&x509.KeyUsageContentCommitment != 0 {
 		keyUsageNames = append(keyUsageNames, "ContentCommitment")
 	}
 
-	if keyUsage&x509.KeyUsageKeyEncipherment == 1 {
+	if keyUsage&x509.KeyUsageKeyEncipherment != 0 {
 		keyUsageNames = append(keyUsageNames, "KeyEncipherment")
 	}
 
-	if keyUsage&x509.KeyUsageDataEncipherment == 1 {
+	if keyUsage&x509.KeyUsageDataEncipherment != 0 {
 		keyUsageNames = append(keyUsageNames, "DataEncipherment")
 	}
 
-	if keyUsage&x509.KeyUsageKeyAgreement == 1 {
+	if keyUsage&x509.KeyUsageKeyAgreement != 0 {
 		keyUsageNames = append(keyUsageNames, "KeyAgreement")
 	}
 
-	if keyUsage&x509.KeyUsageCertSign == 1 {
+	if keyUsage&x509.KeyUsageCertSign != 0 {
 		keyUsageNames = append(keyUsageNames, "CertSign")
 	}
 
-	if keyUsage&x509.KeyUsageCRLSign == 1 {
+	if keyUsage&x509.KeyUsageCRLSign != 0 {
 		keyUsageNames = append(keyUsageNames, "CRLSign")
 	}
 
-	if keyUsage&x509.KeyUsageEncipherOnly == 1 {
+	if keyUsage&x509.KeyUsageEncipherOnly != 0 {
 		keyUsageNames = append(keyUsageNames, "EncipherOnly")
 	}
 
-	if keyUsage&x509.KeyUsageDecipherOnly == 1 {
+	if keyUsage&x509.KeyUsageDecipherOnly != 0 {
 		keyUsageNames = append(keyUsageNames, "DecipherOnly")
 	}
 

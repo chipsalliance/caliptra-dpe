@@ -95,7 +95,11 @@ impl X509CertWriter<'_> {
     const UEID_OID: &[u8] = &[0x67, 0x81, 0x05, 0x05, 0x04, 0x04];
 
     // tcg-dice-kp-identityLoc 2.23.133.5.4.100.7
-    const IDENTITY_LOC_OID: &[u8] = &[0x67, 0x81, 0x05, 0x05, 0x04, 0x64, 0x07];
+    // const IDENTITY_LOC_OID: &[u8] = &[0x67, 0x81, 0x05, 0x05, 0x04, 0x64, 0x07];
+
+
+    // tcg-dice-kp-eca 2.23.133.5.4.100.12
+    const ECA_OID: &[u8] = &[0x67, 0x81, 0x05, 0x05, 0x04, 0x64, 0x0C];
 
     // tcg-dice-kp-attestLoc 2.23.133.5.4.100.9
     const ATTEST_LOC_OID: &[u8] = &[0x67, 0x81, 0x05, 0x05, 0x04, 0x64, 0x09];
@@ -357,7 +361,7 @@ impl X509CertWriter<'_> {
         tagged: bool,
     ) -> Result<usize, DpeErrorCode> {
         let policy_oid_size = if measurements.is_ca {
-            Self::IDENTITY_LOC_OID.len()
+            Self::ECA_OID.len()
         } else {
             Self::ATTEST_LOC_OID.len()
         };
@@ -966,7 +970,7 @@ impl X509CertWriter<'_> {
         measurements: &MeasurementData,
     ) -> Result<usize, DpeErrorCode> {
         let policy_oid = if measurements.is_ca {
-            Self::IDENTITY_LOC_OID
+            Self::ECA_OID
         } else {
             Self::ATTEST_LOC_OID
         };
@@ -1537,8 +1541,8 @@ mod tests {
         match cert.extended_key_usage() {
             Ok(Some(ext_key_usage)) => {
                 assert!(ext_key_usage.critical);
-                // Expect tcg-dice-kp-identityLoc OID (2.23.133.5.4.100.7)
-                assert_eq!(ext_key_usage.value.other, [oid!(2.23.133 .5 .4 .100 .7)]);
+                // Expect tcg-dice-kp-eca OID (2.23.133.5.4.100.12)
+                assert_eq!(ext_key_usage.value.other, [oid!(2.23.133 .5 .4 .100 .12)]);
             }
             Ok(None) => panic!("extended key usage extension not found"),
             Err(_) => panic!("multiple extended key usage extensions found"),
