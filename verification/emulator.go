@@ -30,7 +30,7 @@ const (
 )
 
 // Added dummy support for emulator .This is to verify against the support_needed list
-var emulator_supports = []string{"AutoInit", "X509", "Simulation"}
+var emulator_supports = []string{"AutoInit", "X509", "Simulation", "Tagging"}
 
 //TODO code for emulator to start, stop, getsupport
 
@@ -162,6 +162,10 @@ func (s *DpeEmulator) SendCmd(buf []byte) ([]byte, error) {
 
 func (s *DpeEmulator) GetSupport() *Support {
 	return &s.supports
+}
+
+func (s *DpeEmulator) SetSupport(support Support) {
+	s.supports = support
 }
 
 func (s *DpeEmulator) GetProfile() Profile {

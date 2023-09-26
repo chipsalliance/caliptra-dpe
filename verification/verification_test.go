@@ -23,13 +23,13 @@ var testTargetType string
 
 // This will be called before running tests, and it assigns the socket path based on command line flag.
 func TestMain(m *testing.M) {
-	testTarget := flag.String("target", "emulator", "socket type - simulator")
+	testTarget := flag.String("target", "simulator", "socket type - emulator")
 	flag.Parse()
 	testTargetType = *testTarget
 	if testTargetType == SIMULATOR {
 		target_exe = flag.String("sim", "../simulator/target/debug/simulator", "path to simulator executable")
 	} else if testTargetType == EMULATOR {
-		target_exe = flag.String("emu", "../server/example", "path to emulator executable")
+		target_exe = flag.String("emu", "../emulator/target/debug/emulator", "path to emulator executable")
 	}
 
 	exitVal := m.Run()
@@ -52,6 +52,8 @@ type TestDPEInstance interface {
 	// it supports, but this function is used by tests to know how to test the DPE
 	// instance.
 	GetSupport() *Support
+	//Set the Support
+	SetSupport(support Support)
 	// Returns the profile the transport supports.
 	GetProfile() Profile
 	// Returns a slice of all the localities the instance supports.
@@ -128,6 +130,7 @@ func GetEmulatorTarget(support_needed []string) (TestDPEInstance, error) {
 			return nil, errors.New("Error in creating dpe instances - supported feature is not enabled in emulator")
 		}
 	}
+	instance.SetSupport(support)
 	return instance, nil
 }
 
