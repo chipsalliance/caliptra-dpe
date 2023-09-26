@@ -58,7 +58,9 @@ mod tests {
     use super::*;
     use crate::{
         commands::{Command, CommandHdr, InitCtxCmd},
-        dpe_instance::tests::{TestTypes, SIMULATION_HANDLE, TEST_HANDLE, TEST_LOCALITIES},
+        dpe_instance::tests::{
+            TestTypes, RANDOM_HANDLE, SIMULATION_HANDLE, TEST_HANDLE, TEST_LOCALITIES,
+        },
         support::Support,
     };
     use crypto::OpensslCrypto;
@@ -104,6 +106,17 @@ mod tests {
         InitCtxCmd::new_use_default()
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
             .unwrap();
+
+        // Wrong locality.
+        assert_eq!(
+            Err(DpeErrorCode::InvalidLocality),
+            TagTciCmd {
+                handle: ContextHandle::default(),
+                tag: 0,
+            }
+            .execute(&mut dpe, &mut env, TEST_LOCALITIES[1])
+        );
+
         let sim_local = TEST_LOCALITIES[1];
         // Make a simulation context to test against.
         InitCtxCmd::new_simulation()
@@ -118,16 +131,6 @@ mod tests {
                 tag: 0,
             }
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
-        );
-
-        // Wrong locality.
-        assert_eq!(
-            Err(DpeErrorCode::InvalidLocality),
-            TagTciCmd {
-                handle: ContextHandle::default(),
-                tag: 0,
-            }
-            .execute(&mut dpe, &mut env, TEST_LOCALITIES[1])
         );
 
         // Tag default handle.
@@ -166,32 +169,29 @@ mod tests {
         // Give the simulation context another handle so we can prove the handle rotates when it
         // gets tagged.
         let simulation_ctx = &mut dpe.contexts[dpe
-            .get_active_context_pos(&SIMULATION_HANDLE, sim_local)
+            .get_active_context_pos(&RANDOM_HANDLE, sim_local)
             .unwrap()];
         let sim_tmp_handle = ContextHandle([0xff; ContextHandle::SIZE]);
         simulation_ctx.handle = sim_tmp_handle;
         assert!(dpe
-            .get_active_context_pos(&SIMULATION_HANDLE, sim_local)
+            .get_active_context_pos(&RANDOM_HANDLE, sim_local)
             .is_err());
 
         // Tag simulation.
-        assert_eq!(
-            Ok(Response::TagTci(NewHandleResp {
-                handle: SIMULATION_HANDLE,
-                resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
-            })),
-            TagTciCmd {
-                handle: sim_tmp_handle,
-                tag: 1,
+        match (TagTciCmd {
+            handle: sim_tmp_handle,
+            tag: 1,
+        }
+        .execute(&mut dpe, &mut env, TEST_LOCALITIES[1]))
+        {
+            Ok(Response::TagTci(NewHandleResp { handle, .. })) => {
+                // Make sure it rotated back to the deterministic simulation handle.
+                assert!(dpe
+                    .get_active_context_pos(&sim_tmp_handle, sim_local)
+                    .is_err());
+                assert!(dpe.get_active_context_pos(&handle, sim_local).is_ok());
             }
-            .execute(&mut dpe, &mut env, TEST_LOCALITIES[1])
-        );
-        // Make sure it rotated back to the deterministic simulation handle.
-        assert!(dpe
-            .get_active_context_pos(&sim_tmp_handle, sim_local)
-            .is_err());
-        assert!(dpe
-            .get_active_context_pos(&SIMULATION_HANDLE, sim_local)
-            .is_ok());
+            _ => panic!("Tag simulation failed"),
+        }
     }
 }

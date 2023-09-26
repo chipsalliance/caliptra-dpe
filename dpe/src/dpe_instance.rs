@@ -12,6 +12,7 @@ use crate::{
     tci::{TciMeasurement, TciNodeData},
     U8Bool, DPE_PROFILE, INTERNAL_INPUT_INFO_SIZE, MAX_HANDLES,
 };
+use constant_time_eq::constant_time_eq;
 use crypto::{Crypto, Digest, Hasher};
 use platform::{Platform, MAX_CHUNK_SIZE};
 use zerocopy::{AsBytes, FromBytes};
@@ -33,7 +34,7 @@ pub struct DpeEnv<'a, T: DpeTypes + 'a> {
 #[repr(C, align(4))]
 #[derive(AsBytes, FromBytes)]
 pub struct DpeInstance {
-    pub(crate) contexts: [Context; MAX_HANDLES],
+    pub contexts: [Context; MAX_HANDLES],
     pub(crate) support: Support,
 
     /// Can only successfully execute the initialize context command for non-simulation (i.e.
@@ -150,27 +151,31 @@ impl DpeInstance {
         handle: &ContextHandle,
         locality: u32,
     ) -> Result<usize, DpeErrorCode> {
-        let mut valid_handles = self
+        // find all active contexts whose localities match the locality parameter
+        let mut valid_localities = self
             .contexts
             .iter()
             .enumerate()
             .filter(|(_, context)| {
-                context.state == ContextState::Active && &context.handle == handle
+                context.state == ContextState::Active && context.locality == locality
             })
             .peekable();
-        if valid_handles.peek().is_none() {
-            return Err(DpeErrorCode::InvalidHandle);
+        if valid_localities.peek().is_none() {
+            return Err(DpeErrorCode::InvalidLocality);
         }
-        let mut valid_handles_and_localities = valid_handles
-            .filter(|(_, context)| context.locality == locality)
+
+        // filter down the contexts with valid localities based on their context handle matching the input context handle
+        // the locality and handle filters are separated so that we can return InvalidHandle or InvalidLocality upon getting no valid contexts accordingly
+        let mut valid_handles_and_localities = valid_localities
+            .filter(|(_, context)| constant_time_eq(&context.handle.0, &handle.0))
             .peekable();
         if valid_handles_and_localities.peek().is_none() {
-            return Err(DpeErrorCode::InvalidLocality);
+            return Err(DpeErrorCode::InvalidHandle);
         }
         let (i, _) = valid_handles_and_localities
             .find(|(_, context)| {
                 context.state == ContextState::Active
-                    && &context.handle == handle
+                    && constant_time_eq(&context.handle.0, &handle.0)
                     && context.locality == locality
             })
             .ok_or(DpeErrorCode::InternalError)?;
@@ -209,7 +214,12 @@ impl DpeInstance {
             env.crypto
                 .rand_bytes(&mut handle.0)
                 .map_err(|_| DpeErrorCode::RandError)?;
-            if !handle.is_default() && !self.contexts.iter().any(|c| c.handle == handle) {
+            if !handle.is_default()
+                && !self
+                    .contexts
+                    .iter()
+                    .any(|c| constant_time_eq(&c.handle.0, &handle.0))
+            {
                 return Ok(handle);
             }
         }
@@ -264,18 +274,12 @@ impl DpeInstance {
     }
 
     pub(crate) fn add_tci_measurement(
-        &mut self,
+        &self,
         env: &mut DpeEnv<impl DpeTypes>,
-        idx: usize,
+        context: &mut Context,
         measurement: &TciMeasurement,
         locality: u32,
     ) -> Result<(), DpeErrorCode> {
-        if idx >= MAX_HANDLES {
-            return Err(DpeErrorCode::MaxTcis);
-        }
-
-        let context = &mut self.contexts[idx];
-
         if context.state != ContextState::Active {
             return Err(DpeErrorCode::InvalidHandle);
         }
@@ -442,6 +446,9 @@ pub mod tests {
         ContextHandle([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
     pub const SIMULATION_HANDLE: ContextHandle =
         ContextHandle([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
+    pub const RANDOM_HANDLE: ContextHandle = ContextHandle([
+        51, 1, 232, 215, 231, 84, 219, 44, 245, 123, 10, 76, 167, 63, 37, 60,
+    ]);
 
     pub const TEST_LOCALITIES: [u32; 2] = [AUTO_INIT_LOCALITY, u32::from_be_bytes(*b"OTHR")];
 
@@ -475,7 +482,7 @@ pub mod tests {
         command.extend(InitCtxCmd::new_simulation().as_bytes());
         assert_eq!(
             Response::InitCtx(NewHandleResp {
-                handle: SIMULATION_HANDLE,
+                handle: RANDOM_HANDLE,
                 resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
             }),
             dpe.execute_serialized_command(&mut env, TEST_LOCALITIES[0], &command)
@@ -541,21 +548,16 @@ pub mod tests {
 
         let mut dpe = DpeInstance::new(&mut env, Support::AUTO_INIT).unwrap();
 
-        // Verify bounds checking.
-        assert_eq!(
-            Err(DpeErrorCode::MaxTcis),
-            dpe.add_tci_measurement(
-                &mut env,
-                MAX_HANDLES,
-                &TciMeasurement::default(),
-                TEST_LOCALITIES[0],
-            )
-        );
-
         let data = [1; DPE_PROFILE.get_hash_size()];
-        dpe.add_tci_measurement(&mut env, 0, &TciMeasurement(data), TEST_LOCALITIES[0])
-            .unwrap();
-        let context = &dpe.contexts[0];
+        let mut context = dpe.contexts[0];
+        dpe.add_tci_measurement(
+            &mut env,
+            &mut context,
+            &TciMeasurement(data),
+            TEST_LOCALITIES[0],
+        )
+        .unwrap();
+        dpe.contexts[0] = context;
         assert_eq!(data, context.tci.tci_current.0);
 
         // Compute cumulative.
@@ -568,10 +570,15 @@ pub mod tests {
         assert_eq!(first_cumulative.bytes(), context.tci.tci_cumulative.0);
 
         let data = [2; DPE_PROFILE.get_hash_size()];
-        dpe.add_tci_measurement(&mut env, 0, &TciMeasurement(data), TEST_LOCALITIES[0])
-            .unwrap();
+        dpe.add_tci_measurement(
+            &mut env,
+            &mut context,
+            &TciMeasurement(data),
+            TEST_LOCALITIES[0],
+        )
+        .unwrap();
         // Make sure the current TCI was updated correctly.
-        let context = &dpe.contexts[0];
+        dpe.contexts[0] = context;
         assert_eq!(data, context.tci.tci_current.0);
 
         let mut hasher = env.crypto.hash_initialize(DPE_PROFILE.alg_len()).unwrap();
@@ -714,19 +721,25 @@ pub mod tests {
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         .unwrap();
 
+        let child_context_idx = dpe
+            .get_active_context_pos(&ContextHandle::default(), TEST_LOCALITIES[0])
+            .unwrap();
         let digest = dpe
-            .compute_measurement_hash(&mut env, parent_context_idx)
+            .compute_measurement_hash(&mut env, child_context_idx)
             .unwrap();
         let cdi_with_internal_input_info = env
             .crypto
             .derive_cdi(DPE_PROFILE.alg_len(), &digest, b"DPE")
             .unwrap();
-        let context = &dpe.contexts[parent_context_idx];
-        assert!(context.uses_internal_input_info());
+        let parent_context = &dpe.contexts[parent_context_idx];
+        let child_context = &dpe.contexts[child_context_idx];
+        assert!(child_context.uses_internal_input_info());
+        assert!(!parent_context.uses_internal_input_info());
 
         let mut hasher = env.crypto.hash_initialize(DPE_PROFILE.alg_len()).unwrap();
 
-        hasher.update(context.tci.as_bytes()).unwrap();
+        hasher.update(child_context.tci.as_bytes()).unwrap();
+        hasher.update(parent_context.tci.as_bytes()).unwrap();
         let mut internal_input_info = [0u8; INTERNAL_INPUT_INFO_SIZE];
         dpe.serialize_internal_input_info(&mut env.platform, &mut internal_input_info)
             .unwrap();
@@ -764,19 +777,25 @@ pub mod tests {
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         .unwrap();
 
+        let child_context_idx = dpe
+            .get_active_context_pos(&ContextHandle::default(), TEST_LOCALITIES[0])
+            .unwrap();
         let digest = dpe
-            .compute_measurement_hash(&mut env, parent_context_idx)
+            .compute_measurement_hash(&mut env, child_context_idx)
             .unwrap();
         let cdi_with_internal_input_dice = env
             .crypto
             .derive_cdi(DPE_PROFILE.alg_len(), &digest, b"DPE")
             .unwrap();
-        let context = &dpe.contexts[parent_context_idx];
-        assert!(context.uses_internal_input_dice());
+        let parent_context = &dpe.contexts[parent_context_idx];
+        let child_context = &dpe.contexts[child_context_idx];
+        assert!(child_context.uses_internal_input_dice());
+        assert!(!parent_context.uses_internal_input_dice());
 
         let mut hasher = env.crypto.hash_initialize(DPE_PROFILE.alg_len()).unwrap();
 
-        hasher.update(context.tci.as_bytes()).unwrap();
+        hasher.update(child_context.tci.as_bytes()).unwrap();
+        hasher.update(parent_context.tci.as_bytes()).unwrap();
         hasher
             .update(&TEST_CERT_CHAIN[..TEST_CERT_CHAIN.len()])
             .unwrap();

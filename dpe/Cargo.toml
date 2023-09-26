@@ -12,6 +12,7 @@ dpe_profile_p384_sha384 = []
 
 [dependencies]
 bitflags = "2.4.0"
+constant_time_eq = "0.3.0"
 crypto = {path = "../crypto", default-features = false}
 platform = {path = "../platform", default-features = false}
 zerocopy = "0.6.1"
@@ -20,5 +21,5 @@ zerocopy = "0.6.1"
 asn1 = "0.13.0"
 openssl = "0.10"
 x509-parser = "0.14.0"
-crypto = {path = "../crypto", features = ["deterministic_rand"]}
+crypto = {path = "../crypto", features = ["deterministic_rand", "openssl"]}
 platform = {path = "../platform", features = ["openssl"]}

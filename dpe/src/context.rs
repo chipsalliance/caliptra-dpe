@@ -1,10 +1,11 @@
 // Licensed under the Apache-2.0 license.
 use crate::{response::DpeErrorCode, tci::TciNodeData, U8Bool, MAX_HANDLES};
+use constant_time_eq::constant_time_eq;
 use zerocopy::{AsBytes, FromBytes};
 
 #[repr(C, align(4))]
-#[derive(AsBytes, FromBytes)]
-pub(crate) struct Context {
+#[derive(AsBytes, FromBytes, Copy, Clone, PartialEq, Eq)]
+pub struct Context {
     pub handle: ContextHandle,
     pub tci: TciNodeData,
     /// Bitmap of the node indices that are children of this node
@@ -106,13 +107,24 @@ impl Context {
         self.uses_internal_input_dice = false.into();
     }
 
-    /// Add a child to list of children in the context.
-    pub fn add_child(&mut self, idx: usize) -> Result<(), DpeErrorCode> {
+    /// Return the list of children of the context with idx added.
+    /// This function does not mutate DPE state.
+    pub fn add_child(&mut self, idx: usize) -> Result<u32, DpeErrorCode> {
         if idx >= MAX_HANDLES {
-            return Err(DpeErrorCode::MaxTcis);
+            return Err(DpeErrorCode::InternalError);
         }
-        self.children |= 1 << idx;
-        Ok(())
+        let children_with_idx = self.children | 1 << idx;
+        Ok(children_with_idx)
+    }
+
+    /// Return the list of children of the context with idx removed.
+    /// This function does not mutate DPE state.
+    pub fn remove_child(&mut self, idx: usize) -> Result<u32, DpeErrorCode> {
+        if idx >= MAX_HANDLES {
+            return Err(DpeErrorCode::InternalError);
+        }
+        let children_without_idx = self.children & !(1 << idx);
+        Ok(children_without_idx)
     }
 }
 
@@ -131,14 +143,14 @@ impl ContextHandle {
 
     /// Whether the handle is the default context handle.
     pub fn is_default(&self) -> bool {
-        self.0 == Self::DEFAULT
+        constant_time_eq(&self.0, &Self::DEFAULT)
     }
 }
 
-#[derive(Debug, PartialEq, Eq, AsBytes, FromBytes)]
+#[derive(Debug, PartialEq, Eq, AsBytes, FromBytes, Copy, Clone)]
 #[repr(u8, align(1))]
 #[rustfmt::skip]
-pub(crate) enum ContextState {
+pub enum ContextState {
     /// Inactive or uninitialized.
     Inactive,
     /// Context is initialized and ready to be used.
@@ -170,7 +182,7 @@ pub(crate) enum ContextState {
 #[derive(Debug, PartialEq, Eq, Clone, Copy, AsBytes, FromBytes)]
 #[repr(u8, align(1))]
 #[rustfmt::skip]
-pub(crate) enum ContextType {
+pub enum ContextType {
     /// Typical context.
     Normal,
     /// Has limitations on what operations can be done.
@@ -194,7 +206,7 @@ pub(crate) enum ContextType {
     _F0, _F1, _F2, _F3, _F4, _F5, _F6, _F7, _F8, _F9, _Fa, _Fb, _Fc, _Fd, _Fe, _Ff,
 }
 
-pub(crate) struct ActiveContextArgs<'a> {
+pub struct ActiveContextArgs<'a> {
     pub context_type: ContextType,
     pub locality: u32,
     pub handle: &'a ContextHandle,
@@ -235,6 +247,7 @@ impl<'a> Iterator for ChildToRootIter<'a> {
             return Some(Err(DpeErrorCode::MaxTcis));
         }
         if self.idx >= self.contexts.len() {
+            self.done = true;
             return Some(Err(DpeErrorCode::InternalError));
         }
 
@@ -353,6 +366,19 @@ mod tests {
         contexts[0].parent_idx = Context::ROOT_INDEX;
         let mut iter = ChildToRootIter::new(0, &contexts);
         assert!(iter.next().unwrap().is_ok());
+    }
+
+    #[test]
+    fn test_child_to_root_iter_infinite_loop() {
+        let contexts = [CONTEXT_INITIALIZER; MAX_HANDLES];
+        let mut i = 0;
+        for _ in ChildToRootIter::new(30, &contexts) {
+            i += 1;
+            // fail test if we iterate over all nodes without terminating, meaning we are in infinite loop
+            if i > MAX_HANDLES {
+                panic!("child to root iterator loops without termination")
+            }
+        }
     }
 
     /// This is intended for testing a list of parent to children relationships. These are indices of contexts within a DPE instance.
