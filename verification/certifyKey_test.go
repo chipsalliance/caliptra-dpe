@@ -591,10 +591,9 @@ func testCertifyKey(d TestDPEInstance, t *testing.T) {
 		},
 		{
 			ContextHandle: [16]byte{0},
-			//	Flags:         64, // Set the 31st bit: LITTLE ENDIAN 01000000 00000000 00000000 00000000
-			Flags:  1 << AddIsCA, // This doesnt return a CA cert, Setting the 31st bit counted from 0 returns CA cert but has parse errors: 10000000 00000000 00000000 00000000
-			Label:  [32]byte{143, 67, 67, 70, 100, 143, 107, 150, 223, 137, 221, 169, 1, 197, 23, 107, 16, 166, 216, 57, 97, 221, 60, 26, 200, 139, 89, 178, 220, 50, 122, 164},
-			Format: CertifyKeyX509,
+			Flags:         1 << AddIsCA, // Setting the 30th bit counted from 0 returns CA cert : 01000000 00000000 00000000 00000000
+			Label:         [32]byte{143, 67, 67, 70, 100, 143, 107, 150, 223, 137, 221, 169, 1, 197, 23, 107, 16, 166, 216, 57, 97, 221, 60, 26, 200, 139, 89, 178, 220, 50, 122, 164},
+			Format:        CertifyKeyX509,
 		},
 	}
 
