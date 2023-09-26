@@ -239,6 +239,18 @@ func (c *Client[_, _]) GetCertificateChain() (*GetCertificateChainResp, error) {
 	return &certs, nil
 }
 
+// DeriveChild() calls the DPE CertifyKey command.
+func (c *Client[_, Digest]) DeriveChild(cmd *DeriveChildReq[Digest]) (*DeriveChildResp[Digest], error) {
+	var respStruct DeriveChildResp[Digest]
+
+	_, err := execCommand(c.transport, CommandCertifyKey, c.Profile, cmd, &respStruct)
+	if err != nil {
+		return nil, err
+	}
+
+	return &respStruct, nil
+}
+
 // TagTCI calls the DPE TagTCI command.
 func (c *Client[_, _]) TagTCI(cmd *TagTCIReq) (*TagTCIResp, error) {
 	var respStruct TagTCIResp

@@ -15,6 +15,7 @@ type CommandCode uint32
 const (
 	CommandGetProfile          CommandCode = 0x1
 	CommandInitializeContext   CommandCode = 0x7
+	CommandDeriveChild         CommandCode = 0x8
 	CommandCertifyKey          CommandCode = 0x9
 	CommandDestroyContext      CommandCode = 0xf
 	CommandGetCertificateChain CommandCode = 0x80
@@ -125,4 +126,19 @@ type GetTaggedTCIReq struct {
 type GetTaggedTCIResp[Digest DigestAlgorithm] struct {
 	CumulativeTCI Digest
 	CurrentTCI    Digest
+}
+
+type DeriveChildFlags uint32
+
+type DeriveChildReq[Digest DigestAlgorithm] struct {
+	ContextHandle  ContextHandle
+	InputData      Digest
+	Flags          DeriveChildFlags
+	InputType      [4]byte
+	TargetLocality uint32
+}
+
+type DeriveChildResp[Digest DigestAlgorithm] struct {
+	NewContextHandle    ContextHandle
+	ParentContextHandle ContextHandle
 }
