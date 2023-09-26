@@ -476,8 +476,7 @@ func checkCertifyKeyBasicConstraints(t *testing.T, c *x509.Certificate, flags ui
 	if flagIsCA == c.IsCA {
 		t.Logf("[LOG]: ADD_IS_CA is set to %v and the basic constraint IsCA is set to %v", flagIsCA, c.IsCA)
 	} else {
-		// TODO: Fail this when ISCA is set properly in cert when ADDISCA is set to true
-		t.Logf("[LOG]: ADD_IS_CA is set to %v but the basic constraint IsCA is set to %v", flagIsCA, c.IsCA)
+		t.Errorf("[LOG]: ADD_IS_CA is set to %v but the basic constraint IsCA is set to %v", flagIsCA, c.IsCA)
 	}
 }
 
