@@ -1,7 +1,7 @@
 // Licensed under the Apache-2.0 license.
 use super::CommandExecution;
 use crate::{
-    context::ContextHandle,
+    context::{Context, ContextHandle},
     dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
     response::{DpeErrorCode, NewHandleResp, Response, ResponseHdr},
     tci::TciMeasurement,
@@ -29,10 +29,18 @@ impl CommandExecution for ExtendTciCmd {
         }
 
         let idx = dpe.get_active_context_pos(&self.handle, locality)?;
-        dpe.add_tci_measurement(env, idx, &TciMeasurement(self.data), locality)?;
+
+        let mut tmp_context = dpe.contexts[idx];
+        dpe.add_tci_measurement(env, &mut tmp_context, &TciMeasurement(self.data), locality)?;
 
         // Rotate the handle if it isn't the default context.
         dpe.roll_onetime_use_handle(env, idx)?;
+
+        dpe.contexts[idx] = Context {
+            handle: dpe.contexts[idx].handle,
+            ..tmp_context
+        };
+
         Ok(Response::ExtendTci(NewHandleResp {
             handle: dpe.contexts[idx].handle,
             resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
@@ -45,7 +53,7 @@ mod tests {
     use super::*;
     use crate::{
         commands::{tests::TEST_DIGEST, Command, CommandHdr, InitCtxCmd},
-        dpe_instance::tests::{TestTypes, SIMULATION_HANDLE, TEST_LOCALITIES},
+        dpe_instance::tests::{TestTypes, RANDOM_HANDLE, SIMULATION_HANDLE, TEST_LOCALITIES},
         support::Support,
     };
     use crypto::OpensslCrypto;
@@ -134,26 +142,28 @@ mod tests {
         // Give the simulation context another handle so we can prove the handle rotates when it
         // gets extended.
         let simulation_ctx = &mut dpe.contexts[dpe
-            .get_active_context_pos(&SIMULATION_HANDLE, sim_local)
+            .get_active_context_pos(&RANDOM_HANDLE, sim_local)
             .unwrap()];
         let sim_tmp_handle = ContextHandle([0xff; ContextHandle::SIZE]);
         simulation_ctx.handle = sim_tmp_handle;
         assert!(dpe
-            .get_active_context_pos(&SIMULATION_HANDLE, sim_local)
+            .get_active_context_pos(&RANDOM_HANDLE, sim_local)
             .is_err());
 
-        ExtendTciCmd {
+        match (ExtendTciCmd {
             handle: sim_tmp_handle,
             data,
         }
-        .execute(&mut dpe, &mut env, TEST_LOCALITIES[1])
-        .unwrap();
-        // Make sure it rotated back to the deterministic simulation handle.
-        assert!(dpe
-            .get_active_context_pos(&sim_tmp_handle, sim_local)
-            .is_err());
-        assert!(dpe
-            .get_active_context_pos(&SIMULATION_HANDLE, sim_local)
-            .is_ok());
+        .execute(&mut dpe, &mut env, TEST_LOCALITIES[1]))
+        {
+            Ok(Response::ExtendTci(NewHandleResp { handle, .. })) => {
+                // Make sure it rotated back to the deterministic simulation handle.
+                assert!(dpe
+                    .get_active_context_pos(&sim_tmp_handle, sim_local)
+                    .is_err());
+                assert!(dpe.get_active_context_pos(&handle, sim_local).is_ok());
+            }
+            _ => panic!("Extend TCI failed"),
+        }
     }
 }

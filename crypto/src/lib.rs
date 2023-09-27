@@ -12,6 +12,9 @@ pub use signer::*;
 #[cfg(feature = "openssl")]
 pub mod openssl;
 
+#[cfg(feature = "deterministic_rand")]
+pub use rand::*;
+
 mod signer;
 
 #[derive(Debug, Clone, Copy)]
@@ -33,7 +36,7 @@ impl AlgLen {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum CryptoError {
     AbstractionLayer,
     CryptoLibError,

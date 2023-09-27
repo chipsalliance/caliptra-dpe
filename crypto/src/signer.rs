@@ -9,15 +9,6 @@ pub struct EcdsaSig {
     pub s: CryptoBuf,
 }
 
-impl EcdsaSig {
-    pub fn default(alg: AlgLen) -> EcdsaSig {
-        EcdsaSig {
-            r: CryptoBuf::default(alg),
-            s: CryptoBuf::default(alg),
-        }
-    }
-}
-
 /// An ECDSA public key
 pub struct EcdsaPub {
     pub x: CryptoBuf,
@@ -37,16 +28,16 @@ impl EcdsaPub {
 pub type HmacSig = CryptoBuf;
 
 /// A common base struct that can be used for all digests, signatures, and keys.
+#[derive(Debug, PartialEq, Eq)]
 pub struct CryptoBuf(ArrayVec<u8, { Self::MAX_SIZE }>);
 
 impl CryptoBuf {
     pub const MAX_SIZE: usize = AlgLen::MAX_ALG_LEN_BYTES;
 
-    pub fn new(bytes: &[u8], algs: AlgLen) -> Result<CryptoBuf, CryptoError> {
+    pub fn new(bytes: &[u8]) -> Result<CryptoBuf, CryptoError> {
         let mut vec = ArrayVec::new();
         vec.try_extend_from_slice(bytes)
             .map_err(|_| CryptoError::Size)?;
-        unsafe { vec.set_len(algs.size()) };
         Ok(CryptoBuf(vec))
     }
 
@@ -55,7 +46,6 @@ impl CryptoBuf {
         for _ in 0..algs.size() {
             vec.push(0);
         }
-        unsafe { vec.set_len(algs.size()) };
         CryptoBuf(vec)
     }
 
@@ -91,5 +81,32 @@ impl CryptoBuf {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_crypto_buf_init() {
+        let arr = &[1u8; CryptoBuf::MAX_SIZE + 1];
+
+        // array length must not exceed MAX_SIZE
+        assert_eq!(CryptoBuf::new(arr), Err(CryptoError::Size));
+
+        let arr = &[1u8; AlgLen::Bit256.size()];
+        // test new
+        match CryptoBuf::new(arr) {
+            Ok(buf) => {
+                assert_eq!(arr, buf.bytes());
+                assert_eq!(buf.len(), AlgLen::Bit256.size());
+            }
+            Err(_) => panic!("CryptoBuf::new failed"),
+        };
+
+        // test default
+        let default_buf = CryptoBuf::default(AlgLen::Bit384);
+        assert_eq!(default_buf.bytes(), [0; AlgLen::Bit384.size()]);
     }
 }

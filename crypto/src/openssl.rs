@@ -12,9 +12,11 @@ use openssl::{
     pkey::{PKey, Private},
     sign::Signer,
 };
+#[cfg(feature = "deterministic_rand")]
+use rand::{rngs::StdRng, RngCore, SeedableRng};
 use sha2::{Sha256, Sha384};
 
-pub struct OpensslHasher(openssl::hash::Hasher, AlgLen);
+pub struct OpensslHasher(openssl::hash::Hasher);
 
 impl Hasher for OpensslHasher {
     fn update(&mut self, bytes: &[u8]) -> Result<(), CryptoError> {
@@ -24,16 +26,25 @@ impl Hasher for OpensslHasher {
     }
 
     fn finish(mut self) -> Result<Digest, CryptoError> {
-        Digest::new(
-            &self.0.finish().map_err(|_| CryptoError::CryptoLibError)?,
-            self.1,
-        )
+        Digest::new(&self.0.finish().map_err(|_| CryptoError::CryptoLibError)?)
     }
 }
 
+#[cfg(feature = "deterministic_rand")]
+pub struct OpensslCrypto(StdRng);
+
+#[cfg(not(feature = "deterministic_rand"))]
 pub struct OpensslCrypto;
 
 impl OpensslCrypto {
+    #[cfg(feature = "deterministic_rand")]
+    pub fn new() -> Self {
+        const SEED: [u8; 32] = [1; 32];
+        let seeded_rng = StdRng::from_seed(SEED);
+        OpensslCrypto(seeded_rng)
+    }
+
+    #[cfg(not(feature = "deterministic_rand"))]
     pub fn new() -> Self {
         Self {}
     }
@@ -81,9 +92,7 @@ impl Crypto for OpensslCrypto {
 
     #[cfg(feature = "deterministic_rand")]
     fn rand_bytes(&mut self, dst: &mut [u8]) -> Result<(), CryptoError> {
-        for (i, char) in dst.iter_mut().enumerate() {
-            *char = (i + 1) as u8;
-        }
+        StdRng::fill_bytes(&mut self.0, dst);
         Ok(())
     }
 
@@ -96,7 +105,6 @@ impl Crypto for OpensslCrypto {
         let md = Self::get_digest(algs);
         Ok(OpensslHasher(
             openssl::hash::Hasher::new(md).map_err(|_| CryptoError::CryptoLibError)?,
-            algs,
         ))
     }
 
@@ -140,7 +148,7 @@ impl Crypto for OpensslCrypto {
                 hk.expand(label, &mut priv_key)
                     .map_err(|_| CryptoError::CryptoLibError)?;
 
-                Ok(CryptoBuf::new(&priv_key, algs).unwrap())
+                Ok(CryptoBuf::new(&priv_key).unwrap())
             }
             AlgLen::Bit384 => {
                 let hk = Hkdf::<Sha384>::new(Some(info), cdi);
@@ -148,7 +156,7 @@ impl Crypto for OpensslCrypto {
                 hk.expand(label, &mut priv_key)
                     .map_err(|_| CryptoError::CryptoLibError)?;
 
-                Ok(CryptoBuf::new(&priv_key, algs).unwrap())
+                Ok(CryptoBuf::new(&priv_key).unwrap())
             }
         }?;
 
@@ -167,8 +175,8 @@ impl Crypto for OpensslCrypto {
             .affine_coordinates(&group, &mut x, &mut y, &mut bn_ctx)
             .unwrap();
 
-        let x = CryptoBuf::new(&x.to_vec_padded(algs.size() as i32).unwrap(), algs).unwrap();
-        let y = CryptoBuf::new(&y.to_vec_padded(algs.size() as i32).unwrap(), algs).unwrap();
+        let x = CryptoBuf::new(&x.to_vec_padded(algs.size() as i32).unwrap()).unwrap();
+        let y = CryptoBuf::new(&y.to_vec_padded(algs.size() as i32).unwrap()).unwrap();
 
         Ok((priv_key, EcdsaPub { x, y }))
     }
@@ -184,8 +192,8 @@ impl Crypto for OpensslCrypto {
         let sig = EcdsaSig::sign::<Private>(digest.bytes(), &ec_priv)
             .map_err(|_| CryptoError::CryptoLibError)?;
 
-        let r = CryptoBuf::new(&sig.r().to_vec_padded(algs.size() as i32).unwrap(), algs).unwrap();
-        let s = CryptoBuf::new(&sig.s().to_vec_padded(algs.size() as i32).unwrap(), algs).unwrap();
+        let r = CryptoBuf::new(&sig.r().to_vec_padded(algs.size() as i32).unwrap()).unwrap();
+        let s = CryptoBuf::new(&sig.s().to_vec_padded(algs.size() as i32).unwrap()).unwrap();
 
         Ok(super::EcdsaSig { r, s })
     }
@@ -201,8 +209,8 @@ impl Crypto for OpensslCrypto {
             .map_err(|_| CryptoError::CryptoLibError)?;
         let sig = EcdsaSig::sign::<Private>(digest.bytes(), &ec_priv_key).unwrap();
 
-        let r = CryptoBuf::new(&sig.r().to_vec_padded(algs.size() as i32).unwrap(), algs).unwrap();
-        let s = CryptoBuf::new(&sig.s().to_vec_padded(algs.size() as i32).unwrap(), algs).unwrap();
+        let r = CryptoBuf::new(&sig.r().to_vec_padded(algs.size() as i32).unwrap()).unwrap();
+        let s = CryptoBuf::new(&sig.s().to_vec_padded(algs.size() as i32).unwrap()).unwrap();
 
         Ok(super::EcdsaSig { r, s })
     }
@@ -223,6 +231,6 @@ impl Crypto for OpensslCrypto {
         signer.update(digest.bytes()).unwrap();
         let hmac = signer.sign_to_vec().unwrap();
 
-        Ok(HmacSig::new(&hmac, algs).unwrap())
+        Ok(HmacSig::new(&hmac).unwrap())
     }
 }

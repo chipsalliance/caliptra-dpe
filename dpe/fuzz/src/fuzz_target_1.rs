@@ -5,6 +5,7 @@
 #[cfg(all(not(feature = "libfuzzer-sys"), not(feature = "afl")))]
 compile_error!("Either feature \"libfuzzer-sys\" or \"afl\" must be enabled!");
 
+use dpe::response::DpeErrorCode;
 #[cfg(feature = "libfuzzer-sys")]
 use libfuzzer_sys::fuzz_target;
 
@@ -16,9 +17,14 @@ use simplelog::{Config, WriteLogger};
 use std::fs::OpenOptions;
 
 use crypto::OpensslCrypto;
-use dpe::dpe_instance::{DpeEnv, DpeTypes};
-use dpe::{commands::Command, response::Response, DpeInstance, support::Support};
-use platform::{DefaultPlatform, AUTO_INIT_LOCALITY};
+use dpe::{
+    commands::Command,
+    dpe_instance::{DpeEnv, DpeTypes},
+    response::Response,
+    support::Support,
+    DpeInstance,
+};
+use platform::default::{DefaultPlatform, AUTO_INIT_LOCALITY};
 
 // https://github.com/chipsalliance/caliptra-sw/issues/624 will consider matrix fuzzing.
 const SUPPORT: Support = Support::all();
@@ -27,7 +33,7 @@ struct SimTypes {}
 
 impl DpeTypes for SimTypes {
     type Crypto<'a> = OpensslCrypto;
-    type Platform = DefaultPlatform;
+    type Platform<'a> = DefaultPlatform;
 }
 
 // Although fuzzers use persistent mode, using an internal worker shortens the lifetime.
@@ -47,7 +53,7 @@ fn harness(data: &[u8]) {
 
     trace!("----------------------------------");
     if let Ok(command) = Command::deserialize(data) {
-        trace!("| Fuzzer's locality requested {command:x?}",);
+        trace!("| Fuzzer's locality requested {command:x?}");
         trace!("|");
     } else {
         trace!("| Fuzzer's locality requested invalid command. {data:02x?}");
@@ -60,6 +66,7 @@ fn harness(data: &[u8]) {
         platform: DefaultPlatform,
     };
     let mut dpe = DpeInstance::new(&mut env, SUPPORT).unwrap();
+    let prev_contexts = dpe.contexts;
 
     // Hard-code working locality
     let response = dpe
@@ -82,6 +89,12 @@ fn harness(data: &[u8]) {
     };
     // There are a few vendor error codes starting at 0x1000, so this can be a 2 bytes.
     trace!("| Response Code {response_code:#06x}");
+    if dpe.contexts != prev_contexts && response_code != 0 {
+        panic!("Error: DPE state changes upon a failed DPE command.");
+    }
+    if response_code == DpeErrorCode::InternalError as u32 {
+        panic!("Error: DPE reached a state that should be unreachable.");
+    }
     trace!("----------------------------------");
 }
 

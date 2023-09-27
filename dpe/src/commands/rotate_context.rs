@@ -74,7 +74,7 @@ mod tests {
     use super::*;
     use crate::{
         commands::{Command, CommandHdr, InitCtxCmd},
-        dpe_instance::tests::{TestTypes, SIMULATION_HANDLE, TEST_HANDLE, TEST_LOCALITIES},
+        dpe_instance::tests::{TestTypes, RANDOM_HANDLE, TEST_HANDLE, TEST_LOCALITIES},
         support::Support,
     };
     use crypto::OpensslCrypto;
@@ -159,7 +159,7 @@ mod tests {
         // Rotate default handle.
         assert_eq!(
             Ok(Response::RotateCtx(NewHandleResp {
-                handle: SIMULATION_HANDLE,
+                handle: RANDOM_HANDLE,
                 resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
             })),
             RotateCtxCmd {
@@ -177,7 +177,7 @@ mod tests {
                 resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
             })),
             RotateCtxCmd {
-                handle: SIMULATION_HANDLE,
+                handle: RANDOM_HANDLE,
                 flags: RotateCtxFlags::TARGET_IS_DEFAULT,
                 target_locality: 0
             }

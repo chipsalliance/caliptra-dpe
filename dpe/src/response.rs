@@ -124,19 +124,6 @@ pub struct CertifyKeyResp {
     pub cert: [u8; MAX_CERT_SIZE],
 }
 
-impl Default for CertifyKeyResp {
-    fn default() -> Self {
-        Self {
-            resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
-            new_context_handle: ContextHandle::default(),
-            derived_pubkey_x: [0; DPE_PROFILE.get_ecc_int_size()],
-            derived_pubkey_y: [0; DPE_PROFILE.get_ecc_int_size()],
-            cert_size: 0,
-            cert: [0; MAX_CERT_SIZE],
-        }
-    }
-}
-
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, zerocopy::AsBytes, zerocopy::FromBytes)]
 pub struct SignResp {
@@ -163,16 +150,6 @@ pub struct GetCertificateChainResp {
     pub certificate_chain: [u8; MAX_CERT_SIZE],
 }
 
-impl Default for GetCertificateChainResp {
-    fn default() -> Self {
-        Self {
-            certificate_size: 0,
-            certificate_chain: [0; MAX_CERT_SIZE],
-            resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
-        }
-    }
-}
-
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum DpeErrorCode {
     NoError = 0,
@@ -188,5 +165,4 @@ pub enum DpeErrorCode {
     CryptoError = 0x1005,
     HashError = 0x1006,
     RandError = 0x1007,
-    InvalidInternalState = 0x1008,
 }
