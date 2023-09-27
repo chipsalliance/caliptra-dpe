@@ -18,7 +18,7 @@ pub struct CertifyKeyFlags(u32);
 
 bitflags! {
     impl CertifyKeyFlags: u32 {
-        const IS_CA = 1u32 << 31;
+        const IS_CA = 1u32 << 30;
     }
 }
 
