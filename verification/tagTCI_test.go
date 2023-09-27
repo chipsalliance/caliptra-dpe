@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// This file is used to test the tagTCI command by using a simulator/emulator
+// This file is used to test the tagTCI command.
 
 func TestTagTCI(t *testing.T) {
 

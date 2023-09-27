@@ -32,7 +32,7 @@ const (
 
 )
 
-// This file is used to test the certify key command by using a simulator/emulator
+// This file is used to test the certify key command.
 var (
 	OidExtensionAuthorityKeyIdentifier = asn1.ObjectIdentifier{2, 5, 29, 35}
 	OidExtensionBasicConstraints       = asn1.ObjectIdentifier{2, 5, 29, 19}
@@ -582,15 +582,37 @@ func testCertifyKey(d TestDPEInstance, t *testing.T) {
 		t.Fatalf("[FATAL]: Could not initialize client: %v", err)
 	}
 
+	var ctx ContextHandle
+	var initCtxResp *InitCtxResp
+
+	if d.GetSupport().Simulation {
+		initCtxResp, err := client.InitializeContext(NewInitCtxIsSimulation())
+		if err != nil {
+			t.Fatal("The instance should be able to create a simulation context.")
+		}
+		// Could prove difficult to prove it is a cryptographically secure random.
+		if initCtxResp.Handle == [16]byte{0} {
+			t.Fatal("Incorrect simulation context handle.")
+		}
+
+		defer client.DestroyContext(NewDestroyCtx(initCtxResp.Handle, false))
+	}
+	if initCtxResp == nil {
+		//default context
+		ctx = [16]byte{0}
+	} else {
+		ctx = initCtxResp.Handle
+	}
+
 	certifyKeyReq := []CertifyKeyReq[SHA256Digest]{
 		{
-			ContextHandle: [16]byte{0},
+			ContextHandle: ctx,
 			Flags:         0,
 			Label:         [32]byte{},
 			Format:        CertifyKeyX509,
 		},
 		{
-			ContextHandle: [16]byte{0},
+			ContextHandle: ctx,
 			Flags:         1 << AddIsCA, // Setting the 30th bit counted from 0 returns CA cert : 01000000 00000000 00000000 00000000
 			Label:         [32]byte{143, 67, 67, 70, 100, 143, 107, 150, 223, 137, 221, 169, 1, 197, 23, 107, 16, 166, 216, 57, 97, 221, 60, 26, 200, 139, 89, 178, 220, 50, 122, 164},
 			Format:        CertifyKeyX509,
@@ -631,86 +653,18 @@ func testCertifyKey(d TestDPEInstance, t *testing.T) {
 	}
 }
 
-// Build certificate chain and calls to validateSignature on each chain.
-func validateCertChain(t *testing.T, certChain []*x509.Certificate, leafCert *x509.Certificate) {
-	t.Helper()
-	var certsToProcess []*x509.Certificate
-	if leafCert != nil {
-		t.Log("[LOG]: Validating leaf certificate chain...")
-		certsToProcess = []*x509.Certificate{leafCert}
-	} else {
-		t.Log("[LOG]: Validating intermediate certificates chains...")
-		certsToProcess = certChain
-	}
-
-	// Remove unhandled critical extensions reported by x509 but defined in spec
-	t.Log("[LOG]: Checking for unhandled critical certificate extensions unknown to DPE certificates profile spec...")
-	removeTcgDiceCriticalExtensions(t, certsToProcess)
-
-	// Remove unhandled extended key usages reported by x509 but defined in spec
-	t.Log("[LOG]: Checking for extended key usages unknown to DPE certificates profile spec...")
-	removeTcgDiceExtendedKeyUsages(t, certsToProcess)
-
-	// Build verify options
-	opts := buildVerifyOptions(t, certChain)
-
-	if leafCert != nil {
-		// Certificate chain validation for leaf
-		chains, err := leafCert.Verify(opts)
-		if err != nil {
-			// Certificate chain cannot be built from leaf to root
-			t.Errorf("[ERROR]: Error in certificate chain %s: ", err.Error())
-		}
-
-		// Log certificate chains linked to leaf
-		t.Logf("[LOG]: Chains of DPE leaf certificate.")
-		for _, chain := range chains {
-			for i, cert := range chain {
-				t.Logf("%d %s", i, (*cert).Subject)
-			}
-
-		}
-
-		// This indicates that signature validation found no errors in the DPE leaf cert chain
-		t.Logf("[LOG]: DPE leaf certificate chain validation is done")
-
-	} else {
-		// Certificate chain validation for each intermediate certificate
-		for _, cert := range certChain {
-			chains, err := cert.Verify(opts)
-			if err != nil {
-				t.Errorf("[ERROR]: Error in Certificate Chain of %s: %s", cert.Subject, err.Error())
-			}
-
-			// Log certificate chains linked to each cetificate in chain
-			t.Logf("[LOG]: Chains of intermediate certificate.")
-			for _, chain := range chains {
-				for i, cert := range chain {
-					t.Logf("%d %s", i, (*cert).Subject)
-				}
-			}
-		}
-
-		// This indicates that signature validation found no errors each cert
-		// chain of intermediate certificates
-		t.Logf("[LOG]: Intermediate certificates chain validation is done")
-	}
-}
-
 func buildVerifyOptions(t *testing.T, certChain []*x509.Certificate) x509.VerifyOptions {
 	roots := x509.NewCertPool()
 	intermediates := x509.NewCertPool()
 
-	t.Logf("[LOG]: Root certificate is expected to be in the beginning of the chain, the rest are expected to be intermediates.")
-	if certChain[0].Subject.String() != certChain[0].Issuer.String() {
-		t.Errorf("[ERROR]: Found a non-root certificate in beginning of certificate chain returned by GetCertificateChain.")
-	} else {
+	// Root certificate is expected to be in the beginning of the chain, the rest are expected to be intermediates.
+	if certChain[0].Subject.String() == certChain[0].Issuer.String() {
 		roots.AddCert(certChain[0])
 	}
 
 	for _, cert := range certChain[1:] {
 		if cert.Subject.String() == cert.Issuer.String() {
-			t.Errorf("[ERROR]: Found a Root certificate in middle of certificate chain returned by GetCertificateChain.")
+			t.Errorf("[ERROR]: Found a self-signed certificate in middle of certificate chain returned by GetCertificateChain.")
 			continue
 		}
 		intermediates.AddCert(cert)

@@ -14,7 +14,7 @@ import (
 	"github.com/zmap/zlint/v3/lint"
 )
 
-// This file is used to test the Get Certificate Chain command by using a simulator/emulator
+// This file is used to test the Get Certificate Chain command.
 
 func TestGetCertificateChain(t *testing.T) {
 	support_needed := []string{"AutoInit", "X509"}
@@ -22,20 +22,6 @@ func TestGetCertificateChain(t *testing.T) {
 	if err != nil {
 		if err.Error() == "Requested support is not supported in the emulator" {
 			t.Skipf("[WARNING]: Failed executing TestGetCertificateChain command due to unsupported request. Hence, skipping the command execution")
-		} else {
-			log.Fatalf("[ERROR]: %s", err.Error())
-		}
-	}
-	testGetCertificateChain(instance, t)
-}
-
-func TestGetCertificateChain_SimulationMode(t *testing.T) {
-
-	support_needed := []string{"AutoInit", "Simulation", "X509"}
-	instance, err := GetTestTarget(support_needed)
-	if err != nil {
-		if err.Error() == "Requested support is not supported in the emulator" {
-			t.Skipf("[WARNING]: Failed executing TestGetCertificateChain_SimulationMode command due to unsupported request. Hence, skipping the command execution")
 		} else {
 			log.Fatalf("[ERROR]: %s", err.Error())
 		}
@@ -134,4 +120,65 @@ func checkCertificateChain(t *testing.T, certData []byte) []*x509.Certificate {
 
 	validateCertChain(t, x509Certs, nil)
 	return x509Certs
+}
+
+// Build certificate chain and calls to validateSignature on each chain.
+func validateCertChain(t *testing.T, certChain []*x509.Certificate, leafCert *x509.Certificate) {
+	t.Helper()
+	var certsToProcess []*x509.Certificate
+	if leafCert != nil {
+		t.Log("[LOG]: Validating leaf certificate chain...")
+		certsToProcess = []*x509.Certificate{leafCert}
+	} else {
+		t.Log("[LOG]: Validating intermediate certificates chains...")
+		certsToProcess = certChain
+	}
+
+	// Remove unhandled critical extensions reported by x509 but defined in spec
+	t.Log("[LOG]: Checking for unhandled critical certificate extensions unknown to DPE certificates profile spec...")
+	removeTcgDiceCriticalExtensions(t, certsToProcess)
+
+	// Remove unhandled extended key usages reported by x509 but defined in spec
+	t.Log("[LOG]: Checking for extended key usages unknown to DPE certificates profile spec...")
+	removeTcgDiceExtendedKeyUsages(t, certsToProcess)
+
+	// Build verify options
+	opts := buildVerifyOptions(t, certChain)
+
+	if leafCert != nil {
+		// Certificate chain validation for leaf
+		chains, err := leafCert.Verify(opts)
+		if err != nil {
+			// Certificate chain cannot be built from leaf to root
+			t.Errorf("[ERROR]: Error in certificate chain %s: ", err.Error())
+		}
+
+		// Log certificate chains linked to leaf
+		t.Logf("[LOG]: Chains of DPE leaf certificate.")
+		if len(chains) == 0 {
+			t.Errorf("[ERROR]: certificate chain is empty")
+		}
+
+		// This indicates that signature validation found no errors in the DPE leaf cert chain
+		t.Logf("[LOG]: DPE leaf certificate chain validation is done")
+
+	} else {
+		// Certificate chain validation for each intermediate certificate
+		for _, cert := range certChain {
+			chains, err := cert.Verify(opts)
+			if err != nil {
+				t.Errorf("[ERROR]: Error in Certificate Chain of %s: %s", cert.Subject, err.Error())
+			}
+
+			// Log certificate chains linked to each cetificate in chain
+			t.Logf("[LOG]: Chains of intermediate certificate.")
+			if len(chains) == 0 {
+				t.Errorf("[ERROR]: certificate chain is empty")
+			}
+		}
+
+		// This indicates that signature validation found no errors each cert
+		// chain of intermediate certificates
+		t.Logf("[LOG]: Intermediate certificates chain validation is done")
+	}
 }
