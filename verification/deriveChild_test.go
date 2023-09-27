@@ -6,24 +6,13 @@ import (
 	"testing"
 )
 
-type DeriveChildFlag int
-
-const (
-	InternalInputInfo DeriveChildFlag = 31
-	InternalInputDice DeriveChildFlag = 30
-	RetainParent      DeriveChildFlag = 29
-	MakeDefault       DeriveChildFlag = 28
-	ChangeLocality    DeriveChildFlag = 27
-	InputAllowCA      DeriveChildFlag = 26
-	InputAllowX509    DeriveChildFlag = 25
-)
-
 func TestDeriveChild(t *testing.T) {
-	supportNeeded := []string{"AutoInit", "X509"}
+	//supportNeeded := []string{"AutoInit"}
+	supportNeeded := []string{"Simulation", "ExtendTci", "AutoInit", "Tagging", "RotateContext", "X509", "Csr", "IsSymmetric", "InternalInfo", "InternalDice", "IsCA"}
 	instance, err := GetTestTarget(supportNeeded)
 	if err != nil {
 		if err.Error() == "Requested support is not supported in the emulator" {
-			t.Skipf("Warning: Failed executing TestCertifyKey command due to unsupported request. Hence, skipping the command execution")
+			t.Skipf("[WARNING]: Failed executing TestDeriveChild command due to unsupported request. Hence, skipping the command execution")
 		} else {
 			log.Fatal(err)
 		}
@@ -42,18 +31,19 @@ func testDeriveChild(d TestDPEInstance, t *testing.T) {
 	if err != nil {
 		t.Fatalf("Could not initialize client: %v", err)
 	}
-	r := []DeriveChildReq[SHA256Digest]{
-		{
-			ContextHandle:  [16]byte{0},
-			InputData:      SHA256Digest{},
-			Flags:          0,
-			InputType:      [4]byte{},
-			TargetLocality: 0,
-		},
-	}
-	_, err = client.DeriveChild(&r[0])
-	if err != nil {
-		t.Infof("[FATAL]: Could not perform derive child command: %v", err)
+
+	requests := []DeriveChildReq[SHA256Digest]{{
+		ContextHandle:  [16]byte{0},
+		InputData:      SHA256Digest{0},
+		Flags:          1 << 28,
+		InputType:      0,
+		TargetLocality: 0,
+	}}
+	for _, req := range requests {
+		_, err := client.DeriveChild(&req)
+		if err != nil {
+			t.Fatalf("[FATAL]: Could not perform derive child command: %v", err)
+		}
 	}
 
 }

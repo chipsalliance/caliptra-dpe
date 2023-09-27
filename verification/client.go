@@ -243,7 +243,7 @@ func (c *Client[_, _]) GetCertificateChain() (*GetCertificateChainResp, error) {
 func (c *Client[_, Digest]) DeriveChild(cmd *DeriveChildReq[Digest]) (*DeriveChildResp[Digest], error) {
 	var respStruct DeriveChildResp[Digest]
 
-	_, err := execCommand(c.transport, CommandCertifyKey, c.Profile, cmd, &respStruct)
+	_, err := execCommand(c.transport, CommandDeriveChild, c.Profile, cmd, &respStruct)
 	if err != nil {
 		return nil, err
 	}

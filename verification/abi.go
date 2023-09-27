@@ -128,13 +128,23 @@ type GetTaggedTCIResp[Digest DigestAlgorithm] struct {
 	CurrentTCI    Digest
 }
 
-type DeriveChildFlags uint32
+type DeriveChildFlag uint32
+
+const (
+	InternalInputInfo DeriveChildFlag = 31
+	InternalInputDice DeriveChildFlag = 30
+	RetainParent      DeriveChildFlag = 29
+	MakeDefault       DeriveChildFlag = 28
+	ChangeLocality    DeriveChildFlag = 27
+	InputAllowCA      DeriveChildFlag = 26
+	InputAllowX509    DeriveChildFlag = 25
+)
 
 type DeriveChildReq[Digest DigestAlgorithm] struct {
 	ContextHandle  ContextHandle
 	InputData      Digest
-	Flags          DeriveChildFlags
-	InputType      [4]byte
+	Flags          DeriveChildFlag
+	InputType      uint32
 	TargetLocality uint32
 }
 
