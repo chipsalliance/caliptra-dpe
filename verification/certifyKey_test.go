@@ -124,7 +124,7 @@ func TestCertifyKey(t *testing.T) {
 			log.Fatalf("[FATAL]: %s", err.Error())
 		}
 	}
-	testCertifyKey(instance, t)
+	testCertifyKey(instance, t, false)
 }
 
 func TestCertifyKey_SimulationMode(t *testing.T) {
@@ -138,7 +138,7 @@ func TestCertifyKey_SimulationMode(t *testing.T) {
 			log.Fatalf("[FATAL]: %s", err.Error())
 		}
 	}
-	testCertifyKey(instance, t)
+	testCertifyKey(instance, t, true)
 }
 
 // Ignores critical extensions that are unknown to x509 package
@@ -569,7 +569,7 @@ func checkCertificateStructure(t *testing.T, certBytes []byte) *x509.Certificate
 	return x509Cert
 }
 
-func testCertifyKey(d TestDPEInstance, t *testing.T) {
+func testCertifyKey(d TestDPEInstance, t *testing.T, use_simulation bool) {
 	if d.HasPowerControl() {
 		err := d.PowerOn()
 		if err != nil {
@@ -584,18 +584,21 @@ func testCertifyKey(d TestDPEInstance, t *testing.T) {
 
 	var ctx ContextHandle
 	var initCtxResp *InitCtxResp
+	if use_simulation {
+		if d.GetSupport().Simulation {
+			initCtxResp, err := client.InitializeContext(NewInitCtxIsSimulation())
+			if err != nil {
+				t.Fatal("The instance should be able to create a simulation context.")
+			}
+			// Could prove difficult to prove it is a cryptographically secure random.
+			if initCtxResp.Handle == [16]byte{0} {
+				t.Fatal("Incorrect simulation context handle.")
+			}
 
-	if d.GetSupport().Simulation {
-		initCtxResp, err := client.InitializeContext(NewInitCtxIsSimulation())
-		if err != nil {
-			t.Fatal("The instance should be able to create a simulation context.")
+			defer client.DestroyContext(NewDestroyCtx(initCtxResp.Handle, false))
+		} else {
+			t.Errorf("[ERROR]:  DPE instance doesn't support simulation contexts.")
 		}
-		// Could prove difficult to prove it is a cryptographically secure random.
-		if initCtxResp.Handle == [16]byte{0} {
-			t.Fatal("Incorrect simulation context handle.")
-		}
-
-		defer client.DestroyContext(NewDestroyCtx(initCtxResp.Handle, false))
 	}
 	if initCtxResp == nil {
 		//default context
