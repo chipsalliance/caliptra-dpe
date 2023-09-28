@@ -94,9 +94,6 @@ impl X509CertWriter<'_> {
     // tcg-dice-Ueid 2.23.133.5.4.4
     const UEID_OID: &[u8] = &[0x67, 0x81, 0x05, 0x05, 0x04, 0x04];
 
-    // tcg-dice-kp-identityLoc 2.23.133.5.4.100.7
-    // const IDENTITY_LOC_OID: &[u8] = &[0x67, 0x81, 0x05, 0x05, 0x04, 0x64, 0x07];
-
     // tcg-dice-kp-eca 2.23.133.5.4.100.12
     const ECA_OID: &[u8] = &[0x67, 0x81, 0x05, 0x05, 0x04, 0x64, 0x0C];
 
