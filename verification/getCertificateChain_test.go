@@ -155,7 +155,7 @@ func validateCertChain(t *testing.T, certChain []*x509.Certificate, leafCert *x5
 
 		// Log certificate chains linked to leaf
 		t.Logf("[LOG]: Chains of DPE leaf certificate.")
-		if len(chains) == 0 {
+		if len(chains) != 1 {
 			t.Errorf("[ERROR]: certificate chain is empty")
 		}
 
@@ -172,7 +172,7 @@ func validateCertChain(t *testing.T, certChain []*x509.Certificate, leafCert *x5
 
 			// Log certificate chains linked to each cetificate in chain
 			t.Logf("[LOG]: Chains of intermediate certificate.")
-			if len(chains) == 0 {
+			if len(chains) != 1 {
 				t.Errorf("[ERROR]: certificate chain is empty")
 			}
 		}
