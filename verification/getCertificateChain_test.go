@@ -156,7 +156,7 @@ func validateCertChain(t *testing.T, certChain []*x509.Certificate, leafCert *x5
 		// Log certificate chains linked to leaf
 		t.Logf("[LOG]: Chains of DPE leaf certificate.")
 		if len(chains) != 1 {
-			t.Errorf("[ERROR]: certificate chain is empty")
+			t.Errorf("[ERROR]: There are %d certificate chains but there should be exactly one certificate chain.", len(chains))
 		}
 
 		// This indicates that signature validation found no errors in the DPE leaf cert chain
@@ -173,7 +173,7 @@ func validateCertChain(t *testing.T, certChain []*x509.Certificate, leafCert *x5
 			// Log certificate chains linked to each cetificate in chain
 			t.Logf("[LOG]: Chains of intermediate certificate.")
 			if len(chains) != 1 {
-				t.Errorf("[ERROR]: certificate chain is empty")
+				t.Errorf("[ERROR]: There are %d certificate chains but there should be exactly one certificate chain.", len(chains))
 			}
 		}
 
