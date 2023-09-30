@@ -118,21 +118,16 @@ func checkCertificateChain(t *testing.T, certData []byte) []*x509.Certificate {
 		}
 	}
 
-	validateCertChain(t, x509Certs, nil)
+	validateCertChain(t, x509Certs)
 	return x509Certs
 }
 
 // Build certificate chain and calls to validateSignature on each chain.
-func validateCertChain(t *testing.T, certChain []*x509.Certificate, leafCert *x509.Certificate) {
+func validateCertChain(t *testing.T, certChain []*x509.Certificate) {
 	t.Helper()
-	var certsToProcess []*x509.Certificate
-	if leafCert != nil {
-		t.Log("[LOG]: Validating leaf certificate chain...")
-		certsToProcess = []*x509.Certificate{leafCert}
-	} else {
-		t.Log("[LOG]: Validating intermediate certificates chains...")
-		certsToProcess = certChain
-	}
+
+	t.Log("[LOG]: Validating intermediate certificates chains...")
+	certsToProcess := certChain
 
 	// Remove unhandled critical extensions reported by x509 but defined in spec
 	t.Log("[LOG]: Checking for unhandled critical certificate extensions unknown to DPE certificates profile spec...")
@@ -145,40 +140,21 @@ func validateCertChain(t *testing.T, certChain []*x509.Certificate, leafCert *x5
 	// Build verify options
 	opts := buildVerifyOptions(t, certChain)
 
-	if leafCert != nil {
-		// Certificate chain validation for leaf
-		chains, err := leafCert.Verify(opts)
+	// Certificate chain validation for each intermediate certificate
+	for _, cert := range certChain {
+		chains, err := cert.Verify(opts)
 		if err != nil {
-			// Certificate chain cannot be built from leaf to root
-			t.Errorf("[ERROR]: Error in certificate chain %s: ", err.Error())
+			t.Errorf("[ERROR]: Error in Certificate Chain of %s: %s", cert.Subject, err.Error())
 		}
 
-		// Log certificate chains linked to leaf
-		t.Logf("[LOG]: Chains of DPE leaf certificate.")
+		// Log certificate chains linked to each cetificate in chain
+		t.Logf("[LOG]: Chains of intermediate certificate.")
 		if len(chains) != 1 {
-			t.Errorf("[ERROR]: There are %d certificate chains but there should be exactly one certificate chain.", len(chains))
+			t.Errorf("[ERROR]: certificate chain is empty")
 		}
-
-		// This indicates that signature validation found no errors in the DPE leaf cert chain
-		t.Logf("[LOG]: DPE leaf certificate chain validation is done")
-
-	} else {
-		// Certificate chain validation for each intermediate certificate
-		for _, cert := range certChain {
-			chains, err := cert.Verify(opts)
-			if err != nil {
-				t.Errorf("[ERROR]: Error in Certificate Chain of %s: %s", cert.Subject, err.Error())
-			}
-
-			// Log certificate chains linked to each cetificate in chain
-			t.Logf("[LOG]: Chains of intermediate certificate.")
-			if len(chains) != 1 {
-				t.Errorf("[ERROR]: There are %d certificate chains but there should be exactly one certificate chain.", len(chains))
-			}
-		}
-
-		// This indicates that signature validation found no errors each cert
-		// chain of intermediate certificates
-		t.Logf("[LOG]: Intermediate certificates chain validation is done")
 	}
+
+	// This indicates that signature validation found no errors each cert
+	// chain of intermediate certificates
+	t.Logf("[LOG]: Intermediate certificates chain validation is done")
 }
