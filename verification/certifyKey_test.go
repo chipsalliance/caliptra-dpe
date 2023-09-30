@@ -8,7 +8,6 @@ import (
 	"encoding/asn1"
 	"encoding/binary"
 	"encoding/pem"
-	"errors"
 	"fmt"
 	"log"
 	"reflect"
@@ -20,8 +19,6 @@ import (
 	zlint "github.com/zmap/zlint/v3"
 	"github.com/zmap/zlint/v3/lint"
 
-	"golang.org/x/crypto/cryptobyte"
-	cryptobyte_asn1 "golang.org/x/crypto/cryptobyte/asn1"
 	"golang.org/x/exp/slices"
 )
 
@@ -99,19 +96,33 @@ type TcgUeidExtension struct {
 // }
 
 type Fwid struct {
-	HashAlg string
-	Digest  string
+	HashAlg asn1.ObjectIdentifier
+	Digest  []byte
 }
 
 type DiceTcbInfo struct {
-	Fwids      []Fwid
-	VendorInfo string
-	Type       string
+	Vendor     string          `asn1:"optional,tag:0,utf8"`
+	Model      string          `asn1:"optional,tag:1,utf8"`
+	Version    string          `asn1:"optional,tag:2,utf8"`
+	SVN        int             `asn1:"optional,tag:3"`
+	Layer      int             `asn1:"optional,tag:4"`
+	Index      int             `asn1:"optional,tag:5"`
+	Fwids      []Fwid          `asn1:"optional,tag:6"`
+	Flags      OperationalFlag `asn1:"optional,tag:7"`
+	VendorInfo []byte          `asn1:"optional,tag:8"`
+	Type       []byte          `asn1:"optional,tag:9"`
 }
 
-type TcgMultiTcbInfo struct {
-	DiceTcbInfos []DiceTcbInfo
-}
+type OperationalFlag int
+
+const (
+	NotConfigured OperationalFlag = iota
+	NotSecure
+	Debug
+	Recovery
+)
+
+type TcgMultiTcbInfo = []DiceTcbInfo
 
 func TestCertifyKey(t *testing.T) {
 
@@ -240,8 +251,10 @@ func checkCertifyKeyTcgUeidExtension(t *testing.T, c *x509.Certificate, label []
 
 // A tcg-dice-MultiTcbInfo extension.
 // This extension SHOULD be marked as critical.
-func checkCertifyKeyMultiTcbInfoExtension(t *testing.T, c *x509.Certificate) {
+func checkCertifyKeyMultiTcbInfoExtension(t *testing.T, c *x509.Certificate) (TcgMultiTcbInfo, error) {
 	t.Helper()
+	var multiTcbInfo TcgMultiTcbInfo
+	var err error
 
 	// Check MultiTcbInfo Extension
 	//tcg-dice-MultiTcbInfo extension
@@ -250,7 +263,7 @@ func checkCertifyKeyMultiTcbInfoExtension(t *testing.T, c *x509.Certificate) {
 			if !ext.Critical {
 				t.Errorf("[ERROR]: TCG DICE MultiTcbInfo extension is not marked as CRITICAL")
 			}
-			multiTcbInfo, err := parseMultiTcbInfo(ext.Value)
+			_, err = asn1.Unmarshal(ext.Value, &multiTcbInfo)
 			if err != nil {
 				// multiTcb info is not provided in leaf
 				t.Errorf("[ERROR]: Failed to unmarshal MultiTcbInfo field: %v", err)
@@ -260,123 +273,7 @@ func checkCertifyKeyMultiTcbInfoExtension(t *testing.T, c *x509.Certificate) {
 			break
 		}
 	}
-}
-
-func parseMultiTcbInfo(der []byte) (*TcgMultiTcbInfo, error) {
-	multiTcbInfo := TcgMultiTcbInfo{DiceTcbInfos: []DiceTcbInfo{}}
-	input := cryptobyte.String(der)
-
-	// Unwrap outer most layer of input containing DiceTcbInfo array
-	if !input.ReadASN1Element(&input, cryptobyte_asn1.SEQUENCE) {
-		return nil, errors.New("tcb-dice-multi-info is malformed")
-	}
-	if !input.ReadASN1(&input, cryptobyte_asn1.SEQUENCE) {
-		return nil, errors.New("tcb-dice-multi-info is malformed")
-	}
-
-	for {
-		d := DiceTcbInfo{Fwids: []Fwid{}}
-		dindex := 0
-		// Read DiceTcb info elements
-		var diceTcbRaw cryptobyte.String
-		if !input.ReadASN1Element(&diceTcbRaw, cryptobyte_asn1.SEQUENCE) {
-			return nil, errors.New("dice tcb data is malformed")
-		}
-		if !diceTcbRaw.ReadASN1(&diceTcbRaw, cryptobyte_asn1.SEQUENCE) {
-			return nil, errors.New("dice tcb data is malformed")
-		}
-
-		for {
-			unknownTag := !(diceTcbRaw.PeekASN1Tag(cryptobyte_asn1.Tag(6).Constructed().ContextSpecific()) || diceTcbRaw.PeekASN1Tag(cryptobyte_asn1.Tag(8).ContextSpecific()) || diceTcbRaw.PeekASN1Tag(cryptobyte_asn1.Tag(9).ContextSpecific()))
-			if unknownTag {
-				return nil, errors.New("Unknown tag encountered.")
-			}
-			// Implicit tags from 0-5 and 7 are ignored and their values are not set in Rust code
-			// 	fwids 	[6] IMPLICIT FWIDLIST OPTIONAL,
-			if diceTcbRaw.PeekASN1Tag(cryptobyte_asn1.Tag(6).Constructed().ContextSpecific()) {
-				var fwidsArray cryptobyte.String
-				if !diceTcbRaw.ReadASN1Element(&fwidsArray, cryptobyte_asn1.Tag(6).ContextSpecific().Constructed()) {
-					return nil, errors.New("fwid array is malformed")
-				}
-				if !fwidsArray.ReadASN1(&fwidsArray, cryptobyte_asn1.Tag(6).ContextSpecific().Constructed()) {
-					return nil, errors.New("fwid array is malformed")
-				}
-				for {
-					findex := 0
-					var fwidsElem cryptobyte.String
-					if !fwidsArray.ReadASN1Element(&fwidsElem, cryptobyte_asn1.SEQUENCE) {
-						msg := fmt.Sprintf("fwid element %d data in dice tcb element %d is malformed", findex, dindex)
-						return nil, errors.New(msg)
-					}
-					if !fwidsElem.ReadASN1(&fwidsElem, cryptobyte_asn1.SEQUENCE) {
-						msg := fmt.Sprintf("fwid element %d data in dice tcb element %d is malformed", findex, dindex)
-						return nil, errors.New(msg)
-					}
-
-					var hashAlg asn1.ObjectIdentifier
-					if !fwidsElem.ReadASN1ObjectIdentifier(&hashAlg) {
-						msg := fmt.Sprintf("hash algorithm in fwid element %d data in dice tcb element %d is malformed", findex, dindex)
-						return nil, errors.New(msg)
-					}
-
-					var digest cryptobyte.String
-					if !fwidsElem.ReadASN1Element(&digest, cryptobyte_asn1.OCTET_STRING) {
-						msg := fmt.Sprintf("digest in fwid element %d data in dice tcb element %d is malformed", findex, dindex)
-						return nil, errors.New(msg)
-					}
-					if !digest.ReadASN1(&digest, cryptobyte_asn1.OCTET_STRING) {
-						msg := fmt.Sprintf("digest in fwid element %d data in dice tcb element %d is malformed", findex, dindex)
-						return nil, errors.New(msg)
-					}
-
-					fwid := Fwid{HashAlg: hashAlg.String(), Digest: fmt.Sprintf("%x", digest)}
-
-					d.Fwids = append(d.Fwids, fwid)
-
-					if len(fwidsArray) == 0 {
-						break
-					}
-					findex++
-				}
-
-			} else if diceTcbRaw.PeekASN1Tag(cryptobyte_asn1.Tag(8).ContextSpecific()) {
-				//	vendorInfo 	[8] IMPLICIT OCTET STRING OPTIONAL,
-				var vendorInfo cryptobyte.String
-				if !diceTcbRaw.ReadASN1Element(&vendorInfo, cryptobyte_asn1.Tag(8).ContextSpecific()) {
-					msg := fmt.Sprintf("vendor info in dice tcb element %d is malformed", dindex)
-					return nil, errors.New(msg)
-				}
-				if !vendorInfo.ReadASN1(&vendorInfo, cryptobyte_asn1.Tag(8).ContextSpecific()) {
-					msg := fmt.Sprintf("vendor info in dice tcb element %d is malformed", dindex)
-					return nil, errors.New(msg)
-				}
-				d.VendorInfo = fmt.Sprintf("%x", vendorInfo)
-			} else if diceTcbRaw.PeekASN1Tag(cryptobyte_asn1.Tag(9).ContextSpecific()) {
-				// 	type 		[9] IMPLICIT OCTET STRING OPTIONAL,
-				var typeInfo cryptobyte.String
-				if !diceTcbRaw.ReadASN1Element(&typeInfo, cryptobyte_asn1.Tag(9).ContextSpecific()) {
-					msg := fmt.Sprintf("type info in dice tcb element %d is malformed", dindex)
-					return nil, errors.New(msg)
-				}
-				if !typeInfo.ReadASN1(&typeInfo, cryptobyte_asn1.Tag(9).ContextSpecific()) {
-					msg := fmt.Sprintf("type info in dice tcb element %d is malformed", dindex)
-					return nil, errors.New(msg)
-				}
-				d.Type = fmt.Sprintf("%x", typeInfo)
-			}
-
-			if len(diceTcbRaw) == 0 {
-				multiTcbInfo.DiceTcbInfos = append(multiTcbInfo.DiceTcbInfos, d)
-				break
-			}
-		}
-		if len(input) == 0 {
-			break
-		}
-		dindex++
-
-	}
-	return &multiTcbInfo, nil
+	return multiTcbInfo, err
 }
 
 // Check whether certificate extended key usage is as per spec
@@ -384,8 +281,10 @@ func parseMultiTcbInfo(der []byte) (*TcgMultiTcbInfo, error) {
 // The ExtendedKeyUsage extension SHOULD be marked as critical
 // If IsCA = true, the extension SHOULD contain tcg-dice-kp-eca
 // If IsCA = false, the extension SHOULD contain tcg-dice-kp-attestLoc
-func checkCertifyKeyExtendedKeyUsages(t *testing.T, c *x509.Certificate) {
+func checkCertifyKeyExtendedKeyUsages(t *testing.T, c *x509.Certificate) (*TcgMultiTcbInfo, error) {
 	t.Helper()
+	var multiTcbInfo *TcgMultiTcbInfo
+	var err error
 
 	extKeyUsage := []asn1.ObjectIdentifier{}
 
@@ -433,6 +332,7 @@ func checkCertifyKeyExtendedKeyUsages(t *testing.T, c *x509.Certificate) {
 	if !isExtendedKeyUsageValid {
 		t.Errorf("[ERROR]: Certificate has IsCA: %v  and does not contain specified key usage: %s", c.IsCA, expectedKeyUsageName)
 	}
+	return multiTcbInfo, err
 }
 
 // Check for KeyUsage Extension as per spec
@@ -493,11 +393,11 @@ func validateCertifyKeyCert(t *testing.T, c *x509.Certificate, flags uint32, lab
 	// Check extended key usage extensions
 	checkCertifyKeyExtendedKeyUsages(t, c)
 
-	// Check critical TCG extensions
+	// Check critical UEID and Multi Tcb Info TCG extensions
 	// Check UEID extension
 	checkCertifyKeyTcgUeidExtension(t, c, label)
 
-	// Check MultiTcbInfo Extension
+	// Check MultiTcbInfo Extension structure
 	checkCertifyKeyMultiTcbInfoExtension(t, c)
 }
 
