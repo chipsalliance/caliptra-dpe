@@ -550,10 +550,42 @@ func testCertifyKey(d TestDPEInstance, t *testing.T, use_simulation bool) {
 
 		// Ensure full certificate chain has valid signatures
 		// This also checks certificate lifetime, signatures as part of cert chain validation
-		validateCertChain(t, certChain, leafCert)
+		validateLeafCertChain(t, certChain, leafCert)
 
 		// TODO: When DeriveChild is implemented, call it here to add more TCIs and call CertifyKey again.
+}
+// Build certificate chain and calls to validateSignature on each chain.
+func validateLeafCertChain(t *testing.T, certChain []*x509.Certificate, leafCert *x509.Certificate) {
+	t.Helper()
+	t.Log("[LOG]: Validating leaf certificate chain...")
+	certsToProcess := []*x509.Certificate{leafCert}
+
+	// Remove unhandled critical extensions reported by x509 but defined in spec
+	t.Log("[LOG]: Checking for unhandled critical certificate extensions unknown to DPE certificates profile spec...")
+	removeTcgDiceCriticalExtensions(t, certsToProcess)
+
+	// Remove unhandled extended key usages reported by x509 but defined in spec
+	t.Log("[LOG]: Checking for extended key usages unknown to DPE certificates profile spec...")
+	removeTcgDiceExtendedKeyUsages(t, certsToProcess)
+
+	// Build verify options
+	opts := buildVerifyOptions(t, certChain)
+
+	// Certificate chain validation for leaf
+	chains, err := leafCert.Verify(opts)
+	if err != nil {
+		// Certificate chain cannot be built from leaf to root
+		t.Errorf("[ERROR]: Error in certificate chain %s: ", err.Error())
 	}
+
+	// Log certificate chains linked to leaf
+	t.Logf("[LOG]: Chains of DPE leaf certificate.")
+	if len(chains) != 1 {
+		t.Errorf("[ERROR]: certificate chain is empty")
+	}
+
+	// This indicates that signature validation found no errors in the DPE leaf cert chain
+	t.Logf("[LOG]: DPE leaf certificate chain validation is done")
 }
 
 func buildVerifyOptions(t *testing.T, certChain []*x509.Certificate) x509.VerifyOptions {
