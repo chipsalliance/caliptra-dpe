@@ -553,7 +553,9 @@ func testCertifyKey(d TestDPEInstance, t *testing.T, use_simulation bool) {
 		validateLeafCertChain(t, certChain, leafCert)
 
 		// TODO: When DeriveChild is implemented, call it here to add more TCIs and call CertifyKey again.
+	}
 }
+
 // Build certificate chain and calls to validateSignature on each chain.
 func validateLeafCertChain(t *testing.T, certChain []*x509.Certificate, leafCert *x509.Certificate) {
 	t.Helper()
