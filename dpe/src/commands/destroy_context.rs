@@ -6,32 +6,12 @@ use crate::{
     response::{DpeErrorCode, Response, ResponseHdr},
     MAX_HANDLES,
 };
-use bitflags::bitflags;
-
-#[repr(C)]
-#[derive(Debug, PartialEq, Eq, zerocopy::FromBytes)]
-#[cfg_attr(test, derive(zerocopy::AsBytes))]
-pub struct DestroyCtxFlags(u32);
-
-bitflags! {
-    impl DestroyCtxFlags: u32 {
-        const DESTROY_CHILDREN_FLAG_MASK = 1u32 << 31;
-    }
-}
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, zerocopy::FromBytes)]
 #[cfg_attr(test, derive(zerocopy::AsBytes))]
 pub struct DestroyCtxCmd {
     pub handle: ContextHandle,
-    pub flags: DestroyCtxFlags,
-}
-
-impl DestroyCtxCmd {
-    const fn flag_is_destroy_descendants(&self) -> bool {
-        self.flags
-            .contains(DestroyCtxFlags::DESTROY_CHILDREN_FLAG_MASK)
-    }
 }
 
 impl CommandExecution for DestroyCtxCmd {
@@ -48,11 +28,7 @@ impl CommandExecution for DestroyCtxCmd {
             return Err(DpeErrorCode::InvalidLocality);
         }
 
-        let to_destroy = if self.flag_is_destroy_descendants() {
-            (1 << idx) | dpe.get_descendants(context)?
-        } else {
-            1 << idx
-        };
+        let to_destroy = (1 << idx) | dpe.get_descendants(context)?;
 
         // contexts_to_destroy[i] == true implies dpe.contexts[i] must be destroyed
         let mut contexts_to_destroy = [false; MAX_HANDLES];
@@ -110,7 +86,6 @@ mod tests {
 
     const TEST_DESTROY_CTX_CMD: DestroyCtxCmd = DestroyCtxCmd {
         handle: SIMULATION_HANDLE,
-        flags: DestroyCtxFlags(0x1234_5678),
     };
 
     #[test]
@@ -142,7 +117,6 @@ mod tests {
             Err(DpeErrorCode::InvalidLocality),
             DestroyCtxCmd {
                 handle: ContextHandle::default(),
-                flags: DestroyCtxFlags::empty(),
             }
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[1])
         );
@@ -157,7 +131,6 @@ mod tests {
             ))),
             DestroyCtxCmd {
                 handle: ContextHandle::default(),
-                flags: DestroyCtxFlags::empty(),
             }
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         );
@@ -170,7 +143,6 @@ mod tests {
             ))),
             DestroyCtxCmd {
                 handle: TEST_HANDLE,
-                flags: DestroyCtxFlags::empty(),
             }
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         );
@@ -233,7 +205,6 @@ mod tests {
             ))),
             DestroyCtxCmd {
                 handle: ContextHandle::default(),
-                flags: DestroyCtxFlags::DESTROY_CHILDREN_FLAG_MASK,
             }
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         );
