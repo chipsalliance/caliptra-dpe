@@ -55,7 +55,7 @@ func testInitContext(d TestDPEInstance, t *testing.T) {
 		defer d.PowerOff()
 	}
 
-	client, err := NewClient256(d)
+	client, err := NewClient384(d)
 	if err != nil {
 		t.Fatalf("Could not initialize client: %v", err)
 	}
@@ -104,10 +104,10 @@ func testInitContext(d TestDPEInstance, t *testing.T) {
 
 		// Try to get the correct error for overflowing the contexts. Fill up the
 		// rest of the contexts (-1 for default).
-		for i := uint32(0); i < getProfileRsp.MaxTciNodes-1; i++ {
+		for i := uint32(0); i < getProfileRsp.MaxTciNodes-2; i++ {
 			initCtxResp, err := client.InitializeContext(NewInitCtxIsSimulation())
 			if err != nil {
-				t.Fatal("The instance should be able to create a simulation context.")
+				t.Fatal("The instance should be able to create a simulation context.", err)
 			}
 			// Could prove difficult to prove it is a cryptographically secure random.
 			if initCtxResp.Handle == [16]byte{0} {

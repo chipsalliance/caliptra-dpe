@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -20,16 +21,16 @@ const (
 
 	DPE_EMULATOR_AUTO_INIT_LOCALITY    uint32  = 0
 	DPE_EMULATOR_OTHER_LOCALITY        uint32  = 0
-	DPE_EMULATOR_PROFILE               Profile = 0
-	DPE_EMULATOR_MAX_TCI_NODES         uint32  = 0
+	DPE_EMULATOR_PROFILE               Profile = ProfileP384SHA384
+	DPE_EMULATOR_MAX_TCI_NODES         uint32  = 0x00000018
 	DPE_EMULATOR_MAJOR_PROFILE_VERSION uint16  = 0
-	DPE_EMULATOR_MINOR_PROFILE_VERSION uint16  = 0
-	DPE_EMULATOR_VENDOR_ID             uint32  = 0
-	DPE_EMULATOR_VENDOR_SKU            uint32  = 0
+	DPE_EMULATOR_MINOR_PROFILE_VERSION uint16  = 8
+	DPE_EMULATOR_VENDOR_ID             uint32  = 0x43545241
+	DPE_EMULATOR_VENDOR_SKU            uint32  = 0x43545241
 )
 
 // Added dummy support for emulator .This is to verify against the support_needed list
-var emulator_supports = []string{"AutoInit", "X509"}
+var emulator_supports = []string{"AutoInit", "X509", "Simulation", "Tagging"}
 
 //TODO code for emulator to start, stop, getsupport
 
@@ -116,7 +117,7 @@ func (s *DpeEmulator) waitForPower(on bool) bool {
 
 	for i := 0; i < checks_per_sec*timeout_seconds; i++ {
 		// Check if the socket file has been created.
-		if fileExists(simulatorSocketPath) == on {
+		if fileExists(emulatorSocketPath) == on {
 			return true
 		}
 		time.Sleep(time.Duration(1000/checks_per_sec) * time.Millisecond)
@@ -126,9 +127,15 @@ func (s *DpeEmulator) waitForPower(on bool) bool {
 
 func (s *DpeEmulator) SendCmd(buf []byte) ([]byte, error) {
 	// Connect to DPE instance.
-	conn, err := net.Dial("unix", simulatorSocketPath)
+	conn, err := net.Dial("unix", emulatorSocketPath)
 	if err != nil {
 		return nil, err
+	}
+
+	var i int
+	for i = 0; i < len(buf); i++ {
+		fmt.Print(buf[i])
+		fmt.Print(",")
 	}
 
 	// Prepend the command with the locality.
@@ -157,8 +164,12 @@ func (s *DpeEmulator) GetSupport() *Support {
 	return &s.supports
 }
 
+func (s *DpeEmulator) SetSupport(support Support) {
+	s.supports = support
+}
+
 func (s *DpeEmulator) GetProfile() Profile {
-	return DPE_SIMULATOR_PROFILE
+	return DPE_EMULATOR_PROFILE
 }
 
 func (s *DpeEmulator) GetSupportedLocalities() []uint32 {

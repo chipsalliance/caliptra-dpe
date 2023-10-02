@@ -5,6 +5,7 @@ package verification
 import (
 	"errors"
 	"flag"
+	"log"
 	"os"
 	"reflect"
 	"testing"
@@ -28,7 +29,7 @@ func TestMain(m *testing.M) {
 	if testTargetType == SIMULATOR {
 		target_exe = flag.String("sim", "../simulator/target/debug/simulator", "path to simulator executable")
 	} else if testTargetType == EMULATOR {
-		target_exe = flag.String("emu", "../simulator/target/debug/emulator", "path to emulator executable")
+		target_exe = flag.String("emu", "../emulator/target/debug/emulator", "path to emulator executable")
 	}
 
 	exitVal := m.Run()
@@ -51,6 +52,8 @@ type TestDPEInstance interface {
 	// it supports, but this function is used by tests to know how to test the DPE
 	// instance.
 	GetSupport() *Support
+	//Set the Support
+	SetSupport(support Support)
 	// Returns the profile the transport supports.
 	GetProfile() Profile
 	// Returns a slice of all the localities the instance supports.
@@ -98,15 +101,36 @@ func GetTestTarget(support_needed []string) (TestDPEInstance, error) {
 
 // Get the emulator target
 func GetEmulatorTarget(support_needed []string) (TestDPEInstance, error) {
+	// TODO : Get the supported modes from emulator and then check.
+	var instance TestDPEInstance = &DpeEmulator{exe_path: *target_exe}
+	if instance.HasPowerControl() {
+		err := instance.PowerOn()
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer instance.PowerOff()
+	}
 
-	value := reflect.ValueOf(DpeEmulator{}.supports)
+	client, err := NewClient384(instance)
+	if err != nil {
+		return nil, errors.New("Error in getting client")
+	}
+
+	rsp, err := client.GetProfile()
+	if err != nil {
+		return nil, errors.New("Unable to get profile")
+	}
+
+	support := Support{}
+
+	value := reflect.ValueOf(support.ToSupport(rsp.Flags))
 	for i := 0; i < len(support_needed); i++ {
 		support := reflect.Indirect(value).FieldByName(support_needed[i])
 		if !support.Bool() {
 			return nil, errors.New("Error in creating dpe instances - supported feature is not enabled in emulator")
 		}
 	}
-	var instance TestDPEInstance = &DpeEmulator{exe_path: *target_exe}
+	instance.SetSupport(support)
 	return instance, nil
 }
 

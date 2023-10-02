@@ -159,6 +159,10 @@ func (s *DpeSimulator) GetSupport() *Support {
 	return &s.supports
 }
 
+func (s *DpeSimulator) SetSupport(support Support) {
+	s.supports = support
+}
+
 func (s *DpeSimulator) GetProfile() Profile {
 	return DPE_SIMULATOR_PROFILE
 }
