@@ -46,7 +46,7 @@ impl DeriveChildCmd {
         self.flags.contains(DeriveChildFlags::INTERNAL_INPUT_DICE)
     }
 
-    const fn retains_parent(&self) -> bool {
+    pub const fn retains_parent(&self) -> bool {
         self.flags.contains(DeriveChildFlags::RETAIN_PARENT)
     }
 
