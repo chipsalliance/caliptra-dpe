@@ -8,8 +8,7 @@ use crate::{
 use bitflags::bitflags;
 
 #[repr(C)]
-#[derive(Debug, PartialEq, Eq, zerocopy::FromBytes)]
-#[cfg_attr(test, derive(zerocopy::AsBytes))]
+#[derive(Debug, PartialEq, Eq, zerocopy::FromBytes, zerocopy::AsBytes)]
 pub struct RotateCtxFlags(u32);
 
 bitflags! {
@@ -19,8 +18,7 @@ bitflags! {
 }
 
 #[repr(C)]
-#[derive(Debug, PartialEq, Eq, zerocopy::FromBytes)]
-#[cfg_attr(test, derive(zerocopy::AsBytes))]
+#[derive(Debug, PartialEq, Eq, zerocopy::FromBytes, zerocopy::AsBytes)]
 pub struct RotateCtxCmd {
     pub handle: ContextHandle,
     pub flags: RotateCtxFlags,
