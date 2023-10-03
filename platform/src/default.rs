@@ -64,4 +64,9 @@ impl Platform for DefaultPlatform {
     fn get_auto_init_locality(&mut self) -> Result<u32, PlatformError> {
         Ok(AUTO_INIT_LOCALITY)
     }
+
+    fn write_str(&mut self, str: &str) -> Result<(), PlatformError> {
+        print!("{str}");
+        Ok(())
+    }
 }

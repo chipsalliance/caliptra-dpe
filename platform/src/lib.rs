@@ -11,6 +11,8 @@ pub use openssl::x509::X509;
 #[cfg(feature = "openssl")]
 pub mod default;
 
+pub mod printer;
+
 pub const MAX_CHUNK_SIZE: usize = 2048;
 
 #[derive(Debug)]
@@ -18,6 +20,7 @@ pub enum PlatformError {
     CertificateChainError,
     NotImplemented,
     IssuerNameError,
+    PrintError,
 }
 
 pub trait Platform {
@@ -47,4 +50,6 @@ pub trait Platform {
     fn get_vendor_sku(&mut self) -> Result<u32, PlatformError>;
 
     fn get_auto_init_locality(&mut self) -> Result<u32, PlatformError>;
+
+    fn write_str(&mut self, str: &str) -> Result<(), PlatformError>;
 }
