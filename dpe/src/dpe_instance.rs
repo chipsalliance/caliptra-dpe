@@ -435,6 +435,22 @@ impl DpeInstance {
         }
         false
     }
+
+    pub fn count_active_contexts(&self) -> Result<usize, DpeErrorCode> {
+        Ok(self
+            .contexts
+            .iter()
+            .filter(|context| context.state == ContextState::Active)
+            .count())
+    }
+
+    pub fn count_active_contexts_in_locality(&self, locality: u32) -> Result<usize, DpeErrorCode> {
+        Ok(self
+            .contexts
+            .iter()
+            .filter(|context| context.state == ContextState::Active && context.locality == locality)
+            .count())
+    }
 }
 
 /// Iterate over all of the bits set to 1 in a u32. Each iteration returns the bit index 0 being the

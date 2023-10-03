@@ -24,7 +24,7 @@ impl InitCtxCmd {
         Self::DEFAULT_FLAG_MASK
     }
 
-    const fn flag_is_simulation(&self) -> bool {
+    pub const fn flag_is_simulation(&self) -> bool {
         self.contains(Self::SIMULATION_FLAG_MASK)
     }
 
