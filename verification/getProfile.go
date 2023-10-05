@@ -18,6 +18,7 @@ func TestGetProfile(d TestDPEInstance, t *testing.T) {
 	}
 
 	const MIN_TCI_NODES uint32 = 8
+
 	profile, err := GetTransportProfile(d)
 	if err != nil {
 		t.Fatalf("Could not get profile: %v", err)
@@ -44,7 +45,7 @@ func TestGetProfile(d TestDPEInstance, t *testing.T) {
 			t.Fatalf("Incorrect version. 0x%08x != 0x%08x", d.GetProfileVendorId(), rsp.VendorId)
 		}
 		if rsp.VendorSku != d.GetProfileVendorSku() {
-			t.Fatalf("Incorrect version. 0x%08x != 0x%08x", d.GetProfileVendorSku(), rsp.VendorSku)
+			t.Fatalf("Unexpected SKU. 0x%08x != 0x%08x", d.GetProfileVendorSku(), rsp.VendorSku)
 		}
 		if rsp.MaxTciNodes != d.GetMaxTciNodes() {
 			t.Fatalf("Incorrect max TCI nodes. 0x%08x != 0x%08x", d.GetMaxTciNodes(), rsp.MaxTciNodes)
