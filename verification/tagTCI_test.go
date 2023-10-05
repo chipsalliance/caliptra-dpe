@@ -5,6 +5,7 @@ package verification
 import (
 	"errors"
 	"log"
+	"reflect"
 	"testing"
 )
 
@@ -35,9 +36,14 @@ func testtagTCI(d TestDPEInstance, t *testing.T) {
 		defer d.PowerOff()
 	}
 
-	client, err := NewClient256(d)
+	client, err := NewClient(d)
 	if err != nil {
 		t.Fatalf("Could not initialize client: %v", err)
+	}
+
+	profile, err := client.GetProfile()
+	if err != nil {
+		t.Fatalf("Could not get profile: %v", err)
 	}
 
 	// Try to create the default context if isn't done automatically.
@@ -72,13 +78,13 @@ func testtagTCI(d TestDPEInstance, t *testing.T) {
 		t.Fatalf("Could not get tagged TCI: %v", err)
 	}
 
-	var wantCumulativeTCI SHA256Digest
-	if getResp.CumulativeTCI != wantCumulativeTCI {
+	wantCumulativeTCI := make([]byte, profile.Profile.GetDigestSize())
+	if !reflect.DeepEqual(getResp.CumulativeTCI, wantCumulativeTCI) {
 		t.Errorf("GetTaggedTCI returned cumulative TCI %x, expected %x", getResp.CumulativeTCI, wantCumulativeTCI)
 	}
 
-	var wantCurrentTCI SHA256Digest
-	if getResp.CurrentTCI != wantCurrentTCI {
+	wantCurrentTCI := make([]byte, profile.Profile.GetDigestSize())
+	if !reflect.DeepEqual(getResp.CurrentTCI, wantCurrentTCI) {
 		t.Errorf("GetTaggedTCI returned current TCI %x, expected %x", getResp.CurrentTCI, wantCurrentTCI)
 	}
 

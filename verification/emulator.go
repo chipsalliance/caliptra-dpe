@@ -18,14 +18,13 @@ import (
 const (
 	emulatorSocketPath = "/tmp/dpe-emu.socket"
 
-	DPE_EMULATOR_AUTO_INIT_LOCALITY    uint32  = 0
-	DPE_EMULATOR_OTHER_LOCALITY        uint32  = 0
-	DPE_EMULATOR_PROFILE               Profile = 0
-	DPE_EMULATOR_MAX_TCI_NODES         uint32  = 0
-	DPE_EMULATOR_MAJOR_PROFILE_VERSION uint16  = 0
-	DPE_EMULATOR_MINOR_PROFILE_VERSION uint16  = 0
-	DPE_EMULATOR_VENDOR_ID             uint32  = 0
-	DPE_EMULATOR_VENDOR_SKU            uint32  = 0
+	DPE_EMULATOR_AUTO_INIT_LOCALITY    uint32 = 0
+	DPE_EMULATOR_OTHER_LOCALITY        uint32 = 0
+	DPE_EMULATOR_MAX_TCI_NODES         uint32 = 0
+	DPE_EMULATOR_MAJOR_PROFILE_VERSION uint16 = 0
+	DPE_EMULATOR_MINOR_PROFILE_VERSION uint16 = 0
+	DPE_EMULATOR_VENDOR_ID             uint32 = 0
+	DPE_EMULATOR_VENDOR_SKU            uint32 = 0
 )
 
 // Added dummy support for emulator .This is to verify against the support_needed list
@@ -155,10 +154,6 @@ func (s *DpeEmulator) SendCmd(buf []byte) ([]byte, error) {
 
 func (s *DpeEmulator) GetSupport() *Support {
 	return &s.supports
-}
-
-func (s *DpeEmulator) GetProfile() Profile {
-	return DPE_SIMULATOR_PROFILE
 }
 
 func (s *DpeEmulator) GetSupportedLocalities() []uint32 {

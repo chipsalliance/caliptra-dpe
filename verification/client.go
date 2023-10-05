@@ -31,8 +31,18 @@ type Transport interface {
 	SendCmd(buf []byte) ([]byte, error)
 }
 
-// Client is a connection to a DPE instance, parameterized by hash algorithm and ECC curve.
-type Client[CurveParameter Curve, Digest DigestAlgorithm] struct {
+type Client interface {
+	GetProfile() (*GetProfileResp, error)
+	InitializeContext(cmd *InitCtxCmd) (*InitCtxResp, error)
+	DestroyContext(cmd *DestroyCtxCmd) error
+	CertifyKey(cmd *CertifyKeyReq) (*CertifyKeyResp, error)
+	GetCertificateChain() (*GetCertificateChainResp, error)
+	TagTCI(cmd *TagTCIReq) (*TagTCIResp, error)
+	GetTaggedTCI(cmd *GetTaggedTCIReq) (*GetTaggedTCIResp, error)
+}
+
+// ClientImpl is a connection to a DPE instance, parameterized by hash algorithm and ECC curve.
+type ClientImpl[CurveParameter Curve, Digest DigestAlgorithm] struct {
 	transport    Transport
 	Profile      Profile
 	MajorVersion uint16
@@ -44,12 +54,12 @@ type Client[CurveParameter Curve, Digest DigestAlgorithm] struct {
 }
 
 // Client256 is a client that implements DPE_PROFILE_IROT_P256_SHA256
-type Client256 = Client[NISTP256Parameter, SHA256Digest]
+type Client256 = ClientImpl[NISTP256Parameter, SHA256Digest]
 
 // Client384 is a client that implements DPE_PROFILE_IROT_P384_SHA384
-type Client384 = Client[NISTP384Parameter, SHA384Digest]
+type Client384 = ClientImpl[NISTP384Parameter, SHA384Digest]
 
-// dpeProfileImplementsTypeConstraints checks that the requested Client type constraints are compatible with the DPE profile.
+// dpeProfileImplementsTypeConstraints checks that the requested ClientImpl type constraints are compatible with the DPE profile.
 func dpeProfileImplementsTypeConstraints[C Curve, D DigestAlgorithm](profile Profile) error {
 	// Test that the expected value types produced by each DPE profile can be assigned to variables of type C and D
 	var c C
@@ -77,8 +87,24 @@ func dpeProfileImplementsTypeConstraints[C Curve, D DigestAlgorithm](profile Pro
 	return fmt.Errorf("unsupported DPE profile: %v", profile)
 }
 
-// NewClient initializes a new DPE client.
-func NewClient[C Curve, D DigestAlgorithm](t Transport) (*Client[C, D], error) {
+func NewClient(t Transport) (Client, error) {
+	rsp, err := getProfile(t)
+	if err != nil {
+		return nil, fmt.Errorf("could not query DPE for profile: %w", err)
+	}
+
+	switch rsp.Profile {
+	case ProfileP256SHA256:
+		return newClient256(t)
+	case ProfileP384SHA384:
+		return newClient384(t)
+	}
+
+	return nil, fmt.Errorf("Could not create client for profile %v", rsp.Profile)
+}
+
+// NewClientImpl initializes a new DPE client.
+func newClientImpl[C Curve, D DigestAlgorithm](t Transport) (*ClientImpl[C, D], error) {
 	rsp, err := getProfile(t)
 	if err != nil {
 		return nil, fmt.Errorf("could not query DPE for profile: %w", err)
@@ -88,7 +114,7 @@ func NewClient[C Curve, D DigestAlgorithm](t Transport) (*Client[C, D], error) {
 		return nil, err
 	}
 
-	return &Client[C, D]{
+	return &ClientImpl[C, D]{
 		transport:    t,
 		Profile:      rsp.Profile,
 		MajorVersion: rsp.MajorVersion,
@@ -100,16 +126,16 @@ func NewClient[C Curve, D DigestAlgorithm](t Transport) (*Client[C, D], error) {
 }
 
 // NewClient256 is a convenience wrapper for NewClient[NISTP256Parameter, SHA256Digest].
-func NewClient256(t Transport) (*Client[NISTP256Parameter, SHA256Digest], error) {
-	return NewClient[NISTP256Parameter, SHA256Digest](t)
+func newClient256(t Transport) (*ClientImpl[NISTP256Parameter, SHA256Digest], error) {
+	return newClientImpl[NISTP256Parameter, SHA256Digest](t)
 }
 
 // NewClient256 is a convenience wrapper for NewClient[NISTP384Parameter, SHA384Digest].
-func NewClient384(t Transport) (*Client[NISTP384Parameter, SHA384Digest], error) {
-	return NewClient[NISTP384Parameter, SHA384Digest](t)
+func newClient384(t Transport) (*ClientImpl[NISTP384Parameter, SHA384Digest], error) {
+	return newClientImpl[NISTP384Parameter, SHA384Digest](t)
 }
 
-func (c *Client[_, _]) InitializeContext(cmd *InitCtxCmd) (*InitCtxResp, error) {
+func (c *ClientImpl[_, _]) InitializeContext(cmd *InitCtxCmd) (*InitCtxResp, error) {
 	var respStruct InitCtxResp
 
 	if _, err := execCommand(c.transport, CommandInitializeContext, c.Profile, cmd, &respStruct); err != nil {
@@ -152,12 +178,12 @@ func getProfile(t Transport) (*GetProfileResp, error) {
 	}, nil
 }
 
-func (c *Client[_, _]) GetProfile() (*GetProfileResp, error) {
+func (c *ClientImpl[_, _]) GetProfile() (*GetProfileResp, error) {
 	return getProfile(c.transport)
 }
 
 // Send the command to destroy a context.
-func (c *Client[_, _]) DestroyContext(cmd *DestroyCtxCmd) error {
+func (c *ClientImpl[_, _]) DestroyContext(cmd *DestroyCtxCmd) error {
 	// DestroyContext does not return any parameters.
 	respStruct := struct{}{}
 
@@ -169,8 +195,14 @@ func (c *Client[_, _]) DestroyContext(cmd *DestroyCtxCmd) error {
 }
 
 // CertifyKey calls the DPE CertifyKey command.
-func (c *Client[CurveParameter, Digest]) CertifyKey(cmd *CertifyKeyReq[Digest]) (*CertifyKeyResp[CurveParameter, Digest], error) {
+func (c *ClientImpl[CurveParameter, Digest]) CertifyKey(cmd *CertifyKeyReq) (*CertifyKeyResp, error) {
 	// Define an anonymous struct for the response, because we have to accept the variable-sized certificate.
+	reqStruct := struct {
+		ContextHandle ContextHandle
+		Flags         CertifyKeyFlags
+		Label         Digest
+		Format        CertifyKeyFormat
+	}{}
 	respStruct := struct {
 		NewContextHandle  [16]byte
 		DerivedPublicKeyX CurveParameter
@@ -179,7 +211,12 @@ func (c *Client[CurveParameter, Digest]) CertifyKey(cmd *CertifyKeyReq[Digest]) 
 		Certificate       [2048]byte
 	}{}
 
-	_, err := execCommand(c.transport, CommandCertifyKey, c.Profile, cmd, &respStruct)
+	reqStruct.ContextHandle = cmd.ContextHandle
+	reqStruct.Flags = cmd.Flags
+	reqStruct.Label = Digest(cmd.Label)
+	reqStruct.Format = cmd.Format
+
+	_, err := execCommand(c.transport, CommandCertifyKey, c.Profile, &reqStruct, &respStruct)
 	if err != nil {
 		return nil, err
 	}
@@ -189,16 +226,16 @@ func (c *Client[CurveParameter, Digest]) CertifyKey(cmd *CertifyKeyReq[Digest]) 
 		return nil, fmt.Errorf("DPE reported a %d-byte cert, which was larger than 2048", respStruct.CertificateSize)
 	}
 
-	return &CertifyKeyResp[CurveParameter, Digest]{
+	return &CertifyKeyResp{
 		NewContextHandle:  respStruct.NewContextHandle,
-		DerivedPublicKeyX: respStruct.DerivedPublicKeyX,
-		DerivedPublicKeyY: respStruct.DerivedPublicKeyY,
+		DerivedPublicKeyX: respStruct.DerivedPublicKeyX.Slice(),
+		DerivedPublicKeyY: respStruct.DerivedPublicKeyY.Slice(),
 		Certificate:       respStruct.Certificate[:respStruct.CertificateSize],
 	}, nil
 }
 
 // GetCertificateChain calls the DPE GetCertificateChain command.
-func (c *Client[_, _]) GetCertificateChain() (*GetCertificateChainResp, error) {
+func (c *ClientImpl[_, _]) GetCertificateChain() (*GetCertificateChainResp, error) {
 	var certs GetCertificateChainResp
 
 	// Initialize request input parameters
@@ -237,7 +274,7 @@ func (c *Client[_, _]) GetCertificateChain() (*GetCertificateChainResp, error) {
 }
 
 // TagTCI calls the DPE TagTCI command.
-func (c *Client[_, _]) TagTCI(cmd *TagTCIReq) (*TagTCIResp, error) {
+func (c *ClientImpl[_, _]) TagTCI(cmd *TagTCIReq) (*TagTCIResp, error) {
 	var respStruct TagTCIResp
 
 	_, err := execCommand(c.transport, CommandTagTCI, c.Profile, cmd, &respStruct)
@@ -249,15 +286,21 @@ func (c *Client[_, _]) TagTCI(cmd *TagTCIReq) (*TagTCIResp, error) {
 }
 
 // GetTaggedTCI calls the DPE GetTaggedTCI command.
-func (c *Client[_, Digest]) GetTaggedTCI(cmd *GetTaggedTCIReq) (*GetTaggedTCIResp[Digest], error) {
-	var respStruct GetTaggedTCIResp[Digest]
+func (c *ClientImpl[_, Digest]) GetTaggedTCI(cmd *GetTaggedTCIReq) (*GetTaggedTCIResp, error) {
+	respStruct := struct {
+		CumulativeTCI Digest
+		CurrentTCI    Digest
+	}{}
 
 	_, err := execCommand(c.transport, CommandGetTaggedTCI, c.Profile, cmd, &respStruct)
 	if err != nil {
 		return nil, err
 	}
 
-	return &respStruct, nil
+	return &GetTaggedTCIResp{
+		CumulativeTCI: respStruct.CumulativeTCI.Slice(),
+		CurrentTCI:    respStruct.CurrentTCI.Slice(),
+	}, nil
 }
 
 func (s *Support) ToFlags() uint32 {

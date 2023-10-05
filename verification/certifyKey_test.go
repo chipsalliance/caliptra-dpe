@@ -477,9 +477,14 @@ func testCertifyKey(d TestDPEInstance, t *testing.T, use_simulation bool) {
 		}
 		defer d.PowerOff()
 	}
-	client, err := NewClient256(d)
+	client, err := NewClient(d)
 	if err != nil {
 		t.Fatalf("[FATAL]: Could not initialize client: %v", err)
+	}
+
+	profile, err := client.GetProfile()
+	if err != nil {
+		t.Fatal(err)
 	}
 
 	var ctx ContextHandle
@@ -507,17 +512,23 @@ func testCertifyKey(d TestDPEInstance, t *testing.T, use_simulation bool) {
 		ctx = initCtxResp.Handle
 	}
 
-	certifyKeyReq := []CertifyKeyReq[SHA256Digest]{
+	emptyLabel := make([]byte, profile.Profile.GetDigestSize())
+	seqLabel := make([]byte, profile.Profile.GetDigestSize())
+	for i, _ := range seqLabel {
+		seqLabel[i] = byte(i)
+	}
+
+	certifyKeyReq := []CertifyKeyReq{
 		{
 			ContextHandle: ctx,
 			Flags:         0,
-			Label:         [32]byte{},
+			Label:         emptyLabel,
 			Format:        CertifyKeyX509,
 		},
 		{
 			ContextHandle: ctx,
 			Flags:         1 << AddIsCA, // Setting the 30th bit counted from 0 returns CA cert : 01000000 00000000 00000000 00000000
-			Label:         [32]byte{143, 67, 67, 70, 100, 143, 107, 150, 223, 137, 221, 169, 1, 197, 23, 107, 16, 166, 216, 57, 97, 221, 60, 26, 200, 139, 89, 178, 220, 50, 122, 164},
+			Label:         seqLabel,
 			Format:        CertifyKeyX509,
 		},
 	}

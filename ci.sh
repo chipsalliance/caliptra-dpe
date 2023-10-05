@@ -51,6 +51,9 @@ set -ex
 )
 ( cd verification
   test -z "$(gofmt -l .)"
+  cargo build --no-default-features --features=dpe_profile_p256_sha256 --manifest-path ../simulator/Cargo.toml
+  go test
+  cargo build --no-default-features --features=dpe_profile_p384_sha384 --manifest-path ../simulator/Cargo.toml
   go test
 )
 (

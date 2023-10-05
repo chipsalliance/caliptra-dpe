@@ -51,8 +51,6 @@ type TestDPEInstance interface {
 	// it supports, but this function is used by tests to know how to test the DPE
 	// instance.
 	GetSupport() *Support
-	// Returns the profile the transport supports.
-	GetProfile() Profile
 	// Returns a slice of all the localities the instance supports.
 	GetSupportedLocalities() []uint32
 	// Sets the current locality.

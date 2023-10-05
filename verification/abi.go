@@ -2,6 +2,13 @@
 
 package verification
 
+/* Structures for DPE commands and responses
+ *
+ * These structures do not not use generics for parameters which are
+ * fixed-size based on the profile (e.g. hashes, ecc ints). This is to support
+ * a Client interface that does not use generics.
+ */
+
 const (
 	CmdMagic  uint32 = 0x44504543
 	RespMagic uint32 = 0x44504552
@@ -84,17 +91,17 @@ const (
 	CertifyKeyCsr  CertifyKeyFormat = 1
 )
 
-type CertifyKeyReq[Digest DigestAlgorithm] struct {
+type CertifyKeyReq struct {
 	ContextHandle ContextHandle
 	Flags         CertifyKeyFlags
-	Label         Digest
+	Label         []byte
 	Format        CertifyKeyFormat
 }
 
-type CertifyKeyResp[CurveParameter Curve, Digest DigestAlgorithm] struct {
+type CertifyKeyResp struct {
 	NewContextHandle  ContextHandle
-	DerivedPublicKeyX CurveParameter
-	DerivedPublicKeyY CurveParameter
+	DerivedPublicKeyX []byte
+	DerivedPublicKeyY []byte
 	Certificate       []byte
 }
 
@@ -122,7 +129,7 @@ type GetTaggedTCIReq struct {
 	Tag TCITag
 }
 
-type GetTaggedTCIResp[Digest DigestAlgorithm] struct {
-	CumulativeTCI Digest
-	CurrentTCI    Digest
+type GetTaggedTCIResp struct {
+	CumulativeTCI []byte
+	CurrentTCI    []byte
 }

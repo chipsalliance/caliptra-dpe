@@ -55,7 +55,7 @@ func testInitContext(d TestDPEInstance, t *testing.T) {
 		defer d.PowerOff()
 	}
 
-	client, err := NewClient256(d)
+	client, err := NewClient(d)
 	if err != nil {
 		t.Fatalf("Could not initialize client: %v", err)
 	}

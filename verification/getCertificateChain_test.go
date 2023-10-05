@@ -37,7 +37,7 @@ func testGetCertificateChain(d TestDPEInstance, t *testing.T) {
 		}
 		defer d.PowerOff()
 	}
-	client, err := NewClient256(d)
+	client, err := NewClient(d)
 	if err != nil {
 		t.Fatalf("[FATAL]: Could not initialize client: %v", err)
 	}
