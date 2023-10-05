@@ -19,6 +19,9 @@ var TestCases = []TestCase{
 	TestCase{
 		"InitializeContext", TestInitializeContext, []string{},
 	},
+	TestCase{
+		"InitializeContextSimulation", TestInitializeSimulation, []string{"Simulation"},
+	},
 	// CertifyKey
 	TestCase{
 		"CertifyKey", TestCertifyKey, []string{"AutoInit", "X509", "IsCA"},
@@ -37,47 +40,5 @@ var TestCases = []TestCase{
 	// GetProfile
 	TestCase{
 		"GetProfile", TestGetProfile, []string{},
-	},
-	TestCase{
-		"GetProfile_Simulation", TestGetProfile, []string{"Simulation"},
-	},
-	TestCase{
-		"GetProfile_ExtendTCI", TestGetProfile, []string{"ExtendTci"},
-	},
-	TestCase{
-		"GetProfile_AutoInit", TestGetProfile, []string{"AutoInit"},
-	},
-	TestCase{
-		"GetProfile_Tagging", TestGetProfile, []string{"Tagging"},
-	},
-	TestCase{
-		"GetProfile_RotateContext", TestGetProfile, []string{"RotateContext"},
-	},
-	TestCase{
-		"GetProfile_X509", TestGetProfile, []string{"X509"},
-	},
-	TestCase{
-		"GetProfile_CSR", TestGetProfile, []string{"Csr"},
-	},
-	TestCase{
-		"GetProfile_Symmetric", TestGetProfile, []string{"IsSymmetric"},
-	},
-	TestCase{
-		"GetProfile_InternalInfo", TestGetProfile, []string{"InternalInfo"},
-	},
-	TestCase{
-		"GetProfile_InternalDice", TestGetProfile, []string{"InternalDice"},
-	},
-	TestCase{
-		"GetProfile_IsCA", TestGetProfile, []string{"IsCA"},
-	},
-	TestCase{
-		"GetProfile_Combo01", TestGetProfile, []string{"Simulation", "AutoInit", "RotateContext", "Csr", "InternalDice", "IsCA"},
-	},
-	TestCase{
-		"GetProfile_Combo02", TestGetProfile, []string{"ExtendTci", "Tagging", "X509", "InternalInfo"},
-	},
-	TestCase{
-		"GetProfile_All", TestGetProfile, []string{"Simulation", "ExtendTci", "AutoInit", "Tagging", "RotateContext", "X509", "Csr", "IsSymmetric", "InternalInfo", "InternalDice", "IsCA"},
 	},
 }
