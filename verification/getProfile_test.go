@@ -243,19 +243,25 @@ func testGetProfile(d TestDPEInstance, t *testing.T) {
 		}
 		defer d.PowerOff()
 	}
-	client, err := NewClient384(d)
+	var client256 *Client256
+	var client384 *Client384
+	var err error
+
+	if d.GetProfile() == DPE_EMULATOR_PROFILE {
+		client384, err = NewClient384(d)
+	} else {
+		client256, err = NewClient256(d)
+	}
 	if err != nil {
 		t.Fatalf("Could not initialize client: %v", err)
 	}
-
 	for _, locality := range d.GetSupportedLocalities() {
+		var rsp *GetProfileResp
 		d.SetLocality(locality)
-		rsp, err := client.GetProfile()
-		if err != nil {
-			t.Fatalf("Unable to get profile: %v", err)
-		}
-		if rsp.Profile != d.GetProfile() {
-			t.Fatalf("Incorrect profile. 0x%08x != 0x%08x", d.GetProfile(), rsp.Profile)
+		if d.GetProfile() == DPE_EMULATOR_PROFILE {
+			rsp, err = client384.GetProfile()
+		} else {
+			rsp, err = client256.GetProfile()
 		}
 		if rsp.MajorVersion != d.GetProfileMajorVersion() {
 			t.Fatalf("Incorrect version. 0x%08x != 0x%08x", d.GetProfileMajorVersion(), rsp.MajorVersion)

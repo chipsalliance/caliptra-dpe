@@ -116,23 +116,46 @@ func testCertifyKey(d TestDPEInstance, t *testing.T) {
 		}
 		defer d.PowerOff()
 	}
-	client, err := NewClient384(d)
+	var client256 *Client256
+	var client384 *Client384
+	var err error
+
+	if d.GetProfile() == DPE_EMULATOR_PROFILE {
+		client384, err = NewClient384(d)
+	} else {
+		client256, err = NewClient256(d)
+	}
 	if err != nil {
 		t.Fatalf("Could not initialize client: %v", err)
 	}
 
-	certifyKeyReq := CertifyKeyReq[SHA384Digest]{
-		ContextHandle: [16]byte{0},
-		Flags:         0,
-		Label:         [48]byte{0},
-		Format:        CertifyKeyX509,
-	}
+	if d.GetProfile() == DPE_EMULATOR_PROFILE {
+		certifyKeyReq := CertifyKeyReq[SHA384Digest]{
+			ContextHandle: [16]byte{0},
+			Flags:         0,
+			Label:         [48]byte{0},
+			Format:        CertifyKeyX509,
+		}
 
-	certifyKeyResp, err := client.CertifyKey(&certifyKeyReq)
-	if err != nil {
-		t.Fatalf("Could not certify key: %v", err)
+		certifyKeyResp, err := client384.CertifyKey(&certifyKeyReq)
+		if err != nil {
+			t.Fatalf("Could not certify key: %v", err)
+		}
+		checkCertificateStructure(t, certifyKeyResp.Certificate)
+	} else {
+		certifyKeyReq := CertifyKeyReq[SHA256Digest]{
+			ContextHandle: [16]byte{0},
+			Flags:         0,
+			Label:         [32]byte{0},
+			Format:        CertifyKeyX509,
+		}
+
+		certifyKeyResp, err := client256.CertifyKey(&certifyKeyReq)
+		if err != nil {
+			t.Fatalf("Could not certify key: %v", err)
+		}
+		checkCertificateStructure(t, certifyKeyResp.Certificate)
 	}
-	checkCertificateStructure(t, certifyKeyResp.Certificate)
 
 	// TODO: When DeriveChild is implemented, call it here to add more TCIs and call CertifyKey again.
 }
