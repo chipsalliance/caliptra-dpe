@@ -6,7 +6,6 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
-	"log"
 	"testing"
 
 	zx509 "github.com/zmap/zcrypto/x509"
@@ -14,29 +13,15 @@ import (
 	"github.com/zmap/zlint/v3/lint"
 )
 
-// This file is used to test the Get Certificate Chain command.
-
-func TestGetCertificateChain(t *testing.T) {
-	support_needed := []string{"AutoInit", "X509"}
-	instance, err := GetTestTarget(support_needed)
-	if err != nil {
-		if err.Error() == "Requested support is not supported in the emulator" {
-			t.Skipf("[WARNING]: Failed executing TestGetCertificateChain command due to unsupported request. Hence, skipping the command execution")
-		} else {
-			log.Fatalf("[ERROR]: %s", err.Error())
-		}
-	}
-	testGetCertificateChain(instance, t)
-}
-
-func testGetCertificateChain(d TestDPEInstance, t *testing.T) {
+func TestGetCertificateChain(d TestDPEInstance, t *testing.T) {
 	if d.HasPowerControl() {
 		err := d.PowerOn()
 		if err != nil {
-			log.Fatal(err)
+			t.Fatal(err)
 		}
 		defer d.PowerOff()
 	}
+
 	profile, err := GetTransportProfile(d)
 	if err != nil {
 		t.Fatalf("Could not get profile: %v", err)
@@ -62,7 +47,6 @@ func checkCertificateChain(t *testing.T, certData []byte) []*x509.Certificate {
 	var x509Certs []*x509.Certificate
 	var err error
 
-	t.Log("[LOG]: Parse the obtained certificate chain...")
 	// Check whether certificate chain is DER encoded.
 	if x509Certs, err = x509.ParseCertificates(certData); err != nil {
 		t.Fatalf("[FATAL]: Could not parse certificate using crypto/x509: %v", err)
@@ -109,17 +93,17 @@ func checkCertificateChain(t *testing.T, certData []byte) []*x509.Certificate {
 			l := registry.ByName(id)
 			// TODO(https://github.com/chipsalliance/caliptra-dpe/issues/74):
 			// Fail the test with Errorf here once we expect it to pass.
-			t.Logf("[%s] %s: %s%s (%s)", level, l.Source, details, l.Description, l.Citation)
+			t.Logf("[LINT %s] %s: %s%s (%s)", level, l.Source, details, l.Description, l.Citation)
 			failed = true
 		}
 
 		if failed {
-			// Dump the cert in PEM and hex for use with various tools
-			t.Logf("[LOG]: Offending certificate (PEM):\n%s", (string)(pem.EncodeToMemory(&pem.Block{
+			// Dump the cert in PEM for use with various tools
+			t.Logf("[LINT]: Offending certificate: %s\n", cert.Subject.String())
+			t.Logf("[LINT]: Offending certificate (PEM):\n%s", (string)(pem.EncodeToMemory(&pem.Block{
 				Type:  "CERTIFICATE",
-				Bytes: certData,
+				Bytes: cert.Raw,
 			})))
-			t.Logf("[LOG]: Offending certificate (DER):\n%x", certData)
 		}
 	}
 
@@ -131,15 +115,12 @@ func checkCertificateChain(t *testing.T, certData []byte) []*x509.Certificate {
 func validateCertChain(t *testing.T, certChain []*x509.Certificate) {
 	t.Helper()
 
-	t.Log("[LOG]: Validating intermediate certificates chains...")
 	certsToProcess := certChain
 
 	// Remove unhandled critical extensions reported by x509 but defined in spec
-	t.Log("[LOG]: Checking for unhandled critical certificate extensions unknown to DPE certificates profile spec...")
 	removeTcgDiceCriticalExtensions(t, certsToProcess)
 
 	// Remove unhandled extended key usages reported by x509 but defined in spec
-	t.Log("[LOG]: Checking for extended key usages unknown to DPE certificates profile spec...")
 	removeTcgDiceExtendedKeyUsages(t, certsToProcess)
 
 	// Build verify options
@@ -153,13 +134,8 @@ func validateCertChain(t *testing.T, certChain []*x509.Certificate) {
 		}
 
 		// Log certificate chains linked to each cetificate in chain
-		t.Logf("[LOG]: Chains of intermediate certificate.")
 		if len(chains) != 1 {
-			t.Errorf("[ERROR]: certificate chain is empty")
+			t.Errorf("[ERROR]: validateCertChain certificate chain is empty")
 		}
 	}
-
-	// This indicates that signature validation found no errors each cert
-	// chain of intermediate certificates
-	t.Logf("[LOG]: Intermediate certificates chain validation is done")
 }

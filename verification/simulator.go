@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"reflect"
 	"syscall"
 	"time"
 )
@@ -17,14 +18,13 @@ import (
 const (
 	simulatorSocketPath = "/tmp/dpe-sim.socket"
 
-	DPE_SIMULATOR_AUTO_INIT_LOCALITY    uint32  = 0
-	DPE_SIMULATOR_OTHER_LOCALITY        uint32  = 0x4f544852
-	DPE_SIMULATOR_PROFILE               Profile = ProfileP256SHA256
-	DPE_SIMULATOR_MAX_TCI_NODES         uint32  = 24
-	DPE_SIMULATOR_MAJOR_PROFILE_VERSION uint16  = CURRENT_PROFILE_MAJOR_VERSION
-	DPE_SIMULATOR_MINOR_PROFILE_VERSION uint16  = CURRENT_PROFILE_MINOR_VERSION
-	DPE_SIMULATOR_VENDOR_ID             uint32  = 0
-	DPE_SIMULATOR_VENDOR_SKU            uint32  = 0
+	DPE_SIMULATOR_AUTO_INIT_LOCALITY    uint32 = 0
+	DPE_SIMULATOR_OTHER_LOCALITY        uint32 = 0x4f544852
+	DPE_SIMULATOR_MAX_TCI_NODES         uint32 = 24
+	DPE_SIMULATOR_MAJOR_PROFILE_VERSION uint16 = CURRENT_PROFILE_MAJOR_VERSION
+	DPE_SIMULATOR_MINOR_PROFILE_VERSION uint16 = CURRENT_PROFILE_MINOR_VERSION
+	DPE_SIMULATOR_VENDOR_ID             uint32 = 0
+	DPE_SIMULATOR_VENDOR_SKU            uint32 = 0
 )
 
 type DpeSimulator struct {
@@ -159,10 +159,6 @@ func (s *DpeSimulator) GetSupport() *Support {
 	return &s.supports
 }
 
-func (s *DpeSimulator) GetProfile() Profile {
-	return DPE_SIMULATOR_PROFILE
-}
-
 func (s *DpeSimulator) GetSupportedLocalities() []uint32 {
 	return []uint32{DPE_SIMULATOR_AUTO_INIT_LOCALITY, DPE_SIMULATOR_OTHER_LOCALITY}
 }
@@ -193,4 +189,23 @@ func (s *DpeSimulator) GetProfileVendorId() uint32 {
 
 func (s *DpeSimulator) GetProfileVendorSku() uint32 {
 	return DPE_SIMULATOR_VENDOR_SKU
+}
+
+// Get the simulator target
+func GetSimulatorTarget(support_needed []string, target_exe string) (TestDPEInstance, error) {
+
+	value := reflect.ValueOf(DpeSimulator{}.supports)
+	fields := reflect.Indirect(value)
+	fVal := reflect.New(reflect.TypeOf(DpeSimulator{}.supports))
+
+	for i := 0; i < len(support_needed); i++ {
+		for j := 0; j < value.NumField(); j++ {
+			if fields.Type().Field(j).Name == support_needed[i] {
+				fVal.Elem().Field(j).SetBool(true)
+			}
+		}
+	}
+	support := fVal.Elem().Interface().(Support)
+	var instance TestDPEInstance = &DpeSimulator{exe_path: target_exe, supports: support}
+	return instance, nil
 }

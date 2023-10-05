@@ -54,10 +54,10 @@ function test_rust_targets() {
 function run_verification_tests() {
   profile=$1
 
-  cargo build --manifest-path simulator/Cargo.toml #--features=$profile --no-default-features
+  cargo build --manifest-path simulator/Cargo.toml --features=$profile --no-default-features
 
   ( cd verification
-    go test
+    go test -v
   )
 }
 

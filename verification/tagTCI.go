@@ -4,34 +4,17 @@ package verification
 
 import (
 	"errors"
-	"log"
 	"reflect"
 	"testing"
 )
 
 // This file is used to test the tagTCI command.
 
-func TestTagTCI(t *testing.T) {
-
-	support_needed := []string{"AutoInit", "Tagging"}
-	instance, err := GetTestTarget(support_needed)
-	if err != nil {
-		if err.Error() == "Requested support is not supported in the emulator" {
-			t.Skipf("Warning: Failed executing TestTagTCI command due to unsupported request. Hence, skipping the command execution")
-		} else {
-			log.Fatal(err)
-		}
-	}
-
-	testtagTCI(instance, t)
-}
-
-func testtagTCI(d TestDPEInstance, t *testing.T) {
-
+func TestTagTCI(d TestDPEInstance, t *testing.T) {
 	if d.HasPowerControl() {
 		err := d.PowerOn()
 		if err != nil {
-			log.Fatal(err)
+			t.Fatal(err)
 		}
 		defer d.PowerOff()
 	}
@@ -78,12 +61,12 @@ func testtagTCI(d TestDPEInstance, t *testing.T) {
 		t.Fatalf("Could not get tagged TCI: %v", err)
 	}
 
-	wantCumulativeTCI := make([]byte, 32)
+	wantCumulativeTCI := make([]byte, profile.GetDigestSize())
 	if !reflect.DeepEqual(taggedTCI.CumulativeTCI, wantCumulativeTCI) {
 		t.Errorf("GetTaggedTCI returned cumulative TCI %x, expected %x", taggedTCI.CumulativeTCI, wantCumulativeTCI)
 	}
 
-	wantCurrentTCI := make([]byte, 32)
+	wantCurrentTCI := make([]byte, profile.GetDigestSize())
 	if !reflect.DeepEqual(taggedTCI.CurrentTCI, wantCurrentTCI) {
 		t.Errorf("GetTaggedTCI returned current TCI %x, expected %x", taggedTCI.CurrentTCI, wantCurrentTCI)
 	}

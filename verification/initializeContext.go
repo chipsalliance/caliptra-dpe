@@ -10,39 +10,10 @@ import (
 
 // This file is used to test the initialize context command.
 
-func TestInitializeContext(t *testing.T) {
-
-	support_needed := []string{""}
-	instance, err := GetTestTarget(support_needed)
-	if err != nil {
-		if err.Error() == "Requested support is not supported in the emulator" {
-			t.Skipf("Warning: Failed executing TestInitializeContext command due to unsupported request. Hence, skipping the command execution")
-		} else {
-			log.Fatal(err)
-		}
-	}
-
-	for _, locality := range instance.GetSupportedLocalities() {
-		instance.SetLocality(locality)
-		testInitContext(instance, t)
-	}
-}
-
-func TestInitializeContext_SimulationMode(t *testing.T) {
-
-	support_needed := []string{"Simulation"}
-	instance, err := GetTestTarget(support_needed)
-	if err != nil {
-		if err.Error() == "Requested support is not supported in the emulator" {
-			t.Skipf("Warning: Failed executing TestInitializeContext_SimulationMode command due to unsupported request. Hence, skipping the command execution")
-		} else {
-			log.Fatal(err)
-		}
-	}
-
-	for _, locality := range instance.GetSupportedLocalities() {
-		instance.SetLocality(locality)
-		testInitContext(instance, t)
+func TestInitializeContext(d TestDPEInstance, t *testing.T) {
+	for _, locality := range d.GetSupportedLocalities() {
+		d.SetLocality(locality)
+		testInitContext(d, t)
 	}
 }
 
