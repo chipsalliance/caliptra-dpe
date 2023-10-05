@@ -68,7 +68,7 @@ impl CryptoBuf {
         }
 
         let mut curr_idx = 0;
-        const HEX_CHARS: &[u8; 16] = b"0123456789abcdef";
+        const HEX_CHARS: &[u8; 16] = b"0123456789ABCDEF";
         for &b in src {
             let h1 = (b >> 4) as usize;
             let h2 = (b & 0xF) as usize;

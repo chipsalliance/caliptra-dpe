@@ -14,6 +14,26 @@ const (
 	ProfileP384SHA384 Profile = 2
 )
 
+func (p Profile) GetDigestSize() int {
+	switch p {
+	case ProfileP256SHA256:
+		return 32
+	case ProfileP384SHA384:
+		return 48
+	}
+	return 0
+}
+
+func (p Profile) GetECCIntSize() int {
+	switch p {
+	case ProfileP256SHA256:
+		return 32
+	case ProfileP384SHA384:
+		return 48
+	}
+	return 0
+}
+
 func (p Profile) String() string {
 	switch p {
 	case ProfileP256SHA256:

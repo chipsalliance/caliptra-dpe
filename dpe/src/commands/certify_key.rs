@@ -5,7 +5,7 @@ use crate::{
     dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
     response::{CertifyKeyResp, DpeErrorCode, Response, ResponseHdr},
     tci::TciNodeData,
-    x509::{MeasurementData, Name, X509CertWriter},
+    x509::{DirectoryString, MeasurementData, Name, X509CertWriter},
     DPE_PROFILE, MAX_CERT_SIZE, MAX_HANDLES,
 };
 use bitflags::bitflags;
@@ -82,13 +82,15 @@ impl CommandExecution for CertifyKeyCmd {
             .derive_key_pair(algs, &cdi, &self.label, b"ECC")
             .map_err(|_| DpeErrorCode::CryptoError)?;
 
-        let mut subject_name = Name {
-            cn: b"DPE Leaf",
-            serial: [0u8; DPE_PROFILE.get_hash_size() * 2],
-        };
+        let mut subj_serial = [0u8; DPE_PROFILE.get_hash_size() * 2];
         env.crypto
-            .get_pubkey_serial(DPE_PROFILE.alg_len(), &pub_key, &mut subject_name.serial)
+            .get_pubkey_serial(DPE_PROFILE.alg_len(), &pub_key, &mut subj_serial)
             .map_err(|_| DpeErrorCode::CryptoError)?;
+
+        let subject_name = Name {
+            cn: DirectoryString::PrintableString(b"DPE Leaf"),
+            serial: DirectoryString::PrintableString(&subj_serial),
+        };
 
         // Get TCI Nodes
         const INITIALIZER: TciNodeData = TciNodeData::new();
@@ -122,7 +124,7 @@ impl CommandExecution for CertifyKeyCmd {
                 }
                 let mut bytes_written = tbs_writer.encode_ecdsa_tbs(
                     /*serial=*/
-                    &subject_name.serial[..20], // Serial number must be truncated to 20 bytes
+                    &subject_name.serial.bytes()[..20], // Serial number must be truncated to 20 bytes
                     &issuer_name[..issuer_len],
                     &subject_name,
                     &pub_key,

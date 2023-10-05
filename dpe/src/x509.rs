@@ -13,12 +13,34 @@ use crate::{
 use bitflags::bitflags;
 use crypto::{EcdsaPub, EcdsaSig};
 
+pub enum DirectoryString<'a> {
+    PrintableString(&'a [u8]),
+    Utf8String(&'a [u8]),
+}
+
+impl DirectoryString<'_> {
+    pub fn len(&self) -> usize {
+        self.bytes().len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.bytes().is_empty()
+    }
+
+    pub fn bytes(&self) -> &[u8] {
+        match self {
+            Self::PrintableString(val) => val,
+            Self::Utf8String(val) => val,
+        }
+    }
+}
+
 /// Type for specifying an X.509 RelativeDistinguisedName
 ///
 /// `serial` is expected to hold a hex string of the hash of the public key
 pub struct Name<'a> {
-    pub cn: &'a [u8],
-    pub serial: [u8; DPE_PROFILE.get_hash_size() * 2],
+    pub cn: DirectoryString<'a>,
+    pub serial: DirectoryString<'a>,
 }
 
 pub struct MeasurementData<'a> {
@@ -48,6 +70,7 @@ impl X509CertWriter<'_> {
     const BIT_STRING_TAG: u8 = 0x3;
     const OCTET_STRING_TAG: u8 = 0x4;
     const OID_TAG: u8 = 0x6;
+    const UTF8_STRING_TAG: u8 = 0xC;
     const PRINTABLE_STRING_TAG: u8 = 0x13;
     const GENERALIZE_TIME_TAG: u8 = 0x18;
     const SEQUENCE_TAG: u8 = 0x30;
@@ -187,12 +210,12 @@ impl X509CertWriter<'_> {
     fn get_rdn_size(name: &Name, tagged: bool) -> Result<usize, DpeErrorCode> {
         let cn_seq_size = Self::get_structure_size(
             Self::get_bytes_size(&Self::RDN_COMMON_NAME_OID, /*tagged=*/ true)?
-                + Self::get_bytes_size(name.cn, true)?,
+                + Self::get_bytes_size(name.cn.bytes(), true)?,
             /*tagged=*/ true,
         )?;
         let serialnumber_seq_size = Self::get_structure_size(
             Self::get_bytes_size(&Self::RDN_COMMON_NAME_OID, /*tagged=*/ true)?
-                + Self::get_bytes_size(&name.serial, /*tagged=*/ true)?,
+                + Self::get_bytes_size(name.serial.bytes(), /*tagged=*/ true)?,
             /*tagged=*/ true,
         )?;
 
@@ -507,10 +530,17 @@ impl X509CertWriter<'_> {
         Ok(bytes_written)
     }
 
-    fn encode_printable_string(&mut self, s: &[u8]) -> Result<usize, DpeErrorCode> {
-        let mut bytes_written = self.encode_tag_field(Self::PRINTABLE_STRING_TAG)?;
-        bytes_written += self.encode_size_field(s.len())?;
-        bytes_written += self.encode_bytes(s)?;
+    /// Encode a DirectoryString for an RDN. Multiple string types are allowed, so
+    /// this function accepts a `tag`. This is important because some verifiers
+    /// will do an exact DER comparison when building cert chains.
+    fn encode_rdn_string(&mut self, s: &DirectoryString) -> Result<usize, DpeErrorCode> {
+        let (val, tag) = match s {
+            DirectoryString::PrintableString(val) => (val, Self::PRINTABLE_STRING_TAG),
+            DirectoryString::Utf8String(val) => (val, Self::UTF8_STRING_TAG),
+        };
+        let mut bytes_written = self.encode_tag_field(tag)?;
+        bytes_written += self.encode_size_field(val.len())?;
+        bytes_written += self.encode_bytes(val)?;
 
         Ok(bytes_written)
     }
@@ -559,7 +589,7 @@ impl X509CertWriter<'_> {
         bytes_written += self.encode_tag_field(Self::SEQUENCE_TAG)?;
         bytes_written += self.encode_size_field(cn_size)?;
         bytes_written += self.encode_oid(&Self::RDN_COMMON_NAME_OID)?;
-        bytes_written += self.encode_printable_string(name.cn)?;
+        bytes_written += self.encode_rdn_string(&name.cn)?;
 
         // Encode RDN SET
         bytes_written += self.encode_tag_field(Self::SET_OF_TAG)?;
@@ -569,7 +599,7 @@ impl X509CertWriter<'_> {
         bytes_written += self.encode_tag_field(Self::SEQUENCE_TAG)?;
         bytes_written += self.encode_size_field(serialnumber_size)?;
         bytes_written += self.encode_oid(&Self::RDN_SERIALNUMBER_OID)?;
-        bytes_written += self.encode_printable_string(&name.serial)?;
+        bytes_written += self.encode_rdn_string(&name.serial)?;
 
         Ok(bytes_written)
     }
@@ -1140,7 +1170,7 @@ impl X509CertWriter<'_> {
 #[cfg(test)]
 mod tests {
     use crate::tci::{TciMeasurement, TciNodeData};
-    use crate::x509::{MeasurementData, Name, X509CertWriter};
+    use crate::x509::{DirectoryString, MeasurementData, Name, X509CertWriter};
     use crate::DPE_PROFILE;
     use crypto::{CryptoBuf, EcdsaPub, EcdsaSig};
     use std::str;
@@ -1185,8 +1215,8 @@ mod tests {
     }
 
     const TEST_ISSUER: Name = Name {
-        cn: b"Caliptra Alias",
-        serial: [0x00; DPE_PROFILE.get_hash_size() * 2],
+        cn: DirectoryString::PrintableString(b"Caliptra Alias"),
+        serial: DirectoryString::PrintableString(&[0x00; DPE_PROFILE.get_hash_size() * 2]),
     };
 
     fn encode_test_issuer() -> Vec<u8> {
@@ -1238,8 +1268,8 @@ mod tests {
     fn test_rdn() {
         let mut cert = [0u8; 256];
         let test_name = Name {
-            cn: b"Caliptra Alias",
-            serial: [0x0u8; DPE_PROFILE.get_hash_size() * 2],
+            cn: DirectoryString::PrintableString(b"Caliptra Alias"),
+            serial: DirectoryString::PrintableString(&[0x0u8; DPE_PROFILE.get_hash_size() * 2]),
         };
 
         let mut w = X509CertWriter::new(&mut cert, true);
@@ -1252,8 +1282,8 @@ mod tests {
 
         let expected = format!(
             "CN={}, serialNumber={}",
-            str::from_utf8(test_name.cn).unwrap(),
-            str::from_utf8(&test_name.serial).unwrap()
+            str::from_utf8(test_name.cn.bytes()).unwrap(),
+            str::from_utf8(&test_name.serial.bytes()).unwrap()
         );
         let actual = name.to_string_with_registry(oid_registry()).unwrap();
         assert_eq!(expected, actual);
@@ -1353,8 +1383,8 @@ mod tests {
         let issuer_der = encode_test_issuer();
 
         let test_subject_name = Name {
-            cn: b"DPE Leaf",
-            serial: [0x00; DPE_PROFILE.get_hash_size() * 2],
+            cn: DirectoryString::PrintableString(b"DPE Leaf"),
+            serial: DirectoryString::PrintableString(&[0x00; DPE_PROFILE.get_hash_size() * 2]),
         };
 
         const ECC_INT_SIZE: usize = DPE_PROFILE.get_ecc_int_size();
@@ -1402,12 +1432,12 @@ mod tests {
 
     const TEST_SERIAL: &[u8] = &[0x1F; 20];
     const TEST_ISSUER_NAME: Name = Name {
-        cn: b"Caliptra Alias",
-        serial: [0x00; DPE_PROFILE.get_hash_size() * 2],
+        cn: DirectoryString::PrintableString(b"Caliptra Alias"),
+        serial: DirectoryString::PrintableString(&[0x00; DPE_PROFILE.get_hash_size() * 2]),
     };
     const TEST_SUBJECT_NAME: Name = Name {
-        cn: b"DPE Leaf",
-        serial: [0x00; DPE_PROFILE.get_hash_size() * 2],
+        cn: DirectoryString::PrintableString(b"DPE Leaf"),
+        serial: DirectoryString::PrintableString(&[0x00; DPE_PROFILE.get_hash_size() * 2]),
     };
 
     const ECC_INT_SIZE: usize = DPE_PROFILE.get_ecc_int_size();
