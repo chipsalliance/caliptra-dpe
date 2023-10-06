@@ -16,6 +16,7 @@ use constant_time_eq::constant_time_eq;
 use crypto::{Crypto, Digest, Hasher};
 use platform::{Platform, MAX_CHUNK_SIZE};
 use zerocopy::{AsBytes, FromBytes};
+use zeroize::Zeroize;
 
 pub trait DpeTypes {
     type Crypto<'a>: Crypto
@@ -32,7 +33,7 @@ pub struct DpeEnv<'a, T: DpeTypes + 'a> {
 }
 
 #[repr(C, align(4))]
-#[derive(AsBytes, FromBytes)]
+#[derive(AsBytes, FromBytes, Zeroize)]
 pub struct DpeInstance {
     pub contexts: [Context; MAX_HANDLES],
     pub(crate) support: Support,
