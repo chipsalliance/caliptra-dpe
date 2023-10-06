@@ -61,16 +61,14 @@ impl Support {
 #[cfg(test)]
 pub mod test {
     use super::*;
+    use crate::bitflags_join;
 
-    pub const SUPPORT: Support = Support::union(
-        Support::union(
-            Support::union(
-                Support::union(Support::SIMULATION, Support::AUTO_INIT),
-                Support::TAGGING,
-            ),
-            Support::ROTATE_CONTEXT,
-        ),
-        Support::X509,
+    pub const SUPPORT: Support = bitflags_join!(
+        Support::SIMULATION,
+        Support::AUTO_INIT,
+        Support::TAGGING,
+        Support::ROTATE_CONTEXT,
+        Support::X509
     );
 
     #[test]
