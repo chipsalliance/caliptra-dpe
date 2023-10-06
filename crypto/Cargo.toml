@@ -8,9 +8,6 @@ edition = "2021"
 [features]
 openssl = ["dep:openssl", "dep:hkdf", "dep:sha2"]
 deterministic_rand = ["dep:rand"]
-default = ["dpe_profile_p256_sha256"]
-dpe_profile_p256_sha256 = []
-dpe_profile_p384_sha384 = []
 
 [dependencies]
 arrayvec = { version = "0.7.4", default-features = false }
