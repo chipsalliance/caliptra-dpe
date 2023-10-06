@@ -186,8 +186,18 @@ impl Crypto for OpensslCrypto {
         algs: AlgLen,
         digest: &Digest,
     ) -> Result<super::EcdsaSig, CryptoError> {
-        let pem = include_bytes!(concat!(env!("OUT_DIR"), "/alias_priv.pem"));
-        let ec_priv: EcKey<Private> = EcKey::private_key_from_pem(pem).unwrap();
+        let ec_priv: EcKey<Private> = match algs {
+            AlgLen::Bit256 => EcKey::private_key_from_pem(include_bytes!(concat!(
+                env!("OUT_DIR"),
+                "/alias_priv_256.pem"
+            )))
+            .unwrap(),
+            AlgLen::Bit384 => EcKey::private_key_from_pem(include_bytes!(concat!(
+                env!("OUT_DIR"),
+                "/alias_priv_384.pem"
+            )))
+            .unwrap(),
+        };
 
         let sig = EcdsaSig::sign::<Private>(digest.bytes(), &ec_priv)
             .map_err(|_| CryptoError::CryptoLibError)?;
@@ -203,7 +213,7 @@ impl Crypto for OpensslCrypto {
         algs: AlgLen,
         digest: &Digest,
         priv_key: &Self::PrivKey,
-        _pub_key: EcdsaPub,
+        _pub_key: &EcdsaPub,
     ) -> Result<super::EcdsaSig, CryptoError> {
         let ec_priv_key = OpensslCrypto::ec_key_from_priv_key(algs, priv_key)
             .map_err(|_| CryptoError::CryptoLibError)?;

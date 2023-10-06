@@ -53,7 +53,7 @@ impl SignCmd {
 
         let sig = env
             .crypto
-            .ecdsa_sign_with_derived(algs, digest, &priv_key, pub_key)
+            .ecdsa_sign_with_derived(algs, digest, &priv_key, &pub_key)
             .map_err(|_| DpeErrorCode::CryptoError)?;
 
         Ok(sig)

@@ -183,7 +183,7 @@ pub trait Crypto {
         algs: AlgLen,
         digest: &Digest,
         priv_key: &Self::PrivKey,
-        pub_key: EcdsaPub,
+        pub_key: &EcdsaPub,
     ) -> Result<EcdsaSig, CryptoError>;
 
     /// Sign `digest` with a derived HMAC key from the CDI.
