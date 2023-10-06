@@ -84,3 +84,14 @@ pub const DPE_PROFILE: DpeProfile = DpeProfile::P256Sha256;
 
 #[cfg(feature = "dpe_profile_p384_sha384")]
 pub const DPE_PROFILE: DpeProfile = DpeProfile::P384Sha384;
+
+// Recursive macro that does a union of all the flags passed to it. This is
+// const and looks about as nice as using the | operator.
+#[macro_export]
+macro_rules! bitflags_join {
+    // If input is just one element, output it
+    ($x: expr) => ($x);
+    // In input is 1 or more comma separated things, take the first one, and call
+    // .union(bitflags_join!(remaining))
+    ($x: expr, $($z: expr),+) => ($x.union(bitflags_join!($($z),*)));
+}
