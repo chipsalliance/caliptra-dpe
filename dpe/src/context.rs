@@ -2,9 +2,10 @@
 use crate::{response::DpeErrorCode, tci::TciNodeData, U8Bool, MAX_HANDLES};
 use constant_time_eq::constant_time_eq;
 use zerocopy::{AsBytes, FromBytes};
+use zeroize::Zeroize;
 
 #[repr(C, align(4))]
-#[derive(AsBytes, FromBytes, Copy, Clone, PartialEq, Eq)]
+#[derive(AsBytes, FromBytes, Copy, Clone, PartialEq, Eq, Zeroize)]
 pub struct Context {
     pub handle: ContextHandle,
     pub tci: TciNodeData,
@@ -129,7 +130,7 @@ impl Context {
 }
 
 #[repr(C)]
-#[derive(Debug, PartialEq, Eq, Clone, Copy, zerocopy::AsBytes, zerocopy::FromBytes)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, zerocopy::AsBytes, zerocopy::FromBytes, Zeroize)]
 pub struct ContextHandle(pub [u8; ContextHandle::SIZE]);
 
 impl ContextHandle {
@@ -147,7 +148,7 @@ impl ContextHandle {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, AsBytes, FromBytes, Copy, Clone)]
+#[derive(Debug, PartialEq, Eq, AsBytes, FromBytes, Copy, Clone, Zeroize)]
 #[repr(u8, align(1))]
 #[rustfmt::skip]
 pub enum ContextState {
@@ -179,7 +180,7 @@ pub enum ContextState {
     _F0, _F1, _F2, _F3, _F4, _F5, _F6, _F7, _F8, _F9, _Fa, _Fb, _Fc, _Fd, _Fe, _Ff,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy, AsBytes, FromBytes)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, AsBytes, FromBytes, Zeroize)]
 #[repr(u8, align(1))]
 #[rustfmt::skip]
 pub enum ContextType {
