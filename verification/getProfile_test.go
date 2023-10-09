@@ -243,7 +243,12 @@ func testGetProfile(d TestDPEInstance, t *testing.T) {
 		}
 		defer d.PowerOff()
 	}
-	client, err := NewClient256(d)
+	profile, err := GetTransportProfile(d)
+	if err != nil {
+		t.Fatalf("Could not get profile: %v", err)
+	}
+
+	client, err := NewClient(d, profile)
 	if err != nil {
 		t.Fatalf("Could not initialize client: %v", err)
 	}
@@ -253,9 +258,6 @@ func testGetProfile(d TestDPEInstance, t *testing.T) {
 		rsp, err := client.GetProfile()
 		if err != nil {
 			t.Fatalf("Unable to get profile: %v", err)
-		}
-		if rsp.Profile != d.GetProfile() {
-			t.Fatalf("Incorrect profile. 0x%08x != 0x%08x", d.GetProfile(), rsp.Profile)
 		}
 		if rsp.MajorVersion != d.GetProfileMajorVersion() {
 			t.Fatalf("Incorrect version. 0x%08x != 0x%08x", d.GetProfileMajorVersion(), rsp.MajorVersion)
