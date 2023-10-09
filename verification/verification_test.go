@@ -130,7 +130,6 @@ func GetEmulatorTarget(support_needed []string) (TestDPEInstance, error) {
 			return nil, errors.New("Error in creating dpe instances - supported feature is not enabled in emulator")
 		}
 	}
-	instance.SetSupport(support)
 	return instance, nil
 }
 
