@@ -132,12 +132,6 @@ func (s *DpeEmulator) SendCmd(buf []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	var i int
-	for i = 0; i < len(buf); i++ {
-		fmt.Print(buf[i])
-		fmt.Print(",")
-	}
-
 	// Prepend the command with the locality.
 	prepended := bytes.NewBuffer(make([]byte, 0, 4+len(buf)))
 	if err := binary.Write(prepended, binary.LittleEndian, s.currentLocality); err != nil {
