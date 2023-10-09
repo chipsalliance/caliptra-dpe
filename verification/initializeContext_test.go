@@ -55,25 +55,30 @@ func testInitContext(d TestDPEInstance, t *testing.T) {
 		defer d.PowerOff()
 	}
 
-	client, err := NewClient256(d)
+	profile, err := GetTransportProfile(d)
+	if err != nil {
+		t.Fatalf("Could not get profile: %v", err)
+	}
+
+	client, err := NewClient(d, profile)
 	if err != nil {
 		t.Fatalf("Could not initialize client: %v", err)
 	}
 
 	// Try to create the default context if isn't done automatically.
 	if !d.GetSupport().AutoInit {
-		initCtxResp, err := client.InitializeContext(NewInitCtxIsDefault())
+		handle, err := client.InitializeContext(InitIsDefault)
 		if err != nil {
 			t.Fatalf("Failed to initialize default context: %v", err)
 		}
-		if initCtxResp.Handle != [16]byte{0} {
+		if *handle != ContextHandle([16]byte{0}) {
 			t.Fatal("Incorrect default context handle.")
 		}
-		defer client.DestroyContext(NewDestroyCtx(initCtxResp.Handle, false))
+		defer client.DestroyContext(handle, DestroyDescendants)
 	}
 
 	// Try to initialize another default context.
-	_, err = client.InitializeContext(NewInitCtxIsDefault())
+	_, err = client.InitializeContext(InitIsDefault)
 	if err == nil {
 		t.Fatal("The instance should return an error when trying to initialize another default context.")
 	} else if !errors.Is(err, StatusArgumentNotSupported) {
@@ -81,7 +86,7 @@ func testInitContext(d TestDPEInstance, t *testing.T) {
 	}
 
 	// Try to initialize a context that is neither default or simulation.
-	_, err = client.InitializeContext(&InitCtxCmd{})
+	_, err = client.InitializeContext(InitCtxFlags(0))
 	if err == nil {
 		t.Fatal("The instance should return an error when not default or simulation.")
 	} else if !errors.Is(err, StatusInvalidArgument) {
@@ -90,7 +95,7 @@ func testInitContext(d TestDPEInstance, t *testing.T) {
 
 	if !d.GetSupport().Simulation {
 		// Try to initialize a simulation context when they aren't supported.
-		_, err = client.InitializeContext(NewInitCtxIsSimulation())
+		_, err = client.InitializeContext(InitIsSimulation)
 		if err == nil {
 			t.Fatal("The instance should return an error when trying to initialize another default context.")
 		} else if !errors.Is(err, StatusArgumentNotSupported) {
@@ -105,19 +110,19 @@ func testInitContext(d TestDPEInstance, t *testing.T) {
 		// Try to get the correct error for overflowing the contexts. Fill up the
 		// rest of the contexts (-1 for default).
 		for i := uint32(0); i < getProfileRsp.MaxTciNodes-1; i++ {
-			initCtxResp, err := client.InitializeContext(NewInitCtxIsSimulation())
+			handle, err := client.InitializeContext(InitIsSimulation)
 			if err != nil {
 				t.Fatal("The instance should be able to create a simulation context.")
 			}
 			// Could prove difficult to prove it is a cryptographically secure random.
-			if initCtxResp.Handle == [16]byte{0} {
+			if *handle == ContextHandle([16]byte{0}) {
 				t.Fatal("Incorrect simulation context handle.")
 			}
-			defer client.DestroyContext(NewDestroyCtx(initCtxResp.Handle, false))
+			defer client.DestroyContext(handle, DestroyDescendants)
 		}
 
 		// Now try to make one more than the max.
-		_, err = client.InitializeContext(NewInitCtxIsSimulation())
+		_, err = client.InitializeContext(InitIsSimulation)
 		if err == nil {
 			t.Fatal("Failed to report an error for too many contexts.")
 		} else if !errors.Is(err, StatusMaxTCIs) {

@@ -22,13 +22,6 @@ import (
 	"golang.org/x/exp/slices"
 )
 
-const (
-	// RESERVED_0 CertifyKeyFlag = 31
-	AddIsCA CertifyKeyFlags = 30
-	// RESERVED_1 CertifyKeyFlag     = 29:0   for future use
-
-)
-
 // This file is used to test the certify key command.
 var (
 	OidExtensionAuthorityKeyIdentifier = asn1.ObjectIdentifier{2, 5, 29, 35}
@@ -370,7 +363,7 @@ func checkCertifyKeyBasicConstraints(t *testing.T, c *x509.Certificate, flags ui
 	flagsBuf := &bytes.Buffer{}
 	binary.Write(flagsBuf, binary.LittleEndian, flags)
 
-	flagIsCA := extractFlagBit(int(AddIsCA), uint32(flags))
+	flagIsCA := uint32(CertifyAddIsCA)&flags != 0
 	t.Logf("[LOG]: Flags value %d", flags)
 	t.Logf("[LOG]: Flags bit string %s", strconv.FormatInt(int64(flags), 2))
 	if flagIsCA == c.IsCA {
@@ -477,66 +470,77 @@ func testCertifyKey(d TestDPEInstance, t *testing.T, use_simulation bool) {
 		}
 		defer d.PowerOff()
 	}
-	client, err := NewClient256(d)
+
+	profile, err := GetTransportProfile(d)
+	if err != nil {
+		t.Fatalf("Could not get profile: %v", err)
+	}
+
+	client, err := NewClient(d, profile)
 	if err != nil {
 		t.Fatalf("[FATAL]: Could not initialize client: %v", err)
 	}
 
 	var ctx ContextHandle
-	var initCtxResp *InitCtxResp
 	if use_simulation {
 		if d.GetSupport().Simulation {
-			initCtxResp, err := client.InitializeContext(NewInitCtxIsSimulation())
+			handle, err := client.InitializeContext(InitIsSimulation)
 			if err != nil {
 				t.Fatal("The instance should be able to create a simulation context.")
 			}
 			// Could prove difficult to prove it is a cryptographically secure random.
-			if initCtxResp.Handle == [16]byte{0} {
+			if *handle == ContextHandle([16]byte{0}) {
 				t.Fatal("Incorrect simulation context handle.")
 			}
 
-			defer client.DestroyContext(NewDestroyCtx(initCtxResp.Handle, false))
+			defer client.DestroyContext(handle, 0)
 		} else {
 			t.Errorf("[ERROR]:  DPE instance doesn't support simulation contexts.")
 		}
-	}
-	if initCtxResp == nil {
+	} else {
 		//default context
 		ctx = [16]byte{0}
-	} else {
-		ctx = initCtxResp.Handle
 	}
 
-	certifyKeyReq := []CertifyKeyReq[SHA256Digest]{
-		{
-			ContextHandle: ctx,
-			Flags:         0,
-			Label:         [32]byte{},
-			Format:        CertifyKeyX509,
-		},
-		{
-			ContextHandle: ctx,
-			Flags:         1 << AddIsCA, // Setting the 30th bit counted from 0 returns CA cert : 01000000 00000000 00000000 00000000
-			Label:         [32]byte{143, 67, 67, 70, 100, 143, 107, 150, 223, 137, 221, 169, 1, 197, 23, 107, 16, 166, 216, 57, 97, 221, 60, 26, 200, 139, 89, 178, 220, 50, 122, 164},
-			Format:        CertifyKeyX509,
-		},
+	type Params struct {
+		Label []byte
+		Flags CertifyKeyFlags
 	}
 
-	for _, r := range certifyKeyReq {
+	var digestLen int
+	switch profile {
+	case ProfileP256SHA256:
+		digestLen = 32
+	case ProfileP384SHA384:
+		digestLen = 48
+	default:
+		t.Fatalf("Invalid profile %d", profile)
+	}
+
+	seqLabel := make([]byte, digestLen)
+	for i, _ := range seqLabel {
+		seqLabel[i] = byte(i)
+	}
+
+	certifyKeyParams := []Params{
+		Params{Label: make([]byte, digestLen), Flags: CertifyKeyFlags(0)},
+		Params{Label: seqLabel, Flags: CertifyKeyFlags(0)},
+	}
+
+	for _, params := range certifyKeyParams {
 		// Get DPE leaf certificate from CertifyKey
-		certifyKeyResp, err := client.CertifyKey(&r)
+		certifyKeyResp, err := client.CertifyKey(&ctx, params.Label, CertifyKeyX509, params.Flags)
 		if err != nil {
 			t.Fatalf("[FATAL]: Could not certify key: %v", err)
 		}
 
 		// Get root and intermediate certificates to validate certificate chain of leaf cert
-		getCertificateChainResp, err := client.GetCertificateChain()
+		certChainBytes, err := client.GetCertificateChain()
 		if err != nil {
 			t.Fatalf("[FATAL]: Could not get Certificate Chain: %v", err)
 		}
 
 		leafCertBytes := certifyKeyResp.Certificate
-		certChainBytes := getCertificateChainResp.CertificateChain
 
 		// Run X.509 linter on full certificate chain and file issues for errors
 		leafCert := checkCertificateStructure(t, leafCertBytes)
@@ -546,7 +550,7 @@ func testCertifyKey(d TestDPEInstance, t *testing.T, use_simulation bool) {
 		t.Logf("[LOG]: Certificate chain is DER encoded")
 
 		// Validate that all X.509 fields conform with the format defined in the DPE iRoT profile
-		validateCertifyKeyCert(t, leafCert, uint32(r.Flags), r.Label[:])
+		validateCertifyKeyCert(t, leafCert, uint32(params.Flags), params.Label)
 
 		// Ensure full certificate chain has valid signatures
 		// This also checks certificate lifetime, signatures as part of cert chain validation

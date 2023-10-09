@@ -5,6 +5,7 @@ package verification
 import (
 	"errors"
 	"log"
+	"reflect"
 	"testing"
 )
 
@@ -35,55 +36,60 @@ func testtagTCI(d TestDPEInstance, t *testing.T) {
 		defer d.PowerOff()
 	}
 
-	client, err := NewClient256(d)
+	profile, err := GetTransportProfile(d)
+	if err != nil {
+		t.Fatalf("Could not get profile: %v", err)
+	}
+
+	client, err := NewClient(d, profile)
 	if err != nil {
 		t.Fatalf("Could not initialize client: %v", err)
 	}
 
 	// Try to create the default context if isn't done automatically.
 	if !d.GetSupport().AutoInit {
-		initCtxResp, err := client.InitializeContext(NewInitCtxIsDefault())
+		handle, err := client.InitializeContext(InitIsDefault)
 		if err != nil {
 			t.Fatalf("Failed to initialize default context: %v", err)
 		}
-		defer client.DestroyContext(NewDestroyCtx(initCtxResp.Handle, false))
+		defer client.DestroyContext(handle, DestroyDescendants)
 	}
 
 	tag := TCITag(12345)
 	// Check to see our tag is not yet found.
-	if _, err := client.GetTaggedTCI(&GetTaggedTCIReq{Tag: tag}); !errors.Is(err, StatusBadTag) {
+	if _, err := client.GetTaggedTCI(tag); !errors.Is(err, StatusBadTag) {
 		t.Fatalf("GetTaggedTCI returned %v, want %v", err, StatusBadTag)
 	}
 
 	// Tag the default context
 	var ctx ContextHandle
 
-	tagResp, err := client.TagTCI(&TagTCIReq{ContextHandle: ctx, Tag: tag})
+	handle, err := client.TagTCI(&ctx, tag)
 	if err != nil {
 		t.Fatalf("Could not tag TCI: %v", err)
 	}
 
-	if tagResp.NewContextHandle != ctx {
-		t.Errorf("New context handle from TagTCI was %x, expected %x", tagResp.NewContextHandle, ctx)
+	if *handle != ctx {
+		t.Errorf("New context handle from TagTCI was %x, expected %x", handle, ctx)
 	}
 
-	getResp, err := client.GetTaggedTCI(&GetTaggedTCIReq{Tag: tag})
+	taggedTCI, err := client.GetTaggedTCI(tag)
 	if err != nil {
 		t.Fatalf("Could not get tagged TCI: %v", err)
 	}
 
-	var wantCumulativeTCI SHA256Digest
-	if getResp.CumulativeTCI != wantCumulativeTCI {
-		t.Errorf("GetTaggedTCI returned cumulative TCI %x, expected %x", getResp.CumulativeTCI, wantCumulativeTCI)
+	wantCumulativeTCI := make([]byte, 32)
+	if !reflect.DeepEqual(taggedTCI.CumulativeTCI, wantCumulativeTCI) {
+		t.Errorf("GetTaggedTCI returned cumulative TCI %x, expected %x", taggedTCI.CumulativeTCI, wantCumulativeTCI)
 	}
 
-	var wantCurrentTCI SHA256Digest
-	if getResp.CurrentTCI != wantCurrentTCI {
-		t.Errorf("GetTaggedTCI returned current TCI %x, expected %x", getResp.CurrentTCI, wantCurrentTCI)
+	wantCurrentTCI := make([]byte, 32)
+	if !reflect.DeepEqual(taggedTCI.CurrentTCI, wantCurrentTCI) {
+		t.Errorf("GetTaggedTCI returned current TCI %x, expected %x", taggedTCI.CurrentTCI, wantCurrentTCI)
 	}
 
 	// Make sure some other tag is still not found.
-	if _, err := client.GetTaggedTCI(&GetTaggedTCIReq{Tag: TCITag(98765)}); !errors.Is(err, StatusBadTag) {
+	if _, err := client.GetTaggedTCI(TCITag(98765)); !errors.Is(err, StatusBadTag) {
 		t.Fatalf("GetTaggedTCI returned %v, want %v", err, StatusBadTag)
 	}
 

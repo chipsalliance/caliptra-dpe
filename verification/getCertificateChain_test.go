@@ -37,17 +37,22 @@ func testGetCertificateChain(d TestDPEInstance, t *testing.T) {
 		}
 		defer d.PowerOff()
 	}
-	client, err := NewClient256(d)
+	profile, err := GetTransportProfile(d)
+	if err != nil {
+		t.Fatalf("Could not get profile: %v", err)
+	}
+
+	client, err := NewClient(d, profile)
 	if err != nil {
 		t.Fatalf("[FATAL]: Could not initialize client: %v", err)
 	}
 
-	getCertificateChainResp, err := client.GetCertificateChain()
+	certChain, err := client.GetCertificateChain()
 	if err != nil {
 		t.Fatalf("[FATAL]: Could not get Certificate Chain: %v", err)
 	}
 
-	checkCertificateChain(t, getCertificateChainResp.CertificateChain)
+	checkCertificateChain(t, certChain)
 }
 
 func checkCertificateChain(t *testing.T, certData []byte) []*x509.Certificate {
