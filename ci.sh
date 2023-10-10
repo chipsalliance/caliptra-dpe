@@ -3,15 +3,78 @@
 #!/bin/sh
 set -ex
 
-( cd dpe
-  cargo build
-  cargo build --no-default-features --features=dpe_profile_p384_sha384
-  cargo build --release
-  cargo test
-  cargo test --no-default-features --features=dpe_profile_p384_sha384
-  cargo fmt -- --check
-  cargo clippy -- --deny=warnings
-)
+# TODO: Support building the simulator for different profiles
+function build_rust_targets() {
+  profile=$1
+
+  cargo build --release --manifest-path crypto/Cargo.toml --features=$profile --no-default-features
+  cargo build --release --manifest-path platform/Cargo.toml --features=$profile --no-default-features
+  cargo build --release --manifest-path dpe/Cargo.toml --features=$profile --no-default-features
+  cargo build --release --manifest-path simulator/Cargo.toml #--features=$profile --no-default-features
+  cargo build --release --manifest-path tools/Cargo.toml --features=$profile --no-default-features
+
+  cargo build --manifest-path crypto/Cargo.toml --features=$profile --no-default-features
+  cargo build --manifest-path platform/Cargo.toml --features=$profile --no-default-features
+  cargo build --manifest-path dpe/Cargo.toml --features=$profile --no-default-features
+  cargo build --manifest-path simulator/Cargo.toml #--features=$profile
+  cargo build --manifest-path tools/Cargo.toml --features=$profile --no-default-features
+
+  cargo clippy --manifest-path crypto/Cargo.toml --features=$profile --no-default-features -- --deny=warnings
+  cargo clippy --manifest-path platform/Cargo.toml --features=$profile --no-default-features -- --deny=warnings
+  cargo clippy --manifest-path dpe/Cargo.toml --features=$profile --no-default-features -- --deny=warnings
+  cargo clippy --manifest-path simulator/Cargo.toml -- --deny=warnings #--features=$profile --no-default-features
+  cargo clippy --manifest-path tools/Cargo.toml --features=$profile --no-default-features -- --deny=warnings
+}
+
+function format_rust_targets() {
+  cargo fmt --manifest-path crypto/Cargo.toml
+  cargo fmt --manifest-path platform/Cargo.toml
+  cargo fmt --manifest-path dpe/Cargo.toml
+  cargo fmt --manifest-path simulator/Cargo.toml
+  cargo fmt --manifest-path tools/Cargo.toml
+}
+
+function format_go_targets() {
+  ( cd verification
+    test -z "$(gofmt -l .)"
+  )
+}
+
+# TODO: Support building the simulator for different profiles
+function test_rust_targets() {
+  profile=$1
+
+  cargo test --manifest-path platform/Cargo.toml --features=$profile --no-default-features
+  cargo test --manifest-path crypto/Cargo.toml --features=$profile --no-default-features
+  cargo test --manifest-path dpe/Cargo.toml --features=$profile --no-default-features
+  cargo test --manifest-path simulator/Cargo.toml #--features=$profile --no-default-features
+}
+
+# TODO: Support building the simulator for different profiles
+function run_verification_tests() {
+  profile=$1
+
+  cargo build --manifest-path simulator/Cargo.toml #--features=$profile --no-default-features
+
+  ( cd verification
+    go test
+  )
+}
+
+format_rust_targets
+format_go_targets
+
+# Run tests for P256 profile
+build_rust_targets dpe_profile_p256_sha256
+test_rust_targets dpe_profile_p256_sha256
+run_verification_tests dpe_profile_p256_sha256
+
+# Run tests for P384 profile
+build_rust_targets dpe_profile_p384_sha384
+test_rust_targets dpe_profile_p384_sha384
+run_verification_tests dpe_profile_p384_sha384
+
+# Build fuzz target
 ( cd dpe/fuzz
   rustup toolchain install nightly-2023-04-15
   cargo +nightly-2023-04-15 install cargo-fuzz cargo-afl
@@ -21,42 +84,6 @@ set -ex
   cargo +nightly-2023-04-15 fuzz build --features libfuzzer-sys
   cargo +nightly-2023-04-15 afl build --features afl
 )
-( cd simulator
-  cargo build
-  cargo build --release
-  cargo test
-  cargo fmt -- --check
-  cargo clippy -- --deny=warnings
-)
-( cd crypto
-  cargo build
-  cargo build --features=openssl
-  cargo build --features=deterministic_rand
-  cargo build --no-default-features --features=dpe_profile_p384_sha384
-  cargo build --release
-  cargo test
-  cargo test --no-default-features --features=dpe_profile_p384_sha384
-  cargo fmt -- --check
-  cargo clippy -- --deny=warnings
-)
-( cd platform
-  cargo build
-  cargo build --features=openssl
-  cargo build --no-default-features --features=dpe_profile_p384_sha384
-  cargo build --release
-  cargo test
-  cargo test --no-default-features --features=dpe_profile_p384_sha384
-  cargo fmt -- --check
-  cargo clippy -- --deny=warnings
-)
-( cd verification
-  test -z "$(gofmt -l .)"
-  go test
-)
-(
-  cd tools
-  cargo build
-  cargo fmt -- --check
-  cargo clippy -- --deny=warnings
-)
+
+# Fix license headers
 ci-tools/file-header-fix.sh --check
