@@ -12,10 +12,10 @@ pub const VENDOR_SKU: u32 = 0;
 
 // Run ./generate.sh to generate all test certs and test private keys
 #[cfg(feature = "dpe_profile_p256_sha256")]
-pub const TEST_CERT_CHAIN: &[u8; 642] = include_bytes!("test_data/cert_256.der");
+pub const TEST_CERT_CHAIN: &[u8] = include_bytes!("test_data/cert_256.der");
 
 #[cfg(feature = "dpe_profile_p384_sha384")]
-pub const TEST_CERT_CHAIN: &[u8; 703] = include_bytes!("test_data/cert_384.der");
+pub const TEST_CERT_CHAIN: &[u8] = include_bytes!("test_data/cert_384.der");
 
 impl Platform for DefaultPlatform {
     fn get_certificate_chain(

@@ -91,9 +91,8 @@ func checkCertificateChain(t *testing.T, certData []byte) []*x509.Certificate {
 				details = fmt.Sprintf("%s. ", details)
 			}
 			l := registry.ByName(id)
-			// TODO(https://github.com/chipsalliance/caliptra-dpe/issues/74):
-			// Fail the test with Errorf here once we expect it to pass.
-			t.Logf("[LINT %s] %s: %s%s (%s)", level, l.Source, details, l.Description, l.Citation)
+
+			t.Errorf("[LINT %s] %s: %s%s (%s)", level, l.Source, details, l.Description, l.Citation)
 			failed = true
 		}
 
