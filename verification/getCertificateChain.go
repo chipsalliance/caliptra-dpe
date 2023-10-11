@@ -68,7 +68,14 @@ func checkCertificateChain(t *testing.T, certData []byte) []*x509.Certificate {
 			lint.RFC5480,
 			lint.RFC5891,
 			lint.RFC8813,
-		}})
+		},
+		ExcludeNames: []string{
+			// It is fine for cert chains to always use GeneralizedTime, UTCTime is
+			// strictly worse and mixing the two formats does not lend itself well
+			// to fixed-sized X.509 templating.
+			"e_wrong_time_format_pre2050",
+		},
+	})
 	if err != nil {
 		t.Fatalf("[FATAL]: Could not set up zlint registry: %v", err)
 	}
