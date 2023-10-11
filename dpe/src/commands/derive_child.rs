@@ -64,27 +64,91 @@ impl DeriveChildCmd {
         self.flags.contains(DeriveChildFlags::INPUT_ALLOW_X509)
     }
 
-    /// Check if this will result in two default contexts in the same locality.
+    /// Whether it is okay to make a default context.
     ///
-    /// There can only be one default context in each locality at any given time. A default context
-    /// has a specific handle. If there are multiple, the DPE instance will not be able to
-    /// differentiate between them.
+    /// When a default context is in a locality, it MUST be the only context in the locality. This
+    /// checks that the operation will result in the locality will only have the newly created
+    /// default context and no others.
     ///
     /// # Arguments
     ///
     /// * `parent_idx` - Index of the soon-to-be parent.
-    /// * `default_context_idx` - Index of the current default context, if there is one.
+    /// * `default_context_idx` - Index of the target locality's default context, if there is one.
+    /// * `num_contexts_in_locality` - Number of contexts already in the locality.
     fn safe_to_make_default(
         &self,
         parent_idx: usize,
-        default_context_idx: Result<usize, DpeErrorCode>,
+        default_context_idx: Option<usize>,
+        num_contexts_in_locality: usize,
     ) -> bool {
-        if let Ok(default_idx) = default_context_idx {
-            if default_idx != parent_idx || self.retains_parent() {
-                return false;
+        match (num_contexts_in_locality, default_context_idx) {
+            // No other contexts in the locality.
+            (0, None) => true,
+            // There is only one context, but that context is the parent.
+            (1, Some(default_idx)) if default_idx == parent_idx => {
+                // It is okay if the parent is about to be retired. The Child can be the default
+                // because the parent is the only other context in the locality and it is about to
+                // be retired.
+                !self.retains_parent()
             }
+            // In all other scenarios, there will be a combination of default and non-default
+            // contexts
+            _ => false,
         }
-        true
+    }
+
+    /// Whether it is okay to make a NON-default context.
+    ///
+    /// There can never be a mixture of default and non-default contexts within the same locality.
+    /// This checks to make sure the operation will not result in a mixture.
+    ///
+    /// # Arguments
+    ///
+    /// * `parent_idx` - Index of the soon-to-be parent.
+    /// * `default_context_idx` - Index of the target locality's default context, if there is one.
+    fn safe_to_make_non_default(
+        &self,
+        parent_idx: usize,
+        default_context_idx: Option<usize>,
+    ) -> bool {
+        match default_context_idx {
+            None => true,
+            // If the default context is the parent.
+            Some(default_idx) if default_idx == parent_idx => {
+                // It is okay if the parent is about to be retired.
+                !self.retains_parent()
+            }
+            _ => false,
+        }
+    }
+
+    /// Whether it is okay to create a child in the given environment.
+    ///
+    /// When a default context is in a locality, it MUST be the only context in the locality. There
+    /// can never be a mixture of default and non-default contexts within the same locality. This
+    /// checks that the operation will not violate either statement.
+    ///
+    /// # Arguments
+    ///
+    /// * `dpe` - DPE instance executing the command.
+    /// * `parent_idx` - Index of the soon-to-be parent.
+    /// * `target_locality` - Intended locality of the new child.
+    fn safe_to_make_child(
+        &self,
+        dpe: &mut DpeInstance,
+        parent_idx: usize,
+        target_locality: u32,
+    ) -> Result<bool, DpeErrorCode> {
+        let default_context_idx = dpe
+            .get_active_context_pos(&ContextHandle::default(), target_locality)
+            .ok();
+        let num_contexts_in_locality = dpe.count_active_contexts_in_locality(target_locality)?;
+
+        Ok(if self.makes_default() {
+            self.safe_to_make_default(parent_idx, default_context_idx, num_contexts_in_locality)
+        } else {
+            self.safe_to_make_non_default(parent_idx, default_context_idx)
+        })
     }
 }
 
@@ -124,14 +188,8 @@ impl CommandExecution for DeriveChildCmd {
             self.target_locality
         };
 
-        // Make sure it can be the default if it is supposed to be.
-        if self.makes_default() {
-            let default_context_idx =
-                dpe.get_active_context_pos(&ContextHandle::default(), target_locality);
-
-            if !self.safe_to_make_default(parent_idx, default_context_idx) {
-                return Err(DpeErrorCode::InvalidArgument);
-            }
+        if !self.safe_to_make_child(dpe, parent_idx, target_locality)? {
+            return Err(DpeErrorCode::InvalidArgument);
         }
 
         let child_handle = if self.makes_default() {
@@ -169,10 +227,6 @@ impl CommandExecution for DeriveChildCmd {
             tmp_parent_context.handle = ContextHandle([0xff; ContextHandle::SIZE]);
         } else if !tmp_parent_context.handle.is_default() {
             tmp_parent_context.handle = dpe.generate_new_handle(env)?;
-        } else if locality == target_locality {
-            // The default context cannot be retained because a locality cannot
-            // support the default context and random context handles at the same time.
-            return Err(DpeErrorCode::InvalidArgument);
         }
 
         // Add child to the parent's list of children.
@@ -572,24 +626,50 @@ mod tests {
         };
         let parent_idx = 0;
         // No default context.
-        assert!(
-            make_default_in_0.safe_to_make_default(parent_idx, Err(DpeErrorCode::InvalidHandle))
-        );
+        assert!(make_default_in_0.safe_to_make_default(parent_idx, None, 0));
         // Default context at parent, but not going to retain parent.
-        assert!(make_default_in_0.safe_to_make_default(parent_idx, Ok(parent_idx)));
+        assert!(make_default_in_0.safe_to_make_default(parent_idx, Some(parent_idx), 1));
         // Make default in a different locality that already has a default.
-        assert!(!make_default_in_0.safe_to_make_default(parent_idx, Ok(1)));
+        assert!(!make_default_in_0.safe_to_make_default(parent_idx, Some(1), 1));
+        // There is a non-default context already.
+        assert!(!make_default_in_0.safe_to_make_default(parent_idx, None, 1));
+        // Two non-default contexts.
+        assert!(!make_default_in_0.safe_to_make_default(parent_idx, None, 2));
+        // This should never be possible, but there is already a mixture of default and non-default
+        // contexts.
+        assert!(!make_default_in_0.safe_to_make_default(parent_idx, Some(parent_idx), 2));
+        // This should never be possible, but there is already a mixture of default and non-default
+        // contexts.
+        assert!(!make_default_in_0.safe_to_make_default(parent_idx, Some(1), 2));
+        // This should never be possible, but there no contexts but somehow the is a default context
+        assert!(!make_default_in_0.safe_to_make_default(parent_idx, Some(parent_idx), 0));
 
         make_default_in_0.flags |= DeriveChildFlags::RETAIN_PARENT;
 
         // Retain parent and make default in another locality that doesn't have a default.
-        assert!(
-            make_default_in_0.safe_to_make_default(parent_idx, Err(DpeErrorCode::InvalidHandle))
-        );
+        assert!(make_default_in_0.safe_to_make_default(parent_idx, None, 0));
         // Retain default parent and make default in another locality that has a default.
-        assert!(!make_default_in_0.safe_to_make_default(parent_idx, Ok(1)));
+        assert!(!make_default_in_0.safe_to_make_default(parent_idx, Some(1), 1));
         // Retain default parent.
-        assert!(!make_default_in_0.safe_to_make_default(parent_idx, Ok(parent_idx)));
+        assert!(!make_default_in_0.safe_to_make_default(parent_idx, Some(parent_idx), 1));
+    }
+
+    #[test]
+    fn test_safe_to_make_non_default() {
+        let non_default = DeriveChildCmd {
+            handle: ContextHandle::default(),
+            data: TciMeasurement::default().0,
+            flags: DeriveChildFlags(0),
+            tci_type: 0,
+            target_locality: 0,
+        };
+        let parent_idx = 0;
+        // No default context.
+        assert!(non_default.safe_to_make_non_default(parent_idx, None));
+        // Default context is parent.
+        assert!(non_default.safe_to_make_non_default(parent_idx, Some(parent_idx)));
+        // Default context is not parent.
+        assert!(!non_default.safe_to_make_non_default(parent_idx, Some(1)));
     }
 
     #[test]
@@ -607,6 +687,39 @@ mod tests {
                 flags: DeriveChildFlags::RETAIN_PARENT,
                 tci_type: 0,
                 target_locality: 0,
+            }
+            .execute(&mut dpe, &mut env, TEST_LOCALITIES[0]),
+            Err(DpeErrorCode::InvalidArgument)
+        );
+    }
+
+    #[test]
+    fn test_make_default_in_other_locality_that_has_non_default() {
+        let mut env = DpeEnv::<TestTypes> {
+            crypto: OpensslCrypto::new(),
+            platform: DefaultPlatform,
+        };
+        let mut dpe = DpeInstance::new(&mut env, Support::AUTO_INIT).unwrap();
+
+        DeriveChildCmd {
+            handle: ContextHandle::default(),
+            data: [0; DPE_PROFILE.get_tci_size()],
+            flags: DeriveChildFlags::RETAIN_PARENT
+                | DeriveChildFlags::MAKE_DEFAULT
+                | DeriveChildFlags::CHANGE_LOCALITY,
+            tci_type: 7,
+            target_locality: TEST_LOCALITIES[1],
+        }
+        .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
+        .unwrap();
+
+        assert_eq!(
+            DeriveChildCmd {
+                handle: ContextHandle::default(),
+                data: [0; DPE_PROFILE.get_tci_size()],
+                flags: DeriveChildFlags::RETAIN_PARENT | DeriveChildFlags::CHANGE_LOCALITY,
+                tci_type: 7,
+                target_locality: TEST_LOCALITIES[1],
             }
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0]),
             Err(DpeErrorCode::InvalidArgument)
