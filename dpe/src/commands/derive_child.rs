@@ -52,7 +52,7 @@ impl DeriveChildCmd {
         self.flags.contains(DeriveChildFlags::MAKE_DEFAULT)
     }
 
-    const fn changes_locality(&self) -> bool {
+    pub const fn changes_locality(&self) -> bool {
         self.flags.contains(DeriveChildFlags::CHANGE_LOCALITY)
     }
 
