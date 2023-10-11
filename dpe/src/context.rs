@@ -106,6 +106,7 @@ impl Context {
         self.state = ContextState::Inactive;
         self.uses_internal_input_info = false.into();
         self.uses_internal_input_dice = false.into();
+        self.parent_idx = 0xFF;
     }
 
     /// Return the list of children of the context with idx added.
@@ -116,16 +117,6 @@ impl Context {
         }
         let children_with_idx = self.children | 1 << idx;
         Ok(children_with_idx)
-    }
-
-    /// Return the list of children of the context with idx removed.
-    /// This function does not mutate DPE state.
-    pub fn remove_child(&mut self, idx: usize) -> Result<u32, DpeErrorCode> {
-        if idx >= MAX_HANDLES {
-            return Err(DpeErrorCode::InternalError);
-        }
-        let children_without_idx = self.children & !(1 << idx);
-        Ok(children_without_idx)
     }
 }
 

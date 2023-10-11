@@ -2,9 +2,8 @@
 use super::CommandExecution;
 use crate::{
     context::ContextHandle,
-    dpe_instance::{flags_iter, DpeEnv, DpeInstance, DpeTypes},
+    dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
     response::{DpeErrorCode, Response, ResponseHdr},
-    MAX_HANDLES,
 };
 
 #[repr(C)]
@@ -30,38 +29,11 @@ impl CommandExecution for DestroyCtxCmd {
 
         let to_destroy = (1 << idx) | dpe.get_descendants(context)?;
 
-        // contexts_to_destroy[i] == true implies dpe.contexts[i] must be destroyed
-        let mut contexts_to_destroy = [false; MAX_HANDLES];
-        // updated_children[i] holds i's non-destroyed children.
-        let mut updated_children = [0u32; MAX_HANDLES];
-        // This loop collects updates to DPE state so that updates to DPE are atomic
-        // and so that we don't need to copy every context.
-        for idx in flags_iter(to_destroy, MAX_HANDLES) {
-            if idx >= dpe.contexts.len() {
-                return Err(DpeErrorCode::InternalError);
-            }
-            contexts_to_destroy[idx] = true;
-            let parent = dpe.contexts[idx].parent_idx as usize;
-            // If parent is the root, we cannot update it's children.
-            if parent < MAX_HANDLES {
-                let children_without_idx = dpe.contexts[parent].remove_child(idx)?;
-                // Need to take intersection because multiple children of the same parent could be destroyed.
-                updated_children[parent] &= children_without_idx;
-            }
-        }
-
-        // At this point, we cannot error out anymore so it is safe to mutate DPE state
-        for (idx, context_to_destroy) in contexts_to_destroy
-            .iter()
-            .enumerate()
-            .take(contexts_to_destroy.len())
-        {
-            if *context_to_destroy {
-                dpe.contexts[idx].destroy();
-                let parent = dpe.contexts[idx].parent_idx as usize;
-                if parent < MAX_HANDLES {
-                    dpe.contexts[parent].children = updated_children[parent];
-                }
+        for (idx, c) in dpe.contexts.iter_mut().enumerate() {
+            // Clears all the to_destroy bits in the children of every context
+            c.children &= !to_destroy;
+            if to_destroy & (1 << idx) != 0 {
+                c.destroy();
             }
         }
 
@@ -219,6 +191,41 @@ mod tests {
         assert_eq!(dpe.contexts[1].children, 0);
         assert_eq!(dpe.contexts[2].children, 0);
         assert_eq!(dpe.contexts[3].children, 0);
+
+        activate_dummy_context(
+            &mut dpe,
+            0,
+            Context::ROOT_INDEX,
+            &ContextHandle::default(),
+            &[1, 2],
+        );
+        activate_dummy_context(
+            &mut dpe,
+            1,
+            0,
+            &ContextHandle([1; ContextHandle::SIZE]),
+            &[],
+        );
+        activate_dummy_context(
+            &mut dpe,
+            2,
+            0,
+            &ContextHandle([2; ContextHandle::SIZE]),
+            &[],
+        );
+        // destroy context[1]
+        assert_eq!(
+            Ok(Response::DestroyCtx(ResponseHdr::new(
+                DpeErrorCode::NoError,
+            ))),
+            DestroyCtxCmd {
+                handle: ContextHandle([1; ContextHandle::SIZE]),
+            }
+            .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
+        );
+        assert_eq!(dpe.contexts[1].state, ContextState::Inactive);
+        // check that context[2] is still a child of context[0]
+        assert_eq!(dpe.contexts[0].children, 1 << 2);
     }
 
     fn activate_dummy_context(
