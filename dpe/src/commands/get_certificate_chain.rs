@@ -3,7 +3,6 @@ use super::CommandExecution;
 use crate::{
     dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
     response::{DpeErrorCode, GetCertificateChainResp, Response, ResponseHdr},
-    MAX_CERT_SIZE,
 };
 use platform::{Platform, PlatformError, MAX_CHUNK_SIZE};
 
@@ -22,7 +21,7 @@ impl CommandExecution for GetCertificateChainCmd {
         _locality: u32,
     ) -> Result<Response, DpeErrorCode> {
         // Make sure the operation is supported.
-        if self.size > MAX_CERT_SIZE as u32 {
+        if self.size > MAX_CHUNK_SIZE as u32 {
             return Err(DpeErrorCode::InvalidArgument);
         }
 
@@ -56,7 +55,7 @@ mod tests {
 
     const TEST_GET_CERTIFICATE_CHAIN_CMD: GetCertificateChainCmd = GetCertificateChainCmd {
         offset: 0,
-        size: MAX_CERT_SIZE as u32,
+        size: MAX_CHUNK_SIZE as u32,
     };
 
     #[test]
@@ -72,7 +71,7 @@ mod tests {
     }
 
     #[test]
-    fn test_fails_if_size_greater_than_max_cert_size() {
+    fn test_fails_if_size_greater_than_max_chunk_size() {
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
@@ -82,7 +81,7 @@ mod tests {
         assert_eq!(
             Err(DpeErrorCode::InvalidArgument),
             GetCertificateChainCmd {
-                size: MAX_CERT_SIZE as u32 + 1,
+                size: MAX_CHUNK_SIZE as u32 + 1,
                 ..TEST_GET_CERTIFICATE_CHAIN_CMD
             }
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
