@@ -27,11 +27,11 @@ function build_rust_targets() {
 }
 
 function format_rust_targets() {
-  cargo fmt --manifest-path crypto/Cargo.toml
-  cargo fmt --manifest-path platform/Cargo.toml
-  cargo fmt --manifest-path dpe/Cargo.toml
-  cargo fmt --manifest-path simulator/Cargo.toml
-  cargo fmt --manifest-path tools/Cargo.toml
+  cargo fmt --manifest-path crypto/Cargo.toml --check
+  cargo fmt --manifest-path platform/Cargo.toml --check
+  cargo fmt --manifest-path dpe/Cargo.toml --check
+  cargo fmt --manifest-path simulator/Cargo.toml --check
+  cargo fmt --manifest-path tools/Cargo.toml --check
 }
 
 function format_go_targets() {
