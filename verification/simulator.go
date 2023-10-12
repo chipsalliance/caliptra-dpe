@@ -27,11 +27,14 @@ const (
 	DPE_SIMULATOR_VENDOR_SKU            uint32 = 0
 )
 
+var TargetExe *string
+
 type DpeSimulator struct {
 	exe_path        string
 	cmd             *exec.Cmd
 	supports        Support
 	currentLocality uint32
+	isInitialized   bool
 	Transport
 }
 
@@ -159,6 +162,14 @@ func (s *DpeSimulator) GetSupport() *Support {
 	return &s.supports
 }
 
+func (s *DpeSimulator) GetIsInitialized() bool {
+	return s.supports.AutoInit || s.isInitialized
+}
+
+func (s *DpeSimulator) SetIsInitialized(isInitialized bool) {
+	s.isInitialized = isInitialized
+}
+
 func (s *DpeSimulator) GetSupportedLocalities() []uint32 {
 	return []uint32{DPE_SIMULATOR_AUTO_INIT_LOCALITY, DPE_SIMULATOR_OTHER_LOCALITY}
 }
@@ -192,7 +203,7 @@ func (s *DpeSimulator) GetProfileVendorSku() uint32 {
 }
 
 // Get the simulator target
-func GetSimulatorTarget(support_needed []string, target_exe string) (TestDPEInstance, error) {
+func GetSimulatorTarget(support_needed []string, target_exe string) TestDPEInstance {
 
 	value := reflect.ValueOf(DpeSimulator{}.supports)
 	fields := reflect.Indirect(value)
@@ -207,5 +218,97 @@ func GetSimulatorTarget(support_needed []string, target_exe string) (TestDPEInst
 	}
 	support := fVal.Elem().Interface().(Support)
 	var instance TestDPEInstance = &DpeSimulator{exe_path: target_exe, supports: support}
-	return instance, nil
+	return instance
+}
+
+func GetSimulatorTargets() []TestTarget {
+	return []TestTarget{
+		{
+			"SupportNone",
+			getTestTarget([]string{}),
+			[]TestCase{GetProfileTestCase, InitializeContextTestCase},
+		},
+		{
+			"DefaultSupport",
+			getTestTarget([]string{"AutoInit", "Simulation", "X509", "IsCA", "Tagging"}),
+			AllTestCases,
+		},
+		{
+			"GetProfile_Simulation",
+			getTestTarget([]string{"Simulation"}),
+			[]TestCase{GetProfileTestCase},
+		},
+		{
+			"GetProfile_ExtendTCI",
+			getTestTarget([]string{"ExtendTci"}),
+			[]TestCase{GetProfileTestCase},
+		},
+		{
+			"GetProfile_AutoInit",
+			getTestTarget([]string{"AutoInit"}),
+			[]TestCase{GetProfileTestCase},
+		},
+		{
+			"GetProfile_Tagging",
+			getTestTarget([]string{"Tagging"}),
+			[]TestCase{GetProfileTestCase},
+		},
+		{
+			"GetProfile_RotateContext",
+			getTestTarget([]string{"RotateContext"}),
+			[]TestCase{GetProfileTestCase},
+		},
+		{
+			"GetProfile_X509",
+			getTestTarget([]string{"X509"}),
+			[]TestCase{GetProfileTestCase},
+		},
+		{
+			"GetProfile_CSR",
+			getTestTarget([]string{"Csr"}),
+			[]TestCase{GetProfileTestCase},
+		},
+		{
+			"GetProfile_Symmetric",
+			getTestTarget([]string{"IsSymmetric"}),
+			[]TestCase{GetProfileTestCase},
+		},
+		{
+			"GetProfile_InternalInfo",
+			getTestTarget([]string{"InternalInfo"}),
+			[]TestCase{GetProfileTestCase},
+		},
+		{
+			"GetProfile_InternalDice",
+			getTestTarget([]string{"InternalDice"}),
+			[]TestCase{GetProfileTestCase},
+		},
+		{
+			"GetProfile_IsCA",
+			getTestTarget([]string{"IsCA"}),
+			[]TestCase{GetProfileTestCase},
+		},
+		{
+			"GetProfile_Combo01",
+			getTestTarget([]string{"Simulation", "AutoInit", "RotateContext", "Csr", "InternalDice", "IsCA"}),
+			[]TestCase{GetProfileTestCase},
+		},
+		{
+			"GetProfile_Combo02",
+			getTestTarget([]string{"ExtendTci", "Tagging", "X509", "InternalInfo"}),
+			[]TestCase{GetProfileTestCase},
+		},
+		{
+			"GetProfile_All",
+			getTestTarget([]string{"Simulation", "ExtendTci", "AutoInit", "Tagging", "RotateContext", "X509", "Csr", "IsSymmetric", "InternalInfo", "InternalDice", "IsCA"}),
+			[]TestCase{GetProfileTestCase},
+		},
+	}
+}
+
+// Get the test target for simulator/emulator
+func getTestTarget(supportNeeded []string) TestDPEInstance {
+	instance := GetSimulatorTarget(supportNeeded, *TargetExe)
+	instance.SetLocality(DPE_SIMULATOR_AUTO_INIT_LOCALITY)
+	return instance
 }

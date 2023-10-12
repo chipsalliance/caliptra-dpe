@@ -8,26 +8,8 @@ import (
 
 // This file is used to test the get profile command.
 
-func TestGetProfile(d TestDPEInstance, t *testing.T) {
-	if d.HasPowerControl() {
-		err := d.PowerOn()
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer d.PowerOff()
-	}
-
+func TestGetProfile(d TestDPEInstance, client DPEClient, t *testing.T) {
 	const MIN_TCI_NODES uint32 = 8
-
-	profile, err := GetTransportProfile(d)
-	if err != nil {
-		t.Fatalf("Could not get profile: %v", err)
-	}
-
-	client, err := NewClient(d, profile)
-	if err != nil {
-		t.Fatalf("Could not initialize client: %v", err)
-	}
 
 	for _, locality := range d.GetSupportedLocalities() {
 		d.SetLocality(locality)

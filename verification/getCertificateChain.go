@@ -13,25 +13,7 @@ import (
 	"github.com/zmap/zlint/v3/lint"
 )
 
-func TestGetCertificateChain(d TestDPEInstance, t *testing.T) {
-	if d.HasPowerControl() {
-		err := d.PowerOn()
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer d.PowerOff()
-	}
-
-	profile, err := GetTransportProfile(d)
-	if err != nil {
-		t.Fatalf("Could not get profile: %v", err)
-	}
-
-	client, err := NewClient(d, profile)
-	if err != nil {
-		t.Fatalf("[FATAL]: Could not initialize client: %v", err)
-	}
-
+func TestGetCertificateChain(d TestDPEInstance, client DPEClient, t *testing.T) {
 	certChain, err := client.GetCertificateChain()
 	if err != nil {
 		t.Fatalf("[FATAL]: Could not get Certificate Chain: %v", err)

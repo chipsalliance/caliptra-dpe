@@ -35,6 +35,10 @@ type TestDPEInstance interface {
 	// it supports, but this function is used by tests to know how to test the DPE
 	// instance.
 	GetSupport() *Support
+	// Whether the default context has been initialized.
+	GetIsInitialized() bool
+	// Set whether the default context has been initialized.
+	SetIsInitialized(bool)
 	// Returns a slice of all the localities the instance supports.
 	GetSupportedLocalities() []uint32
 	// Sets the current locality.
