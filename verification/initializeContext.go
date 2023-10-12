@@ -4,47 +4,28 @@ package verification
 
 import (
 	"errors"
-	"log"
 	"testing"
 )
 
 // This file is used to test the initialize context command.
 
-func TestInitializeContext(d TestDPEInstance, t *testing.T) {
+func TestInitializeContext(d TestDPEInstance, c DPEClient, t *testing.T) {
 	for _, locality := range d.GetSupportedLocalities() {
 		d.SetLocality(locality)
-		testInitContext(d, t, false)
+		testInitContext(d, c, t, false)
 	}
 }
 
-func TestInitializeSimulation(d TestDPEInstance, t *testing.T) {
+func TestInitializeSimulation(d TestDPEInstance, c DPEClient, t *testing.T) {
 	for _, locality := range d.GetSupportedLocalities() {
 		d.SetLocality(locality)
-		testInitContext(d, t, true)
+		testInitContext(d, c, t, true)
 	}
 }
 
-func testInitContext(d TestDPEInstance, t *testing.T, simulation bool) {
-	if d.HasPowerControl() {
-		err := d.PowerOn()
-		if err != nil {
-			log.Fatal(err)
-		}
-		defer d.PowerOff()
-	}
-
-	profile, err := GetTransportProfile(d)
-	if err != nil {
-		t.Fatalf("Could not get profile: %v", err)
-	}
-
-	client, err := NewClient(d, profile)
-	if err != nil {
-		t.Fatalf("Could not initialize client: %v", err)
-	}
-
+func testInitContext(d TestDPEInstance, client DPEClient, t *testing.T, simulation bool) {
 	// Try to create the default context if isn't done automatically.
-	if !d.GetSupport().AutoInit {
+	if !d.GetIsInitialized() {
 		handle, err := client.InitializeContext(InitIsDefault)
 		if err != nil {
 			t.Fatalf("Failed to initialize default context: %v", err)
@@ -52,11 +33,11 @@ func testInitContext(d TestDPEInstance, t *testing.T, simulation bool) {
 		if *handle != ContextHandle([16]byte{0}) {
 			t.Fatal("Incorrect default context handle.")
 		}
-		defer client.DestroyContext(handle, DestroyDescendants)
+		d.SetIsInitialized(true)
 	}
 
 	// Try to initialize another default context.
-	_, err = client.InitializeContext(InitIsDefault)
+	_, err := client.InitializeContext(InitIsDefault)
 	if err == nil {
 		t.Fatal("The instance should return an error when trying to initialize another default context.")
 	} else if !errors.Is(err, StatusArgumentNotSupported) {

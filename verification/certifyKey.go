@@ -9,7 +9,6 @@ import (
 	"encoding/binary"
 	"encoding/pem"
 	"fmt"
-	"log"
 	"reflect"
 	"testing"
 	"time"
@@ -116,12 +115,12 @@ const (
 
 type TcgMultiTcbInfo = []DiceTcbInfo
 
-func TestCertifyKey(d TestDPEInstance, t *testing.T) {
-	testCertifyKey(d, t, false)
+func TestCertifyKey(d TestDPEInstance, c DPEClient, t *testing.T) {
+	testCertifyKey(d, c, t, false)
 }
 
-func TestCertifyKey_SimulationMode(d TestDPEInstance, t *testing.T) {
-	testCertifyKey(d, t, true)
+func TestCertifyKey_SimulationMode(d TestDPEInstance, c DPEClient, t *testing.T) {
+	testCertifyKey(d, c, t, true)
 }
 
 // Ignores critical extensions that are unknown to x509 package
@@ -432,25 +431,7 @@ func checkCertificateStructure(t *testing.T, certBytes []byte) *x509.Certificate
 	return x509Cert
 }
 
-func testCertifyKey(d TestDPEInstance, t *testing.T, use_simulation bool) {
-	if d.HasPowerControl() {
-		err := d.PowerOn()
-		if err != nil {
-			log.Fatal(err)
-		}
-		defer d.PowerOff()
-	}
-
-	profile, err := GetTransportProfile(d)
-	if err != nil {
-		t.Fatalf("Could not get profile: %v", err)
-	}
-
-	client, err := NewClient(d, profile)
-	if err != nil {
-		t.Fatalf("[FATAL]: Could not initialize client: %v", err)
-	}
-
+func testCertifyKey(d TestDPEInstance, client DPEClient, t *testing.T, use_simulation bool) {
 	var ctx ContextHandle
 	if use_simulation {
 		if d.GetSupport().Simulation {
@@ -477,15 +458,11 @@ func testCertifyKey(d TestDPEInstance, t *testing.T, use_simulation bool) {
 		Flags CertifyKeyFlags
 	}
 
-	var digestLen int
-	switch profile {
-	case ProfileP256SHA256:
-		digestLen = 32
-	case ProfileP384SHA384:
-		digestLen = 48
-	default:
-		t.Fatalf("Invalid profile %d", profile)
+	profile, err := GetTransportProfile(d)
+	if err != nil {
+		t.Fatalf("Could not get profile: %v", err)
 	}
+	digestLen := profile.GetDigestSize()
 
 	seqLabel := make([]byte, digestLen)
 	for i, _ := range seqLabel {

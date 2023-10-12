@@ -10,25 +10,7 @@ import (
 
 // This file is used to test the tagTCI command.
 
-func TestTagTCI(d TestDPEInstance, t *testing.T) {
-	if d.HasPowerControl() {
-		err := d.PowerOn()
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer d.PowerOff()
-	}
-
-	profile, err := GetTransportProfile(d)
-	if err != nil {
-		t.Fatalf("Could not get profile: %v", err)
-	}
-
-	client, err := NewClient(d, profile)
-	if err != nil {
-		t.Fatalf("Could not initialize client: %v", err)
-	}
-
+func TestTagTCI(d TestDPEInstance, client DPEClient, t *testing.T) {
 	// Try to create the default context if isn't done automatically.
 	if !d.GetSupport().AutoInit {
 		handle, err := client.InitializeContext(InitIsDefault)
