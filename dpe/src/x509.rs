@@ -47,6 +47,7 @@ pub struct MeasurementData<'a> {
     pub label: &'a [u8],
     pub tci_nodes: &'a [TciNodeData],
     pub is_ca: bool,
+    pub supports_extend_tci: bool,
 }
 
 pub struct X509CertWriter<'a> {
@@ -294,14 +295,22 @@ impl X509CertWriter<'_> {
     /// Get the size of a tcg-dice-TcbInfo structure. For DPE, this is only used
     /// as part of a MultiTcbInfo. For this reason, do not include the standard
     /// extension fields. Only include the size of the structure itself.
-    fn get_tcb_info_size(node: &TciNodeData, tagged: bool) -> Result<usize, DpeErrorCode> {
-        let size = Self::get_structure_size(
-            2 * Self::get_fwid_size(&node.tci_current.0, /*tagged=*/ true)?,
-            /*tagged=*/ true,
-        )? + (2 * Self::get_structure_size(
-            core::mem::size_of::<u32>(),
-            /*tagged=*/ true,
-        )?); // vendorInfo and type
+    fn get_tcb_info_size(
+        node: &TciNodeData,
+        supports_extend_tci: bool,
+        tagged: bool,
+    ) -> Result<usize, DpeErrorCode> {
+        let fwid0_size = Self::get_fwid_size(&node.tci_current.0, /*tagged=*/ true)?;
+        let fwid1_size = if supports_extend_tci {
+            Self::get_fwid_size(&node.tci_cumulative.0, /*tagged=*/ true)?
+        } else {
+            0
+        };
+        let fwids_size = Self::get_structure_size(fwid0_size + fwid1_size, /*tagged=*/ true)?;
+
+        let size = fwids_size
+            + (2 * Self::get_structure_size(core::mem::size_of::<u32>(), /*tagged=*/ true)?); // vendorInfo and type
+
         Self::get_structure_size(size, tagged)
     }
 
@@ -317,7 +326,11 @@ impl X509CertWriter<'_> {
 
         // Size of concatenated tcb infos
         let tcb_infos_size = measurements.tci_nodes.len()
-            * Self::get_tcb_info_size(&measurements.tci_nodes[0], /*tagged=*/ true)?;
+            * Self::get_tcb_info_size(
+                &measurements.tci_nodes[0],
+                measurements.supports_extend_tci,
+                /*tagged=*/ true,
+            )?;
 
         // Size of tcb infos including SEQUENCE OF tag/size
         let multi_tcb_info_size = Self::get_structure_size(tcb_infos_size, /*tagged=*/ true)?;
@@ -774,8 +787,13 @@ impl X509CertWriter<'_> {
     /// For constructed types (SEQUENCE, SEQUENCE OF, SET, SET OF) the 6th
     /// bit is also set. For example, "Implicit tag number 2" would be encoded
     /// with tag 0xA2 for constructed types.
-    fn encode_tcb_info(&mut self, node: &TciNodeData) -> Result<usize, DpeErrorCode> {
-        let tcb_info_size = Self::get_tcb_info_size(node, /*tagged=*/ false)?;
+    fn encode_tcb_info(
+        &mut self,
+        node: &TciNodeData,
+        supports_extend_tci: bool,
+    ) -> Result<usize, DpeErrorCode> {
+        let tcb_info_size =
+            Self::get_tcb_info_size(node, supports_extend_tci, /*tagged=*/ false)?;
         // TcbInfo sequence
         let mut bytes_written = self.encode_byte(Self::SEQUENCE_TAG)?;
         bytes_written += self.encode_size_field(tcb_info_size)?;
@@ -784,13 +802,20 @@ impl X509CertWriter<'_> {
         // IMPLICIT [6] Constructed
         let fwid_size = Self::get_fwid_size(&node.tci_current.0, /*tagged=*/ true)?;
         bytes_written += self.encode_byte(Self::CONTEXT_SPECIFIC | Self::CONSTRUCTED | 0x06)?;
-        bytes_written += self.encode_size_field(fwid_size * 2)?;
+        if supports_extend_tci {
+            bytes_written += self.encode_size_field(fwid_size * 2)?;
+        } else {
+            bytes_written += self.encode_size_field(fwid_size)?;
+        }
 
         // fwid[0] current measurement
         bytes_written += self.encode_fwid(&node.tci_current)?;
 
         // fwid[1] journey measurement
-        bytes_written += self.encode_fwid(&node.tci_cumulative)?;
+        // Omit fwid[1] from tcb_info if DPE_PROFILE does not support extend_tci
+        if supports_extend_tci {
+            bytes_written += self.encode_fwid(&node.tci_cumulative)?;
+        }
 
         // vendorInfo OCTET STRING
         // IMPLICIT[8] Primitive
@@ -829,8 +854,11 @@ impl X509CertWriter<'_> {
         bytes_written += self.encode_byte(crit)?;
 
         let tcb_infos_size = if !measurements.tci_nodes.is_empty() {
-            Self::get_tcb_info_size(&measurements.tci_nodes[0], /*tagged=*/ true)?
-                * measurements.tci_nodes.len()
+            Self::get_tcb_info_size(
+                &measurements.tci_nodes[0],
+                measurements.supports_extend_tci,
+                /*tagged=*/ true,
+            )? * measurements.tci_nodes.len()
         } else {
             0
         };
@@ -846,7 +874,7 @@ impl X509CertWriter<'_> {
 
         // Encode multiple tcg-dice-TcbInfos
         for node in measurements.tci_nodes {
-            bytes_written += self.encode_tcb_info(node)?;
+            bytes_written += self.encode_tcb_info(node, measurements.supports_extend_tci)?;
         }
 
         Ok(bytes_written)
@@ -1321,13 +1349,14 @@ mod tests {
 
         let mut cert = [0u8; 256];
         let mut w = X509CertWriter::new(&mut cert, true);
-        let bytes_written = w.encode_tcb_info(&node).unwrap();
+        let mut supports_extend_tci = true;
+        let mut bytes_written = w.encode_tcb_info(&node, supports_extend_tci).unwrap();
 
-        let parsed_tcb_info = asn1::parse_single::<TcbInfo>(&cert[..bytes_written]).unwrap();
+        let mut parsed_tcb_info = asn1::parse_single::<TcbInfo>(&cert[..bytes_written]).unwrap();
 
         assert_eq!(
             bytes_written,
-            X509CertWriter::get_tcb_info_size(&node, true).unwrap()
+            X509CertWriter::get_tcb_info_size(&node, supports_extend_tci, true).unwrap()
         );
 
         // FWIDs
@@ -1345,6 +1374,24 @@ mod tests {
             parsed_tcb_info.vendor_info.unwrap(),
             node.locality.to_be_bytes()
         );
+
+        // test tbs_info with supports_extend_tci = false
+        supports_extend_tci = false;
+        w = X509CertWriter::new(&mut cert, true);
+        bytes_written = w.encode_tcb_info(&node, supports_extend_tci).unwrap();
+
+        parsed_tcb_info = asn1::parse_single::<TcbInfo>(&cert[..bytes_written]).unwrap();
+
+        assert_eq!(
+            bytes_written,
+            X509CertWriter::get_tcb_info_size(&node, supports_extend_tci, true).unwrap()
+        );
+
+        // Check that only FWID[0] is present
+        let mut fwid_itr = parsed_tcb_info.fwids.unwrap();
+        let expected_current = fwid_itr.next().unwrap().digest;
+        assert!(fwid_itr.next().is_none());
+        assert_eq!(expected_current, node.tci_current.0);
     }
 
     fn get_key_usage(is_ca: bool) -> KeyUsage {
@@ -1399,6 +1446,7 @@ mod tests {
             label: &[0xCC; DPE_PROFILE.get_hash_size()],
             tci_nodes: &[node],
             is_ca: false,
+            supports_extend_tci: true,
         };
 
         let bytes_written = w
@@ -1457,7 +1505,8 @@ mod tests {
         let measurements = MeasurementData {
             label: &[0; DPE_PROFILE.get_hash_size()],
             tci_nodes: &[node],
-            is_ca: is_ca,
+            is_ca,
+            supports_extend_tci: true,
         };
 
         let mut tbs_writer = X509CertWriter::new(cert_buf, true);
