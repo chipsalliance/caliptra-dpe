@@ -437,20 +437,13 @@ impl DpeInstance {
         false
     }
 
-    pub fn count_active_contexts(&self) -> Result<usize, DpeErrorCode> {
-        Ok(self
-            .contexts
-            .iter()
-            .filter(|context| context.state == ContextState::Active)
-            .count())
-    }
-
-    pub fn count_active_contexts_in_locality(&self, locality: u32) -> Result<usize, DpeErrorCode> {
-        Ok(self
-            .contexts
-            .iter()
-            .filter(|context| context.state == ContextState::Active && context.locality == locality)
-            .count())
+    /// Count number of contexts satisfying some predicate
+    ///
+    /// # Arguments
+    ///
+    /// * `context_pred` - A predicate on a context used to determine contexts to count
+    pub fn count_contexts(&self, f: impl Fn(&Context) -> bool) -> Result<usize, DpeErrorCode> {
+        Ok(self.contexts.iter().filter(|context| f(context)).count())
     }
 }
 
