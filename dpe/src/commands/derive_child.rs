@@ -74,7 +74,7 @@ impl DeriveChildCmd {
     ///
     /// * `parent_idx` - Index of the soon-to-be parent.
     /// * `default_context_idx` - Index of the target locality's default context, if there is one.
-    /// * `num_contexts_in_locality` - Number of contexts already in the locality.
+    /// * `num_contexts_in_locality` - Number of active contexts already in the locality.
     fn safe_to_make_default(
         &self,
         parent_idx: usize,
@@ -142,7 +142,11 @@ impl DeriveChildCmd {
         let default_context_idx = dpe
             .get_active_context_pos(&ContextHandle::default(), target_locality)
             .ok();
-        let num_contexts_in_locality = dpe.count_active_contexts_in_locality(target_locality)?;
+
+        // count active contexts in target_locality
+        let num_contexts_in_locality = dpe.count_contexts(|c: &Context| {
+            c.state == ContextState::Active && c.locality == target_locality
+        })?;
 
         Ok(if self.makes_default() {
             self.safe_to_make_default(parent_idx, default_context_idx, num_contexts_in_locality)
