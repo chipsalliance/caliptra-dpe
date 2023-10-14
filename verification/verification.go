@@ -25,10 +25,10 @@ var InitializeContextSimulationTestCase = TestCase{
 	"InitializeContextSimulation", TestInitializeSimulation, []string{"Simulation"},
 }
 var CertifyKeyTestCase = TestCase{
-	"CertifyKey", TestCertifyKey, []string{"AutoInit", "X509", "IsCA"},
+	"CertifyKey", TestCertifyKey, []string{"AutoInit", "X509", "IsCA", "ExtendTci"},
 }
 var CertifyKeySimulationTestCase = TestCase{
-	"CertifyKeySimulation", TestCertifyKey_SimulationMode, []string{"AutoInit", "Simulation", "X509", "IsCA"},
+	"CertifyKeySimulation", TestCertifyKey_SimulationMode, []string{"AutoInit", "Simulation", "X509", "IsCA", "ExtendTci"},
 }
 var GetCertificateChainTestCase = TestCase{
 	"GetCertificateChain", TestGetCertificateChain, []string{"AutoInit", "X509"},

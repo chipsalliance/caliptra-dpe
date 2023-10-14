@@ -444,7 +444,7 @@ func testCertifyKey(d TestDPEInstance, client DPEClient, t *testing.T, use_simul
 				t.Fatal("Incorrect simulation context handle.")
 			}
 
-			defer client.DestroyContext(handle, 0)
+			defer client.DestroyContext(handle)
 		} else {
 			t.Errorf("[ERROR]:  DPE instance doesn't support simulation contexts.")
 		}
@@ -465,8 +465,16 @@ func testCertifyKey(d TestDPEInstance, client DPEClient, t *testing.T, use_simul
 	digestLen := profile.GetDigestSize()
 
 	seqLabel := make([]byte, digestLen)
+	seqData := make([]byte, digestLen)
 	for i, _ := range seqLabel {
 		seqLabel[i] = byte(i)
+		seqData[i] = byte(i)
+	}
+
+	// Extend tci to add measurement to root node
+	extendTciHandle, err := client.ExtendTci(&ctx, seqData)
+	if err != nil {
+		t.Fatalf("[FATAL]: Could not extend tci: %v", err)
 	}
 
 	certifyKeyParams := []Params{
@@ -476,7 +484,7 @@ func testCertifyKey(d TestDPEInstance, client DPEClient, t *testing.T, use_simul
 
 	for _, params := range certifyKeyParams {
 		// Get DPE leaf certificate from CertifyKey
-		certifyKeyResp, err := client.CertifyKey(&ctx, params.Label, CertifyKeyX509, params.Flags)
+		certifyKeyResp, err := client.CertifyKey(extendTciHandle, params.Label, CertifyKeyX509, params.Flags)
 		if err != nil {
 			t.Fatalf("[FATAL]: Could not certify key: %v", err)
 		}

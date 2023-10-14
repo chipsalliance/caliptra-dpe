@@ -254,6 +254,7 @@ mod tests {
     use super::*;
     use crate::{
         commands::{
+            extend_tci::ExtendTciCmd,
             rotate_context::{RotateCtxCmd, RotateCtxFlags},
             tests::{TEST_DIGEST, TEST_LABEL},
             CertifyKeyCmd, CertifyKeyFlags, Command, CommandHdr, InitCtxCmd, SignCmd, SignFlags,
@@ -461,7 +462,11 @@ mod tests {
         };
         let mut dpe = DpeInstance::new(
             &mut env,
-            Support::INTERNAL_INFO | Support::X509 | Support::AUTO_INIT | Support::ROTATE_CONTEXT,
+            Support::INTERNAL_INFO
+                | Support::X509
+                | Support::AUTO_INIT
+                | Support::ROTATE_CONTEXT
+                | Support::EXTEND_TCI,
         )
         .unwrap();
 
@@ -476,8 +481,20 @@ mod tests {
             Err(e) => Err(e).unwrap(),
         };
 
-        let parent_handle = match (DeriveChildCmd {
+        // extend tci for root node so it has measurements to be included in cert
+        let extend_tci_handle = match (ExtendTciCmd {
             handle,
+            data: TEST_DIGEST,
+        })
+        .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
+        {
+            Ok(Response::ExtendTci(resp)) => resp.handle,
+            Ok(_) => panic!("Invalid response type"),
+            Err(e) => Err(e).unwrap(),
+        };
+
+        let parent_handle = match (DeriveChildCmd {
+            handle: extend_tci_handle,
             data: [0; DPE_PROFILE.get_tci_size()],
             flags: DeriveChildFlags::RETAIN_PARENT,
             tci_type: 0,

@@ -12,8 +12,8 @@ use crate::{
 #[derive(Debug, PartialEq, Eq, zerocopy::FromBytes)]
 #[cfg_attr(test, derive(zerocopy::AsBytes))]
 pub struct ExtendTciCmd {
-    handle: ContextHandle,
-    data: [u8; DPE_PROFILE.get_hash_size()],
+    pub handle: ContextHandle,
+    pub data: [u8; DPE_PROFILE.get_hash_size()],
 }
 
 impl CommandExecution for ExtendTciCmd {
@@ -40,6 +40,10 @@ impl CommandExecution for ExtendTciCmd {
             handle: dpe.contexts[idx].handle,
             ..tmp_context
         };
+
+        if dpe.contexts[idx].parent_idx == Context::ROOT_INDEX {
+            dpe.root_has_measurement = true.into();
+        }
 
         Ok(Response::ExtendTci(NewHandleResp {
             handle: dpe.contexts[idx].handle,

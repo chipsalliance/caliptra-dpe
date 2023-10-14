@@ -246,7 +246,7 @@ impl CommandExecution for CertifyKeyCmd {
 mod tests {
     use super::*;
     use crate::{
-        commands::{Command, CommandHdr, InitCtxCmd},
+        commands::{extend_tci::ExtendTciCmd, tests::TEST_DIGEST, Command, CommandHdr, InitCtxCmd},
         dpe_instance::tests::{TestTypes, SIMULATION_HANDLE, TEST_LOCALITIES},
         support::Support,
     };
@@ -298,7 +298,7 @@ mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe = DpeInstance::new(&mut env, Support::X509).unwrap();
+        let mut dpe = DpeInstance::new(&mut env, Support::X509 | Support::EXTEND_TCI).unwrap();
 
         let init_resp = match InitCtxCmd::new_use_default()
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
@@ -307,8 +307,22 @@ mod tests {
             Response::InitCtx(resp) => resp,
             _ => panic!("Incorrect return type."),
         };
-        let certify_cmd = CertifyKeyCmd {
+
+        // extend tci for root node so it has measurements to be included in cert
+        let extend_tci = ExtendTciCmd {
             handle: init_resp.handle,
+            data: TEST_DIGEST,
+        };
+        let extend_tci_resp = match extend_tci
+            .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
+            .unwrap()
+        {
+            Response::ExtendTci(extend_tci_resp) => extend_tci_resp,
+            _ => panic!("Incorrect return type."),
+        };
+
+        let certify_cmd = CertifyKeyCmd {
+            handle: extend_tci_resp.handle,
             flags: CertifyKeyFlags::empty(),
             label: [0; DPE_PROFILE.get_hash_size()],
             format: CertifyKeyCmd::FORMAT_X509,
@@ -338,7 +352,11 @@ mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe = DpeInstance::new(&mut env, Support::X509 | Support::IS_CA).unwrap();
+        let mut dpe = DpeInstance::new(
+            &mut env,
+            Support::X509 | Support::IS_CA | Support::EXTEND_TCI,
+        )
+        .unwrap();
 
         let init_resp = match InitCtxCmd::new_use_default()
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
@@ -347,8 +365,22 @@ mod tests {
             Response::InitCtx(resp) => resp,
             _ => panic!("Incorrect return type."),
         };
-        let certify_cmd_ca = CertifyKeyCmd {
+
+        // extend tci for root node so it has measurements to be included in cert
+        let extend_tci = ExtendTciCmd {
             handle: init_resp.handle,
+            data: TEST_DIGEST,
+        };
+        let extend_tci_resp = match extend_tci
+            .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
+            .unwrap()
+        {
+            Response::ExtendTci(extend_tci_resp) => extend_tci_resp,
+            _ => panic!("Incorrect return type."),
+        };
+
+        let certify_cmd_ca = CertifyKeyCmd {
+            handle: extend_tci_resp.handle,
             flags: CertifyKeyFlags::IS_CA,
             label: [0; DPE_PROFILE.get_hash_size()],
             format: CertifyKeyCmd::FORMAT_X509,
@@ -375,7 +407,7 @@ mod tests {
         };
 
         let certify_cmd_non_ca = CertifyKeyCmd {
-            handle: init_resp.handle,
+            handle: extend_tci_resp.handle,
             flags: CertifyKeyFlags::empty(),
             label: [0; DPE_PROFILE.get_hash_size()],
             format: CertifyKeyCmd::FORMAT_X509,
@@ -409,7 +441,7 @@ mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe = DpeInstance::new(&mut env, Support::CSR).unwrap();
+        let mut dpe = DpeInstance::new(&mut env, Support::CSR | Support::EXTEND_TCI).unwrap();
 
         let init_resp = match InitCtxCmd::new_use_default()
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
@@ -418,8 +450,22 @@ mod tests {
             Response::InitCtx(resp) => resp,
             _ => panic!("Incorrect return type."),
         };
-        let certify_cmd = CertifyKeyCmd {
+
+        // extend tci for root node so it has measurements to be included in cert
+        let extend_tci = ExtendTciCmd {
             handle: init_resp.handle,
+            data: TEST_DIGEST,
+        };
+        let extend_tci_resp = match extend_tci
+            .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
+            .unwrap()
+        {
+            Response::ExtendTci(extend_tci_resp) => extend_tci_resp,
+            _ => panic!("Incorrect return type."),
+        };
+
+        let certify_cmd = CertifyKeyCmd {
+            handle: extend_tci_resp.handle,
             flags: CertifyKeyFlags::empty(),
             label: [0; DPE_PROFILE.get_hash_size()],
             format: CertifyKeyCmd::FORMAT_CSR,

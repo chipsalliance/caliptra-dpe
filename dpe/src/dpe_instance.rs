@@ -42,8 +42,11 @@ pub struct DpeInstance {
     /// `InitializeContext(simulation=false)`) once per reset cycle.
     pub(crate) has_initialized: U8Bool,
 
+    /// Flag used to determine if the root node can be used in CDI/Key derivation
+    pub(crate) root_has_measurement: U8Bool,
+
     // unused buffer added to make DpeInstance word aligned and remove padding
-    reserved: [u8; 3],
+    reserved: [u8; 2],
 }
 
 impl DpeInstance {
@@ -64,7 +67,8 @@ impl DpeInstance {
             contexts: [CONTEXT_INITIALIZER; MAX_HANDLES],
             support,
             has_initialized: false.into(),
-            reserved: [0u8; 3],
+            root_has_measurement: false.into(),
+            reserved: [0u8; 2],
         };
 
         if dpe.support.auto_init() {
@@ -264,9 +268,11 @@ impl DpeInstance {
                 return Err(DpeErrorCode::InternalError);
             }
 
-            // TODO: The root node isn't a real node with measurements and
-            // shouldn't be in the cert. But we don't support DeriveChild yet,
-            // so this is the only node we can create to test cert creation.
+            // Skip adding the root node if it doesn't contain any measurements.
+            if curr.parent_idx == Context::ROOT_INDEX && !self.root_has_measurement.get() {
+                break;
+            }
+
             nodes[out_idx] = curr.tci;
             out_idx += 1;
         }

@@ -37,10 +37,11 @@ type DPEClient interface {
 	InitializeContext(flags InitCtxFlags) (*ContextHandle, error)
 	GetProfile() (*GetProfileResp, error)
 	CertifyKey(handle *ContextHandle, label []byte, format CertifyKeyFormat, flags CertifyKeyFlags) (*CertifiedKey, error)
+	ExtendTci(handle *ContextHandle, data []byte) (*ContextHandle, error)
 	GetCertificateChain() ([]byte, error)
 	TagTCI(handle *ContextHandle, tag TCITag) (*ContextHandle, error)
 	GetTaggedTCI(tag TCITag) (*DPETCI, error)
-	DestroyContext(handle *ContextHandle, flags DestroyCtxFlags) error
+	DestroyContext(handle *ContextHandle) error
 }
 
 func NewClient(t Transport, p Profile) (DPEClient, error) {

@@ -17,7 +17,7 @@ func TestTagTCI(d TestDPEInstance, client DPEClient, t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to initialize default context: %v", err)
 		}
-		defer client.DestroyContext(handle, DestroyDescendants)
+		defer client.DestroyContext(handle)
 	}
 
 	tag := TCITag(12345)

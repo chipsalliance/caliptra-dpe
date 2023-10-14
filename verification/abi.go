@@ -38,6 +38,7 @@ const (
 	CommandCertifyKey          CommandCode = 0x9
 	CommandDestroyContext      CommandCode = 0xf
 	CommandGetCertificateChain CommandCode = 0x80
+	CommandExtendTci           CommandCode = 0x81
 	CommandTagTCI              CommandCode = 0x82
 	CommandGetTaggedTCI        CommandCode = 0x83
 )
@@ -67,23 +68,8 @@ const (
 
 type ContextHandle [16]byte
 
-type DestroyCtxFlags uint32
-
-const (
-	DestroyDescendants DestroyCtxFlags = 1 << 31
-)
-
 type DestroyCtxCmd struct {
 	handle ContextHandle
-	flags  DestroyCtxFlags
-}
-
-func NewDestroyCtx(handle ContextHandle, destroy_descendants bool) *DestroyCtxCmd {
-	flags := DestroyCtxFlags(0)
-	if destroy_descendants {
-		flags |= DestroyDescendants
-	}
-	return &DestroyCtxCmd{handle: handle, flags: flags}
 }
 
 type InitCtxResp struct {
@@ -134,6 +120,15 @@ type GetCertificateChainReq struct {
 type GetCertificateChainResp struct {
 	CertificateSize  uint32
 	CertificateChain []byte
+}
+
+type ExtendTciCmd[Digest DigestAlgorithm] struct {
+	Handle ContextHandle
+	Data   Digest
+}
+
+type ExtendTciResp struct {
+	NewContextHandle ContextHandle
 }
 
 type TCITag uint32
@@ -331,6 +326,18 @@ func (c *dpeABI[CurveParameter, Digest]) CertifyKeyABI(cmd *CertifyKeyReq[Digest
 	}, nil
 }
 
+// ExtendTci calls the DPE ExtendTci command.
+func (c *dpeABI[_, Digest]) ExtendTciABI(cmd *ExtendTciCmd[Digest]) (*ExtendTciResp, error) {
+	var respStruct ExtendTciResp
+
+	_, err := execCommand(c.transport, CommandExtendTci, c.Profile, cmd, &respStruct)
+	if err != nil {
+		return nil, err
+	}
+
+	return &respStruct, nil
+}
+
 // GetCertificateChain calls the DPE GetCertificateChain command.
 func (c *dpeABI[_, _]) GetCertificateChainABI() (*GetCertificateChainResp, error) {
 	var certs GetCertificateChainResp
@@ -467,13 +474,30 @@ func (c *dpeABI[_, _]) GetTaggedTCI(tag TCITag) (*DPETCI, error) {
 	}, nil
 }
 
-func (c *dpeABI[_, _]) DestroyContext(handle *ContextHandle, flags DestroyCtxFlags) error {
+func (c *dpeABI[_, _]) DestroyContext(handle *ContextHandle) error {
 	cmd := DestroyCtxCmd{
 		handle: *handle,
-		flags:  flags,
 	}
 
 	return c.DestroyContextABI(&cmd)
+}
+
+func (c *dpeABI[_, Digest]) ExtendTci(Handle *ContextHandle, data []byte) (*ContextHandle, error) {
+	cmd := ExtendTciCmd[Digest]{
+		Handle: *Handle,
+		Data:   Digest(data),
+	}
+
+	if len(data) != len(cmd.Data) {
+		return nil, fmt.Errorf("Invalid digest length")
+	}
+
+	resp, err := c.ExtendTciABI(&cmd)
+	if err != nil {
+		return nil, err
+	}
+
+	return &resp.NewContextHandle, nil
 }
 
 func (c *dpeABI[_, _]) GetCertificateChain() ([]byte, error) {
