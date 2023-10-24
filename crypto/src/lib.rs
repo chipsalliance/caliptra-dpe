@@ -36,13 +36,25 @@ impl AlgLen {
     }
 }
 
+// For errors which come from lower layers, include the error code returned
+// from platform libraries.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[repr(u16)]
 pub enum CryptoError {
-    AbstractionLayer,
-    CryptoLibError,
-    Size,
-    NotImplemented,
-    HashError,
+    AbstractionLayer(u32) = 0x1,
+    CryptoLibError(u32) = 0x2,
+    Size = 0x3,
+    NotImplemented = 0x4,
+    HashError(u32) = 0x5,
+}
+
+impl CryptoError {
+    pub fn discriminant(&self) -> u16 {
+        // SAFETY: Because `Self` is marked `repr(u16)`, its layout is a `repr(C)` `union`
+        // between `repr(C)` structs, each of which has the `u16` discriminant as its first
+        // field, so we can read the discriminant without offsetting the pointer.
+        unsafe { *<*const _>::from(self).cast::<u16>() }
+    }
 }
 
 pub trait Hasher: Sized {

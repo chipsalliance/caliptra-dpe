@@ -92,7 +92,7 @@ fn harness(data: &[u8]) {
     if dpe.contexts != prev_contexts && response_code != 0 {
         panic!("Error: DPE state changes upon a failed DPE command.");
     }
-    if response_code == DpeErrorCode::InternalError as u32 {
+    if response_code == DpeErrorCode::InternalError.discriminant() {
         panic!("Error: DPE reached a state that should be unreachable.");
     }
     trace!("----------------------------------");

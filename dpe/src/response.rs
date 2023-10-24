@@ -8,6 +8,8 @@ use crate::{
     context::ContextHandle, tci::TciMeasurement, CURRENT_PROFILE_MAJOR_VERSION,
     CURRENT_PROFILE_MINOR_VERSION, DPE_PROFILE, MAX_CERT_SIZE, MAX_HANDLES,
 };
+use crypto::CryptoError;
+use platform::PlatformError;
 use zerocopy::AsBytes;
 
 #[cfg_attr(test, derive(PartialEq, Debug, Eq))]
@@ -62,7 +64,7 @@ impl ResponseHdr {
     pub fn new(error_code: DpeErrorCode) -> ResponseHdr {
         ResponseHdr {
             magic: Self::DPE_RESPONSE_MAGIC,
-            status: error_code as u32,
+            status: error_code.get_error_code(),
             profile: DPE_PROFILE as u32,
         }
     }
@@ -91,7 +93,7 @@ impl GetProfileResp {
             flags,
             resp_hdr: ResponseHdr {
                 magic: ResponseHdr::DPE_RESPONSE_MAGIC,
-                status: DpeErrorCode::NoError as u32,
+                status: 0,
                 profile: DPE_PROFILE as u32,
             },
         }
@@ -151,6 +153,7 @@ pub struct GetCertificateChainResp {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[repr(u32)]
 pub enum DpeErrorCode {
     NoError = 0,
     InternalError = 1,
@@ -161,8 +164,62 @@ pub enum DpeErrorCode {
     InvalidLocality = 0x1001,
     BadTag = 0x1002,
     MaxTcis = 0x1003,
-    PlatformError = 0x1004,
-    CryptoError = 0x1005,
-    HashError = 0x1006,
-    RandError = 0x1007,
+    Platform(PlatformError) = 0x01000000,
+    Crypto(CryptoError) = 0x02000000,
+}
+
+impl From<PlatformError> for DpeErrorCode {
+    fn from(e: PlatformError) -> Self {
+        DpeErrorCode::Platform(e)
+    }
+}
+
+impl From<CryptoError> for DpeErrorCode {
+    fn from(e: CryptoError) -> Self {
+        DpeErrorCode::Crypto(e)
+    }
+}
+
+impl DpeErrorCode {
+    /// Get the spec-defined numeric error code. This does not include the
+    /// extended error information returned from the Platform and Crypto
+    /// implementations.
+    pub fn discriminant(&self) -> u32 {
+        // SAFETY: Because `Self` is marked `repr(u32)`, its layout is a `repr(C)` `union`
+        // between `repr(C)` structs, each of which has the `u32` discriminant as its first
+        // field, so we can read the discriminant without offsetting the pointer.
+        unsafe { *<*const _>::from(self).cast::<u32>() }
+    }
+
+    pub fn get_error_code(&self) -> u32 {
+        match self {
+            DpeErrorCode::Platform(e) => self.discriminant() | e.discriminant() as u32,
+            DpeErrorCode::Crypto(e) => self.discriminant() | e.discriminant() as u32,
+            _ => self.discriminant(),
+        }
+    }
+
+    /// For error variants which have extended error info returned from
+    /// underlying libraries (Platform and Crypto), return that extended error
+    /// code. For all other variants, return None.
+    ///
+    /// Reporting of detailed error information is platform-defined.
+    pub fn get_error_detail(&self) -> Option<u32> {
+        match self {
+            DpeErrorCode::Platform(e) => match e {
+                PlatformError::CertificateChainError => None,
+                PlatformError::NotImplemented => None,
+                PlatformError::IssuerNameError(code) => Some(*code),
+                PlatformError::PrintError(code) => Some(*code),
+            },
+            DpeErrorCode::Crypto(e) => match e {
+                CryptoError::AbstractionLayer(code) => Some(*code),
+                CryptoError::CryptoLibError(code) => Some(*code),
+                CryptoError::Size => None,
+                CryptoError::NotImplemented => None,
+                CryptoError::HashError(code) => Some(*code),
+            },
+            _ => None,
+        }
+    }
 }

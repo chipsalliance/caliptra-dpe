@@ -16,17 +16,35 @@ use openssl::{
 use rand::{rngs::StdRng, RngCore, SeedableRng};
 use sha2::{Sha256, Sha384};
 
+impl From<ErrorStack> for CryptoError {
+    fn from(e: ErrorStack) -> Self {
+        // Just return the top error on the stack
+        let s = e.errors();
+        let e_code = if s.len() > 0 {
+            s[0].code().try_into().unwrap_or(0u32)
+        } else {
+            0u32
+        };
+
+        CryptoError::CryptoLibError(e_code)
+    }
+}
+
+impl From<hkdf::InvalidLength> for CryptoError {
+    fn from(_: hkdf::InvalidLength) -> Self {
+        CryptoError::HashError(0)
+    }
+}
+
 pub struct OpensslHasher(openssl::hash::Hasher);
 
 impl Hasher for OpensslHasher {
     fn update(&mut self, bytes: &[u8]) -> Result<(), CryptoError> {
-        self.0
-            .update(bytes)
-            .map_err(|_| CryptoError::CryptoLibError)
+        Ok(self.0.update(bytes)?)
     }
 
     fn finish(mut self) -> Result<Digest, CryptoError> {
-        Digest::new(&self.0.finish().map_err(|_| CryptoError::CryptoLibError)?)
+        Digest::new(&self.0.finish()?)
     }
 }
 
@@ -98,14 +116,12 @@ impl Crypto for OpensslCrypto {
 
     #[cfg(not(feature = "deterministic_rand"))]
     fn rand_bytes(&mut self, dst: &mut [u8]) -> Result<(), CryptoError> {
-        openssl::rand::rand_bytes(dst).map_err(|_| CryptoError::CryptoLibError)
+        Ok(openssl::rand::rand_bytes(dst)?)
     }
 
     fn hash_initialize(&mut self, algs: AlgLen) -> Result<Self::Hasher<'_>, CryptoError> {
         let md = Self::get_digest(algs);
-        Ok(OpensslHasher(
-            openssl::hash::Hasher::new(md).map_err(|_| CryptoError::CryptoLibError)?,
-        ))
+        Ok(OpensslHasher(openssl::hash::Hasher::new(md)?))
     }
 
     fn derive_cdi(
@@ -118,16 +134,14 @@ impl Crypto for OpensslCrypto {
             AlgLen::Bit256 => {
                 let hk = Hkdf::<Sha256>::new(Some(info), measurement.bytes());
                 let mut cdi = [0u8; AlgLen::Bit256.size()];
-                hk.expand(measurement.bytes(), &mut cdi)
-                    .map_err(|_| CryptoError::CryptoLibError)?;
+                hk.expand(measurement.bytes(), &mut cdi)?;
 
                 Ok(cdi.to_vec())
             }
             AlgLen::Bit384 => {
                 let hk = Hkdf::<Sha384>::new(Some(info), measurement.bytes());
                 let mut cdi = [0u8; AlgLen::Bit384.size()];
-                hk.expand(measurement.bytes(), &mut cdi)
-                    .map_err(|_| CryptoError::CryptoLibError)?;
+                hk.expand(measurement.bytes(), &mut cdi)?;
 
                 Ok(cdi.to_vec())
             }
@@ -145,23 +159,20 @@ impl Crypto for OpensslCrypto {
             AlgLen::Bit256 => {
                 let hk = Hkdf::<Sha256>::new(Some(info), cdi);
                 let mut priv_key = [0u8; AlgLen::Bit256.size()];
-                hk.expand(label, &mut priv_key)
-                    .map_err(|_| CryptoError::CryptoLibError)?;
+                hk.expand(label, &mut priv_key)?;
 
-                Ok(CryptoBuf::new(&priv_key).unwrap())
+                CryptoBuf::new(&priv_key).unwrap()
             }
             AlgLen::Bit384 => {
                 let hk = Hkdf::<Sha384>::new(Some(info), cdi);
                 let mut priv_key = [0u8; AlgLen::Bit384.size()];
-                hk.expand(label, &mut priv_key)
-                    .map_err(|_| CryptoError::CryptoLibError)?;
+                hk.expand(label, &mut priv_key)?;
 
-                Ok(CryptoBuf::new(&priv_key).unwrap())
+                CryptoBuf::new(&priv_key).unwrap()
             }
-        }?;
+        };
 
-        let ec_priv_key = OpensslCrypto::ec_key_from_priv_key(algs, &priv_key)
-            .map_err(|_| CryptoError::CryptoLibError)?;
+        let ec_priv_key = OpensslCrypto::ec_key_from_priv_key(algs, &priv_key)?;
         let nid = OpensslCrypto::get_curve(algs);
 
         let group = EcGroup::from_curve_name(nid).unwrap();
@@ -199,8 +210,7 @@ impl Crypto for OpensslCrypto {
             .unwrap(),
         };
 
-        let sig = EcdsaSig::sign::<Private>(digest.bytes(), &ec_priv)
-            .map_err(|_| CryptoError::CryptoLibError)?;
+        let sig = EcdsaSig::sign::<Private>(digest.bytes(), &ec_priv)?;
 
         let r = CryptoBuf::new(&sig.r().to_vec_padded(algs.size() as i32).unwrap()).unwrap();
         let s = CryptoBuf::new(&sig.s().to_vec_padded(algs.size() as i32).unwrap()).unwrap();
@@ -215,8 +225,7 @@ impl Crypto for OpensslCrypto {
         priv_key: &Self::PrivKey,
         _pub_key: &EcdsaPub,
     ) -> Result<super::EcdsaSig, CryptoError> {
-        let ec_priv_key = OpensslCrypto::ec_key_from_priv_key(algs, priv_key)
-            .map_err(|_| CryptoError::CryptoLibError)?;
+        let ec_priv_key = OpensslCrypto::ec_key_from_priv_key(algs, priv_key)?;
         let sig = EcdsaSig::sign::<Private>(digest.bytes(), &ec_priv_key).unwrap();
 
         let r = CryptoBuf::new(&sig.r().to_vec_padded(algs.size() as i32).unwrap()).unwrap();

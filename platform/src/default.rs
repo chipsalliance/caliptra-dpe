@@ -47,7 +47,7 @@ impl Platform for DefaultPlatform {
             .to_der()
             .unwrap();
         if issuer_name.len() > out.len() {
-            return Err(PlatformError::IssuerNameError);
+            return Err(PlatformError::IssuerNameError(0));
         }
         out[..issuer_name.len()].copy_from_slice(&issuer_name);
         Ok(issuer_name.len())

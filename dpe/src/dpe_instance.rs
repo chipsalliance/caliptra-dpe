@@ -68,10 +68,7 @@ impl DpeInstance {
         };
 
         if dpe.support.auto_init() {
-            let locality = env
-                .platform
-                .get_auto_init_locality()
-                .map_err(|_| DpeErrorCode::InvalidLocality)?;
+            let locality = env.platform.get_auto_init_locality()?;
             InitCtxCmd::new_use_default().execute(&mut dpe, env, locality)?;
         }
         Ok(dpe)
@@ -85,12 +82,8 @@ impl DpeInstance {
         &self,
         platform: &mut impl Platform,
     ) -> Result<GetProfileResp, DpeErrorCode> {
-        let vendor_id = platform
-            .get_vendor_id()
-            .map_err(|_| DpeErrorCode::PlatformError)?;
-        let vendor_sku = platform
-            .get_vendor_sku()
-            .map_err(|_| DpeErrorCode::PlatformError)?;
+        let vendor_id = platform.get_vendor_id()?;
+        let vendor_sku = platform.get_vendor_sku()?;
         Ok(GetProfileResp::new(
             self.support.bits(),
             vendor_id,
@@ -212,9 +205,7 @@ impl DpeInstance {
     ) -> Result<ContextHandle, DpeErrorCode> {
         for _ in 0..Self::MAX_NEW_HANDLE_ATTEMPTS {
             let mut handle = ContextHandle::default();
-            env.crypto
-                .rand_bytes(&mut handle.0)
-                .map_err(|_| DpeErrorCode::RandError)?;
+            env.crypto.rand_bytes(&mut handle.0)?;
             if !handle.is_default()
                 && !self
                     .contexts
@@ -289,17 +280,10 @@ impl DpeInstance {
         }
 
         // Derive the new TCI as HASH(TCI_CUMULATIVE || INPUT_DATA).
-        let mut hasher = env
-            .crypto
-            .hash_initialize(DPE_PROFILE.alg_len())
-            .map_err(|_| DpeErrorCode::HashError)?;
-        hasher
-            .update(&context.tci.tci_cumulative.0)
-            .map_err(|_| DpeErrorCode::HashError)?;
-        hasher
-            .update(&measurement.0)
-            .map_err(|_| DpeErrorCode::HashError)?;
-        let digest = hasher.finish().map_err(|_| DpeErrorCode::HashError)?;
+        let mut hasher = env.crypto.hash_initialize(DPE_PROFILE.alg_len())?;
+        hasher.update(&context.tci.tci_cumulative.0)?;
+        hasher.update(&measurement.0)?;
+        let digest = hasher.finish()?;
 
         let digest_bytes = digest.bytes();
 
@@ -344,10 +328,7 @@ impl DpeInstance {
         env: &mut DpeEnv<impl DpeTypes>,
         start_idx: usize,
     ) -> Result<Digest, DpeErrorCode> {
-        let mut hasher = env
-            .crypto
-            .hash_initialize(DPE_PROFILE.alg_len())
-            .map_err(|_| DpeErrorCode::HashError)?;
+        let mut hasher = env.crypto.hash_initialize(DPE_PROFILE.alg_len())?;
 
         let mut uses_internal_input_info = false;
         let mut uses_internal_input_dice = false;
@@ -356,9 +337,7 @@ impl DpeInstance {
         for status in ChildToRootIter::new(start_idx, &self.contexts) {
             let context = status?;
 
-            hasher
-                .update(context.tci.as_bytes())
-                .map_err(|_| DpeErrorCode::HashError)?;
+            hasher.update(context.tci.as_bytes())?;
 
             // Check if any context uses internal inputs
             uses_internal_input_info =
@@ -371,9 +350,7 @@ impl DpeInstance {
         if uses_internal_input_info {
             let mut internal_input_info = [0u8; INTERNAL_INPUT_INFO_SIZE];
             self.serialize_internal_input_info(&mut env.platform, &mut internal_input_info)?;
-            hasher
-                .update(&internal_input_info[..INTERNAL_INPUT_INFO_SIZE])
-                .map_err(|_| DpeErrorCode::HashError)?;
+            hasher.update(&internal_input_info[..INTERNAL_INPUT_INFO_SIZE])?;
         }
 
         // Add internal input dice to hash
@@ -384,14 +361,12 @@ impl DpeInstance {
                 env.platform
                     .get_certificate_chain(offset, MAX_CHUNK_SIZE as u32, &mut cert_chunk)
             {
-                hasher
-                    .update(&cert_chunk[..len as usize])
-                    .map_err(|_| DpeErrorCode::HashError)?;
+                hasher.update(&cert_chunk[..len as usize])?;
                 offset += len;
             }
         }
 
-        hasher.finish().map_err(|_| DpeErrorCode::HashError)
+        Ok(hasher.finish()?)
     }
 
     /// Determines if the context array represents a valid tree by checking that

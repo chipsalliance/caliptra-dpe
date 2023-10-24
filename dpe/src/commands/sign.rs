@@ -44,17 +44,14 @@ impl SignCmd {
         let cdi_digest = dpe.compute_measurement_hash(env, idx)?;
         let cdi = env
             .crypto
-            .derive_cdi(DPE_PROFILE.alg_len(), &cdi_digest, b"DPE")
-            .map_err(|_| DpeErrorCode::CryptoError)?;
+            .derive_cdi(DPE_PROFILE.alg_len(), &cdi_digest, b"DPE")?;
         let (priv_key, pub_key) = env
             .crypto
-            .derive_key_pair(algs, &cdi, &self.label, b"ECC")
-            .map_err(|_| DpeErrorCode::CryptoError)?;
+            .derive_key_pair(algs, &cdi, &self.label, b"ECC")?;
 
         let sig = env
             .crypto
-            .ecdsa_sign_with_derived(algs, digest, &priv_key, &pub_key)
-            .map_err(|_| DpeErrorCode::CryptoError)?;
+            .ecdsa_sign_with_derived(algs, digest, &priv_key, &pub_key)?;
 
         Ok(sig)
     }
@@ -70,11 +67,10 @@ impl SignCmd {
         let cdi_digest = dpe.compute_measurement_hash(env, idx)?;
         let cdi = env
             .crypto
-            .derive_cdi(DPE_PROFILE.alg_len(), &cdi_digest, b"DPE")
-            .map_err(|_| DpeErrorCode::CryptoError)?;
-        env.crypto
-            .hmac_sign_with_derived(algs, &cdi, &self.label, b"HMAC", digest)
-            .map_err(|_| DpeErrorCode::CryptoError)
+            .derive_cdi(DPE_PROFILE.alg_len(), &cdi_digest, b"DPE")?;
+        Ok(env
+            .crypto
+            .hmac_sign_with_derived(algs, &cdi, &self.label, b"HMAC", digest)?)
     }
 }
 
@@ -98,7 +94,7 @@ impl CommandExecution for SignCmd {
         }
 
         let algs = DPE_PROFILE.alg_len();
-        let digest = Digest::new(&self.digest).map_err(|_| DpeErrorCode::InternalError)?;
+        let digest = Digest::new(&self.digest)?;
 
         let EcdsaSig { r, s } = if !self.uses_symmetric() {
             self.ecdsa_sign(dpe, env, idx, &digest)?
