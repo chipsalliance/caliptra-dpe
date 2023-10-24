@@ -77,7 +77,7 @@ impl CryptoBuf {
                 || curr_idx >= dest.len()
                 || curr_idx + 1 >= dest.len()
             {
-                return Err(CryptoError::CryptoLibError);
+                return Err(CryptoError::CryptoLibError(0));
             }
             dest[curr_idx] = HEX_CHARS[h1];
             dest[curr_idx + 1] = HEX_CHARS[h2];

@@ -10,7 +10,7 @@ use crate::{
 };
 use bitflags::bitflags;
 use crypto::Crypto;
-use platform::{Platform, PlatformError, MAX_CHUNK_SIZE};
+use platform::{Platform, MAX_CHUNK_SIZE};
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, zerocopy::FromBytes, zerocopy::AsBytes)]
@@ -75,17 +75,14 @@ impl CommandExecution for CertifyKeyCmd {
         let digest = dpe.compute_measurement_hash(env, idx)?;
         let cdi = env
             .crypto
-            .derive_cdi(DPE_PROFILE.alg_len(), &digest, b"DPE")
-            .map_err(|_| DpeErrorCode::CryptoError)?;
+            .derive_cdi(DPE_PROFILE.alg_len(), &digest, b"DPE")?;
         let (priv_key, pub_key) = env
             .crypto
-            .derive_key_pair(algs, &cdi, &self.label, b"ECC")
-            .map_err(|_| DpeErrorCode::CryptoError)?;
+            .derive_key_pair(algs, &cdi, &self.label, b"ECC")?;
 
         let mut subj_serial = [0u8; DPE_PROFILE.get_hash_size() * 2];
         env.crypto
-            .get_pubkey_serial(DPE_PROFILE.alg_len(), &pub_key, &mut subj_serial)
-            .map_err(|_| DpeErrorCode::CryptoError)?;
+            .get_pubkey_serial(DPE_PROFILE.alg_len(), &pub_key, &mut subj_serial)?;
 
         let subject_name = Name {
             cn: DirectoryString::PrintableString(b"DPE Leaf"),
@@ -107,13 +104,7 @@ impl CommandExecution for CertifyKeyCmd {
         };
 
         let mut issuer_name = [0u8; MAX_CHUNK_SIZE];
-        let issuer_len =
-            env.platform
-                .get_issuer_name(&mut issuer_name)
-                .map_err(|platform_error| match platform_error {
-                    PlatformError::IssuerNameError => DpeErrorCode::InvalidArgument,
-                    _ => DpeErrorCode::PlatformError,
-                })?;
+        let issuer_len = env.platform.get_issuer_name(&mut issuer_name)?;
 
         let mut cert = [0u8; MAX_CERT_SIZE];
         let cert_size = match self.format {
@@ -137,12 +128,10 @@ impl CommandExecution for CertifyKeyCmd {
 
                 let tbs_digest = env
                     .crypto
-                    .hash(DPE_PROFILE.alg_len(), &tbs_buffer[..bytes_written])
-                    .map_err(|_| DpeErrorCode::HashError)?;
+                    .hash(DPE_PROFILE.alg_len(), &tbs_buffer[..bytes_written])?;
                 let sig = env
                     .crypto
-                    .ecdsa_sign_with_alias(DPE_PROFILE.alg_len(), &tbs_digest)
-                    .map_err(|_| DpeErrorCode::CryptoError)?;
+                    .ecdsa_sign_with_alias(DPE_PROFILE.alg_len(), &tbs_digest)?;
 
                 let mut cert_writer = CertWriter::new(&mut cert, true);
                 bytes_written =
@@ -168,23 +157,17 @@ impl CommandExecution for CertifyKeyCmd {
                     return Err(DpeErrorCode::InternalError);
                 }
 
-                let cert_req_info_digest = env
-                    .crypto
-                    .hash(
-                        DPE_PROFILE.alg_len(),
-                        &cert_req_info_buffer[..bytes_written],
-                    )
-                    .map_err(|_| DpeErrorCode::HashError)?;
+                let cert_req_info_digest = env.crypto.hash(
+                    DPE_PROFILE.alg_len(),
+                    &cert_req_info_buffer[..bytes_written],
+                )?;
                 // The PKCS#10 CSR is self-signed so the private key signs it instead of the alias key.
-                let cert_req_info_sig = env
-                    .crypto
-                    .ecdsa_sign_with_derived(
-                        DPE_PROFILE.alg_len(),
-                        &cert_req_info_digest,
-                        &priv_key,
-                        &pub_key,
-                    )
-                    .map_err(|_| DpeErrorCode::CryptoError)?;
+                let cert_req_info_sig = env.crypto.ecdsa_sign_with_derived(
+                    DPE_PROFILE.alg_len(),
+                    &cert_req_info_digest,
+                    &priv_key,
+                    &pub_key,
+                )?;
 
                 let mut csr_buffer = [0u8; MAX_CERT_SIZE];
                 let mut csr_writer = CertWriter::new(&mut csr_buffer, true);
@@ -196,12 +179,10 @@ impl CommandExecution for CertifyKeyCmd {
 
                 let csr_digest = env
                     .crypto
-                    .hash(DPE_PROFILE.alg_len(), &csr_buffer[..bytes_written])
-                    .map_err(|_| DpeErrorCode::HashError)?;
+                    .hash(DPE_PROFILE.alg_len(), &csr_buffer[..bytes_written])?;
                 let csr_sig = env
                     .crypto
-                    .ecdsa_sign_with_alias(DPE_PROFILE.alg_len(), &csr_digest)
-                    .map_err(|_| DpeErrorCode::CryptoError)?;
+                    .ecdsa_sign_with_alias(DPE_PROFILE.alg_len(), &csr_digest)?;
 
                 let mut cms_writer = CertWriter::new(&mut cert, true);
                 bytes_written = cms_writer.encode_cms(

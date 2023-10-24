@@ -4,7 +4,7 @@ use crate::{
     dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
     response::{DpeErrorCode, GetCertificateChainResp, Response, ResponseHdr},
 };
-use platform::{Platform, PlatformError, MAX_CHUNK_SIZE};
+use platform::{Platform, MAX_CHUNK_SIZE};
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, zerocopy::FromBytes, zerocopy::AsBytes)]
@@ -28,11 +28,7 @@ impl CommandExecution for GetCertificateChainCmd {
         let mut cert_chunk = [0u8; MAX_CHUNK_SIZE];
         let len = env
             .platform
-            .get_certificate_chain(self.offset, self.size, &mut cert_chunk)
-            .map_err(|platform_error| match platform_error {
-                PlatformError::CertificateChainError => DpeErrorCode::InvalidArgument,
-                _ => DpeErrorCode::PlatformError,
-            })?;
+            .get_certificate_chain(self.offset, self.size, &mut cert_chunk)?;
         Ok(Response::GetCertificateChain(GetCertificateChainResp {
             certificate_chain: cert_chunk,
             certificate_size: len,

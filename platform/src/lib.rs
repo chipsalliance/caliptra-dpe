@@ -15,12 +15,22 @@ pub mod printer;
 
 pub const MAX_CHUNK_SIZE: usize = 2048;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[repr(u16)]
 pub enum PlatformError {
-    CertificateChainError,
-    NotImplemented,
-    IssuerNameError,
-    PrintError,
+    CertificateChainError = 0x1,
+    NotImplemented = 0x2,
+    IssuerNameError(u32) = 0x3,
+    PrintError(u32) = 0x4,
+}
+
+impl PlatformError {
+    pub fn discriminant(&self) -> u16 {
+        // SAFETY: Because `Self` is marked `repr(u16)`, its layout is a `repr(C)` `union`
+        // between `repr(C)` structs, each of which has the `u16` discriminant as its first
+        // field, so we can read the discriminant without offsetting the pointer.
+        unsafe { *<*const _>::from(self).cast::<u16>() }
+    }
 }
 
 pub trait Platform {
