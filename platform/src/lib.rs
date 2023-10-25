@@ -31,6 +31,15 @@ impl PlatformError {
         // field, so we can read the discriminant without offsetting the pointer.
         unsafe { *<*const _>::from(self).cast::<u16>() }
     }
+
+    pub fn get_error_detail(&self) -> Option<u32> {
+        match self {
+            PlatformError::CertificateChainError => None,
+            PlatformError::NotImplemented => None,
+            PlatformError::IssuerNameError(code) => Some(*code),
+            PlatformError::PrintError(code) => Some(*code),
+        }
+    }
 }
 
 pub trait Platform {

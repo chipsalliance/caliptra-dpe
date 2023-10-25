@@ -55,6 +55,16 @@ impl CryptoError {
         // field, so we can read the discriminant without offsetting the pointer.
         unsafe { *<*const _>::from(self).cast::<u16>() }
     }
+
+    pub fn get_error_detail(&self) -> Option<u32> {
+        match self {
+            CryptoError::AbstractionLayer(code) => Some(*code),
+            CryptoError::CryptoLibError(code) => Some(*code),
+            CryptoError::Size => None,
+            CryptoError::NotImplemented => None,
+            CryptoError::HashError(code) => Some(*code),
+        }
+    }
 }
 
 pub trait Hasher: Sized {
