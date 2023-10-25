@@ -206,19 +206,8 @@ impl DpeErrorCode {
     /// Reporting of detailed error information is platform-defined.
     pub fn get_error_detail(&self) -> Option<u32> {
         match self {
-            DpeErrorCode::Platform(e) => match e {
-                PlatformError::CertificateChainError => None,
-                PlatformError::NotImplemented => None,
-                PlatformError::IssuerNameError(code) => Some(*code),
-                PlatformError::PrintError(code) => Some(*code),
-            },
-            DpeErrorCode::Crypto(e) => match e {
-                CryptoError::AbstractionLayer(code) => Some(*code),
-                CryptoError::CryptoLibError(code) => Some(*code),
-                CryptoError::Size => None,
-                CryptoError::NotImplemented => None,
-                CryptoError::HashError(code) => Some(*code),
-            },
+            DpeErrorCode::Platform(e) => e.get_error_detail(),
+            DpeErrorCode::Crypto(e) => e.get_error_detail(),
             _ => None,
         }
     }
