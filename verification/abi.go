@@ -3,7 +3,6 @@
 package verification
 
 import (
-	"errors"
 	"fmt"
 	"reflect"
 )
@@ -35,9 +34,13 @@ type Support struct {
 const (
 	CommandGetProfile          CommandCode = 0x1
 	CommandInitializeContext   CommandCode = 0x7
+	CommandDeriveChild         CommandCode = 0x8
 	CommandCertifyKey          CommandCode = 0x9
+	CommandSign                CommandCode = 0xa
+	CommandRotateContextHandle CommandCode = 0xe
 	CommandDestroyContext      CommandCode = 0xf
 	CommandGetCertificateChain CommandCode = 0x80
+	CommandExtendTCI           CommandCode = 0x81
 	CommandTagTCI              CommandCode = 0x82
 	CommandGetTaggedTCI        CommandCode = 0x83
 )
@@ -125,6 +128,25 @@ type CertifyKeyResp[CurveParameter Curve, Digest DigestAlgorithm] struct {
 	DerivedPublicKeyX CurveParameter
 	DerivedPublicKeyY CurveParameter
 	Certificate       []byte
+}
+
+type SignFlags uint32
+
+const (
+	IsSymmetric SignFlags = 1 << 31 // TODO: should be 30, a bug in rust side code.
+)
+
+type SignReq[Digest DigestAlgorithm] struct {
+	ContextHandle ContextHandle
+	Label         Digest
+	Flags         SignFlags
+	ToBeSigned    Digest
+}
+
+type SignResp[Digest DigestAlgorithm] struct {
+	NewContextHandle ContextHandle
+	HmacOrSignatureR Digest
+	SignatureS       Digest
 }
 
 type GetCertificateChainReq struct {
@@ -331,6 +353,18 @@ func (c *dpeABI[CurveParameter, Digest]) CertifyKeyABI(cmd *CertifyKeyReq[Digest
 	}, nil
 }
 
+// Sign calls the DPE Sign command.
+func (c *dpeABI[_, Digest]) SignABI(cmd *SignReq[Digest]) (*SignResp[Digest], error) {
+	var respStruct SignResp[Digest]
+
+	_, err := execCommand(c.transport, CommandSign, c.Profile, cmd, &respStruct)
+	if err != nil {
+		return nil, err
+	}
+
+	return &respStruct, nil
+}
+
 // GetCertificateChain calls the DPE GetCertificateChain command.
 func (c *dpeABI[_, _]) GetCertificateChainABI() (*GetCertificateChainResp, error) {
 	var certs GetCertificateChainResp
@@ -365,7 +399,7 @@ func (c *dpeABI[_, _]) GetCertificateChainABI() (*GetCertificateChainResp, error
 	}
 
 	if len(certs.CertificateChain) == 0 {
-		return nil, errors.New("empty certificate chain")
+		return nil, fmt.Errorf("Empty certificate chain returned")
 	}
 	return &certs, nil
 }
@@ -409,15 +443,16 @@ func (c *dpeABI[_, _]) GetProfile() (*GetProfileResp, error) {
 }
 
 func (c *dpeABI[_, Digest]) CertifyKey(handle *ContextHandle, label []byte, format CertifyKeyFormat, flags CertifyKeyFlags) (*CertifiedKey, error) {
+
+	if len(label) != len(Digest(label)) {
+		return nil, fmt.Errorf("Invalid digest length")
+	}
+
 	cmd := CertifyKeyReq[Digest]{
 		ContextHandle: *handle,
 		Flags:         flags,
 		Label:         Digest(label),
 		Format:        format,
-	}
-
-	if len(label) != len(cmd.Label) {
-		return nil, fmt.Errorf("Invalid digest length")
 	}
 
 	resp, err := c.CertifyKeyABI(&cmd)
@@ -435,6 +470,37 @@ func (c *dpeABI[_, Digest]) CertifyKey(handle *ContextHandle, label []byte, form
 	}
 
 	return key, nil
+}
+
+func (c *dpeABI[_, Digest]) Sign(handle *ContextHandle, label []byte, flags SignFlags, toBeSigned []byte) (*DPESignedHash, error) {
+
+	if len(label) != len(Digest(label)) {
+		return nil, fmt.Errorf("Invalid digest length")
+	}
+
+	if len(toBeSigned) != len(Digest(toBeSigned)) {
+		return nil, fmt.Errorf("Invalid toBeSigned length")
+	}
+
+	cmd := SignReq[Digest]{
+		ContextHandle: *handle,
+		Label:         Digest(label),
+		Flags:         flags,
+		ToBeSigned:    Digest(toBeSigned),
+	}
+
+	resp, err := c.SignABI(&cmd)
+	if err != nil {
+		return nil, err
+	}
+
+	signedResp := &DPESignedHash{
+		Handle:           resp.NewContextHandle,
+		HmacOrSignatureR: resp.HmacOrSignatureR.Bytes(),
+		SignatureS:       resp.SignatureS.Bytes(),
+	}
+
+	return signedResp, nil
 }
 
 func (c *dpeABI[_, _]) TagTCI(handle *ContextHandle, tag TCITag) (*ContextHandle, error) {

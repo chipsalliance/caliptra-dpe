@@ -33,6 +33,12 @@ type DPETCI struct {
 	CurrentTCI    []byte
 }
 
+type DPESignedHash struct {
+	Handle           ContextHandle
+	HmacOrSignatureR []byte
+	SignatureS       []byte
+}
+
 type DPEClient interface {
 	InitializeContext(flags InitCtxFlags) (*ContextHandle, error)
 	GetProfile() (*GetProfileResp, error)
@@ -41,6 +47,7 @@ type DPEClient interface {
 	TagTCI(handle *ContextHandle, tag TCITag) (*ContextHandle, error)
 	GetTaggedTCI(tag TCITag) (*DPETCI, error)
 	DestroyContext(handle *ContextHandle, flags DestroyCtxFlags) error
+	Sign(handle *ContextHandle, label []byte, flags SignFlags, toBeSigned []byte) (*DPESignedHash, error)
 }
 
 func NewClient(t Transport, p Profile) (DPEClient, error) {

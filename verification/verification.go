@@ -40,10 +40,15 @@ var GetProfileTestCase = TestCase{
 	"GetProfile", TestGetProfile, []string{},
 }
 
+var TpmPolicySigningTestCase = TestCase{
+	"TPMPolicySigning", TestTpmPolicySigning, []string{"AutoInit", "X509"},
+}
+
 var AllTestCases = []TestCase{
 	CertifyKeyTestCase,
 	CertifyKeySimulationTestCase,
 	GetCertificateChainTestCase,
+	TpmPolicySigningTestCase,
 	TagTCITestCase,
 	GetProfileTestCase,
 	InitializeContextTestCase,
