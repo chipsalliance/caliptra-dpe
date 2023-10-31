@@ -53,7 +53,6 @@ func flushAllContexts(t *testing.T, tpm io.ReadWriteCloser) {
 			if err = tpm2.FlushContext(tpm, handle); err != nil {
 				t.Fatalf("[FATAL]: Error flushing handle 0x%x: %v", handle, err)
 			}
-			t.Logf("Handle 0x%x flushed", handle)
 			totalHandles++
 		}
 	}
@@ -121,7 +120,7 @@ func testTpmPolicySigning(d TestDPEInstance, c DPEClient, t *testing.T) {
 	digest := getDigest(nonce, expiry, digestLen)
 
 	seqLabel := make([]byte, digestLen)
-	for i, _ := range seqLabel {
+	for i := range seqLabel {
 		seqLabel[i] = byte(i)
 	}
 
@@ -153,7 +152,7 @@ func testTpmPolicySigning(d TestDPEInstance, c DPEClient, t *testing.T) {
 		t.Fatalf("[FATAL]: PolicySigned() failed: %v", err)
 	}
 
-	t.Log("[LOG]: PolicySigned() call success")
+	t.Log("PolicySigning validation is successful")
 }
 
 func getDigest(nonce []byte, expiry int32, digestLen int) []byte {
@@ -178,7 +177,6 @@ func extractPubKey(t *testing.T, leafBytes []byte) *ecdsa.PublicKey {
 	var x509Cert *x509.Certificate
 	var err error
 
-	t.Log("[LOG]: Parse the obtained certificate...")
 	// Check whether certificate is DER encoded.
 	if x509Cert, err = x509.ParseCertificate(leafBytes); err != nil {
 		t.Fatalf("[FATAL]: Could not parse certificate using crypto/x509: %v", err)
@@ -228,8 +226,6 @@ func loadPubKey(t *testing.T, pubKey any, tpm io.ReadWriteCloser, alg tpm2.Algor
 		t.Fatalf("[FATAL]: Unsupported public key type")
 	}
 
-	t.Logf("[LOG]: TPM2 Public Key: %v", tpmPublic)
-
 	pkh, _, err := tpm2.LoadExternal(tpm, tpmPublic, tpm2.Private{}, tpm2.HandleNull)
 	if err != nil {
 		t.Fatalf("[FATAL]: Unable to load eexternal public key. Error: %v", err)
@@ -251,7 +247,5 @@ func getEncodedSignature(t *testing.T, r *big.Int, s *big.Int, alg tpm2.Algorith
 	if err != nil {
 		t.Fatalf("[FATAL]: Unable to encode signature: %v", err)
 	}
-	t.Logf("[LOG]: Encoded Signature is %s", string(encodedSign))
-
 	return encodedSign
 }
