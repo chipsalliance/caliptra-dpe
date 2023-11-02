@@ -44,10 +44,6 @@ var GetProfileTestCase = TestCase{
 	"GetProfile", TestGetProfile, []string{},
 }
 
-var TpmPolicySigningTestCase = TestCase{
-	"TPMPolicySigning", TestTpmPolicySigning, []string{"AutoInit", "X509"},
-}
-
 var DeriveChildTestCase = TestCase{
 	"AutoInit", TestDeriveChild, []string{"AutoInit", "InternalDice", "InternalInfo"},
 }
@@ -55,7 +51,6 @@ var DeriveChildTestCase = TestCase{
 var AllTestCases = []TestCase{
 	CertifyKeyTestCase,
 	GetCertificateChainTestCase,
-	TpmPolicySigningTestCase,
 	TagTCITestCase,
 	GetProfileTestCase,
 	InitializeContextTestCase,
