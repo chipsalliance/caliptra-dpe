@@ -230,8 +230,13 @@ func GetSimulatorTargets() []TestTarget {
 		},
 		{
 			"DefaultSupport",
-			getTestTarget([]string{"AutoInit", "Simulation", "X509", "IsCA", "Tagging"}),
+			getTestTarget([]string{"AutoInit", "Simulation", "X509", "IsCA", "Tagging", "RotateContext", "ExtendTci"}),
 			AllTestCases,
+		},
+		{
+			"DeriveChildSupport",
+			getTestTarget([]string{"AutoInit", "InternalDice", "InternalInfo"}),
+			[]TestCase{DeriveChildTestCase},
 		},
 		{
 			"GetProfile_Simulation",

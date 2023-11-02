@@ -2,7 +2,9 @@
 
 package verification
 
-import "testing"
+import (
+	"testing"
+)
 
 type DpeTestFunc func(d TestDPEInstance, c DPEClient, t *testing.T)
 
@@ -27,9 +29,11 @@ var InitializeContextSimulationTestCase = TestCase{
 var CertifyKeyTestCase = TestCase{
 	"CertifyKey", TestCertifyKey, []string{"AutoInit", "X509", "IsCA"},
 }
+
 var CertifyKeySimulationTestCase = TestCase{
-	"CertifyKeySimulation", TestCertifyKey_SimulationMode, []string{"AutoInit", "Simulation", "X509", "IsCA"},
+	"CertifyKeySimulation", TestCertifyKeySimulation, []string{"AutoInit", "Simulation", "X509", "IsCA"},
 }
+
 var GetCertificateChainTestCase = TestCase{
 	"GetCertificateChain", TestGetCertificateChain, []string{"AutoInit", "X509"},
 }
@@ -44,15 +48,19 @@ var TpmPolicySigningTestCase = TestCase{
 	"TPMPolicySigning", TestTpmPolicySigning, []string{"AutoInit", "X509"},
 }
 
+var DeriveChildTestCase = TestCase{
+	"AutoInit", TestDeriveChild, []string{"AutoInit", "InternalDice", "InternalInfo"},
+}
+
 var AllTestCases = []TestCase{
 	CertifyKeyTestCase,
-	CertifyKeySimulationTestCase,
 	GetCertificateChainTestCase,
 	TpmPolicySigningTestCase,
 	TagTCITestCase,
 	GetProfileTestCase,
 	InitializeContextTestCase,
 	InitializeContextSimulationTestCase,
+	CertifyKeySimulationTestCase,
 }
 
 func RunTargetTestCases(target TestTarget, t *testing.T) {

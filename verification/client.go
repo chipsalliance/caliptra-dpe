@@ -42,11 +42,13 @@ type DPESignedHash struct {
 type DPEClient interface {
 	InitializeContext(flags InitCtxFlags) (*ContextHandle, error)
 	GetProfile() (*GetProfileResp, error)
+	DeriveChild(handle *ContextHandle, inputData []byte, flags DeriveChildFlags, tciType uint32, targetLocality uint32) (*DeriveChildResp, error)
 	CertifyKey(handle *ContextHandle, label []byte, format CertifyKeyFormat, flags CertifyKeyFlags) (*CertifiedKey, error)
 	GetCertificateChain() ([]byte, error)
 	TagTCI(handle *ContextHandle, tag TCITag) (*ContextHandle, error)
 	GetTaggedTCI(tag TCITag) (*DPETCI, error)
 	DestroyContext(handle *ContextHandle, flags DestroyCtxFlags) error
+	RotateContextHandle(handle *ContextHandle, flags RotateContextHandleFlags) (*ContextHandle, error)
 	Sign(handle *ContextHandle, label []byte, flags SignFlags, toBeSigned []byte) (*DPESignedHash, error)
 }
 
