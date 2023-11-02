@@ -194,6 +194,9 @@ func testCertifyKey(d TestDPEInstance, c DPEClient, t *testing.T, simulation boo
 		leafCert := checkCertificateStructure(t, leafCertBytes)
 		certChain := checkCertificateChain(t, certChainBytes)
 
+		// Check default context handle is unchanged
+		testCertifyKeyRespHandle(*certifyKeyResp, t, handle)
+
 		// Check key returned in command response against certificate
 		checkCertifyKeyResponse(t, leafCert, *certifyKeyResp, hashAlg)
 
@@ -854,5 +857,17 @@ func checkCertifyKeyResponse(t *testing.T, x509Cert *x509.Certificate, response 
 
 	if !(pubKeyInResponse.Equal(pubKey)) {
 		t.Errorf("[ERROR]: Public key returned in response must match the Public Key Info in the leaf certificate.")
+	}
+}
+
+// Checks whether the context handle is unchanged after sign command when default context handle is used.
+func testCertifyKeyRespHandle(res CertifiedKey, t *testing.T, handle *ContextHandle) {
+	if *handle != DefaultContextHandle {
+		t.Logf("[LOG]: Handle is not default context, skipping check...")
+		return
+	}
+
+	if res.Handle != *handle {
+		t.Errorf("[ERROR]: Handle must be unchanged by Signing, want original handle %v but got %v", handle, res.Handle)
 	}
 }
