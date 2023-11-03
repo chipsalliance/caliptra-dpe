@@ -2,7 +2,9 @@
 
 package verification
 
-import "testing"
+import (
+	"testing"
+)
 
 type DpeTestFunc func(d TestDPEInstance, c DPEClient, t *testing.T)
 
@@ -38,6 +40,18 @@ var TagTCITestCase = TestCase{
 }
 var GetProfileTestCase = TestCase{
 	"GetProfile", TestGetProfile, []string{},
+}
+var InvalidHandleTestCase = TestCase{
+	"CheckInvalidHandle", TestInvalidHandle, []string{"Simulation", "RotateContext", "ExtendTci", "Tagging"},
+}
+var WrongLocalityTestCase = TestCase{
+	"CheckWrongLocality", TestWrongLocality, []string{"AutoInit", "RotateContext", "ExtendTci", "Tagging"},
+}
+var UnsupportedCommand = TestCase{
+	"CheckSupportForCommand", TestUnsupportedCommand, []string{"AutoInit"},
+}
+var UnsupportedCommandFlag = TestCase{
+	"CheckSupportForCommmandFlag", TestUnsupportedCommandFlag, []string{"AutoInit", "RotateContext", "ExtendTci", "Tagging"},
 }
 
 var AllTestCases = []TestCase{

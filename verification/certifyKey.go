@@ -431,26 +431,10 @@ func checkCertificateStructure(t *testing.T, certBytes []byte) *x509.Certificate
 	return x509Cert
 }
 
-func testCertifyKey(d TestDPEInstance, client DPEClient, t *testing.T, use_simulation bool) {
-	var ctx ContextHandle
-	if use_simulation {
-		if d.GetSupport().Simulation {
-			handle, err := client.InitializeContext(InitIsSimulation)
-			if err != nil {
-				t.Fatal("The instance should be able to create a simulation context.")
-			}
-			// Could prove difficult to prove it is a cryptographically secure random.
-			if *handle == ContextHandle([16]byte{0}) {
-				t.Fatal("Incorrect simulation context handle.")
-			}
-
-			defer client.DestroyContext(handle, 0)
-		} else {
-			t.Errorf("[ERROR]:  DPE instance doesn't support simulation contexts.")
-		}
-	} else {
-		//default context
-		ctx = [16]byte{0}
+func testCertifyKey(d TestDPEInstance, client DPEClient, t *testing.T, simulation bool) {
+	ctx := getContextHandle(d, client, t, simulation)
+	if simulation {
+		defer client.DestroyContext(ctx, 0)
 	}
 
 	type Params struct {
@@ -470,13 +454,13 @@ func testCertifyKey(d TestDPEInstance, client DPEClient, t *testing.T, use_simul
 	}
 
 	certifyKeyParams := []Params{
-		Params{Label: make([]byte, digestLen), Flags: CertifyKeyFlags(0)},
-		Params{Label: seqLabel, Flags: CertifyKeyFlags(0)},
+		{Label: make([]byte, digestLen), Flags: CertifyKeyFlags(0)},
+		{Label: seqLabel, Flags: CertifyKeyFlags(0)},
 	}
 
 	for _, params := range certifyKeyParams {
 		// Get DPE leaf certificate from CertifyKey
-		certifyKeyResp, err := client.CertifyKey(&ctx, params.Label, CertifyKeyX509, params.Flags)
+		certifyKeyResp, err := client.CertifyKey(ctx, params.Label, CertifyKeyX509, params.Flags)
 		if err != nil {
 			t.Fatalf("[FATAL]: Could not certify key: %v", err)
 		}
@@ -499,6 +483,11 @@ func testCertifyKey(d TestDPEInstance, client DPEClient, t *testing.T, use_simul
 		// Ensure full certificate chain has valid signatures
 		// This also checks certificate lifetime, signatures as part of cert chain validation
 		validateLeafCertChain(t, certChain, leafCert)
+
+		// Reassign handle for simulation mode.
+		// However, this does not impact in default mode because
+		// same default context handle is returned in default mode.
+		ctx = &certifyKeyResp.Handle
 
 		// TODO: When DeriveChild is implemented, call it here to add more TCIs and call CertifyKey again.
 	}
