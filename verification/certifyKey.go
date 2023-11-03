@@ -432,26 +432,7 @@ func checkCertificateStructure(t *testing.T, certBytes []byte) *x509.Certificate
 }
 
 func testCertifyKey(d TestDPEInstance, client DPEClient, t *testing.T, use_simulation bool) {
-	var ctx ContextHandle
-	if use_simulation {
-		if d.GetSupport().Simulation {
-			handle, err := client.InitializeContext(InitIsSimulation)
-			if err != nil {
-				t.Fatal("The instance should be able to create a simulation context.")
-			}
-			// Could prove difficult to prove it is a cryptographically secure random.
-			if *handle == ContextHandle([16]byte{0}) {
-				t.Fatal("Incorrect simulation context handle.")
-			}
-
-			defer client.DestroyContext(handle, 0)
-		} else {
-			t.Errorf("[ERROR]:  DPE instance doesn't support simulation contexts.")
-		}
-	} else {
-		//default context
-		ctx = [16]byte{0}
-	}
+	ctx := getContextHandle(d, client, t, use_simulation)
 
 	type Params struct {
 		Label []byte
@@ -476,7 +457,7 @@ func testCertifyKey(d TestDPEInstance, client DPEClient, t *testing.T, use_simul
 
 	for _, params := range certifyKeyParams {
 		// Get DPE leaf certificate from CertifyKey
-		certifyKeyResp, err := client.CertifyKey(&ctx, params.Label, CertifyKeyX509, params.Flags)
+		certifyKeyResp, err := client.CertifyKey(ctx, params.Label, CertifyKeyX509, params.Flags)
 		if err != nil {
 			t.Fatalf("[FATAL]: Could not certify key: %v", err)
 		}
@@ -501,6 +482,7 @@ func testCertifyKey(d TestDPEInstance, client DPEClient, t *testing.T, use_simul
 		validateLeafCertChain(t, certChain, leafCert)
 
 		// TODO: When DeriveChild is implemented, call it here to add more TCIs and call CertifyKey again.
+		ctx = &certifyKeyResp.Handle
 	}
 }
 

@@ -2,7 +2,9 @@
 
 package verification
 
-import "testing"
+import (
+	"testing"
+)
 
 type DpeTestFunc func(d TestDPEInstance, c DPEClient, t *testing.T)
 
@@ -34,7 +36,7 @@ var GetCertificateChainTestCase = TestCase{
 	"GetCertificateChain", TestGetCertificateChain, []string{"AutoInit", "X509"},
 }
 var TagTCITestCase = TestCase{
-	"TagTCI", TestTagTCI, []string{"AutoInit", "Tagging"},
+	"TagTCI", TestTagTCI, []string{"AutoInit", "Tagging", "ExtendTci"},
 }
 var GetProfileTestCase = TestCase{
 	"GetProfile", TestGetProfile, []string{},
@@ -42,12 +44,12 @@ var GetProfileTestCase = TestCase{
 
 var AllTestCases = []TestCase{
 	CertifyKeyTestCase,
-	CertifyKeySimulationTestCase,
-	GetCertificateChainTestCase,
 	TagTCITestCase,
+	GetCertificateChainTestCase,
 	GetProfileTestCase,
 	InitializeContextTestCase,
 	InitializeContextSimulationTestCase,
+	CertifyKeySimulationTestCase,
 }
 
 func RunTargetTestCases(target TestTarget, t *testing.T) {

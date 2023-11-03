@@ -3,10 +3,11 @@
 package verification
 
 import (
-	"errors"
 	"fmt"
 	"reflect"
 )
+
+var DefaultContextHandle = ContextHandle{0}
 
 const (
 	CmdMagic  uint32 = 0x44504543
@@ -35,9 +36,13 @@ type Support struct {
 const (
 	CommandGetProfile          CommandCode = 0x1
 	CommandInitializeContext   CommandCode = 0x7
+	CommandDeriveChild         CommandCode = 0x8
 	CommandCertifyKey          CommandCode = 0x9
+	CommandSign                CommandCode = 0xa
+	CommandRotateContextHandle CommandCode = 0xe
 	CommandDestroyContext      CommandCode = 0xf
 	CommandGetCertificateChain CommandCode = 0x80
+	CommandExtendTCI           CommandCode = 0x81
 	CommandTagTCI              CommandCode = 0x82
 	CommandGetTaggedTCI        CommandCode = 0x83
 )
@@ -66,6 +71,21 @@ const (
 )
 
 type ContextHandle [16]byte
+
+type RotateContextHandleFlags uint32
+
+const (
+	TargetIsDefault RotateContextHandleFlags = 1 << 31
+)
+
+type RotateContextHandleCmd struct {
+	Handle ContextHandle
+	Flags  RotateContextHandleFlags
+}
+
+type RotatedContextHandle struct {
+	NewContextHandle ContextHandle
+}
 
 type DestroyCtxFlags uint32
 
@@ -100,6 +120,31 @@ type GetProfileResp struct {
 	Flags        uint32
 }
 
+type DeriveChildFlags uint32
+
+const (
+	InternalInputInfo DeriveChildFlags = 1 << 31
+	InternalInputDice DeriveChildFlags = 1 << 30
+	RetainParent      DeriveChildFlags = 1 << 29
+	MakeDefault       DeriveChildFlags = 1 << 28
+	ChangeLocality    DeriveChildFlags = 1 << 27
+	InputAllowCA      DeriveChildFlags = 1 << 26
+	InputAllowX509    DeriveChildFlags = 1 << 25
+)
+
+type DeriveChildReq[Digest DigestAlgorithm] struct {
+	ContextHandle  ContextHandle
+	InputData      Digest
+	Flags          DeriveChildFlags
+	TciType        uint32
+	TargetLocality uint32
+}
+
+type DeriveChildResp struct {
+	NewContextHandle    ContextHandle
+	ParentContextHandle ContextHandle
+}
+
 type CertifyKeyFlags uint32
 
 const (
@@ -125,6 +170,25 @@ type CertifyKeyResp[CurveParameter Curve, Digest DigestAlgorithm] struct {
 	DerivedPublicKeyX CurveParameter
 	DerivedPublicKeyY CurveParameter
 	Certificate       []byte
+}
+
+type SignFlags uint32
+
+const (
+	IsSymmetric SignFlags = 1 << 30
+)
+
+type SignReq[Digest DigestAlgorithm] struct {
+	ContextHandle ContextHandle
+	Label         Digest
+	Flags         SignFlags
+	ToBeSigned    Digest
+}
+
+type SignResp[Digest DigestAlgorithm] struct {
+	NewContextHandle ContextHandle
+	HmacOrSignatureR Digest
+	SignatureS       Digest
 }
 
 type GetCertificateChainReq struct {
@@ -154,6 +218,15 @@ type GetTaggedTCIReq struct {
 type GetTaggedTCIResp[Digest DigestAlgorithm] struct {
 	CumulativeTCI Digest
 	CurrentTCI    Digest
+}
+
+type ExtendTCIReq[Digest DigestAlgorithm] struct {
+	ContextHandle ContextHandle
+	InputData     Digest
+}
+
+type ExtendTCIResp struct {
+	NewContextHandle ContextHandle
 }
 
 // dpeABI is a connection to a DPE instance, parameterized by hash algorithm and ECC curve.
@@ -191,12 +264,12 @@ func dpeProfileImplementsTypeConstraints[C Curve, D DigestAlgorithm](profile Pro
 	} else if isP384 && isSHA384 {
 		targetProfile = ProfileP384SHA384
 	} else {
-		return fmt.Errorf("Client requested (Curve = %v, Digest = %v), this is an invalid DPE profile",
+		return fmt.Errorf("client requested (Curve = %v, Digest = %v), this is an invalid DPE profile",
 			reflect.TypeOf(c), reflect.TypeOf(d))
 	}
 
 	if profile != targetProfile {
-		fmt.Errorf("Expected profile %v, got profile %v", targetProfile, profile)
+		return fmt.Errorf("expected profile %v, got profile %v", targetProfile, profile)
 	}
 
 	return nil
@@ -331,6 +404,42 @@ func (c *dpeABI[CurveParameter, Digest]) CertifyKeyABI(cmd *CertifyKeyReq[Digest
 	}, nil
 }
 
+// DeriveChild calls DPE DeriveChild command.
+func (c *dpeABI[_, Digest]) DeriveChildABI(cmd *DeriveChildReq[Digest]) (*DeriveChildResp, error) {
+	var respStruct DeriveChildResp
+
+	_, err := execCommand(c.transport, CommandDeriveChild, c.Profile, cmd, &respStruct)
+	if err != nil {
+		return nil, err
+	}
+
+	return &respStruct, err
+}
+
+// RotateContext calls DPE RotateContextABI command.
+func (c *dpeABI[_, Digest]) RotateContextABI(cmd *RotateContextHandleCmd) (*RotatedContextHandle, error) {
+	var respStruct RotatedContextHandle
+
+	_, err := execCommand(c.transport, CommandRotateContextHandle, c.Profile, cmd, &respStruct)
+	if err != nil {
+		return nil, err
+	}
+
+	return &respStruct, err
+}
+
+// Sign calls the DPE Sign command.
+func (c *dpeABI[_, Digest]) SignABI(cmd *SignReq[Digest]) (*SignResp[Digest], error) {
+	var respStruct SignResp[Digest]
+
+	_, err := execCommand(c.transport, CommandSign, c.Profile, cmd, &respStruct)
+	if err != nil {
+		return nil, err
+	}
+
+	return &respStruct, nil
+}
+
 // GetCertificateChain calls the DPE GetCertificateChain command.
 func (c *dpeABI[_, _]) GetCertificateChainABI() (*GetCertificateChainResp, error) {
 	var certs GetCertificateChainResp
@@ -365,7 +474,7 @@ func (c *dpeABI[_, _]) GetCertificateChainABI() (*GetCertificateChainResp, error
 	}
 
 	if len(certs.CertificateChain) == 0 {
-		return nil, errors.New("empty certificate chain")
+		return nil, fmt.Errorf("empty certificate chain returned")
 	}
 	return &certs, nil
 }
@@ -394,6 +503,18 @@ func (c *dpeABI[_, Digest]) GetTaggedTCIABI(cmd *GetTaggedTCIReq) (*GetTaggedTCI
 	return &respStruct, nil
 }
 
+// ExtendTCI calls the DPE ExtendTCI command.
+func (c *dpeABI[_, Digest]) ExtendTCIABI(cmd *ExtendTCIReq[Digest]) (*ExtendTCIResp, error) {
+	var respStruct ExtendTCIResp
+
+	_, err := execCommand(c.transport, CommandExtendTCI, c.Profile, cmd, &respStruct)
+	if err != nil {
+		return nil, err
+	}
+
+	return &respStruct, nil
+}
+
 func (c *dpeABI[_, _]) InitializeContext(flags InitCtxFlags) (*ContextHandle, error) {
 	cmd := InitCtxCmd{flags: flags}
 	resp, err := c.InitializeContextABI(&cmd)
@@ -409,15 +530,15 @@ func (c *dpeABI[_, _]) GetProfile() (*GetProfileResp, error) {
 }
 
 func (c *dpeABI[_, Digest]) CertifyKey(handle *ContextHandle, label []byte, format CertifyKeyFormat, flags CertifyKeyFlags) (*CertifiedKey, error) {
+	if len(label) != len(Digest(label)) {
+		return nil, fmt.Errorf("invalid digest length")
+	}
+
 	cmd := CertifyKeyReq[Digest]{
 		ContextHandle: *handle,
 		Flags:         flags,
 		Label:         Digest(label),
 		Format:        format,
-	}
-
-	if len(label) != len(cmd.Label) {
-		return nil, fmt.Errorf("Invalid digest length")
 	}
 
 	resp, err := c.CertifyKeyABI(&cmd)
@@ -435,6 +556,68 @@ func (c *dpeABI[_, Digest]) CertifyKey(handle *ContextHandle, label []byte, form
 	}
 
 	return key, nil
+}
+
+func (c *dpeABI[_, Digest]) DeriveChild(handle *ContextHandle, inputData []byte, flags DeriveChildFlags, tciType uint32, targetLocality uint32) (*DeriveChildResp, error) {
+	cmd := DeriveChildReq[Digest]{
+		ContextHandle:  *handle,
+		InputData:      Digest(inputData),
+		Flags:          flags,
+		TciType:        tciType,
+		TargetLocality: targetLocality,
+	}
+
+	if len(inputData) != len(cmd.InputData) {
+		return nil, fmt.Errorf("invalid digest length")
+	}
+
+	resp, err := c.DeriveChildABI(&cmd)
+	if err != nil {
+		return nil, err
+	}
+
+	return resp, nil
+}
+
+func (c *dpeABI[_, _]) RotateContextHandle(handle *ContextHandle, flags RotateContextHandleFlags) (*ContextHandle, error) {
+	cmd := RotateContextHandleCmd{
+		Handle: *handle,
+		Flags:  flags,
+	}
+	resp, err := c.RotateContextABI(&cmd)
+	if err != nil {
+		return nil, err
+	}
+	return &resp.NewContextHandle, nil
+}
+
+func (c *dpeABI[_, Digest]) Sign(handle *ContextHandle, label []byte, flags SignFlags, toBeSigned []byte) (*DPESignedHash, error) {
+	if len(label) != len(Digest(label)) {
+		return nil, fmt.Errorf("invalid digest length")
+	}
+
+	if len(toBeSigned) != len(Digest(toBeSigned)) {
+		return nil, fmt.Errorf("invalid toBeSigned length")
+	}
+
+	cmd := SignReq[Digest]{
+		ContextHandle: *handle,
+		Label:         Digest(label),
+		Flags:         flags,
+		ToBeSigned:    Digest(toBeSigned),
+	}
+	resp, err := c.SignABI(&cmd)
+	if err != nil {
+		return nil, err
+	}
+
+	signedResp := &DPESignedHash{
+		Handle:           resp.NewContextHandle,
+		HmacOrSignatureR: resp.HmacOrSignatureR.Bytes(),
+		SignatureS:       resp.SignatureS.Bytes(),
+	}
+
+	return signedResp, nil
 }
 
 func (c *dpeABI[_, _]) TagTCI(handle *ContextHandle, tag TCITag) (*ContextHandle, error) {
@@ -465,6 +648,25 @@ func (c *dpeABI[_, _]) GetTaggedTCI(tag TCITag) (*DPETCI, error) {
 		CumulativeTCI: resp.CumulativeTCI.Bytes(),
 		CurrentTCI:    resp.CurrentTCI.Bytes(),
 	}, nil
+}
+
+func (c *dpeABI[_, Digest]) ExtendTCI(handle *ContextHandle, inputData []byte) (*ContextHandle, error) {
+
+	if len(inputData) != len(Digest(inputData)) {
+		return nil, fmt.Errorf("invalid digest length")
+	}
+
+	cmd := ExtendTCIReq[Digest]{
+		ContextHandle: *handle,
+		InputData:     Digest(inputData),
+	}
+
+	resp, err := c.ExtendTCIABI(&cmd)
+	if err != nil {
+		return nil, err
+	}
+
+	return &resp.NewContextHandle, nil
 }
 
 func (c *dpeABI[_, _]) DestroyContext(handle *ContextHandle, flags DestroyCtxFlags) error {

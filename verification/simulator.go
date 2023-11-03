@@ -230,7 +230,7 @@ func GetSimulatorTargets() []TestTarget {
 		},
 		{
 			"DefaultSupport",
-			getTestTarget([]string{"AutoInit", "Simulation", "X509", "IsCA", "Tagging"}),
+			getTestTarget([]string{"AutoInit", "Simulation", "X509", "IsCA", "Tagging", "ExtendTci"}),
 			AllTestCases,
 		},
 		{
