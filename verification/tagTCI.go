@@ -8,16 +8,14 @@ import (
 	"testing"
 )
 
-// This file is used to test the tagTCI command.
-
 func TestTagTCI(d TestDPEInstance, client DPEClient, t *testing.T) {
-	// Try to create the default context if isn't done automatically.
-	if !d.GetSupport().AutoInit {
-		handle, err := client.InitializeContext(InitIsDefault)
-		if err != nil {
-			t.Fatalf("Failed to initialize default context: %v", err)
-		}
-		defer client.DestroyContext(handle, DestroyDescendants)
+	testTagTCI(d, client, t, false)
+}
+
+func testTagTCI(d TestDPEInstance, client DPEClient, t *testing.T, simulation bool) {
+	ctx := getContextHandle(d, client, t, simulation)
+	if simulation {
+		defer client.DestroyContext(ctx, DestroyDescendants)
 	}
 
 	tag := TCITag(12345)
@@ -27,14 +25,12 @@ func TestTagTCI(d TestDPEInstance, client DPEClient, t *testing.T) {
 	}
 
 	// Tag the default context
-	var ctx ContextHandle
-
-	handle, err := client.TagTCI(&ctx, tag)
+	handle, err := client.TagTCI(ctx, tag)
 	if err != nil {
 		t.Fatalf("Could not tag TCI: %v", err)
 	}
 
-	if *handle != ctx {
+	if *handle != *ctx {
 		t.Errorf("New context handle from TagTCI was %x, expected %x", handle, ctx)
 	}
 

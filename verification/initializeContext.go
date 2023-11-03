@@ -67,3 +67,27 @@ func testInitContext(d TestDPEInstance, client DPEClient, t *testing.T, simulati
 		}
 	}
 }
+
+func getContextHandle(d TestDPEInstance, c DPEClient, t *testing.T, simulation bool) *ContextHandle {
+	var handle *ContextHandle
+	var err error
+	if simulation {
+		if d.GetSupport().Simulation {
+			handle, err = c.InitializeContext(InitIsSimulation)
+			if err != nil {
+				t.Fatal("The instance should be able to create a simulation context.")
+			}
+			// Could prove difficult to prove it is a cryptographically secure random.
+			if *handle == ContextHandle([16]byte{0}) {
+				t.Fatal("Incorrect simulation context handle.")
+			}
+		} else {
+			t.Fatal("[FATAL]:  DPE instance doesn't support simulation contexts.")
+		}
+	} else {
+		//default context
+		handle = &DefaultContextHandle
+	}
+
+	return handle
+}
