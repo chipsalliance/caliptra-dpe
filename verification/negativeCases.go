@@ -9,15 +9,11 @@ import (
 
 var InvalidHandle = ContextHandle{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}
 
-func TestInvalidHandle(d TestDPEInstance, c DPEClient, t *testing.T) {
-	testInvalidHandle(d, c, t)
-}
-
 // Checks whether error is reported when non-existent handle is passed as input to DPE commands.
 // Exceptions are - GetProfile, InitializeContext, GetCertificateChain, GetTaggedTCI commands
 // which do not need context handle as input parameter.
-func testInvalidHandle(d TestDPEInstance, c DPEClient, t *testing.T) {
-	ctx := getContextHandle(d, c, t, true)
+func TestInvalidHandle(d TestDPEInstance, c DPEClient, t *testing.T) {
+	ctx := getInitialContextHandle(d, c, t, true)
 	defer c.DestroyContext(ctx, DestroyDescendants)
 
 	profile, err := GetTransportProfile(d)
@@ -76,14 +72,10 @@ func testInvalidHandle(d TestDPEInstance, c DPEClient, t *testing.T) {
 	}
 }
 
-func TestWrongLocality(d TestDPEInstance, c DPEClient, t *testing.T) {
-	testWrongLocality(d, c, t)
-}
-
 // Checks whether error is reported when caller from one locality issues DPE commands in another locality.
 // Exceptions are - GetProfile, InitializeContext, GetCertificateChain, GetTaggedTCI commands
 // which do not need context handle as input and hence locality is irrelevant.
-func testWrongLocality(d TestDPEInstance, c DPEClient, t *testing.T) {
+func TestWrongLocality(d TestDPEInstance, c DPEClient, t *testing.T) {
 	// Modify and later restore the locality of DPE instance to test
 	d.SetLocality(DPE_SIMULATOR_OTHER_LOCALITY)
 	defer d.SetLocality(DPE_SIMULATOR_AUTO_INIT_LOCALITY)
@@ -149,14 +141,10 @@ func testWrongLocality(d TestDPEInstance, c DPEClient, t *testing.T) {
 	}
 }
 
-func TestUnsupportedCommand(d TestDPEInstance, c DPEClient, t *testing.T) {
-	testUnsupportedCommand(d, c, t)
-}
-
 // Checks whether error is reported while using commands that are turned off in DPE.
 // DPE commands - TagTCI, RotateContextHandle, ExtendTCI, require support to be enabled in DPE profile
 // before being called.
-func testUnsupportedCommand(d TestDPEInstance, c DPEClient, t *testing.T) {
+func TestUnsupportedCommand(d TestDPEInstance, c DPEClient, t *testing.T) {
 	ctx := &DefaultContextHandle
 
 	profile, err := GetTransportProfile(d)
@@ -187,10 +175,6 @@ func testUnsupportedCommand(d TestDPEInstance, c DPEClient, t *testing.T) {
 	}
 }
 
-func TestUnsupportedCommandFlag(d TestDPEInstance, c DPEClient, t *testing.T) {
-	testUnsupportedCommandFlag(d, c, t)
-}
-
 // Checks whether error is reported while enabling command flags that are turned off in DPE.
 // The DPE command may be available but some of its flags may not be supported by DPE.
 // DPE profile supports the below attributes.
@@ -201,7 +185,7 @@ func TestUnsupportedCommandFlag(d TestDPEInstance, c DPEClient, t *testing.T) {
 // IsSymmetric 	: Allows caller to request for symmetric signing
 // InternalInfo	: Allows caller to derive child context with InternalInfo
 // InternalDice	: Allows caller to derive child context with InternalDice
-func testUnsupportedCommandFlag(d TestDPEInstance, c DPEClient, t *testing.T) {
+func TestUnsupportedCommandFlag(d TestDPEInstance, c DPEClient, t *testing.T) {
 	handle := &DefaultContextHandle
 
 	profile, err := GetTransportProfile(d)
