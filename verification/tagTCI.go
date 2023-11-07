@@ -9,14 +9,8 @@ import (
 )
 
 func TestTagTCI(d TestDPEInstance, client DPEClient, t *testing.T) {
-	testTagTCI(d, client, t, false)
-}
-
-func testTagTCI(d TestDPEInstance, client DPEClient, t *testing.T, simulation bool) {
-	ctx := getContextHandle(d, client, t, simulation)
-	if simulation {
-		defer client.DestroyContext(ctx, DestroyDescendants)
-	}
+	useSimulation := false
+	ctx := getInitialContextHandle(d, client, t, useSimulation)
 
 	tag := TCITag(12345)
 	// Check to see our tag is not yet found.

@@ -304,16 +304,6 @@ func GetSimulatorTargets() []TestTarget {
 			[]TestCase{GetProfileTestCase},
 		},
 		{
-			"NegativeCase_InvalidHandle",
-			getTestTarget([]string{"Simulation", "RotateContext", "ExtendTci", "Tagging"}),
-			[]TestCase{InvalidHandleTestCase},
-		},
-		{
-			"NegativeCase_WrongLocality",
-			getTestTarget([]string{"AutoInit", "RotateContext", "ExtendTci", "Tagging"}),
-			[]TestCase{WrongLocalityTestCase},
-		},
-		{
 			"NegativeCase_UnsupportedCommandByDPE",
 			getTestTarget([]string{"AutoInit"}),
 			[]TestCase{UnsupportedCommand},

@@ -432,7 +432,7 @@ func checkCertificateStructure(t *testing.T, certBytes []byte) *x509.Certificate
 }
 
 func testCertifyKey(d TestDPEInstance, client DPEClient, t *testing.T, simulation bool) {
-	ctx := getContextHandle(d, client, t, simulation)
+	ctx := getInitialContextHandle(d, client, t, simulation)
 	if simulation {
 		defer client.DestroyContext(ctx, 0)
 	}
