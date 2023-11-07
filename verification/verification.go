@@ -36,20 +36,34 @@ var GetCertificateChainTestCase = TestCase{
 	"GetCertificateChain", TestGetCertificateChain, []string{"AutoInit", "X509"},
 }
 var TagTCITestCase = TestCase{
-	"TagTCI", TestTagTCI, []string{"AutoInit", "Tagging", "ExtendTci"},
+	"TagTCI", TestTagTCI, []string{"AutoInit", "Tagging"},
 }
 var GetProfileTestCase = TestCase{
 	"GetProfile", TestGetProfile, []string{},
+}
+var InvalidHandleTestCase = TestCase{
+	"CheckInvalidHandle", TestInvalidHandle, []string{"Simulation", "RotateContext", "ExtendTci", "Tagging"},
+}
+var WrongLocalityTestCase = TestCase{
+	"CheckWrongLocality", TestWrongLocality, []string{"AutoInit", "RotateContext", "ExtendTci", "Tagging"},
+}
+var UnsupportedCommand = TestCase{
+	"CheckSupportForCommand", TestUnsupportedCommand, []string{"AutoInit"},
+}
+var UnsupportedCommandFlag = TestCase{
+	"CheckSupportForCommmandFlag", TestUnsupportedCommandFlag, []string{"AutoInit", "RotateContext", "ExtendTci", "Tagging"},
 }
 
 var AllTestCases = []TestCase{
 	CertifyKeyTestCase,
 	TagTCITestCase,
+	CertifyKeySimulationTestCase,
 	GetCertificateChainTestCase,
 	GetProfileTestCase,
 	InitializeContextTestCase,
 	InitializeContextSimulationTestCase,
-	CertifyKeySimulationTestCase,
+	InvalidHandleTestCase,
+	WrongLocalityTestCase,
 }
 
 func RunTargetTestCases(target TestTarget, t *testing.T) {

@@ -431,8 +431,11 @@ func checkCertificateStructure(t *testing.T, certBytes []byte) *x509.Certificate
 	return x509Cert
 }
 
-func testCertifyKey(d TestDPEInstance, client DPEClient, t *testing.T, use_simulation bool) {
-	ctx := getContextHandle(d, client, t, use_simulation)
+func testCertifyKey(d TestDPEInstance, client DPEClient, t *testing.T, simulation bool) {
+	ctx := getInitialContextHandle(d, client, t, simulation)
+	if simulation {
+		defer client.DestroyContext(ctx, 0)
+	}
 
 	type Params struct {
 		Label []byte
@@ -451,8 +454,8 @@ func testCertifyKey(d TestDPEInstance, client DPEClient, t *testing.T, use_simul
 	}
 
 	certifyKeyParams := []Params{
-		Params{Label: make([]byte, digestLen), Flags: CertifyKeyFlags(0)},
-		Params{Label: seqLabel, Flags: CertifyKeyFlags(0)},
+		{Label: make([]byte, digestLen), Flags: CertifyKeyFlags(0)},
+		{Label: seqLabel, Flags: CertifyKeyFlags(0)},
 	}
 
 	for _, params := range certifyKeyParams {
@@ -481,8 +484,12 @@ func testCertifyKey(d TestDPEInstance, client DPEClient, t *testing.T, use_simul
 		// This also checks certificate lifetime, signatures as part of cert chain validation
 		validateLeafCertChain(t, certChain, leafCert)
 
-		// TODO: When DeriveChild is implemented, call it here to add more TCIs and call CertifyKey again.
+		// Reassign handle for simulation mode.
+		// However, this does not impact in default mode because
+		// same default context handle is returned in default mode.
 		ctx = &certifyKeyResp.Handle
+
+		// TODO: When DeriveChild is implemented, call it here to add more TCIs and call CertifyKey again.
 	}
 }
 

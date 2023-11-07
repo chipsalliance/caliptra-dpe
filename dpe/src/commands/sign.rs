@@ -15,7 +15,7 @@ pub struct SignFlags(u32);
 
 bitflags! {
     impl SignFlags: u32 {
-        const IS_SYMMETRIC = 1u32 << 31;
+        const IS_SYMMETRIC = 1u32 << 30;
     }
 }
 
@@ -83,7 +83,7 @@ impl CommandExecution for SignCmd {
     ) -> Result<Response, DpeErrorCode> {
         // Make sure the operation is supported.
         if !dpe.support.is_symmetric() && self.uses_symmetric() {
-            return Err(DpeErrorCode::InvalidArgument);
+            return Err(DpeErrorCode::ArgumentNotSupported);
         }
 
         let idx = dpe.get_active_context_pos(&self.handle, locality)?;
@@ -190,7 +190,7 @@ mod tests {
 
         // Bad argument
         assert_eq!(
-            Err(DpeErrorCode::InvalidArgument),
+            Err(DpeErrorCode::ArgumentNotSupported),
             SignCmd {
                 handle: ContextHandle([0xff; ContextHandle::SIZE]),
                 label: TEST_LABEL,

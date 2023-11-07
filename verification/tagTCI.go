@@ -17,8 +17,10 @@ import (
 
 func TestTagTCI(d TestDPEInstance, c DPEClient, t *testing.T) {
 	var err error
+	useSimulation := false // To indicate that simulation context is not used
+
 	// Tag the default context
-	handle := getContextHandle(d, c, t, false)
+	handle := getInitialContextHandle(d, c, t, useSimulation)
 
 	// Get digest size
 	profile, err := GetTransportProfile(d)
@@ -34,9 +36,6 @@ func TestTagTCI(d TestDPEInstance, c DPEClient, t *testing.T) {
 		t.Fatalf("GetTaggedTCI returned %v, want %v", err, StatusBadTag)
 	}
 
-	// Make sure using wrong locality reports error
-	testTagTCIWrongLocality(d, c, t, handle)
-
 	// Make sure default handle returns same handle when extended
 	testTagTCIHandle(d, c, t, handle, digestLen, tag)
 
@@ -51,24 +50,6 @@ func TestTagTCI(d TestDPEInstance, c DPEClient, t *testing.T) {
 
 	// Pass TCI input to DerivedChild context and check cumulative TCI
 	testForDerivedChildContexts(d, c, t, handle, digestLen, tag)
-}
-
-// Checks whether error is reported when the caller from one locality makes call to another locality.
-func testTagTCIWrongLocality(d TestDPEInstance, c DPEClient, t *testing.T, handle *ContextHandle) {
-	var err error
-
-	// Modify locality of DPE instance to test
-	d.SetLocality(DPE_SIMULATOR_OTHER_LOCALITY)
-
-	// Restore locality of DPE instance after the test
-	defer d.SetLocality(DPE_SIMULATOR_AUTO_INIT_LOCALITY)
-
-	_, err = c.TagTCI(handle, TCITag(1234))
-	if err == nil {
-		t.Fatalf("[FATAL]: TagTCI command should return %q, but returned no error", StatusInvalidLocality)
-	} else if !errors.Is(err, StatusInvalidLocality) {
-		t.Fatalf("[FATAL]: Incorrect error type. TagTCI command should return %q, but returned %q", StatusInvalidLocality, err)
-	}
 }
 
 // Checks whether the default handle remains unchanged when extended with TCI value.

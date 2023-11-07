@@ -230,7 +230,7 @@ func GetSimulatorTargets() []TestTarget {
 		},
 		{
 			"DefaultSupport",
-			getTestTarget([]string{"AutoInit", "Simulation", "X509", "IsCA", "Tagging", "ExtendTci"}),
+			getTestTarget([]string{"AutoInit", "Simulation", "X509", "IsCA", "Tagging", "RotateContext", "ExtendTci"}),
 			AllTestCases,
 		},
 		{
@@ -302,6 +302,16 @@ func GetSimulatorTargets() []TestTarget {
 			"GetProfile_All",
 			getTestTarget([]string{"Simulation", "ExtendTci", "AutoInit", "Tagging", "RotateContext", "X509", "Csr", "IsSymmetric", "InternalInfo", "InternalDice", "IsCA"}),
 			[]TestCase{GetProfileTestCase},
+		},
+		{
+			"NegativeCase_UnsupportedCommandByDPE",
+			getTestTarget([]string{"AutoInit"}),
+			[]TestCase{UnsupportedCommand},
+		},
+		{
+			"NegativeCase_UnsupportedFeatureByDPE",
+			getTestTarget([]string{"AutoInit", "RotateContext", "ExtendTci", "Tagging"}),
+			[]TestCase{UnsupportedCommandFlag},
 		},
 	}
 }
