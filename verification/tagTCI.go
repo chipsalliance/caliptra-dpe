@@ -19,7 +19,7 @@ func TestTagTCI(d TestDPEInstance, c DPEClient, t *testing.T) {
 	var err error
 	useSimulation := false // To indicate that simulation context is not used
 
-	// Tag the default context
+	// Get the default context
 	handle := getInitialContextHandle(d, c, t, useSimulation)
 
 	// Get digest size
@@ -30,6 +30,7 @@ func TestTagTCI(d TestDPEInstance, c DPEClient, t *testing.T) {
 
 	digestLen := profile.GetDigestSize()
 
+	// Tag the default context
 	tag := TCITag(12345)
 	// Check to see our tag is not yet found.
 	if _, err := c.GetTaggedTCI(tag); !errors.Is(err, StatusBadTag) {
