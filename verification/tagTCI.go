@@ -148,7 +148,7 @@ func TestExtendTciOnDerivedContexts(d TestDPEInstance, c DPEClient, t *testing.T
 	} else if digestLen == 48 {
 		hasher = sha512.New384()
 	} else {
-		t.Error("[ERROR]: Unsupported hash algorithm used for TCI value generation")
+		t.Fatal("[FATAL]: Unsupported hash algorithm used for TCI value generation")
 	}
 
 	// Get parent context TCI values for cumulative value calculation
