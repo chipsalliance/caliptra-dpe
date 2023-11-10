@@ -13,13 +13,51 @@ import (
 	"testing"
 )
 
-// This file is used to test the tagTCI command.
+const defaultCtxTCITag = TCITag(12345)
+const nonExistentTCITag = TCITag(98765)
+const childCtxTCITag = TCITag(34567)
 
+// Check tagTCI command with default context handle.
 func TestTagTCI(d TestDPEInstance, c DPEClient, t *testing.T) {
 	var err error
 	useSimulation := false // To indicate that simulation context is not used
 
-	// Get the default context
+	// Get default context handle
+	handle := getInitialContextHandle(d, c, t, useSimulation)
+
+	// Check to see our tag is not yet found and then tag default context
+	if _, err := c.GetTaggedTCI(defaultCtxTCITag); !errors.Is(err, StatusBadTag) {
+		t.Fatalf("GetTaggedTCI returned %v, want %v", err, StatusBadTag)
+	}
+
+	// Tag default context handle and make sure default handle returns
+	// same handle when used for tagging TCI
+	newHandle, err := c.TagTCI(handle, defaultCtxTCITag)
+	if err != nil {
+		t.Fatalf("Could not tag TCI: %v", err)
+	}
+	if *newHandle != *handle {
+		t.Errorf("New context handle from TagTCI was %x, expected %x", newHandle, handle)
+	}
+
+	// Retag a tagged TCI should report error
+	newTag := TCITag(11111)
+	if _, err := c.TagTCI(handle, newTag); !errors.Is(err, StatusBadTag) {
+		t.Fatalf("Re-tagging a tagged TCI returned %v, want %v", err, StatusBadTag)
+	}
+
+	// Fetching a non-existent tag should report error
+	if _, err := c.GetTaggedTCI(TCITag(nonExistentTCITag)); !errors.Is(err, StatusBadTag) {
+		t.Fatalf("GetTaggedTCI returned %v, want %v", err, StatusBadTag)
+	}
+}
+
+// Check whether the ExtendTCI command updates the current TCI and cumulative TCI.
+func TestExtendTCI(d TestDPEInstance, c DPEClient, t *testing.T) {
+	var err error
+	useSimulation := false // To indicate that simulation context is not used
+
+	// Get default context handle
 	handle := getInitialContextHandle(d, c, t, useSimulation)
 
 	// Get digest size
@@ -27,51 +65,10 @@ func TestTagTCI(d TestDPEInstance, c DPEClient, t *testing.T) {
 	if err != nil {
 		t.Fatalf("Could not get profile: %v", err)
 	}
-
 	digestLen := profile.GetDigestSize()
 
-	// Tag the default context
-	tag := TCITag(12345)
-	// Check to see our tag is not yet found.
-	if _, err := c.GetTaggedTCI(tag); !errors.Is(err, StatusBadTag) {
-		t.Fatalf("GetTaggedTCI returned %v, want %v", err, StatusBadTag)
-	}
-
-	// Make sure default handle returns same handle when extended
-	testTagTCIHandle(d, c, t, handle, digestLen, tag)
-
-	// Make sure the current TCI is updated
-	// For profiles which use auto-initialization, we don't know the expected TCIs so we can check only current TCI
-	testCurrentAndCumulativeTCI(d, c, t, handle, digestLen, tag)
-
-	// Make sure some other tag is still not found.
-	if _, err := c.GetTaggedTCI(TCITag(98765)); !errors.Is(err, StatusBadTag) {
-		t.Fatalf("GetTaggedTCI returned %v, want %v", err, StatusBadTag)
-	}
-
-	// Pass TCI input to DerivedChild context and check cumulative TCI
-	testForDerivedChildContexts(d, c, t, handle, digestLen, tag)
-}
-
-// Checks whether the default handle remains unchanged when extended with TCI value.
-func testTagTCIHandle(d TestDPEInstance, c DPEClient, t *testing.T, handle *ContextHandle, digestLen int, tag TCITag) {
-	tciValue := make([]byte, digestLen)
-	for i := range tciValue {
-		tciValue[i] = byte(i)
-	}
-
-	newHandle, err := c.TagTCI(handle, tag)
-	if err != nil {
-		t.Fatalf("Could not tag TCI: %v", err)
-	}
-	if *newHandle != *handle {
-		t.Errorf("New context handle from TagTCI was %x, expected %x", newHandle, handle)
-	}
-}
-
-// Checks whether the ExtendTCI command updates the current TCI and cumulative TCI.
-func testCurrentAndCumulativeTCI(d TestDPEInstance, c DPEClient, t *testing.T, handle *ContextHandle, digestLen int, tag TCITag) {
-	// Initialize TCI inputs
+	// Initialize TCI inputs with all zeroes
+	// since, TCI_DEFAULT for default context is all zeroes
 	defaultTci := make([]byte, digestLen)
 
 	tciValue := make([]byte, digestLen)
@@ -86,16 +83,16 @@ func testCurrentAndCumulativeTCI(d TestDPEInstance, c DPEClient, t *testing.T, h
 	} else if digestLen == 48 {
 		hasher = sha512.New384()
 	} else {
-		t.Error("[ERROR]: Unsupported hash algorithm used for TCI value generation")
+		t.Fatal("[FATAL]: Unsupported hash algorithm used for TCI value generation")
 	}
 
 	// Set current TCI value
-	_, err := c.ExtendTCI(handle, tciValue)
+	_, err = c.ExtendTCI(handle, tciValue)
 	if err != nil {
-		t.Fatalf("Could not tag TCI: %v", err)
+		t.Fatalf("Could not extend TCI: %v", err)
 	}
 
-	taggedTCI, err := c.GetTaggedTCI(tag)
+	taggedTCI, err := c.GetTaggedTCI(defaultCtxTCITag)
 	if err != nil {
 		t.Fatalf("Could not get tagged TCI: %v", err)
 	}
@@ -114,10 +111,22 @@ func testCurrentAndCumulativeTCI(d TestDPEInstance, c DPEClient, t *testing.T, h
 	}
 }
 
-// Checks whether the ExtendTCI command updates the current TCI.
-func testForDerivedChildContexts(d TestDPEInstance, c DPEClient, t *testing.T, handle *ContextHandle, digestLen int, parentTag TCITag) {
+// Check whether the ExtendTCI command with derived child context.
+func TestExtendTciOnDerivedContexts(d TestDPEInstance, c DPEClient, t *testing.T) {
+	var err error
 	var wantCumulativeTCI []byte
-	childTag := TCITag(23456)
+
+	useSimulation := false // To indicate that simulation context is not used
+
+	// Get default context handle
+	handle := getInitialContextHandle(d, c, t, useSimulation)
+
+	// Get digest size
+	profile, err := GetTransportProfile(d)
+	if err != nil {
+		t.Fatalf("Could not get profile: %v", err)
+	}
+	digestLen := profile.GetDigestSize()
 
 	// Initialize TCI inputs
 	defaultTci := make([]byte, digestLen)
@@ -143,7 +152,7 @@ func testForDerivedChildContexts(d TestDPEInstance, c DPEClient, t *testing.T, h
 	}
 
 	// Get parent context TCI values for cumulative value calculation
-	parentTci, err := c.GetTaggedTCI(parentTag)
+	parentTci, err := c.GetTaggedTCI(defaultCtxTCITag)
 	if err != nil {
 		t.Fatalf("Could not get tagged TCI: %v", err)
 	}
@@ -162,12 +171,12 @@ func testForDerivedChildContexts(d TestDPEInstance, c DPEClient, t *testing.T, h
 		t.Fatalf("[FATAL]: Error while creating default child handle in default context: %s", err)
 	}
 
-	newHandle, err := c.TagTCI(&child.NewContextHandle, childTag)
+	newHandle, err := c.TagTCI(&child.NewContextHandle, childCtxTCITag)
 	if err != nil {
 		t.Fatalf("Could not tag TCI: %v", err)
 	}
 
-	childTci, err := c.GetTaggedTCI(childTag)
+	childTci, err := c.GetTaggedTCI(childCtxTCITag)
 	if err != nil {
 		t.Fatalf("Could not get tagged TCI: %v", err)
 	}
@@ -191,7 +200,7 @@ func testForDerivedChildContexts(d TestDPEInstance, c DPEClient, t *testing.T, h
 		t.Fatalf("Could not tag TCI: %v", err)
 	}
 
-	childExtendTci, err := c.GetTaggedTCI(childTag)
+	childExtendTci, err := c.GetTaggedTCI(childCtxTCITag)
 	if err != nil {
 		t.Fatalf("Could not get tagged TCI: %v", err)
 	}

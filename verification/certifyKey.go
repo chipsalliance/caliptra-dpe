@@ -433,9 +433,11 @@ func checkCertificateStructure(t *testing.T, certBytes []byte) *x509.Certificate
 
 func testCertifyKey(d TestDPEInstance, client DPEClient, t *testing.T, simulation bool) {
 	ctx := getInitialContextHandle(d, client, t, simulation)
-	if simulation {
-		defer client.DestroyContext(ctx, 0)
-	}
+	defer func() {
+		if simulation {
+			client.DestroyContext(ctx, 0)
+		}
+	}()
 
 	type Params struct {
 		Label []byte
@@ -449,7 +451,7 @@ func testCertifyKey(d TestDPEInstance, client DPEClient, t *testing.T, simulatio
 	digestLen := profile.GetDigestSize()
 
 	seqLabel := make([]byte, digestLen)
-	for i, _ := range seqLabel {
+	for i := range seqLabel {
 		seqLabel[i] = byte(i)
 	}
 
