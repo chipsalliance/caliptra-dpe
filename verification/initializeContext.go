@@ -71,6 +71,7 @@ func testInitContext(d TestDPEInstance, client DPEClient, t *testing.T, simulati
 // When simulation is set to false, returns a default context handle.
 // Else initializes a simulation context and returns its handle. To get simulation
 // context handle, the DPE profile must support simulation context creation.
+// Caller must ensure to destroy the non-default handle through DestroyContext after usage.
 func getInitialContextHandle(d TestDPEInstance, c DPEClient, t *testing.T, simulation bool) *ContextHandle {
 	var handle *ContextHandle
 	var err error
