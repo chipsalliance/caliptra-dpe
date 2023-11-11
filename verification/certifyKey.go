@@ -546,11 +546,6 @@ func buildVerifyOptions(t *testing.T, certChain []*x509.Certificate) x509.Verify
 	return opts
 }
 
-func extractFlagBit(pos int, flags uint32) bool {
-	var mask uint32 = (1 << pos)
-	return (flags & mask) > 0
-}
-
 func getKeyUsageNames(keyUsage x509.KeyUsage) []string {
 	keyUsageNames := []string{}
 

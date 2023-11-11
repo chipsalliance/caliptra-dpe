@@ -165,13 +165,20 @@ func TestExtendTciOnDerivedContexts(d TestDPEInstance, c DPEClient, t *testing.T
 		t.Errorf("Parent node's cumulative TCI %x, expected %x", parentTci.CumulativeTCI, wantCumulativeTCI)
 	}
 
+	// Preserve parent context to restore for subsequent tests.
+	parentHandle, err := c.RotateContextHandle(handle, RotateContextHandleFlags(0))
+	if err != nil {
+		t.Errorf("[ERROR]: Error while rotating parent context handle, this may cause failure in subsequent tests: %s", err)
+	}
+
 	// Derive Child context with input data, tag it and check TCI_CUMULATIVE
-	child, err := c.DeriveChild(handle, tciValue, DeriveChildFlags(MakeDefault), 0, 0)
+	childCtx, err := c.DeriveChild(parentHandle, tciValue, DeriveChildFlags(RetainParent), 0, 0)
 	if err != nil {
 		t.Fatalf("[FATAL]: Error while creating default child handle in default context: %s", err)
 	}
 
-	newHandle, err := c.TagTCI(&child.NewContextHandle, childCtxTCITag)
+	// Tag derived context
+	newHandle, err := c.TagTCI(&childCtx.NewContextHandle, childCtxTCITag)
 	if err != nil {
 		t.Fatalf("Could not tag TCI: %v", err)
 	}
@@ -195,7 +202,7 @@ func TestExtendTciOnDerivedContexts(d TestDPEInstance, c DPEClient, t *testing.T
 	}
 
 	// Extend TCI to child context and check TCI_CURRENT and TCI_CUMULATIVE
-	_, err = c.ExtendTCI(newHandle, extendTciValue)
+	newHandle, err = c.ExtendTCI(newHandle, extendTciValue)
 	if err != nil {
 		t.Fatalf("Could not tag TCI: %v", err)
 	}
@@ -217,4 +224,18 @@ func TestExtendTciOnDerivedContexts(d TestDPEInstance, c DPEClient, t *testing.T
 	if !bytes.Equal(childExtendTci.CumulativeTCI, wantCumulativeTCI) {
 		t.Errorf("Child node's cumulative TCI %x, expected %x", childExtendTci.CumulativeTCI, wantCumulativeTCI)
 	}
+
+	// Clean up derived context and restore default context handle for subsequnt tests
+	defer func() {
+		err := c.DestroyContext(newHandle, DestroyDescendants)
+		if err != nil {
+			t.Errorf("[ERROR]: Error while cleaning up derived context, this may cause failure in subsequent tests: %s", err)
+		}
+
+		_, err = c.RotateContextHandle(&childCtx.ParentContextHandle, RotateContextHandleFlags(TargetIsDefault))
+		if err != nil {
+			t.Errorf("[ERROR]: Error while restoring parent context handle as default context handle, this may cause failure in subsequent tests: %s", err)
+		}
+	}()
+
 }
