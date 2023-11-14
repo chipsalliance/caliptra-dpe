@@ -435,7 +435,7 @@ func testCertifyKey(d TestDPEInstance, client DPEClient, t *testing.T, simulatio
 	ctx := getInitialContextHandle(d, client, t, simulation)
 	defer func() {
 		if simulation {
-			client.DestroyContext(ctx, 0)
+			client.DestroyContext(ctx, DestroyDescendants)
 		}
 	}()
 

@@ -225,7 +225,7 @@ func TestExtendTciOnDerivedContexts(d TestDPEInstance, c DPEClient, t *testing.T
 		t.Errorf("Child node's cumulative TCI %x, expected %x", childExtendTci.CumulativeTCI, wantCumulativeTCI)
 	}
 
-	// Clean up derived context and restore default context handle for subsequnt tests
+	// Clean up derived context and restore default context handle for subsequent tests
 	defer func() {
 		err := c.DestroyContext(newHandle, DestroyDescendants)
 		if err != nil {
