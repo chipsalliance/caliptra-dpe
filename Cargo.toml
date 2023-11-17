@@ -1,0 +1,11 @@
+# Licensed under the Apache-2.0 license
+
+[workspace]
+
+members = [
+    "dpe",
+    "crypto",
+    "platform",
+    "simulator",
+    "tools",
+]

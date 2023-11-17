@@ -20,7 +20,7 @@ impl From<ErrorStack> for CryptoError {
     fn from(e: ErrorStack) -> Self {
         // Just return the top error on the stack
         let s = e.errors();
-        let e_code = if s.len() > 0 {
+        let e_code = if !s.is_empty() {
             s[0].code().try_into().unwrap_or(0u32)
         } else {
             0u32
@@ -96,6 +96,12 @@ impl OpensslCrypto {
             .unwrap();
 
         EcKey::from_private_components(&group, priv_key_bn, &pub_point)
+    }
+}
+
+impl Default for OpensslCrypto {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
