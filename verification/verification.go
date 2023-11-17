@@ -35,38 +35,30 @@ var CertifyKeySimulationTestCase = TestCase{
 var GetCertificateChainTestCase = TestCase{
 	"GetCertificateChain", TestGetCertificateChain, []string{"AutoInit", "X509"},
 }
-var TagTCITestCase = TestCase{
-	"TagTCI", TestTagTCI, []string{"AutoInit", "Tagging"},
-}
 var ExtendTCITestCase = TestCase{
-	"ExtendTCITestCase", TestExtendTCI, []string{"AutoInit", "Tagging", "ExtendTci"},
-}
-var ExtendDerivedTciTestCase = TestCase{
-	"ExtendDerivedTciTestCase", TestExtendTciOnDerivedContexts, []string{"AutoInit", "Tagging", "ExtendTci"},
+	"ExtendTCITestCase", TestExtendTCI, []string{"AutoInit", "ExtendTci"},
 }
 var GetProfileTestCase = TestCase{
 	"GetProfile", TestGetProfile, []string{},
 }
 var InvalidHandleTestCase = TestCase{
-	"CheckInvalidHandle", TestInvalidHandle, []string{"Simulation", "RotateContext", "ExtendTci", "Tagging"},
+	"CheckInvalidHandle", TestInvalidHandle, []string{"Simulation", "RotateContext", "ExtendTci"},
 }
 var WrongLocalityTestCase = TestCase{
-	"CheckWrongLocality", TestWrongLocality, []string{"AutoInit", "RotateContext", "ExtendTci", "Tagging"},
+	"CheckWrongLocality", TestWrongLocality, []string{"AutoInit", "RotateContext", "ExtendTci"},
 }
 var UnsupportedCommand = TestCase{
 	"CheckSupportForCommand", TestUnsupportedCommand, []string{"AutoInit"},
 }
 var UnsupportedCommandFlag = TestCase{
-	"CheckSupportForCommmandFlag", TestUnsupportedCommandFlag, []string{"AutoInit", "RotateContext", "ExtendTci", "Tagging"},
+	"CheckSupportForCommmandFlag", TestUnsupportedCommandFlag, []string{"AutoInit", "RotateContext", "ExtendTci"},
 }
 
 var AllTestCases = []TestCase{
 	CertifyKeyTestCase,
 	CertifyKeySimulationTestCase,
 	GetCertificateChainTestCase,
-	TagTCITestCase,
 	ExtendTCITestCase,
-	ExtendDerivedTciTestCase,
 	GetProfileTestCase,
 	InitializeContextTestCase,
 	InitializeContextSimulationTestCase,

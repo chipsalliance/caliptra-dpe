@@ -55,9 +55,6 @@ func (s *DpeSimulator) PowerOn() error {
 	if s.supports.AutoInit {
 		args = append(args, "--supports-auto-init")
 	}
-	if s.supports.Tagging {
-		args = append(args, "--supports-tagging")
-	}
 	if s.supports.RotateContext {
 		args = append(args, "--supports-rotate-context")
 	}
@@ -230,7 +227,7 @@ func GetSimulatorTargets() []TestTarget {
 		},
 		{
 			"DefaultSupport",
-			getTestTarget([]string{"AutoInit", "Simulation", "X509", "IsCA", "Tagging", "RotateContext", "ExtendTci"}),
+			getTestTarget([]string{"AutoInit", "Simulation", "X509", "IsCA", "RotateContext", "ExtendTci"}),
 			AllTestCases,
 		},
 		{
@@ -246,11 +243,6 @@ func GetSimulatorTargets() []TestTarget {
 		{
 			"GetProfile_AutoInit",
 			getTestTarget([]string{"AutoInit"}),
-			[]TestCase{GetProfileTestCase},
-		},
-		{
-			"GetProfile_Tagging",
-			getTestTarget([]string{"Tagging"}),
 			[]TestCase{GetProfileTestCase},
 		},
 		{
@@ -295,12 +287,12 @@ func GetSimulatorTargets() []TestTarget {
 		},
 		{
 			"GetProfile_Combo02",
-			getTestTarget([]string{"ExtendTci", "Tagging", "X509", "InternalInfo"}),
+			getTestTarget([]string{"ExtendTci", "X509", "InternalInfo"}),
 			[]TestCase{GetProfileTestCase},
 		},
 		{
 			"GetProfile_All",
-			getTestTarget([]string{"Simulation", "ExtendTci", "AutoInit", "Tagging", "RotateContext", "X509", "Csr", "IsSymmetric", "InternalInfo", "InternalDice", "IsCA"}),
+			getTestTarget([]string{"Simulation", "ExtendTci", "AutoInit", "RotateContext", "X509", "Csr", "IsSymmetric", "InternalInfo", "InternalDice", "IsCA"}),
 			[]TestCase{GetProfileTestCase},
 		},
 		{
@@ -310,7 +302,7 @@ func GetSimulatorTargets() []TestTarget {
 		},
 		{
 			"NegativeCase_UnsupportedFeatureByDPE",
-			getTestTarget([]string{"AutoInit", "RotateContext", "ExtendTci", "Tagging"}),
+			getTestTarget([]string{"AutoInit", "RotateContext", "ExtendTci"}),
 			[]TestCase{UnsupportedCommandFlag},
 		},
 	}

@@ -10,7 +10,7 @@ import (
 var InvalidHandle = ContextHandle{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}
 
 // Checks whether error is reported when non-existent handle is passed as input to DPE commands.
-// Exceptions are - GetProfile, InitializeContext, GetCertificateChain, GetTaggedTCI commands
+// Exceptions are - GetProfile, InitializeContext, GetCertificateChain, commands
 // which do not need context handle as input parameter.
 func TestInvalidHandle(d TestDPEInstance, c DPEClient, t *testing.T) {
 	ctx := getInitialContextHandle(d, c, t, true)
@@ -63,17 +63,10 @@ func TestInvalidHandle(d TestDPEInstance, c DPEClient, t *testing.T) {
 	} else if !errors.Is(err, StatusInvalidHandle) {
 		t.Errorf("[ERROR]: Incorrect error type. ExtendTCI should return %q, but returned %q", StatusInvalidHandle, err)
 	}
-
-	// Check TagTCI with invalid handle
-	if _, err := c.TagTCI(&InvalidHandle, 0); err == nil {
-		t.Errorf("[ERROR]: TagTCI should return %q, but returned no error", StatusInvalidHandle)
-	} else if !errors.Is(err, StatusInvalidHandle) {
-		t.Errorf("[ERROR]: Incorrect error type. TagTCI should return %q, but returned %q", StatusInvalidHandle, err)
-	}
 }
 
 // Checks whether error is reported when caller from one locality issues DPE commands in another locality.
-// Exceptions are - GetProfile, InitializeContext, GetCertificateChain, GetTaggedTCI commands
+// Exceptions are - GetProfile, InitializeContext, GetCertificateChain, commands
 // which do not need context handle as input and hence locality is irrelevant.
 func TestWrongLocality(d TestDPEInstance, c DPEClient, t *testing.T) {
 	// Modify and later restore the locality of DPE instance to test
@@ -132,17 +125,10 @@ func TestWrongLocality(d TestDPEInstance, c DPEClient, t *testing.T) {
 	} else if !errors.Is(err, StatusInvalidLocality) {
 		t.Errorf("[ERROR]: Incorrect error type. ExtendTCI should return %q, but returned %q", StatusInvalidLocality, err)
 	}
-
-	// Check TagTCI from wrong locality
-	if _, err := c.TagTCI(handle, 0); err == nil {
-		t.Errorf("[ERROR]: TagTCI should return %q, but returned no error", StatusInvalidLocality)
-	} else if !errors.Is(err, StatusInvalidLocality) {
-		t.Errorf("[ERROR]: Incorrect error type. TagTCI should return %q, but returned %q", StatusInvalidLocality, err)
-	}
 }
 
 // Checks whether error is reported while using commands that are turned off in DPE.
-// DPE commands - TagTCI, RotateContextHandle, ExtendTCI, require support to be enabled in DPE profile
+// DPE commands - RotateContextHandle, ExtendTCI, require support to be enabled in DPE profile
 // before being called.
 func TestUnsupportedCommand(d TestDPEInstance, c DPEClient, t *testing.T) {
 	ctx := &DefaultContextHandle
@@ -165,13 +151,6 @@ func TestUnsupportedCommand(d TestDPEInstance, c DPEClient, t *testing.T) {
 		t.Errorf("[ERROR]: ExtendTCI is not supported by DPE, should return %q, but returned no error", StatusInvalidCommand)
 	} else if !errors.Is(err, StatusInvalidCommand) {
 		t.Errorf("[ERROR]: Incorrect error type. ExtendTCI is not supported by DPE, should return %q, but returned %q", StatusInvalidCommand, err)
-	}
-
-	// Check whether TagTCI is unsupported by DPE profile
-	if _, err := c.TagTCI(ctx, 0); err == nil {
-		t.Errorf("[ERROR]: TagTCI is not supported by DPE, should return %q, but returned no error", StatusInvalidCommand)
-	} else if !errors.Is(err, StatusInvalidCommand) {
-		t.Errorf("[ERROR]: Incorrect error type. TagTCI is not supported by DPE, should return %q, but returned %q", StatusInvalidCommand, err)
 	}
 }
 

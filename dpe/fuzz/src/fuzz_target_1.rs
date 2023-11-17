@@ -82,8 +82,6 @@ fn harness(data: &[u8]) {
         Response::Sign(ref res) => res.resp_hdr.status,
         Response::DestroyCtx(ref resp_hdr) => resp_hdr.status,
         Response::ExtendTci(ref res) => res.resp_hdr.status,
-        Response::TagTci(ref res) => res.resp_hdr.status,
-        Response::GetTaggedTci(ref res) => res.resp_hdr.status,
         Response::GetCertificateChain(ref res) => res.resp_hdr.status,
         Response::Error(ref resp_hdr) => resp_hdr.status,
     };
