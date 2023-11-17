@@ -14,11 +14,6 @@ pub struct Context {
 
     /// Which hardware locality owns the context.
     pub locality: u32,
-    /// Optional tag assigned to the context.
-    pub tag: u32,
-
-    /// Whether a tag has been assigned to the context.
-    pub has_tag: U8Bool,
 
     /// Index in DPE instance of the parent context. 0xFF if this node is the root
     pub parent_idx: u8,
@@ -36,6 +31,7 @@ pub struct Context {
     pub allow_ca: U8Bool,
     /// Whether this context can emit certificates in X.509 format
     pub allow_x509: U8Bool,
+    pub reserved: [u8; 1],
 }
 
 impl Context {
@@ -50,18 +46,14 @@ impl Context {
             context_type: ContextType::Normal,
             state: ContextState::Inactive,
             locality: 0,
-            has_tag: U8Bool::new(false),
-            tag: 0,
             uses_internal_input_info: U8Bool::new(false),
             uses_internal_input_dice: U8Bool::new(false),
             allow_ca: U8Bool::new(false),
             allow_x509: U8Bool::new(false),
+            reserved: [0; 1],
         }
     }
 
-    pub fn has_tag(&self) -> bool {
-        self.has_tag.get()
-    }
     pub fn uses_internal_input_info(&self) -> bool {
         self.uses_internal_input_info.get()
     }
@@ -101,8 +93,6 @@ impl Context {
     /// context cannot be re-initialized.
     pub fn destroy(&mut self) {
         self.tci = TciNodeData::new();
-        self.has_tag = false.into();
-        self.tag = 0;
         self.state = ContextState::Inactive;
         self.uses_internal_input_info = false.into();
         self.uses_internal_input_dice = false.into();
@@ -274,16 +264,16 @@ mod tests {
         let root_index = CHAIN_INDICES[0];
         assert_eq!(MAX_HANDLES, CHAIN_INDICES.len());
 
-        // Lets put the context's index in the tag to make it easy to find later.
-        contexts[root_index].tag = root_index as u32;
+        // Put the context's index in the handle to make it easy to find later.
+        contexts[root_index].handle = ContextHandle([root_index as u8; ContextHandle::SIZE]);
         contexts[root_index].state = ContextState::Retired;
 
-        // Assign all of the children's parents and put their index in the tag.
+        // Assign all of the children's parents and put their index in the handle.
         for (parent_chain_idx, child_idx) in CHAIN_INDICES.iter().skip(1).enumerate() {
             let parent_idx = CHAIN_INDICES[parent_chain_idx];
             let context = &mut contexts[*child_idx];
             context.parent_idx = parent_idx as u8;
-            context.tag = *child_idx as u32;
+            context.handle = ContextHandle([*child_idx as u8; ContextHandle::SIZE]);
             context.state = ContextState::Active;
         }
 
@@ -295,7 +285,10 @@ mod tests {
             .rev()
             .zip(ChildToRootIter::new(leaf_index, &contexts))
         {
-            assert_eq!(*answer, status.unwrap().tag as usize);
+            assert_eq!(
+                [*answer as u8; ContextHandle::SIZE],
+                status.unwrap().handle.0
+            );
             count += 1;
         }
 

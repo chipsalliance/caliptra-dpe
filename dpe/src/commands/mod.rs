@@ -12,10 +12,8 @@ pub use self::initialize_context::InitCtxCmd;
 pub use self::certify_key::{CertifyKeyCmd, CertifyKeyFlags};
 
 use self::extend_tci::ExtendTciCmd;
-use self::get_tagged_tci::GetTaggedTciCmd;
 pub use self::rotate_context::{RotateCtxCmd, RotateCtxFlags};
 pub use self::sign::{SignCmd, SignFlags};
-use self::tag_tci::TagTciCmd;
 
 use crate::{
     dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
@@ -30,11 +28,9 @@ mod derive_child;
 mod destroy_context;
 mod extend_tci;
 mod get_certificate_chain;
-mod get_tagged_tci;
 mod initialize_context;
 mod rotate_context;
 mod sign;
-mod tag_tci;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Command {
@@ -46,8 +42,6 @@ pub enum Command {
     RotateCtx(RotateCtxCmd),
     DestroyCtx(DestroyCtxCmd),
     ExtendTci(ExtendTciCmd),
-    TagTci(TagTciCmd),
-    GetTaggedTci(GetTaggedTciCmd),
     GetCertificateChain(GetCertificateChainCmd),
 }
 
@@ -61,8 +55,6 @@ impl Command {
     pub const DESTROY_CONTEXT: u32 = 0x0f;
     pub const GET_CERTIFICATE_CHAIN: u32 = 0x80;
     pub const EXTEND_TCI: u32 = 0x81;
-    pub const TAG_TCI: u32 = 0x82;
-    pub const GET_TAGGED_TCI: u32 = 0x83;
 
     /// Returns the command with its parameters given a slice of bytes.
     ///
@@ -85,8 +77,6 @@ impl Command {
                 Self::parse_command(Command::GetCertificateChain, bytes)
             }
             Command::EXTEND_TCI => Self::parse_command(Command::ExtendTci, bytes),
-            Command::TAG_TCI => Self::parse_command(Command::TagTci, bytes),
-            Command::GET_TAGGED_TCI => Self::parse_command(Command::GetTaggedTci, bytes),
             _ => Err(DpeErrorCode::InvalidCommand),
         }
     }
@@ -112,8 +102,6 @@ impl From<Command> for u32 {
             Command::RotateCtx(_) => Command::ROTATE_CONTEXT_HANDLE,
             Command::DestroyCtx(_) => Command::DESTROY_CONTEXT,
             Command::ExtendTci(_) => Command::EXTEND_TCI,
-            Command::TagTci(_) => Command::TAG_TCI,
-            Command::GetTaggedTci(_) => Command::GET_TAGGED_TCI,
             Command::GetCertificateChain(_) => Command::GET_CERTIFICATE_CHAIN,
         }
     }

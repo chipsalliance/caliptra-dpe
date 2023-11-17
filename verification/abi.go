@@ -9,10 +9,6 @@ import (
 
 var DefaultContextHandle = ContextHandle{0}
 
-const defaultCtxTCITag = TCITag(12345)
-const nonExistentTCITag = TCITag(98765)
-const childCtxTCITag = TCITag(34567)
-
 const (
 	CmdMagic  uint32 = 0x44504543
 	RespMagic uint32 = 0x44504552
@@ -27,7 +23,6 @@ type Support struct {
 	Simulation    bool
 	ExtendTci     bool
 	AutoInit      bool
-	Tagging       bool
 	RotateContext bool
 	X509          bool
 	Csr           bool
@@ -47,8 +42,6 @@ const (
 	CommandDestroyContext      CommandCode = 0xf
 	CommandGetCertificateChain CommandCode = 0x80
 	CommandExtendTCI           CommandCode = 0x81
-	CommandTagTCI              CommandCode = 0x82
-	CommandGetTaggedTCI        CommandCode = 0x83
 )
 
 type CommandHdr struct {
@@ -143,26 +136,6 @@ type GetCertificateChainReq struct {
 type GetCertificateChainResp struct {
 	CertificateSize  uint32
 	CertificateChain []byte
-}
-
-type TCITag uint32
-
-type TagTCIReq struct {
-	ContextHandle ContextHandle
-	Tag           TCITag
-}
-
-type TagTCIResp struct {
-	NewContextHandle ContextHandle
-}
-
-type GetTaggedTCIReq struct {
-	Tag TCITag
-}
-
-type GetTaggedTCIResp[Digest DigestAlgorithm] struct {
-	CumulativeTCI Digest
-	CurrentTCI    Digest
 }
 
 type RotateContextHandleFlags uint32
@@ -447,30 +420,6 @@ func (c *dpeABI[_, _]) GetCertificateChainABI() (*GetCertificateChainResp, error
 	return &certs, nil
 }
 
-// TagTCI calls the DPE TagTCI command.
-func (c *dpeABI[_, _]) TagTCIABI(cmd *TagTCIReq) (*TagTCIResp, error) {
-	var respStruct TagTCIResp
-
-	_, err := execCommand(c.transport, CommandTagTCI, c.Profile, cmd, &respStruct)
-	if err != nil {
-		return nil, err
-	}
-
-	return &respStruct, nil
-}
-
-// GetTaggedTCI calls the DPE GetTaggedTCI command.
-func (c *dpeABI[_, Digest]) GetTaggedTCIABI(cmd *GetTaggedTCIReq) (*GetTaggedTCIResp[Digest], error) {
-	var respStruct GetTaggedTCIResp[Digest]
-
-	_, err := execCommand(c.transport, CommandGetTaggedTCI, c.Profile, cmd, &respStruct)
-	if err != nil {
-		return nil, err
-	}
-
-	return &respStruct, nil
-}
-
 // DeriveChild calls DPE DeriveChild command.
 func (c *dpeABI[_, Digest]) DeriveChildABI(cmd *DeriveChildReq[Digest]) (*DeriveChildResp, error) {
 	var respStruct DeriveChildResp
@@ -560,36 +509,6 @@ func (c *dpeABI[_, Digest]) CertifyKey(handle *ContextHandle, label []byte, form
 	}
 
 	return key, nil
-}
-
-func (c *dpeABI[_, _]) TagTCI(handle *ContextHandle, tag TCITag) (*ContextHandle, error) {
-	cmd := TagTCIReq{
-		ContextHandle: *handle,
-		Tag:           tag,
-	}
-
-	resp, err := c.TagTCIABI(&cmd)
-	if err != nil {
-		return nil, err
-	}
-
-	return &resp.NewContextHandle, nil
-}
-
-func (c *dpeABI[_, _]) GetTaggedTCI(tag TCITag) (*DPETCI, error) {
-	cmd := GetTaggedTCIReq{
-		Tag: tag,
-	}
-
-	resp, err := c.GetTaggedTCIABI(&cmd)
-	if err != nil {
-		return nil, err
-	}
-
-	return &DPETCI{
-		CumulativeTCI: resp.CumulativeTCI.Bytes(),
-		CurrentTCI:    resp.CurrentTCI.Bytes(),
-	}, nil
 }
 
 func (c *dpeABI[_, _]) DestroyContext(handle *ContextHandle, flags DestroyCtxFlags) error {
@@ -701,9 +620,6 @@ func (s *Support) ToFlags() uint32 {
 	if s.AutoInit {
 		flags |= (1 << 29)
 	}
-	if s.Tagging {
-		flags |= (1 << 28)
-	}
 	if s.RotateContext {
 		flags |= (1 << 27)
 	}
@@ -717,13 +633,13 @@ func (s *Support) ToFlags() uint32 {
 		flags |= (1 << 24)
 	}
 	if s.InternalInfo {
-		flags |= (1 << 23)
-	}
-	if s.InternalDice {
 		flags |= (1 << 22)
 	}
-	if s.IsCA {
+	if s.InternalDice {
 		flags |= (1 << 21)
+	}
+	if s.IsCA {
+		flags |= (1 << 20)
 	}
 	return flags
 }

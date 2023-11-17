@@ -49,8 +49,6 @@ fn handle_request(dpe: &mut DpeInstance, env: &mut DpeEnv<impl DpeTypes>, stream
         Response::Sign(ref res) => res.resp_hdr.status,
         Response::DestroyCtx(ref resp_hdr) => resp_hdr.status,
         Response::ExtendTci(ref res) => res.resp_hdr.status,
-        Response::TagTci(ref res) => res.resp_hdr.status,
-        Response::GetTaggedTci(ref res) => res.resp_hdr.status,
         Response::GetCertificateChain(ref res) => res.resp_hdr.status,
         Response::Error(ref resp_hdr) => resp_hdr.status,
     };
@@ -82,10 +80,6 @@ struct Args {
     /// Automatically initializes the default context.
     #[arg(long)]
     supports_auto_init: bool,
-
-    /// Supports the TagTci and GetTaggedTci commands.
-    #[arg(long)]
-    supports_tagging: bool,
 
     /// Supports the RotateContextHandle command.
     #[arg(long)]
@@ -152,7 +146,6 @@ fn main() -> std::io::Result<()> {
     support.set(Support::INTERNAL_INFO, args.supports_internal_info);
     support.set(Support::IS_CA, args.supports_is_ca);
     support.set(Support::IS_SYMMETRIC, args.supports_is_symmetric);
-    support.set(Support::TAGGING, args.supports_tagging);
 
     let mut env = DpeEnv::<SimTypes> {
         crypto: OpensslCrypto::new(),

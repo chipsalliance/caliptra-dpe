@@ -23,7 +23,7 @@ pub mod x509;
 use zerocopy::{AsBytes, FromBytes};
 
 const MAX_CERT_SIZE: usize = 2048;
-const MAX_HANDLES: usize = 24;
+pub const MAX_HANDLES: usize = 24;
 const CURRENT_PROFILE_MAJOR_VERSION: u16 = 0;
 const CURRENT_PROFILE_MINOR_VERSION: u16 = 8;
 

@@ -114,8 +114,6 @@ impl DpeInstance {
             Command::RotateCtx(cmd) => cmd.execute(self, env, locality),
             Command::DestroyCtx(cmd) => cmd.execute(self, env, locality),
             Command::ExtendTci(cmd) => cmd.execute(self, env, locality),
-            Command::TagTci(cmd) => cmd.execute(self, env, locality),
-            Command::GetTaggedTci(cmd) => cmd.execute(self, env, locality),
             Command::GetCertificateChain(cmd) => cmd.execute(self, env, locality),
         };
 
@@ -128,7 +126,7 @@ impl DpeInstance {
     // Inlined so the callsite optimizer knows that idx < self.contexts.len()
     // and won't insert possible call to panic.
     #[inline(always)]
-    pub(crate) fn get_active_context_pos(
+    pub fn get_active_context_pos(
         &self,
         handle: &ContextHandle,
         locality: u32,

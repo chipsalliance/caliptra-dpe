@@ -35,8 +35,6 @@ func (s Status) Error() string {
 		return "contextHandle does not exist"
 	case StatusInvalidLocality:
 		return "Hardware Locality does not exist"
-	case StatusBadTag:
-		return "TCI Tag is either in use (TagTci) or not found (GetTaggedTci)"
 	case StatusMaxTCIs:
 		return "maximum number of TCIs have been created"
 	case StatusPlatformError:
