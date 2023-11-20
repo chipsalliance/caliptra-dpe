@@ -4,54 +4,45 @@ package verification
 
 import (
 	"errors"
-	//"reflect"
 	"testing"
 )
 
-func TestTagTCI(d TestDPEInstance, client DPEClient, t *testing.T) {
-	useSimulation := false
-	ctx := getInitialContextHandle(d, client, t, useSimulation)
+// Check tagTCI command with default context handle.
+func TestTagTCI(d TestDPEInstance, c DPEClient, t *testing.T) {
+	var err error
+	useSimulation := false // To indicate that simulation context is not used
 
-	tag := TCITag(12345)
-	// Check to see our tag is not yet found.
-	if _, err := client.GetTaggedTCI(tag); !errors.Is(err, StatusBadTag) {
+	// Get default context handle
+	handle := getInitialContextHandle(d, c, t, useSimulation)
+
+	// Check to see our tag is not yet found and then tag default context
+	if _, err := c.GetTaggedTCI(defaultCtxTCITag); !errors.Is(err, StatusBadTag) {
 		t.Fatalf("GetTaggedTCI returned %v, want %v", err, StatusBadTag)
 	}
 
-	// Tag the default context
-	handle, err := client.TagTCI(ctx, tag)
+	// Tag default context handle and make sure default handle returns
+	// same handle when used for tagging TCI
+	newHandle, err := c.TagTCI(handle, defaultCtxTCITag)
 	if err != nil {
 		t.Fatalf("Could not tag TCI: %v", err)
 	}
-
-	if *handle != *ctx {
-		t.Errorf("New context handle from TagTCI was %x, expected %x", handle, ctx)
+	if *newHandle != *handle {
+		t.Errorf("New context handle from TagTCI was %x, expected %x", newHandle, handle)
 	}
 
-	_, err = client.GetTaggedTCI(tag)
+	_, err = c.GetTaggedTCI(defaultCtxTCITag)
 	if err != nil {
 		t.Fatalf("Could not get tagged TCI: %v", err)
 	}
 
-	// TODO: For profiles which use auto-initialization, we don't know the expected
-	// TCIs. Uncomment this once the DeriveChild API is implemented so the test
-	// can control the TCI inputs.
-	/*
-		wantCumulativeTCI := make([]byte, profile.GetDigestSize())
-		if !reflect.DeepEqual(taggedTCI.CumulativeTCI, wantCumulativeTCI) {
-			t.Errorf("GetTaggedTCI returned cumulative TCI %x, expected %x", taggedTCI.CumulativeTCI, wantCumulativeTCI)
-		}
-
-		wantCurrentTCI := make([]byte, profile.GetDigestSize())
-		if !reflect.DeepEqual(taggedTCI.CurrentTCI, wantCurrentTCI) {
-			t.Errorf("GetTaggedTCI returned current TCI %x, expected %x", taggedTCI.CurrentTCI, wantCurrentTCI)
-		}
-	*/
-
-	// Make sure some other tag is still not found.
-	if _, err := client.GetTaggedTCI(TCITag(98765)); !errors.Is(err, StatusBadTag) {
-		t.Fatalf("GetTaggedTCI returned %v, want %v", err, StatusBadTag)
+	// Retag a tagged TCI should report error
+	newTag := TCITag(11111)
+	if _, err := c.TagTCI(handle, newTag); !errors.Is(err, StatusBadTag) {
+		t.Fatalf("Re-tagging a tagged TCI returned %v, want %v", err, StatusBadTag)
 	}
 
-	// TODO: When DeriveChild is implemented, call it here to add more TCIs and call TagTCI again.
+	// Fetching a non-existent tag should report error
+	if _, err := c.GetTaggedTCI(TCITag(nonExistentTCITag)); !errors.Is(err, StatusBadTag) {
+		t.Fatalf("GetTaggedTCI returned %v, want %v", err, StatusBadTag)
+	}
 }

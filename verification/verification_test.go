@@ -8,8 +8,6 @@ import (
 	"testing"
 )
 
-var testTargetType string
-
 // This will be called before running tests, and it assigns the socket path based on command line flag.
 func TestMain(m *testing.M) {
 	TargetExe = flag.String("sim", "../target/debug/simulator", "path to simulator executable")

@@ -4,11 +4,14 @@ package verification
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"crypto/sha512"
 	"crypto/x509"
 	"encoding/asn1"
 	"encoding/binary"
 	"encoding/pem"
 	"fmt"
+	"hash"
 	"reflect"
 	"testing"
 	"time"
@@ -34,6 +37,8 @@ var (
 	OidExtensionTcgDiceKpAssertInit    = asn1.ObjectIdentifier{2, 23, 133, 5, 4, 100, 10}
 	OidExtensionTcgDiceKpAssertLoc     = asn1.ObjectIdentifier{2, 23, 133, 5, 4, 100, 11}
 	OidExtensionTcgDiceKpEca           = asn1.ObjectIdentifier{2, 23, 133, 5, 4, 100, 12}
+	OidSHA256                          = asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 2, 1}
+	OidSHA384                          = asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 2, 2}
 )
 
 var TcgDiceCriticalExtensions = [...]string{
@@ -218,7 +223,7 @@ func checkCertifyKeyTcgUeidExtension(t *testing.T, c *x509.Certificate, label []
 
 // A tcg-dice-MultiTcbInfo extension.
 // This extension SHOULD be marked as critical.
-func checkCertifyKeyMultiTcbInfoExtension(t *testing.T, c *x509.Certificate) (TcgMultiTcbInfo, error) {
+func checkCertifyKeyMultiTcbInfoExtensionStructure(t *testing.T, c *x509.Certificate) (TcgMultiTcbInfo, error) {
 	t.Helper()
 	var multiTcbInfo TcgMultiTcbInfo
 	var err error
@@ -239,6 +244,44 @@ func checkCertifyKeyMultiTcbInfoExtension(t *testing.T, c *x509.Certificate) (Tc
 		}
 	}
 	return multiTcbInfo, err
+}
+
+// Checks the FWID block's Digest.
+// FWID at index 0 has the TCI_CURRENT as digest
+// FWID at index 1 has the TCI_CUMULATIVE as digest
+// The length of FWID array in each DICE TCB information block is 2.
+func checkCurrentDiceTcbMeasurements(t *testing.T, multiTcbInfo []DiceTcbInfo, expectedCurrentValue []byte) {
+	currentTci := multiTcbInfo[0].Fwids[0].Digest
+	cumulativeTci := multiTcbInfo[0].Fwids[1].Digest
+
+	if !bytes.Equal(currentTci, expectedCurrentValue) {
+		t.Errorf("[ERROR]: Unexpected TCI_CURRENT digest, want %v but got %v", expectedCurrentValue, currentTci)
+	}
+
+	// Calculate expected cumulative value
+	var expectedCumulativeValue []byte
+	var defaultTci []byte
+	var hasher hash.Hash
+	if multiTcbInfo[0].Fwids[1].HashAlg.Equal(OidSHA384) {
+		hasher = sha512.New384()
+		defaultTci = make([]byte, 48)
+		hasher.Write(defaultTci)
+	} else if multiTcbInfo[0].Fwids[1].HashAlg.Equal(OidSHA256) {
+		hasher = sha256.New()
+		defaultTci = make([]byte, 32)
+		hasher.Write(defaultTci)
+	}
+
+	// The DiceTcbInfo blocks are listed with current node at index0 followed by parent TCI nodes.
+	for i := len(multiTcbInfo) - 1; i >= 0; i-- {
+		hasher.Write(multiTcbInfo[i].Fwids[0].Digest)
+	}
+	expectedCumulativeValue = hasher.Sum(nil)
+
+	// Verify the FWID index-1 which has TCI_CUMULATIVE value of current node
+	if !bytes.Equal(cumulativeTci, expectedCumulativeValue) {
+		t.Errorf("[ERROR]: Unexpected cumulative TCI value, want %v but got %v", expectedCumulativeValue, cumulativeTci)
+	}
 }
 
 // Check whether certificate extended key usage is as per spec
@@ -354,7 +397,7 @@ func validateCertifyKeyCert(t *testing.T, c *x509.Certificate, flags uint32, lab
 	checkCertifyKeyTcgUeidExtension(t, c, label)
 
 	// Check MultiTcbInfo Extension structure
-	checkCertifyKeyMultiTcbInfoExtension(t, c)
+	checkCertifyKeyMultiTcbInfoExtensionStructure(t, c)
 }
 
 func checkCertificateStructure(t *testing.T, certBytes []byte) *x509.Certificate {
@@ -433,9 +476,11 @@ func checkCertificateStructure(t *testing.T, certBytes []byte) *x509.Certificate
 
 func testCertifyKey(d TestDPEInstance, client DPEClient, t *testing.T, simulation bool) {
 	ctx := getInitialContextHandle(d, client, t, simulation)
-	if simulation {
-		defer client.DestroyContext(ctx, 0)
-	}
+	defer func() {
+		if simulation {
+			client.DestroyContext(ctx, DestroyDescendants)
+		}
+	}()
 
 	type Params struct {
 		Label []byte
@@ -449,7 +494,7 @@ func testCertifyKey(d TestDPEInstance, client DPEClient, t *testing.T, simulatio
 	digestLen := profile.GetDigestSize()
 
 	seqLabel := make([]byte, digestLen)
-	for i, _ := range seqLabel {
+	for i := range seqLabel {
 		seqLabel[i] = byte(i)
 	}
 
@@ -542,11 +587,6 @@ func buildVerifyOptions(t *testing.T, certChain []*x509.Certificate) x509.Verify
 	}
 
 	return opts
-}
-
-func extractFlagBit(pos int, flags uint32) bool {
-	var mask uint32 = (1 << pos)
-	return (flags & mask) > 0
 }
 
 func getKeyUsageNames(keyUsage x509.KeyUsage) []string {

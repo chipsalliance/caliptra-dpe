@@ -9,6 +9,10 @@ import (
 
 var DefaultContextHandle = ContextHandle{0}
 
+const defaultCtxTCITag = TCITag(12345)
+const nonExistentTCITag = TCITag(98765)
+const childCtxTCITag = TCITag(34567)
+
 const (
 	CmdMagic  uint32 = 0x44504543
 	RespMagic uint32 = 0x44504552

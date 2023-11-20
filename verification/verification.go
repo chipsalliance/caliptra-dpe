@@ -38,6 +38,12 @@ var GetCertificateChainTestCase = TestCase{
 var TagTCITestCase = TestCase{
 	"TagTCI", TestTagTCI, []string{"AutoInit", "Tagging"},
 }
+var ExtendTCITestCase = TestCase{
+	"ExtendTCITestCase", TestExtendTCI, []string{"AutoInit", "Tagging", "ExtendTci"},
+}
+var ExtendDerivedTciTestCase = TestCase{
+	"ExtendDerivedTciTestCase", TestExtendTciOnDerivedContexts, []string{"AutoInit", "Tagging", "ExtendTci"},
+}
 var GetProfileTestCase = TestCase{
 	"GetProfile", TestGetProfile, []string{},
 }
@@ -59,6 +65,8 @@ var AllTestCases = []TestCase{
 	CertifyKeySimulationTestCase,
 	GetCertificateChainTestCase,
 	TagTCITestCase,
+	ExtendTCITestCase,
+	ExtendDerivedTciTestCase,
 	GetProfileTestCase,
 	InitializeContextTestCase,
 	InitializeContextSimulationTestCase,
