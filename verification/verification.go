@@ -30,7 +30,7 @@ var CertifyKeyTestCase = TestCase{
 	"CertifyKey", TestCertifyKey, []string{"AutoInit", "X509", "IsCA"},
 }
 var CertifyKeySimulationTestCase = TestCase{
-	"CertifyKeySimulation", TestCertifyKey_SimulationMode, []string{"AutoInit", "Simulation", "X509", "IsCA"},
+	"CertifyKeySimulation", TestCertifyKeySimulation, []string{"AutoInit", "Simulation", "X509", "IsCA"},
 }
 var GetCertificateChainTestCase = TestCase{
 	"GetCertificateChain", TestGetCertificateChain, []string{"AutoInit", "X509"},
@@ -53,12 +53,24 @@ var UnsupportedCommand = TestCase{
 var UnsupportedCommandFlag = TestCase{
 	"CheckSupportForCommmandFlag", TestUnsupportedCommandFlag, []string{"AutoInit", "RotateContext", "ExtendTci"},
 }
+var SignAsymmetricTestCase = TestCase{
+	"Sign", TestAsymmetricSigning, []string{"AutoInit", "X509"},
+}
+var SignSymmetricTestCase = TestCase{
+	"SignSymmetric", TestSymmetricSigning, []string{"AutoInit", "IsSymmetric"},
+}
+var SignSimulationTestCase = TestCase{
+	"SignSimulation", TestSignSimulation, []string{"Simulation"},
+}
 
 var AllTestCases = []TestCase{
 	CertifyKeyTestCase,
 	CertifyKeySimulationTestCase,
 	GetCertificateChainTestCase,
 	ExtendTCITestCase,
+	SignAsymmetricTestCase,
+	SignSymmetricTestCase,
+	SignSimulationTestCase,
 	GetProfileTestCase,
 	InitializeContextTestCase,
 	InitializeContextSimulationTestCase,
