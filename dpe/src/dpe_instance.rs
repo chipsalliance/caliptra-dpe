@@ -221,7 +221,7 @@ impl DpeInstance {
     /// # Arguments
     ///
     /// * `idx` - the index of the context
-    pub(crate) fn roll_onetime_use_handle(
+    pub fn roll_onetime_use_handle(
         &mut self,
         env: &mut DpeEnv<impl DpeTypes>,
         idx: usize,
