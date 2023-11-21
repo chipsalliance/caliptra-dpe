@@ -31,39 +31,42 @@ func getMultiTcbInfo(c *x509.Certificate) (TcgMultiTcbInfo, error) {
 	return multiTcbInfo, nil
 }
 
-func getTcbInfoForHandle(c DPEClient, handle *ContextHandle) (DiceTcbInfo, error) {
+func getTcbInfoForHandle(c DPEClient, handle *ContextHandle) (*ContextHandle, DiceTcbInfo, error) {
+	outHandle := handle
+
 	// Get digest size
 	profile, err := c.GetProfile()
 	if err != nil {
-		return DiceTcbInfo{}, err
+		return outHandle, DiceTcbInfo{}, fmt.Errorf("Cannot get profile: %s", err)
 	}
 
 	digestLen := profile.Profile.GetDigestSize()
 	label := make([]byte, digestLen)
 
-	certifiedKey, err := c.CertifyKey(handle, label, CertifyKeyX509, 0)
+	certifiedKey, err := c.CertifyKey(outHandle, label, CertifyKeyX509, 0)
 	if err != nil {
-		return DiceTcbInfo{}, err
+		return outHandle, DiceTcbInfo{}, fmt.Errorf("Could not certify key: %s", err)
 	}
 
+	outHandle = &certifiedKey.Handle
 	leafCertBytes := certifiedKey.Certificate
 
 	var leafCert *x509.Certificate
 
 	// Check whether certificate is DER encoded.
 	if leafCert, err = x509.ParseCertificate(leafCertBytes); err != nil {
-		return DiceTcbInfo{}, err
+		return outHandle, DiceTcbInfo{}, err
 	}
 
 	// Get DICE information from MultiTcbInfo Extension
 	multiTcbInfo, err := getMultiTcbInfo(leafCert)
 	if err != nil {
-		return DiceTcbInfo{}, err
+		return outHandle, DiceTcbInfo{}, err
 	}
 
 	if len(multiTcbInfo) == 0 {
-		return DiceTcbInfo{}, fmt.Errorf("Certificate MutliTcbInfo is empty")
+		return outHandle, DiceTcbInfo{}, fmt.Errorf("Certificate MutliTcbInfo is empty")
 	}
 
-	return multiTcbInfo[0], nil
+	return outHandle, multiTcbInfo[0], nil
 }
