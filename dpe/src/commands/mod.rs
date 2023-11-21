@@ -5,7 +5,7 @@ Abstract:
     DPE Commands and deserialization.
 --*/
 pub use self::derive_child::{DeriveChildCmd, DeriveChildFlags};
-pub(crate) use self::destroy_context::DestroyCtxCmd;
+pub use self::destroy_context::DestroyCtxCmd;
 pub use self::get_certificate_chain::GetCertificateChainCmd;
 pub use self::initialize_context::InitCtxCmd;
 
