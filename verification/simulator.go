@@ -171,6 +171,10 @@ func (s *DpeSimulator) GetSupportedLocalities() []uint32 {
 	return []uint32{DPE_SIMULATOR_AUTO_INIT_LOCALITY, DPE_SIMULATOR_OTHER_LOCALITY}
 }
 
+func (s *DpeSimulator) HasLocalityControl() bool {
+	return true
+}
+
 func (s *DpeSimulator) SetLocality(locality uint32) {
 	s.currentLocality = locality
 }

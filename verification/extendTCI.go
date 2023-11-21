@@ -3,9 +3,9 @@
 package verification
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"crypto/sha512"
-	"crypto/x509"
 	"hash"
 
 	"testing"
@@ -26,22 +26,16 @@ func TestExtendTCI(d TestDPEInstance, c DPEClient, t *testing.T) {
 	}
 	digestLen := profile.GetDigestSize()
 
-	// Initialize TCI inputs with all zeroes
-	// since, TCI_DEFAULT for default context is all zeroes
-	defaultTci := make([]byte, digestLen)
-
-	// Initialize hasher
-	var hasher hash.Hash
-	if digestLen == 32 {
-		hasher = sha256.New()
-	} else if digestLen == 48 {
-		hasher = sha512.New384()
-	}
-
 	tciValue := make([]byte, digestLen)
 	for i := range tciValue {
 		tciValue[i] = byte(i)
 	}
+
+	tcbInfo, err := getTcbInfoForHandle(c, handle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lastCumulative := tcbInfo.Fwids[1].Digest
 
 	// Set current TCI value
 	_, err = c.ExtendTCI(handle, tciValue)
@@ -49,31 +43,35 @@ func TestExtendTCI(d TestDPEInstance, c DPEClient, t *testing.T) {
 		t.Fatalf("[FATAL]: Could not extend TCI: %v", err)
 	}
 
+	// Compute expected cumulative
+	var hasher hash.Hash
+	if digestLen == 32 {
+		hasher = sha256.New()
+	} else if digestLen == 48 {
+		hasher = sha512.New384()
+	}
+	hasher.Write(lastCumulative)
+	hasher.Write(tciValue)
+	expectedCumulative := hasher.Sum(nil)
+
 	// Cross-check current and cumulative measurement by CertifyKey
-	verifyMeasurementsByCertifyKey(c, t, handle, defaultTci, tciValue, hasher)
+	verifyMeasurements(c, t, handle, tciValue, expectedCumulative)
 }
 
-func verifyMeasurementsByCertifyKey(c DPEClient, t *testing.T, handle *ContextHandle, label []byte, tciValue []byte, hasher hash.Hash) {
-	certifiedKey, err := c.CertifyKey(handle, label, CertifyKeyX509, 0)
+func verifyMeasurements(c DPEClient, t *testing.T, handle *ContextHandle, expectedCurrent []byte, expectedCumulative []byte) {
+	tcbInfo, err := getTcbInfoForHandle(c, handle)
 	if err != nil {
-		t.Fatalf("[FATAL]: Could not get Certified key: %v", err)
+		t.Fatal(err)
 	}
 
-	leafCertBytes := certifiedKey.Certificate
-
-	var leafCert *x509.Certificate
-
-	// Check whether certificate is DER encoded.
-	if leafCert, err = x509.ParseCertificate(leafCertBytes); err != nil {
-		t.Fatalf("[FATAL]: Could not parse certificate using crypto/x509: %v", err)
+	// Check that the last TcbInfo current/cumulative are as expected
+	current := tcbInfo.Fwids[0].Digest
+	cumulative := tcbInfo.Fwids[1].Digest
+	if !bytes.Equal(current, expectedCurrent) {
+		t.Errorf("[ERROR]: Unexpected TCI_CURRENT digest, want %v but got %v", expectedCurrent, current)
 	}
 
-	// Get DICE information from MultiTcbInfo Extension
-	multiTcbInfo, err := checkCertifyKeyMultiTcbInfoExtensionStructure(t, leafCert)
-	if err != nil {
-		t.Errorf("Error while unmarshalling MultiTCB information %v, skipping MultiTCB validation", err)
-	} else {
-		// Cross-verify cumulative value returned in MultiTcbInfo
-		checkCurrentDiceTcbMeasurements(t, multiTcbInfo, tciValue)
+	if !bytes.Equal(cumulative, expectedCumulative) {
+		t.Errorf("[ERROR]: Unexpected cumulative TCI value, want %v but got %v", expectedCumulative, cumulative)
 	}
 }

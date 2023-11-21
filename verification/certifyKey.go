@@ -4,14 +4,11 @@ package verification
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"crypto/sha512"
 	"crypto/x509"
 	"encoding/asn1"
 	"encoding/binary"
 	"encoding/pem"
 	"fmt"
-	"hash"
 	"reflect"
 	"testing"
 	"time"
@@ -221,69 +218,6 @@ func checkCertifyKeyTcgUeidExtension(t *testing.T, c *x509.Certificate, label []
 	}
 }
 
-// A tcg-dice-MultiTcbInfo extension.
-// This extension SHOULD be marked as critical.
-func checkCertifyKeyMultiTcbInfoExtensionStructure(t *testing.T, c *x509.Certificate) (TcgMultiTcbInfo, error) {
-	t.Helper()
-	var multiTcbInfo TcgMultiTcbInfo
-	var err error
-
-	// Check MultiTcbInfo Extension
-	//tcg-dice-MultiTcbInfo extension
-	for _, ext := range c.Extensions {
-		if ext.Id.Equal(OidExtensionTcgDiceMultiTcbInfo) { // OID for Tcg Dice MultiTcbInfo
-			if !ext.Critical {
-				t.Errorf("[ERROR]: TCG DICE MultiTcbInfo extension is not marked as CRITICAL")
-			}
-			_, err = asn1.Unmarshal(ext.Value, &multiTcbInfo)
-			if err != nil {
-				// multiTcb info is not provided in leaf
-				t.Errorf("[ERROR]: Failed to unmarshal MultiTcbInfo field: %v", err)
-			}
-			break
-		}
-	}
-	return multiTcbInfo, err
-}
-
-// Checks the FWID block's Digest.
-// FWID at index 0 has the TCI_CURRENT as digest
-// FWID at index 1 has the TCI_CUMULATIVE as digest
-// The length of FWID array in each DICE TCB information block is 2.
-func checkCurrentDiceTcbMeasurements(t *testing.T, multiTcbInfo []DiceTcbInfo, expectedCurrentValue []byte) {
-	currentTci := multiTcbInfo[0].Fwids[0].Digest
-	cumulativeTci := multiTcbInfo[0].Fwids[1].Digest
-
-	if !bytes.Equal(currentTci, expectedCurrentValue) {
-		t.Errorf("[ERROR]: Unexpected TCI_CURRENT digest, want %v but got %v", expectedCurrentValue, currentTci)
-	}
-
-	// Calculate expected cumulative value
-	var expectedCumulativeValue []byte
-	var defaultTci []byte
-	var hasher hash.Hash
-	if multiTcbInfo[0].Fwids[1].HashAlg.Equal(OidSHA384) {
-		hasher = sha512.New384()
-		defaultTci = make([]byte, 48)
-		hasher.Write(defaultTci)
-	} else if multiTcbInfo[0].Fwids[1].HashAlg.Equal(OidSHA256) {
-		hasher = sha256.New()
-		defaultTci = make([]byte, 32)
-		hasher.Write(defaultTci)
-	}
-
-	// The DiceTcbInfo blocks are listed with current node at index0 followed by parent TCI nodes.
-	for i := len(multiTcbInfo) - 1; i >= 0; i-- {
-		hasher.Write(multiTcbInfo[i].Fwids[0].Digest)
-	}
-	expectedCumulativeValue = hasher.Sum(nil)
-
-	// Verify the FWID index-1 which has TCI_CUMULATIVE value of current node
-	if !bytes.Equal(cumulativeTci, expectedCumulativeValue) {
-		t.Errorf("[ERROR]: Unexpected cumulative TCI value, want %v but got %v", expectedCumulativeValue, cumulativeTci)
-	}
-}
-
 // Check whether certificate extended key usage is as per spec
 // OID for ExtendedKeyUsage Extension: 2.5.29.37
 // The ExtendedKeyUsage extension SHOULD be marked as critical
@@ -397,7 +331,10 @@ func validateCertifyKeyCert(t *testing.T, c *x509.Certificate, flags uint32, lab
 	checkCertifyKeyTcgUeidExtension(t, c, label)
 
 	// Check MultiTcbInfo Extension structure
-	checkCertifyKeyMultiTcbInfoExtensionStructure(t, c)
+	_, err := getMultiTcbInfo(c)
+	if err != nil {
+		t.Error(err)
+	}
 }
 
 func checkCertificateStructure(t *testing.T, certBytes []byte) *x509.Certificate {

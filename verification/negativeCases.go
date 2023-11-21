@@ -69,9 +69,14 @@ func TestInvalidHandle(d TestDPEInstance, c DPEClient, t *testing.T) {
 // Exceptions are - GetProfile, InitializeContext, GetCertificateChain, commands
 // which do not need context handle as input and hence locality is irrelevant.
 func TestWrongLocality(d TestDPEInstance, c DPEClient, t *testing.T) {
+	if !d.HasLocalityControl() {
+		t.Skipf("Target does not have locality control")
+	}
+
 	// Modify and later restore the locality of DPE instance to test
-	d.SetLocality(DPE_SIMULATOR_OTHER_LOCALITY)
-	defer d.SetLocality(DPE_SIMULATOR_AUTO_INIT_LOCALITY)
+	currentLocality := d.GetLocality()
+	d.SetLocality(currentLocality + 1)
+	defer d.SetLocality(currentLocality)
 
 	// Get default context handle
 	handle := &DefaultContextHandle

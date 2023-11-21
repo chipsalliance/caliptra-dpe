@@ -41,6 +41,8 @@ type TestDPEInstance interface {
 	SetIsInitialized(bool)
 	// Returns a slice of all the localities the instance supports.
 	GetSupportedLocalities() []uint32
+	// Whether the target can artificially control the locality of the caller
+	HasLocalityControl() bool
 	// Sets the current locality.
 	SetLocality(locality uint32)
 	// Gets the current locality.
