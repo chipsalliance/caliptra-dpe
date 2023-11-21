@@ -56,6 +56,12 @@ var UnsupportedCommand = TestCase{
 var UnsupportedCommandFlag = TestCase{
 	"CheckSupportForCommmandFlag", TestUnsupportedCommandFlag, []string{"AutoInit", "RotateContext", "ExtendTci"},
 }
+var RotateContextTestCase = TestCase{
+	"RotateContextHandle", TestRotateContextHandle, []string{"AutoInit", "RotateContext"},
+}
+var RotateContextSimulationTestCase = TestCase{
+	"RotateContextHandleSimulation", TestRotateContextHandleSimulation, []string{"Simulation", "RotateContext"},
+}
 
 var AllTestCases = []TestCase{
 	CertifyKeyTestCase,
@@ -63,6 +69,8 @@ var AllTestCases = []TestCase{
 	GetCertificateChainTestCase,
 	ExtendTCITestCase,
 	ExtendDerivedTciTestCase,
+	RotateContextTestCase,
+	RotateContextSimulationTestCase,
 	GetProfileTestCase,
 	InitializeContextTestCase,
 	InitializeContextSimulationTestCase,
