@@ -4,6 +4,8 @@ package verification
 
 import (
 	"bytes"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/sha256"
 	"crypto/sha512"
 	"crypto/x509"
@@ -12,6 +14,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"hash"
+	"math/big"
 	"reflect"
 	"testing"
 	"time"
@@ -120,18 +123,23 @@ const (
 
 type TcgMultiTcbInfo = []DiceTcbInfo
 
+type CertifyKeyParams struct {
+	Label []byte
+	Flags CertifyKeyFlags
+}
+
 func TestCertifyKey(d TestDPEInstance, c DPEClient, t *testing.T) {
 	testCertifyKey(d, c, t, false)
 }
 
-func TestCertifyKey_SimulationMode(d TestDPEInstance, c DPEClient, t *testing.T) {
+func TestCertifyKeySimulation(d TestDPEInstance, c DPEClient, t *testing.T) {
 	testCertifyKey(d, c, t, true)
 }
 
 // Ignores critical extensions that are unknown to x509 package
 // but atleast defined in DPE certificate profile specification.
 // UnhandledCriticalExtensions may have only custom extensions mentioned in spec
-// unknownExtnMap collects extensions unknown to both x59 and the DICE certificate profiles spec.
+// unknownExtnMap collects extensions unknown to both x509 and the DICE certificate profiles spec.
 // positive case expects the unknownExtnMap to be empty.
 func removeTcgDiceCriticalExtensions(t *testing.T, certs []*x509.Certificate) {
 	t.Helper()
@@ -161,6 +169,11 @@ func removeTcgDiceCriticalExtensions(t *testing.T, certs []*x509.Certificate) {
 	}
 }
 
+// Ignores extended key usages that are unknown to x509 package
+// but atleast defined in DPE certificate profile specification.
+// UnhandledExtendedKeyUsages may have only custom key usages mentioned in spec
+// unknownKeyUsagesMap collects keyusages unknown to both x509 and the DICE certificate profiles spec.
+// positive case expects the unknownKeyUsagesMap to be empty.
 func removeTcgDiceExtendedKeyUsages(t *testing.T, certs []*x509.Certificate) {
 	t.Helper()
 	unknownKeyUsagesMap := map[string][]string{}
@@ -249,42 +262,55 @@ func checkCertifyKeyMultiTcbInfoExtensionStructure(t *testing.T, c *x509.Certifi
 // Checks the FWID block's Digest.
 // FWID at index 0 has the TCI_CURRENT as digest
 // FWID at index 1 has the TCI_CUMULATIVE as digest
-// The length of FWID array in each DICE TCB information block is 2.
-func checkCurrentDiceTcbMeasurements(t *testing.T, multiTcbInfo []DiceTcbInfo, expectedCurrentValue []byte) {
-	currentTci := multiTcbInfo[0].Fwids[0].Digest
-	cumulativeTci := multiTcbInfo[0].Fwids[1].Digest
+// The length of FWID array in each DICE TCB information block is alyays 2 comprising the current and cumulative.
+func checkCurrentDiceTcbMeasurements(t *testing.T, handle *ContextHandle, multiTcbInfo []DiceTcbInfo, expectedCurrentValue []byte, isTciExtended bool) {
+	t.Helper()
 
+	currentTciIndex := 0
+	currentTci := multiTcbInfo[currentTciIndex].Fwids[0].Digest
 	if !bytes.Equal(currentTci, expectedCurrentValue) {
 		t.Errorf("[ERROR]: Unexpected TCI_CURRENT digest, want %v but got %v", expectedCurrentValue, currentTci)
 	}
 
 	// Calculate expected cumulative value
-	var expectedCumulativeValue []byte
 	var defaultTci []byte
 	var hasher hash.Hash
 	if multiTcbInfo[0].Fwids[1].HashAlg.Equal(OidSHA384) {
 		hasher = sha512.New384()
 		defaultTci = make([]byte, 48)
-		hasher.Write(defaultTci)
 	} else if multiTcbInfo[0].Fwids[1].HashAlg.Equal(OidSHA256) {
 		hasher = sha256.New()
 		defaultTci = make([]byte, 32)
+	}
+
+	// For Extended TCI, CUMULATIVE = H(TCI_CUMULATIVE || INPUT_TCI_VALUE)
+	startIndex := 0
+	if isTciExtended {
+		startIndex += 1 // To skip usual hash compuatation for extended TCI
+	}
+
+	// TCI_CUMULATIVE = H(TCI_CURRENT)
+	for i := startIndex; i < len(multiTcbInfo); i++ {
+
+		// Get TCI_CUMULATIVE in MultiTcbInfo Extension
+		cumulativeTci := multiTcbInfo[i].Fwids[1].Digest
+
+		// Re-initialize hasher
+		hasher.Reset()
+
+		// Recompute hash
 		hasher.Write(defaultTci)
-	}
-
-	// The DiceTcbInfo blocks are listed with current node at index0 followed by parent TCI nodes.
-	for i := len(multiTcbInfo) - 1; i >= 0; i-- {
 		hasher.Write(multiTcbInfo[i].Fwids[0].Digest)
-	}
-	expectedCumulativeValue = hasher.Sum(nil)
+		expectedCumulativeValue := hasher.Sum(nil)
 
-	// Verify the FWID index-1 which has TCI_CUMULATIVE value of current node
-	if !bytes.Equal(cumulativeTci, expectedCumulativeValue) {
-		t.Errorf("[ERROR]: Unexpected cumulative TCI value, want %v but got %v", expectedCumulativeValue, cumulativeTci)
+		// Verify hash, the FWID index-1 which has TCI_CUMULATIVE value of current node
+		if !bytes.Equal(cumulativeTci, expectedCumulativeValue) {
+			t.Errorf("[ERROR]: Unexpected cumulative TCI value, want %v but got %v", expectedCumulativeValue, cumulativeTci)
+		}
 	}
 }
 
-// Check whether certificate extended key usage is as per spec
+// Checks whether certificate extended key usage is as per spec
 // OID for ExtendedKeyUsage Extension: 2.5.29.37
 // The ExtendedKeyUsage extension SHOULD be marked as critical
 // If IsCA = true, the extension SHOULD contain tcg-dice-kp-eca
@@ -340,7 +366,7 @@ func checkCertifyKeyExtendedKeyUsages(t *testing.T, c *x509.Certificate) (*TcgMu
 	return multiTcbInfo, err
 }
 
-// Check for KeyUsage Extension as per spec
+// Checks for KeyUsage Extension as per spec
 // If IsCA = true, KeyUsage extension MUST contain DigitalSignature and KeyCertSign
 // If IsCA = false, KeyUsage extension MUST contain  only DigitalSignature
 func checkCertifyKeyExtensions(t *testing.T, c *x509.Certificate) {
@@ -362,25 +388,25 @@ func checkCertifyKeyExtensions(t *testing.T, c *x509.Certificate) {
 
 }
 
-// Validate basic constraints in certificate returned by CertifyKey command
+// Validates basic constraints in certificate returned by CertifyKey command
 // against the flag set for input parameter.
 // The BasicConstraints extension MUST be included
 // If CertifyKey AddIsCA is set, IsCA MUST be set to true.
 // If CertifyKey AddIsCA is NOT set, IsCA MUST be set to false
-func checkCertifyKeyBasicConstraints(t *testing.T, c *x509.Certificate, flags uint32) {
+func checkCertifyKeyBasicConstraints(t *testing.T, c *x509.Certificate, flags CertifyKeyFlags) {
 	t.Helper()
 
 	flagsBuf := &bytes.Buffer{}
 	binary.Write(flagsBuf, binary.LittleEndian, flags)
 
-	flagIsCA := uint32(CertifyAddIsCA)&flags != 0
+	flagIsCA := CertifyAddIsCA&flags != 0
 	if flagIsCA != c.IsCA {
 		t.Errorf("[ERROR]: ADD_IS_CA is set to %v but the basic constraint IsCA is set to %v", flagIsCA, c.IsCA)
 	}
 }
 
-// Validate X509 fields in certificate returned by CertifyKey command.
-func validateCertifyKeyCert(t *testing.T, c *x509.Certificate, flags uint32, label []byte) {
+// Validates X509 fields in certificate returned by CertifyKey command.
+func validateCertifyKeyCert(t *testing.T, c *x509.Certificate, flags CertifyKeyFlags, label []byte) {
 	t.Helper()
 
 	// Check for basic constraints extension
@@ -400,6 +426,7 @@ func validateCertifyKeyCert(t *testing.T, c *x509.Certificate, flags uint32, lab
 	checkCertifyKeyMultiTcbInfoExtensionStructure(t, c)
 }
 
+// Parses X509 certificate
 func checkCertificateStructure(t *testing.T, certBytes []byte) *x509.Certificate {
 	t.Helper()
 	failed := false
@@ -474,18 +501,13 @@ func checkCertificateStructure(t *testing.T, certBytes []byte) *x509.Certificate
 	return x509Cert
 }
 
-func testCertifyKey(d TestDPEInstance, client DPEClient, t *testing.T, simulation bool) {
-	ctx := getInitialContextHandle(d, client, t, simulation)
+func testCertifyKey(d TestDPEInstance, c DPEClient, t *testing.T, simulation bool) {
+	handle := getInitialContextHandle(d, c, t, simulation)
 	defer func() {
 		if simulation {
-			client.DestroyContext(ctx, DestroyDescendants)
+			c.DestroyContext(handle, DestroyDescendants)
 		}
 	}()
-
-	type Params struct {
-		Label []byte
-		Flags CertifyKeyFlags
-	}
 
 	profile, err := GetTransportProfile(d)
 	if err != nil {
@@ -493,25 +515,34 @@ func testCertifyKey(d TestDPEInstance, client DPEClient, t *testing.T, simulatio
 	}
 	digestLen := profile.GetDigestSize()
 
+	var hashAlg asn1.ObjectIdentifier
+	if digestLen == 32 {
+		hashAlg = OidSHA256
+	} else if digestLen == 48 {
+		hashAlg = OidSHA384
+	} else {
+		t.Fatal("Unknown Hash Algorithm")
+	}
+
 	seqLabel := make([]byte, digestLen)
 	for i := range seqLabel {
 		seqLabel[i] = byte(i)
 	}
 
-	certifyKeyParams := []Params{
+	certifyKeyParams := []CertifyKeyParams{
 		{Label: make([]byte, digestLen), Flags: CertifyKeyFlags(0)},
 		{Label: seqLabel, Flags: CertifyKeyFlags(0)},
 	}
 
 	for _, params := range certifyKeyParams {
 		// Get DPE leaf certificate from CertifyKey
-		certifyKeyResp, err := client.CertifyKey(ctx, params.Label, CertifyKeyX509, params.Flags)
+		certifyKeyResp, err := c.CertifyKey(handle, params.Label, CertifyKeyX509, params.Flags)
 		if err != nil {
 			t.Fatalf("[FATAL]: Could not certify key: %v", err)
 		}
 
 		// Get root and intermediate certificates to validate certificate chain of leaf cert
-		certChainBytes, err := client.GetCertificateChain()
+		certChainBytes, err := c.GetCertificateChain()
 		if err != nil {
 			t.Fatalf("[FATAL]: Could not get Certificate Chain: %v", err)
 		}
@@ -522,8 +553,14 @@ func testCertifyKey(d TestDPEInstance, client DPEClient, t *testing.T, simulatio
 		leafCert := checkCertificateStructure(t, leafCertBytes)
 		certChain := checkCertificateChain(t, certChainBytes)
 
+		// Check default context handle is unchanged
+		checkCertifyKeyRespHandle(*certifyKeyResp, t, handle)
+
+		// Check key returned in command response against certificate
+		checkCertifyKeyResponse(t, leafCert, *certifyKeyResp, hashAlg)
+
 		// Validate that all X.509 fields conform with the format defined in the DPE iRoT profile
-		validateCertifyKeyCert(t, leafCert, uint32(params.Flags), params.Label)
+		validateCertifyKeyCert(t, leafCert, params.Flags, params.Label)
 
 		// Ensure full certificate chain has valid signatures
 		// This also checks certificate lifetime, signatures as part of cert chain validation
@@ -532,13 +569,12 @@ func testCertifyKey(d TestDPEInstance, client DPEClient, t *testing.T, simulatio
 		// Reassign handle for simulation mode.
 		// However, this does not impact in default mode because
 		// same default context handle is returned in default mode.
-		ctx = &certifyKeyResp.Handle
-
-		// TODO: When DeriveChild is implemented, call it here to add more TCIs and call CertifyKey again.
+		handle = &certifyKeyResp.Handle
 	}
+	// TODO: When DeriveChild is implemented, call it here to add more TCIs and call CertifyKey again.
 }
 
-// Build certificate chain and calls to validateSignature on each chain.
+// Builds and verifies certificate chain.
 func validateLeafCertChain(t *testing.T, certChain []*x509.Certificate, leafCert *x509.Certificate) {
 	t.Helper()
 	certsToProcess := []*x509.Certificate{leafCert}
@@ -565,6 +601,7 @@ func validateLeafCertChain(t *testing.T, certChain []*x509.Certificate, leafCert
 	}
 }
 
+// Builds Certificate chain verifier parameters.
 func buildVerifyOptions(t *testing.T, certChain []*x509.Certificate) x509.VerifyOptions {
 	roots := x509.NewCertPool()
 	intermediates := x509.NewCertPool()
@@ -589,6 +626,7 @@ func buildVerifyOptions(t *testing.T, certChain []*x509.Certificate) x509.Verify
 	return opts
 }
 
+// Gets KeyUsage bitmap and returns as list of KeyUsage name strings.
 func getKeyUsageNames(keyUsage x509.KeyUsage) []string {
 	keyUsageNames := []string{}
 
@@ -629,4 +667,59 @@ func getKeyUsageNames(keyUsage x509.KeyUsage) []string {
 	}
 
 	return keyUsageNames
+}
+
+// Checks CertifyKey command response against public key extracted from certificate returned in response
+func checkCertifyKeyResponse(t *testing.T, x509Cert *x509.Certificate, response CertifiedKey, hashAlg asn1.ObjectIdentifier) {
+	var err error
+
+	publicKeyDer, err := x509.MarshalPKIXPublicKey(x509Cert.PublicKey)
+	if err != nil {
+		t.Fatalf("[FATAL]: Could not marshal pub key: %v", err)
+	}
+
+	// Parse the DER-encoded public key
+	pubKeyInCert, err := x509.ParsePKIXPublicKey(publicKeyDer)
+	if err != nil {
+		t.Fatalf("[FATAL]: Failed to parse DER-encoded public key: %v", err)
+	}
+
+	if _, ok := pubKeyInCert.(*ecdsa.PublicKey); !ok {
+		t.Fatal("[FATAL]: Public key is not a ecdsa key")
+	}
+
+	var pubKeyInResponse ecdsa.PublicKey
+
+	if hashAlg.Equal(OidSHA384) {
+		pubKeyInResponse = ecdsa.PublicKey{
+			Curve: elliptic.P384(),
+			X:     new(big.Int).SetBytes(response.Pub.X),
+			Y:     new(big.Int).SetBytes(response.Pub.Y),
+		}
+	} else if hashAlg.Equal(OidSHA256) {
+		pubKeyInResponse = ecdsa.PublicKey{
+			Curve: elliptic.P256(),
+			X:     new(big.Int).SetBytes(response.Pub.X),
+			Y:     new(big.Int).SetBytes(response.Pub.Y),
+		}
+	} else {
+		t.Errorf("[ERROR]: Unsupported hash algorithm.")
+		return
+	}
+
+	if !(pubKeyInResponse.Equal(pubKeyInCert)) {
+		t.Errorf("[ERROR]: Public key returned in response must match the Public Key Info in the certificate.")
+	}
+}
+
+// Checks whether the context handle is unchanged after certifyKey command when default context handle is used.
+func checkCertifyKeyRespHandle(res CertifiedKey, t *testing.T, handle *ContextHandle) {
+	if *handle != DefaultContextHandle {
+		t.Logf("[LOG]: Handle is not default context, skipping check...")
+		return
+	}
+
+	if res.Handle != *handle {
+		t.Errorf("[ERROR]: Handle must be unchanged by CertifyKey, want original handle %v but got %v", handle, res.Handle)
+	}
 }
