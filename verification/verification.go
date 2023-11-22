@@ -61,6 +61,7 @@ var RotateContextTestCase = TestCase{
 }
 var RotateContextSimulationTestCase = TestCase{
 	"RotateContextHandleSimulation", TestRotateContextHandleSimulation, []string{"Simulation", "RotateContext"},
+}
 var SignAsymmetricTestCase = TestCase{
 	"Sign", TestAsymmetricSigning, []string{"AutoInit", "X509"},
 }
