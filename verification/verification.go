@@ -30,7 +30,7 @@ var CertifyKeyTestCase = TestCase{
 	"CertifyKey", TestCertifyKey, []string{"AutoInit", "X509", "IsCA"},
 }
 var CertifyKeySimulationTestCase = TestCase{
-	"CertifyKeySimulation", TestCertifyKey_SimulationMode, []string{"AutoInit", "Simulation", "X509", "IsCA"},
+	"CertifyKeySimulation", TestCertifyKeySimulation, []string{"AutoInit", "Simulation", "X509", "IsCA"},
 }
 var GetCertificateChainTestCase = TestCase{
 	"GetCertificateChain", TestGetCertificateChain, []string{"AutoInit", "X509"},
@@ -61,6 +61,14 @@ var RotateContextTestCase = TestCase{
 }
 var RotateContextSimulationTestCase = TestCase{
 	"RotateContextHandleSimulation", TestRotateContextHandleSimulation, []string{"Simulation", "RotateContext"},
+var SignAsymmetricTestCase = TestCase{
+	"Sign", TestAsymmetricSigning, []string{"AutoInit", "X509"},
+}
+var SignSymmetricTestCase = TestCase{
+	"SignSymmetric", TestSymmetricSigning, []string{"AutoInit", "IsSymmetric"},
+}
+var SignSimulationTestCase = TestCase{
+	"SignSimulation", TestSignSimulation, []string{"Simulation"},
 }
 
 var AllTestCases = []TestCase{
@@ -71,6 +79,9 @@ var AllTestCases = []TestCase{
 	ExtendDerivedTciTestCase,
 	RotateContextTestCase,
 	RotateContextSimulationTestCase,
+	SignAsymmetricTestCase,
+	SignSymmetricTestCase,
+	SignSimulationTestCase,
 	GetProfileTestCase,
 	InitializeContextTestCase,
 	InitializeContextSimulationTestCase,
