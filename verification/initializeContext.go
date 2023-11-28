@@ -68,7 +68,11 @@ func testInitContext(d TestDPEInstance, client DPEClient, t *testing.T, simulati
 	}
 }
 
-func getContextHandle(d TestDPEInstance, c DPEClient, t *testing.T, simulation bool) *ContextHandle {
+// When simulation is set to false, returns a default context handle.
+// Else initializes a simulation context and returns its handle. To get simulation
+// context handle, the DPE profile must support simulation context creation.
+// Caller must ensure to destroy the non-default handle through DestroyContext after usage.
+func getInitialContextHandle(d TestDPEInstance, c DPEClient, t *testing.T, simulation bool) *ContextHandle {
 	var handle *ContextHandle
 	var err error
 	if simulation {
@@ -77,7 +81,6 @@ func getContextHandle(d TestDPEInstance, c DPEClient, t *testing.T, simulation b
 			if err != nil {
 				t.Fatal("The instance should be able to create a simulation context.")
 			}
-			// Could prove difficult to prove it is a cryptographically secure random.
 			if *handle == ContextHandle([16]byte{0}) {
 				t.Fatal("Incorrect simulation context handle.")
 			}
@@ -86,8 +89,7 @@ func getContextHandle(d TestDPEInstance, c DPEClient, t *testing.T, simulation b
 		}
 	} else {
 		//default context
-		defaultContext := ContextHandle{0}
-		handle = &defaultContext
+		handle = &DefaultContextHandle
 	}
 
 	return handle

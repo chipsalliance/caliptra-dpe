@@ -45,11 +45,11 @@ type DPEClient interface {
 	DeriveChild(handle *ContextHandle, inputData []byte, flags DeriveChildFlags, tciType uint32, targetLocality uint32) (*DeriveChildResp, error)
 	CertifyKey(handle *ContextHandle, label []byte, format CertifyKeyFormat, flags CertifyKeyFlags) (*CertifiedKey, error)
 	GetCertificateChain() ([]byte, error)
-	TagTCI(handle *ContextHandle, tag TCITag) (*ContextHandle, error)
-	GetTaggedTCI(tag TCITag) (*DPETCI, error)
 	DestroyContext(handle *ContextHandle, flags DestroyCtxFlags) error
+	DeriveChild(handle *ContextHandle, inputData []byte, flags DeriveChildFlags, tciType uint32, targetLocality uint32) (*DeriveChildResp, error)
 	RotateContextHandle(handle *ContextHandle, flags RotateContextHandleFlags) (*ContextHandle, error)
 	Sign(handle *ContextHandle, label []byte, flags SignFlags, toBeSigned []byte) (*DPESignedHash, error)
+	ExtendTCI(handle *ContextHandle, inputData []byte) (*ContextHandle, error)
 }
 
 func NewClient(t Transport, p Profile) (DPEClient, error) {
@@ -59,6 +59,6 @@ func NewClient(t Transport, p Profile) (DPEClient, error) {
 	case ProfileP384SHA384:
 		return NewDPEABI384(t)
 	default:
-		return nil, fmt.Errorf("Cannot create a DPE client for profile %d", p)
+		return nil, fmt.Errorf("cannot create a DPE client for profile %d", p)
 	}
 }

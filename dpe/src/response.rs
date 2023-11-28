@@ -5,8 +5,8 @@ Abstract:
     DPE reponses and serialization.
 --*/
 use crate::{
-    context::ContextHandle, tci::TciMeasurement, CURRENT_PROFILE_MAJOR_VERSION,
-    CURRENT_PROFILE_MINOR_VERSION, DPE_PROFILE, MAX_CERT_SIZE, MAX_HANDLES,
+    context::ContextHandle, CURRENT_PROFILE_MAJOR_VERSION, CURRENT_PROFILE_MINOR_VERSION,
+    DPE_PROFILE, MAX_CERT_SIZE, MAX_HANDLES,
 };
 use crypto::CryptoError;
 use platform::PlatformError;
@@ -23,8 +23,6 @@ pub enum Response {
     Sign(SignResp),
     DestroyCtx(ResponseHdr),
     ExtendTci(NewHandleResp),
-    TagTci(NewHandleResp),
-    GetTaggedTci(GetTaggedTciResp),
     GetCertificateChain(GetCertificateChainResp),
     Error(ResponseHdr),
 }
@@ -40,8 +38,6 @@ impl Response {
             Response::Sign(res) => res.as_bytes(),
             Response::DestroyCtx(res) => res.as_bytes(),
             Response::ExtendTci(res) => res.as_bytes(),
-            Response::TagTci(res) => res.as_bytes(),
-            Response::GetTaggedTci(res) => res.as_bytes(),
             Response::GetCertificateChain(res) => res.as_bytes(),
             Response::Error(res) => res.as_bytes(),
         }
@@ -136,15 +132,6 @@ pub struct SignResp {
 }
 
 #[repr(C)]
-#[derive(Debug, zerocopy::AsBytes)]
-#[cfg_attr(test, derive(PartialEq, Eq))]
-pub struct GetTaggedTciResp {
-    pub resp_hdr: ResponseHdr,
-    pub tci_cumulative: TciMeasurement,
-    pub tci_current: TciMeasurement,
-}
-
-#[repr(C)]
 #[derive(Debug, PartialEq, Eq, zerocopy::AsBytes, zerocopy::FromBytes)]
 pub struct GetCertificateChainResp {
     pub resp_hdr: ResponseHdr,
@@ -162,7 +149,6 @@ pub enum DpeErrorCode {
     ArgumentNotSupported = 4,
     InvalidHandle = 0x1000,
     InvalidLocality = 0x1001,
-    BadTag = 0x1002,
     MaxTcis = 0x1003,
     Platform(PlatformError) = 0x01000000,
     Crypto(CryptoError) = 0x02000000,

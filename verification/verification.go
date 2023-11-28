@@ -37,11 +37,41 @@ var CertifyKeySimulationTestCase = TestCase{
 var GetCertificateChainTestCase = TestCase{
 	"GetCertificateChain", TestGetCertificateChain, []string{"AutoInit", "X509"},
 }
-var TagTCITestCase = TestCase{
-	"TagTCI", TestTagTCI, []string{"AutoInit", "Tagging"},
+var ExtendTCITestCase = TestCase{
+	"ExtendTCITestCase", TestExtendTCI, []string{"AutoInit", "ExtendTci"},
+}
+var ExtendDerivedTciTestCase = TestCase{
+	"ExtendDerivedTciTestCase", TestExtendTciOnDerivedContexts, []string{"AutoInit", "ExtendTci"},
 }
 var GetProfileTestCase = TestCase{
 	"GetProfile", TestGetProfile, []string{},
+}
+var InvalidHandleTestCase = TestCase{
+	"CheckInvalidHandle", TestInvalidHandle, []string{"Simulation", "RotateContext", "ExtendTci"},
+}
+var WrongLocalityTestCase = TestCase{
+	"CheckWrongLocality", TestWrongLocality, []string{"AutoInit", "RotateContext", "ExtendTci"},
+}
+var UnsupportedCommand = TestCase{
+	"CheckSupportForCommand", TestUnsupportedCommand, []string{"AutoInit"},
+}
+var UnsupportedCommandFlag = TestCase{
+	"CheckSupportForCommmandFlag", TestUnsupportedCommandFlag, []string{"AutoInit", "RotateContext", "ExtendTci"},
+}
+var RotateContextTestCase = TestCase{
+	"RotateContextHandle", TestRotateContextHandle, []string{"AutoInit", "RotateContext"},
+}
+var RotateContextSimulationTestCase = TestCase{
+	"RotateContextHandleSimulation", TestRotateContextHandleSimulation, []string{"Simulation", "RotateContext"},
+}
+var SignAsymmetricTestCase = TestCase{
+	"Sign", TestAsymmetricSigning, []string{"AutoInit", "X509"},
+}
+var SignSymmetricTestCase = TestCase{
+	"SignSymmetric", TestSymmetricSigning, []string{"AutoInit", "IsSymmetric"},
+}
+var SignSimulationTestCase = TestCase{
+	"SignSimulation", TestSignSimulation, []string{"Simulation"},
 }
 
 var DeriveChildTestCase = TestCase{
@@ -50,12 +80,20 @@ var DeriveChildTestCase = TestCase{
 
 var AllTestCases = []TestCase{
 	CertifyKeyTestCase,
+	CertifyKeySimulationTestCase,
 	GetCertificateChainTestCase,
-	TagTCITestCase,
+	ExtendTCITestCase,
+	ExtendDerivedTciTestCase,
+	RotateContextTestCase,
+	RotateContextSimulationTestCase,
+	SignAsymmetricTestCase,
+	SignSymmetricTestCase,
+	SignSimulationTestCase,
 	GetProfileTestCase,
 	InitializeContextTestCase,
 	InitializeContextSimulationTestCase,
-	CertifyKeySimulationTestCase,
+	InvalidHandleTestCase,
+	WrongLocalityTestCase,
 }
 
 func RunTargetTestCases(target TestTarget, t *testing.T) {

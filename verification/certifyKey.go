@@ -6,8 +6,6 @@ import (
 	"bytes"
 	"crypto/ecdsa"
 	"crypto/elliptic"
-	"crypto/sha256"
-	"crypto/sha512"
 	"crypto/x509"
 	"encoding/asn1"
 	"encoding/binary"
@@ -425,31 +423,6 @@ func checkCertifyKeyTcgUeidExtension(t *testing.T, c *x509.Certificate, label []
 	}
 }
 
-// A tcg-dice-MultiTcbInfo extension.
-// This extension SHOULD be marked as critical.
-func checkCertifyKeyMultiTcbInfoExtensionStructure(t *testing.T, c *x509.Certificate) (TcgMultiTcbInfo, error) {
-	t.Helper()
-	var multiTcbInfo TcgMultiTcbInfo
-	var err error
-
-	// Check MultiTcbInfo Extension
-	//tcg-dice-MultiTcbInfo extension
-	for _, ext := range c.Extensions {
-		if ext.Id.Equal(OidExtensionTcgDiceMultiTcbInfo) { // OID for Tcg Dice MultiTcbInfo
-			if !ext.Critical {
-				t.Errorf("[ERROR]: TCG DICE MultiTcbInfo extension is not marked as CRITICAL")
-			}
-			_, err = asn1.Unmarshal(ext.Value, &multiTcbInfo)
-			if err != nil {
-				// multiTcb info is not provided in leaf
-				t.Errorf("[ERROR]: Failed to unmarshal MultiTcbInfo field: %v", err)
-			}
-			break
-		}
-	}
-	return multiTcbInfo, err
-}
-
 // Checks whether the VendorInfo is 4-bytes TARGET_LOCALITY parameter
 func checkDiceTcbVendorInfo(t *testing.T, multiTcbInfo []DiceTcbInfo, targetLocality uint32) {
 	isMatchFound := false
@@ -627,7 +600,7 @@ func checkCertifyKeyBasicConstraints(t *testing.T, c *x509.Certificate, flags Ce
 }
 
 // Validates X509 fields in certificate returned by CertifyKey command.
-func validateCertifyKeyCert(t *testing.T, c *x509.Certificate, flags uint32, label []byte) {
+func validateCertifyKeyCert(t *testing.T, c *x509.Certificate, flags CertifyKeyFlags, label []byte) {
 	t.Helper()
 
 	// Check for basic constraints extension
@@ -644,7 +617,10 @@ func validateCertifyKeyCert(t *testing.T, c *x509.Certificate, flags uint32, lab
 	checkCertifyKeyTcgUeidExtension(t, c, label)
 
 	// Check MultiTcbInfo Extension structure
-	checkCertifyKeyMultiTcbInfoExtensionStructure(t, c)
+	_, err := getMultiTcbInfo(c)
+	if err != nil {
+		t.Error(err)
+	}
 }
 
 // Parses X509 certificate
@@ -722,8 +698,81 @@ func checkCertificateStructure(t *testing.T, certBytes []byte) *x509.Certificate
 	return x509Cert
 }
 
-// Builds certificate chain and calls to validateSignature on each chain.
-func checkLeafCertChain(t *testing.T, certChain []*x509.Certificate, leafCert *x509.Certificate) {
+func testCertifyKey(d TestDPEInstance, c DPEClient, t *testing.T, simulation bool) {
+	handle := getInitialContextHandle(d, c, t, simulation)
+	defer func() {
+		if simulation {
+			c.DestroyContext(handle, DestroyDescendants)
+		}
+	}()
+
+	profile, err := GetTransportProfile(d)
+	if err != nil {
+		t.Fatalf("Could not get profile: %v", err)
+	}
+	digestLen := profile.GetDigestSize()
+
+	var hashAlg asn1.ObjectIdentifier
+	if digestLen == 32 {
+		hashAlg = OidSHA256
+	} else if digestLen == 48 {
+		hashAlg = OidSHA384
+	} else {
+		t.Fatal("Unknown Hash Algorithm")
+	}
+
+	seqLabel := make([]byte, digestLen)
+	for i := range seqLabel {
+		seqLabel[i] = byte(i)
+	}
+
+	certifyKeyParams := []CertifyKeyParams{
+		{Label: make([]byte, digestLen), Flags: CertifyKeyFlags(0)},
+		{Label: seqLabel, Flags: CertifyKeyFlags(0)},
+	}
+
+	for _, params := range certifyKeyParams {
+		// Get DPE leaf certificate from CertifyKey
+		certifyKeyResp, err := c.CertifyKey(handle, params.Label, CertifyKeyX509, params.Flags)
+		if err != nil {
+			t.Fatalf("[FATAL]: Could not certify key: %v", err)
+		}
+
+		// Get root and intermediate certificates to validate certificate chain of leaf cert
+		certChainBytes, err := c.GetCertificateChain()
+		if err != nil {
+			t.Fatalf("[FATAL]: Could not get Certificate Chain: %v", err)
+		}
+
+		leafCertBytes := certifyKeyResp.Certificate
+
+		// Run X.509 linter on full certificate chain and file issues for errors
+		leafCert := checkCertificateStructure(t, leafCertBytes)
+		certChain := checkCertificateChain(t, certChainBytes)
+
+		// Check default context handle is unchanged
+		checkCertifyKeyRespHandle(*certifyKeyResp, t, handle)
+
+		// Check key returned in command response against certificate
+		checkCertifyKeyResponse(t, leafCert, *certifyKeyResp, hashAlg)
+
+		// Validate that all X.509 fields conform with the format defined in the DPE iRoT profile
+		validateCertifyKeyCert(t, leafCert, params.Flags, params.Label)
+
+		// Ensure full certificate chain has valid signatures
+		// This also checks certificate lifetime, signatures as part of cert chain validation
+		validateLeafCertChain(t, certChain, leafCert)
+
+		// Reassign handle for simulation mode.
+		// However, this does not impact in default mode because
+		// same default context handle is returned in default mode.
+		handle = &certifyKeyResp.Handle
+	}
+	// TODO: When DeriveChild is implemented, call it here to add more TCIs and call CertifyKey again.
+}
+
+// Builds and verifies certificate chain.
+func validateLeafCertChain(t *testing.T, certChain []*x509.Certificate, leafCert *x509.Certificate) {
 	t.Helper()
 	certsToProcess := []*x509.Certificate{leafCert}
 
@@ -827,12 +876,12 @@ func checkCertifyKeyResponse(t *testing.T, x509Cert *x509.Certificate, response 
 	}
 
 	// Parse the DER-encoded public key
-	pubKey, err := x509.ParsePKIXPublicKey(publicKeyDer)
+	pubKeyInCert, err := x509.ParsePKIXPublicKey(publicKeyDer)
 	if err != nil {
 		t.Fatalf("[FATAL]: Failed to parse DER-encoded public key: %v", err)
 	}
 
-	if _, ok := pubKey.(*ecdsa.PublicKey); !ok {
+	if _, ok := pubKeyInCert.(*ecdsa.PublicKey); !ok {
 		t.Fatal("[FATAL]: Public key is not a ecdsa key")
 	}
 
@@ -855,19 +904,19 @@ func checkCertifyKeyResponse(t *testing.T, x509Cert *x509.Certificate, response 
 		return
 	}
 
-	if !(pubKeyInResponse.Equal(pubKey)) {
-		t.Errorf("[ERROR]: Public key returned in response must match the Public Key Info in the leaf certificate.")
+	if !(pubKeyInResponse.Equal(pubKeyInCert)) {
+		t.Errorf("[ERROR]: Public key returned in response must match the Public Key Info in the certificate.")
 	}
 }
 
-// Checks whether the context handle is unchanged after sign command when default context handle is used.
-func testCertifyKeyRespHandle(res CertifiedKey, t *testing.T, handle *ContextHandle) {
+// Checks whether the context handle is unchanged after certifyKey command when default context handle is used.
+func checkCertifyKeyRespHandle(res CertifiedKey, t *testing.T, handle *ContextHandle) {
 	if *handle != DefaultContextHandle {
 		t.Logf("[LOG]: Handle is not default context, skipping check...")
 		return
 	}
 
 	if res.Handle != *handle {
-		t.Errorf("[ERROR]: Handle must be unchanged by Signing, want original handle %v but got %v", handle, res.Handle)
+		t.Errorf("[ERROR]: Handle must be unchanged by CertifyKey, want original handle %v but got %v", handle, res.Handle)
 	}
 }
