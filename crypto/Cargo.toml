@@ -10,7 +10,7 @@ openssl = ["dep:openssl", "dep:hkdf", "dep:sha2"]
 deterministic_rand = ["dep:rand"]
 
 [dependencies]
-arrayvec = { version = "0.7.4", default-features = false }
+arrayvec = { version = "0.7.4", default-features = false, features = ["zeroize"] }
 hkdf = {version = "0.12.3", optional = true}
 openssl = {version = "0.10.57", optional = true}
 rand = {version = "0.8.5", optional = true}
