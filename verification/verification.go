@@ -26,14 +26,17 @@ var InitializeContextTestCase = TestCase{
 var InitializeContextSimulationTestCase = TestCase{
 	"InitializeContextSimulation", TestInitializeSimulation, []string{"Simulation"},
 }
+
+// ExtendTci is required for tci_cumulative in fwid, RotateContext handle for restore parent context after using child context
 var CertifyKeyTestCase = TestCase{
-	"CertifyKey", TestCertifyKey, []string{"AutoInit", "X509", "IsCA"},
+	"CertifyKey", TestCertifyKey, []string{"AutoInit", "X509", "IsCA", "RotateContext", "ExtendTci"},
 }
-
 var CertifyKeySimulationTestCase = TestCase{
-	"CertifyKeySimulation", TestCertifyKeySimulation, []string{"AutoInit", "Simulation", "X509", "IsCA"},
+	"CertifyKeySimulation", TestCertifyKeySimulation, []string{"AutoInit", "Simulation", "X509", "IsCA", "RotateContext", "ExtendTci"},
 }
-
+var CertifyKeyWithoutExtendTciTestCase = TestCase{
+	"CertifyKeyWithoutExtendTciSupport", TestCertifyKeyWithoutExtendTciSupport, []string{"AutoInit", "X509"},
+}
 var GetCertificateChainTestCase = TestCase{
 	"GetCertificateChain", TestGetCertificateChain, []string{"AutoInit", "X509"},
 }
@@ -73,7 +76,6 @@ var SignSymmetricTestCase = TestCase{
 var SignSimulationTestCase = TestCase{
 	"SignSimulation", TestSignSimulation, []string{"Simulation"},
 }
-
 var DeriveChildTestCase = TestCase{
 	"AutoInit", TestDeriveChild, []string{"AutoInit", "InternalDice", "InternalInfo"},
 }

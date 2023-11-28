@@ -69,21 +69,6 @@ const (
 
 type ContextHandle [16]byte
 
-type RotateContextHandleFlags uint32
-
-const (
-	TargetIsDefault RotateContextHandleFlags = 1 << 31
-)
-
-type RotateContextHandleCmd struct {
-	Handle ContextHandle
-	Flags  RotateContextHandleFlags
-}
-
-type RotatedContextHandle struct {
-	NewContextHandle ContextHandle
-}
-
 type DestroyCtxFlags uint32
 
 const (
@@ -117,31 +102,6 @@ type GetProfileResp struct {
 	Flags        uint32
 }
 
-type DeriveChildFlags uint32
-
-const (
-	InternalInputInfo DeriveChildFlags = 1 << 31
-	InternalInputDice DeriveChildFlags = 1 << 30
-	RetainParent      DeriveChildFlags = 1 << 29
-	MakeDefault       DeriveChildFlags = 1 << 28
-	ChangeLocality    DeriveChildFlags = 1 << 27
-	InputAllowCA      DeriveChildFlags = 1 << 26
-	InputAllowX509    DeriveChildFlags = 1 << 25
-)
-
-type DeriveChildReq[Digest DigestAlgorithm] struct {
-	ContextHandle  ContextHandle
-	InputData      Digest
-	Flags          DeriveChildFlags
-	TciType        uint32
-	TargetLocality uint32
-}
-
-type DeriveChildResp struct {
-	NewContextHandle    ContextHandle
-	ParentContextHandle ContextHandle
-}
-
 type CertifyKeyFlags uint32
 
 const (
@@ -167,25 +127,6 @@ type CertifyKeyResp[CurveParameter Curve, Digest DigestAlgorithm] struct {
 	DerivedPublicKeyX CurveParameter
 	DerivedPublicKeyY CurveParameter
 	Certificate       []byte
-}
-
-type SignFlags uint32
-
-const (
-	IsSymmetric SignFlags = 1 << 30
-)
-
-type SignReq[Digest DigestAlgorithm] struct {
-	ContextHandle ContextHandle
-	Label         Digest
-	Flags         SignFlags
-	ToBeSigned    Digest
-}
-
-type SignResp[Digest DigestAlgorithm] struct {
-	NewContextHandle ContextHandle
-	HmacOrSignatureR Digest
-	SignatureS       Digest
 }
 
 type GetCertificateChainReq struct {
@@ -438,42 +379,6 @@ func (c *dpeABI[CurveParameter, Digest]) CertifyKeyABI(cmd *CertifyKeyReq[Digest
 		DerivedPublicKeyY: respStruct.DerivedPublicKeyY,
 		Certificate:       respStruct.Certificate[:respStruct.CertificateSize],
 	}, nil
-}
-
-// DeriveChild calls DPE DeriveChild command.
-func (c *dpeABI[_, Digest]) DeriveChildABI(cmd *DeriveChildReq[Digest]) (*DeriveChildResp, error) {
-	var respStruct DeriveChildResp
-
-	_, err := execCommand(c.transport, CommandDeriveChild, c.Profile, cmd, &respStruct)
-	if err != nil {
-		return nil, err
-	}
-
-	return &respStruct, err
-}
-
-// RotateContext calls DPE RotateContextHandle command.
-func (c *dpeABI[_, Digest]) RotateContextABI(cmd *RotateContextHandleCmd) (*RotatedContextHandle, error) {
-	var respStruct RotatedContextHandle
-
-	_, err := execCommand(c.transport, CommandRotateContextHandle, c.Profile, cmd, &respStruct)
-	if err != nil {
-		return nil, err
-	}
-
-	return &respStruct, err
-}
-
-// Sign calls the DPE Sign command.
-func (c *dpeABI[_, Digest]) SignABI(cmd *SignReq[Digest]) (*SignResp[Digest], error) {
-	var respStruct SignResp[Digest]
-
-	_, err := execCommand(c.transport, CommandSign, c.Profile, cmd, &respStruct)
-	if err != nil {
-		return nil, err
-	}
-
-	return &respStruct, nil
 }
 
 // GetCertificateChain calls the DPE GetCertificateChain command.
