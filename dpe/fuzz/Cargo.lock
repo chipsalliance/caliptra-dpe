@@ -176,6 +176,7 @@ dependencies = [
  "hkdf",
  "openssl",
  "sha2",
+ "zeroize",
 ]
 
 [[package]]

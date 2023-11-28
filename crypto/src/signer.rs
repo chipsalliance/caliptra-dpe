@@ -2,6 +2,7 @@
 
 use crate::{AlgLen, CryptoError};
 use arrayvec::ArrayVec;
+use zeroize::Zeroize;
 
 /// An ECDSA signature
 pub struct EcdsaSig {
@@ -10,6 +11,7 @@ pub struct EcdsaSig {
 }
 
 /// An ECDSA public key
+#[derive(Zeroize)]
 pub struct EcdsaPub {
     pub x: CryptoBuf,
     pub y: CryptoBuf,
@@ -28,7 +30,7 @@ impl EcdsaPub {
 pub type HmacSig = CryptoBuf;
 
 /// A common base struct that can be used for all digests, signatures, and keys.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Zeroize)]
 pub struct CryptoBuf(ArrayVec<u8, { Self::MAX_SIZE }>);
 
 impl CryptoBuf {
