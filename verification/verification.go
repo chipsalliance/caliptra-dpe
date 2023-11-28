@@ -96,6 +96,7 @@ var AllTestCases = []TestCase{
 	InitializeContextSimulationTestCase,
 	InvalidHandleTestCase,
 	WrongLocalityTestCase,
+	DeriveChildTestCase,
 }
 
 func RunTargetTestCases(target TestTarget, t *testing.T) {
