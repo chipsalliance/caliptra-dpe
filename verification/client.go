@@ -42,7 +42,6 @@ type DPESignedHash struct {
 type DPEClient interface {
 	InitializeContext(flags InitCtxFlags) (*ContextHandle, error)
 	GetProfile() (*GetProfileResp, error)
-	DeriveChild(handle *ContextHandle, inputData []byte, flags DeriveChildFlags, tciType uint32, targetLocality uint32) (*DeriveChildResp, error)
 	CertifyKey(handle *ContextHandle, label []byte, format CertifyKeyFormat, flags CertifyKeyFlags) (*CertifiedKey, error)
 	GetCertificateChain() ([]byte, error)
 	DestroyContext(handle *ContextHandle, flags DestroyCtxFlags) error

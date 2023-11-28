@@ -172,7 +172,7 @@ type CertifyKeyResp[CurveParameter Curve, Digest DigestAlgorithm] struct {
 type SignFlags uint32
 
 const (
-	IsSymmetric SignFlags = 1 << 31 // TODO: should be 30, a bug in rust side code.
+	IsSymmetric SignFlags = 1 << 30
 )
 
 type SignReq[Digest DigestAlgorithm] struct {
@@ -452,7 +452,7 @@ func (c *dpeABI[_, Digest]) DeriveChildABI(cmd *DeriveChildReq[Digest]) (*Derive
 	return &respStruct, err
 }
 
-// DeriveChild calls DPE RotateContextABI command.
+// RotateContext calls DPE RotateContextHandle command.
 func (c *dpeABI[_, Digest]) RotateContextABI(cmd *RotateContextHandleCmd) (*RotatedContextHandle, error) {
 	var respStruct RotatedContextHandle
 
