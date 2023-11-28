@@ -12,7 +12,6 @@ import (
 	"io"
 	"math"
 	"math/big"
-	"strings"
 	"testing"
 
 	"github.com/google/go-tpm-tools/client"
@@ -22,8 +21,7 @@ import (
 )
 
 var (
-	tpmPath                    = flag.String("tpm-path", "/dev/tpm0", "Path to the TPM device (character device or a Unix socket).")
-	tpmPolicySigningValidation = flag.String("tpm-policy-signing-validation", "enabled", "Validation of TPM policy signing with Caliptra DPE commands is enabled/disabled. By default, this is disabled.")
+	tpmPath = flag.String("tpm-path", "/dev/tpm0", "Path to the TPM device (character device or a Unix socket).")
 
 	handleNames = map[string][]tpm2.HandleType{
 		"all":       {tpm2.HandleTypeLoadedSession, tpm2.HandleTypeSavedSession, tpm2.HandleTypeTransient},
@@ -32,16 +30,6 @@ var (
 		"transient": {tpm2.HandleTypeTransient},
 	}
 )
-
-func TestTpmPolicySigning(d TestDPEInstance, c DPEClient, t *testing.T) {
-	if strings.ToLower(*tpmPolicySigningValidation) == "enabled" {
-		t.Log("Validation of TPM policy signing using Caliptra DPE commands is enabled.")
-		testTpmPolicySigning(d, c, t)
-	} else {
-		t.Log("Validation of TPM policy signing using Caliptra DPE commands is disabled, skipping this test.\n To enable this validation start the TPM emulator, set `go test . -tpm-policy-signing-validation=enabled` and rerun.")
-		return
-	}
-}
 
 func flushAllContexts(t *testing.T, tpm io.ReadWriteCloser) {
 	totalHandles := 0
@@ -78,7 +66,7 @@ func startTpmSession(t *testing.T, tpm io.ReadWriteCloser, alg tpm2.Algorithm) (
 	return sessHandle, nonce, nil
 }
 
-func testTpmPolicySigning(d TestDPEInstance, c DPEClient, t *testing.T) {
+func TestTpmPolicySigning(d TestDPEInstance, c DPEClient, t *testing.T) {
 	simulation := false
 	ctx := getInitialContextHandle(d, c, t, simulation)
 	var ec tpm2.EllipticCurve
@@ -230,7 +218,7 @@ func loadPubKey(t *testing.T, pubKey any, tpm io.ReadWriteCloser, alg tpm2.Algor
 
 	pkh, _, err := tpm2.LoadExternal(tpm, tpmPublic, tpm2.Private{}, tpm2.HandleNull)
 	if err != nil {
-		t.Fatalf("[FATAL]: Unable to load eexternal public key. Error: %v", err)
+		t.Fatalf("[FATAL]: Unable to load external public key. Error: %v", err)
 	}
 
 	return pkh
