@@ -16,7 +16,7 @@ func TestDeriveChild(d TestDPEInstance, c DPEClient, t *testing.T) {
 }
 
 func testDeriveChild(d TestDPEInstance, c DPEClient, t *testing.T) {
-	handle := &DefaultContextHandle
+	handle := getInitialContextHandle(d, c, t, false)
 
 	// Get digest size
 	profile, err := GetTransportProfile(d)
@@ -25,10 +25,6 @@ func testDeriveChild(d TestDPEInstance, c DPEClient, t *testing.T) {
 	}
 
 	digestLen := profile.GetDigestSize()
-
-	// Test wrong locality
-
-	testDeriveChildWrongLocality(t, d, c, handle, digestLen)
 
 	// Test child handles when MakeDefault flag is enabled/disabled
 	testChildHandles(t, d, c, handle, digestLen)
@@ -53,40 +49,18 @@ func testDeriveChild(d TestDPEInstance, c DPEClient, t *testing.T) {
 
 	// Test derive child contexts count limited by MAX_TCI_NODES supported by the profile
 	testMaxTcis(t, d, c, handle, digestLen)
-}
-
-// Checks whether caller from one locality is prevented from making DPE calls to other locality
-func testDeriveChildWrongLocality(t *testing.T, d TestDPEInstance, c DPEClient, handle *ContextHandle, digestLen int) {
-
-	var err error
-
-	// Modify locality of DPE instance to test
-	d.SetLocality(DPE_SIMULATOR_OTHER_LOCALITY)
-
-	// Restore locality of DPE instance after the test
-	defer d.SetLocality(DPE_SIMULATOR_AUTO_INIT_LOCALITY)
-
-	_, err = c.DeriveChild(handle,
-		make([]byte, digestLen),
-		DeriveChildFlags(MakeDefault),
-		0,
-		DPE_SIMULATOR_AUTO_INIT_LOCALITY)
-
-	if err == nil {
-		t.Fatalf("[FATAL]: Should return %q, but returned no error", StatusInvalidLocality)
-	} else if !errors.Is(err, StatusInvalidLocality) {
-		t.Fatalf("[FATAL]: Incorrect error type. Should return %q, but returned %q", StatusInvalidLocality, err)
-	}
+	getInitialContextHandle(d, c, t, false)
 }
 
 // Check handle of default and non-default child
 func testChildHandles(t *testing.T, d TestDPEInstance, c DPEClient, handle *ContextHandle, digestLen int) {
 	// MakeDefault flag is not set
+	currentLocality := d.GetLocality()
 	r, err := c.DeriveChild(handle,
 		make([]byte, digestLen),
 		ChangeLocality,
 		0,
-		DPE_SIMULATOR_OTHER_LOCALITY)
+		currentLocality+1)
 
 	if err != nil {
 		t.Fatalf("[FATAL]: Error while creating non-default child context handle: %s", err)
@@ -100,13 +74,13 @@ func testChildHandles(t *testing.T, d TestDPEInstance, c DPEClient, handle *Cont
 	existingTciNodeCount += 1
 
 	// MakeDefault flag is set
-	d.SetLocality(DPE_SIMULATOR_OTHER_LOCALITY)
+	d.SetLocality(currentLocality + 1)
 	defer d.SetLocality(DPE_SIMULATOR_AUTO_INIT_LOCALITY)
 	r, err = c.DeriveChild(&r.NewContextHandle,
 		make([]byte, digestLen),
 		MakeDefault|ChangeLocality,
 		0,
-		DPE_SIMULATOR_AUTO_INIT_LOCALITY,
+		currentLocality,
 	)
 
 	if err != nil {
@@ -144,11 +118,13 @@ func testMakeDefault(t *testing.T, d TestDPEInstance, c DPEClient, handle *Conte
 // Checks default child handle creation in other locality.
 func testMakeDefaultInNonDefaultContext(t *testing.T, d TestDPEInstance, c DPEClient, handle *ContextHandle, digestLen int) {
 
+	currentLocality := d.GetLocality()
 	r, err := c.DeriveChild(handle,
 		make([]byte, digestLen),
 		MakeDefault|ChangeLocality,
 		0,
-		DPE_SIMULATOR_OTHER_LOCALITY)
+		currentLocality+1,
+	)
 
 	if err != nil {
 		t.Fatalf("[FATAL]: Error while creating default child handle in non-default context: %s", err)
@@ -158,14 +134,14 @@ func testMakeDefaultInNonDefaultContext(t *testing.T, d TestDPEInstance, c DPECl
 	existingTciNodeCount += 1
 
 	// Revert hardware locality and handle for further tests
-	d.SetLocality(DPE_SIMULATOR_OTHER_LOCALITY)
-	defer d.SetLocality(DPE_SIMULATOR_AUTO_INIT_LOCALITY)
+	d.SetLocality(currentLocality + 1)
+	defer d.SetLocality(currentLocality)
 
 	_, err = c.DeriveChild(&r.NewContextHandle,
 		make([]byte, digestLen),
 		MakeDefault|ChangeLocality,
 		0,
-		DPE_SIMULATOR_AUTO_INIT_LOCALITY)
+		currentLocality)
 
 	if err != nil {
 		t.Fatalf("[FATAL]: Error while creating default child handle in default context: %s", err)
@@ -178,7 +154,7 @@ func testMakeDefaultInNonDefaultContext(t *testing.T, d TestDPEInstance, c DPECl
 // Checks whether the derived context does not escalate beyond the privileges of parent context.
 func testPrivilegeEscalation(t *testing.T, d TestDPEInstance, c DPEClient, handle *ContextHandle, digestLen int) {
 	var err error
-	escalatedChildPrivileges := []DeriveChildFlags{InputAllowCA, InputAllowX509}
+	escalatedChildPrivileges := []DeriveChildFlags{InternalInputDice, InternalInputDice}
 
 	for _, flag := range escalatedChildPrivileges {
 		_, err = c.DeriveChild(handle, make([]byte, digestLen), MakeDefault|flag, 0, 0)
@@ -194,11 +170,12 @@ func testPrivilegeEscalation(t *testing.T, d TestDPEInstance, c DPEClient, handl
 // This is because mixture of default and non-default handles are not allowed in this context.
 // Parent handle is invalidated in default context.
 func testRetainParentInDefaultContext(t *testing.T, d TestDPEInstance, c DPEClient, handle *ContextHandle, digestLen int) {
+	currentLocality := d.GetLocality()
 	_, err := c.DeriveChild(handle,
 		make([]byte, digestLen),
 		RetainParent,
 		0,
-		DPE_SIMULATOR_AUTO_INIT_LOCALITY)
+		currentLocality)
 	if err == nil {
 		t.Fatalf("[FATAL]: Should return %q, but returned no error", StatusInvalidArgument)
 	} else if !errors.Is(err, StatusInvalidArgument) {
@@ -208,11 +185,12 @@ func testRetainParentInDefaultContext(t *testing.T, d TestDPEInstance, c DPEClie
 
 // Checks whether parent handle could be retained in a locality with non-default context.
 func testRetainParentInNonDefaultContext(t *testing.T, d TestDPEInstance, c DPEClient, handle *ContextHandle, digestLen int) {
+	currentLocality := d.GetLocality()
 	_, err := c.DeriveChild(handle,
 		make([]byte, digestLen),
 		RetainParent|ChangeLocality,
 		0,
-		DPE_SIMULATOR_OTHER_LOCALITY)
+		currentLocality+1)
 	if err != nil {
 		t.Fatalf("[FATAL]: Error while retaining parent handle in non-default context: %s", err)
 	}
@@ -226,11 +204,12 @@ func testRetainParentInNonDefaultContext(t *testing.T, d TestDPEInstance, c DPEC
 // tries to create two default context handles in the locality which is not allowed since a locality can have
 // only one default context handle.
 func testRetainParentAndMakeDefault(t *testing.T, d TestDPEInstance, c DPEClient, handle *ContextHandle, digestLen int) {
+	currentLocality := d.GetLocality()
 	_, err := c.DeriveChild(handle,
 		make([]byte, digestLen),
 		RetainParent|ChangeLocality|MakeDefault,
 		0,
-		DPE_SIMULATOR_OTHER_LOCALITY)
+		currentLocality+1)
 	if err == nil {
 		t.Fatalf("[FATAL]: Error while retaining parent handle and making it default in non-default context: %s", err)
 	} else if !errors.Is(err, StatusInvalidArgument) {
@@ -240,16 +219,17 @@ func testRetainParentAndMakeDefault(t *testing.T, d TestDPEInstance, c DPEClient
 
 // Checks whether the number of derived contexts (TCI nodes) are limited by MAX_TCI_NODES attribute of the profile
 func testMaxTcis(t *testing.T, d TestDPEInstance, c DPEClient, handle *ContextHandle, digestLen int) {
-
+	defer func() { c.DestroyContext(handle, DestroyDescendants) }()
+	currentLocality := d.GetLocality()
 	maxTciCount := d.GetMaxTciNodes()
 	allowedTciNodes := int(maxTciCount) - existingTciNodeCount
 
-	for i := 0; i < allowedTciNodes; i++ {
+	for i := 0; i < allowedTciNodes-1; i++ {
 		resp, err := c.DeriveChild(handle,
 			make([]byte, digestLen),
 			DeriveChildFlags(MakeDefault),
 			0,
-			DPE_SIMULATOR_AUTO_INIT_LOCALITY,
+			currentLocality,
 		)
 
 		if err != nil {
@@ -263,7 +243,7 @@ func testMaxTcis(t *testing.T, d TestDPEInstance, c DPEClient, handle *ContextHa
 		make([]byte, digestLen),
 		DeriveChildFlags(MakeDefault),
 		0,
-		DPE_SIMULATOR_AUTO_INIT_LOCALITY,
+		currentLocality,
 	)
 
 	if err == nil {

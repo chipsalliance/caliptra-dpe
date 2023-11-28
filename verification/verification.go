@@ -77,7 +77,7 @@ var SignSimulationTestCase = TestCase{
 	"SignSimulation", TestSignSimulation, []string{"Simulation"},
 }
 var DeriveChildTestCase = TestCase{
-	"AutoInit", TestDeriveChild, []string{"AutoInit", "InternalDice", "InternalInfo"},
+	"DeriveChild", TestDeriveChild, []string{"AutoInit"},
 }
 
 var AllTestCases = []TestCase{
@@ -91,12 +91,12 @@ var AllTestCases = []TestCase{
 	SignAsymmetricTestCase,
 	SignSymmetricTestCase,
 	SignSimulationTestCase,
+	DeriveChildTestCase,
 	GetProfileTestCase,
 	InitializeContextTestCase,
 	InitializeContextSimulationTestCase,
 	InvalidHandleTestCase,
 	WrongLocalityTestCase,
-	DeriveChildTestCase,
 }
 
 func RunTargetTestCases(target TestTarget, t *testing.T) {
