@@ -9,8 +9,7 @@ use crate::{
 };
 
 #[repr(C)]
-#[derive(Debug, PartialEq, Eq, zerocopy::FromBytes)]
-#[cfg_attr(test, derive(zerocopy::AsBytes))]
+#[derive(Debug, PartialEq, Eq, zerocopy::FromBytes, zerocopy::AsBytes)]
 pub struct ExtendTciCmd {
     handle: ContextHandle,
     data: [u8; DPE_PROFILE.get_hash_size()],
