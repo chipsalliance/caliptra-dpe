@@ -8,8 +8,7 @@ use crate::{
 use bitflags::bitflags;
 
 #[repr(C)]
-#[derive(Debug, PartialEq, Eq, zerocopy::FromBytes)]
-#[cfg_attr(test, derive(zerocopy::AsBytes))]
+#[derive(Debug, PartialEq, Eq, zerocopy::FromBytes, zerocopy::AsBytes)]
 pub struct InitCtxCmd(u32);
 
 bitflags! {
