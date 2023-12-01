@@ -7,6 +7,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/asn1"
 	"encoding/binary"
 	"encoding/pem"
@@ -16,29 +17,13 @@ import (
 	"testing"
 	"time"
 
+	"go.mozilla.org/pkcs7"
+
 	zx509 "github.com/zmap/zcrypto/x509"
 	zlint "github.com/zmap/zlint/v3"
 	"github.com/zmap/zlint/v3/lint"
 
 	"golang.org/x/exp/slices"
-)
-
-// This file is used to test the certify key command.
-var (
-	OidExtensionAuthorityKeyIdentifier = asn1.ObjectIdentifier{2, 5, 29, 35}
-	OidExtensionBasicConstraints       = asn1.ObjectIdentifier{2, 5, 29, 19}
-	OidExtensionExtKeyUsage            = asn1.ObjectIdentifier{2, 5, 29, 37}
-	OidExtensionTcgDiceUeid            = asn1.ObjectIdentifier{2, 23, 133, 5, 4, 4}
-	OidExtensionTcgDiceMultiTcbInfo    = asn1.ObjectIdentifier{2, 23, 133, 5, 4, 5}
-	OidExtensionTcgDiceKpIdentityInit  = asn1.ObjectIdentifier{2, 23, 133, 5, 4, 100, 6}
-	OidExtensionTcgDiceKpIdentityLoc   = asn1.ObjectIdentifier{2, 23, 133, 5, 4, 100, 7}
-	OidExtensionTcgDiceKpAttestInit    = asn1.ObjectIdentifier{2, 23, 133, 5, 4, 100, 8}
-	OidExtensionTcgDiceKpAttestLoc     = asn1.ObjectIdentifier{2, 23, 133, 5, 4, 100, 9}
-	OidExtensionTcgDiceKpAssertInit    = asn1.ObjectIdentifier{2, 23, 133, 5, 4, 100, 10}
-	OidExtensionTcgDiceKpAssertLoc     = asn1.ObjectIdentifier{2, 23, 133, 5, 4, 100, 11}
-	OidExtensionTcgDiceKpEca           = asn1.ObjectIdentifier{2, 23, 133, 5, 4, 100, 12}
-	OidSHA256                          = asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 2, 1}
-	OidSHA384                          = asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 2, 2}
 )
 
 var TcgDiceCriticalExtensions = [...]string{
@@ -133,6 +118,67 @@ func TestCertifyKeySimulation(d TestDPEInstance, c DPEClient, t *testing.T) {
 	testCertifyKey(d, c, t, true)
 }
 
+func TestCertifyKey_Csr(d TestDPEInstance, c DPEClient, t *testing.T) {
+	ctx := getInitialContextHandle(d, c, t, false)
+
+	profile, err := GetTransportProfile(d)
+	if err != nil {
+		t.Fatalf("Could not get profile: %v", err)
+	}
+	digestLen := profile.GetDigestSize()
+
+	flags := CertifyKeyFlags(0)
+	label := make([]byte, digestLen)
+
+	// Get DPE leaf certificate from CertifyKey
+	certifyKeyResp, err := c.CertifyKey(ctx, label, CertifyKeyCsr, flags)
+	if err != nil {
+		t.Fatalf("[FATAL]: Could not certify key: %v", err)
+	}
+
+	wrappedCSR, err := pkcs7.Parse(certifyKeyResp.Certificate)
+	if err != nil {
+		t.Fatalf("[FATAL]: Could not unmarshal CSR CMS message: %v", err)
+	}
+
+	// Check signature on the CMS message
+	certChainBytes, err := c.GetCertificateChain()
+	if err != nil {
+		t.Fatalf("[FATAL]: Could not get Certificate Chain: %v", err)
+	}
+	certChain := checkCertificateChain(t, certChainBytes)
+
+	// This library expects the cert to be in the Certificates field but DPE
+	// does not populate it. Add it so Verify succeeds.
+	//
+	// It is still compliant that DPE does not produce the certificate chain.
+	// From PKCS#7 section 9.1:
+	//		There may also be fewer certificates than necessary, if it is expected that
+	//		those verifying the signatures have an alternate means of
+	//		obtaining necessary certificates (e.g., from a previous set
+	//      of certificates).
+	wrappedCSR.Certificates = append(wrappedCSR.Certificates, certChain...)
+	err = wrappedCSR.Verify()
+	if err != nil {
+		t.Errorf("[ERROR]: Failed to verify CMS wrapper signature: %v", err)
+	}
+
+	csr, err := x509.ParseCertificateRequest(wrappedCSR.Content)
+	if err != nil {
+		t.Fatalf("[FATAL]: Could not parse CSR: %v", err)
+	}
+
+	// Check fields and extensions in the CSR
+	checkCertifyKeyExtensions(t, csr.Extensions, flags, label)
+	checkPubKey(t, profile, csr.PublicKey, *certifyKeyResp)
+
+	// Check that CSR is self-signed
+	err = csr.CheckSignature()
+	if err != nil {
+		t.Errorf("[ERROR] CSR is not self-signed: %v", err)
+	}
+}
+
 // Ignores critical extensions that are unknown to x509 package
 // but atleast defined in DPE certificate profile specification.
 // UnhandledCriticalExtensions may have only custom extensions mentioned in spec
@@ -202,32 +248,17 @@ func removeTcgDiceExtendedKeyUsages(t *testing.T, certs []*x509.Certificate) {
 // A tcg-dice-Ueid extension MUST be added
 // This SHALL be populated by the LABEL input parameter to CertifyKey
 // The extension SHOULD be marked as critical
-func checkCertifyKeyTcgUeidExtension(t *testing.T, c *x509.Certificate, label []byte) {
+func checkCertifyKeyTcgUeidExtension(t *testing.T, extensions []pkix.Extension, label []byte) {
 	t.Helper()
 
-	isFound := false
-	// Check UEID extension
-	for _, ext := range c.Extensions {
-		if ext.Id.Equal(OidExtensionTcgDiceUeid) {
-			isFound = true
-			if !ext.Critical {
-				t.Errorf("[ERROR]: tcg-dice-Ueid extension is NOT marked as CRITICAL")
-			}
-			var ueid TcgUeidExtension = TcgUeidExtension{}
-			_, err := asn1.Unmarshal(ext.Value, &ueid)
-			if err != nil {
-				t.Errorf("[ERROR]: Error encountered while unmarshalling value of UEID extension, %s", err.Error())
-			}
-
-			if !reflect.DeepEqual(ueid.Ueid, label) {
-				// Ueid extn value doen not match the label
-				t.Errorf("[ERROR]: tcg-dice-Ueid value does not match with the \"Label\" passed in CertifyKeyRequest")
-			}
-			break
-		}
+	ueid, err := getUeid(extensions)
+	if err != nil {
+		t.Errorf("[ERROR]: tcg-dice-Ueid extension is missing: %v", err)
 	}
-	if !isFound {
-		t.Errorf("[ERROR]: tcg-dice-Ueid extension is missing")
+
+	if !reflect.DeepEqual(ueid.Ueid, label) {
+		// Ueid extn value doen not match the label
+		t.Errorf("[ERROR]: tcg-dice-Ueid value does not match with the \"Label\" passed in CertifyKeyRequest")
 	}
 }
 
@@ -236,27 +267,12 @@ func checkCertifyKeyTcgUeidExtension(t *testing.T, c *x509.Certificate, label []
 // The ExtendedKeyUsage extension SHOULD be marked as critical
 // If IsCA = true, the extension SHOULD contain tcg-dice-kp-eca
 // If IsCA = false, the extension SHOULD contain tcg-dice-kp-attestLoc
-func checkCertifyKeyExtendedKeyUsages(t *testing.T, c *x509.Certificate) (*TcgMultiTcbInfo, error) {
+func checkCertifyKeyExtendedKeyUsages(t *testing.T, extensions []pkix.Extension, ca bool) {
 	t.Helper()
-	var multiTcbInfo *TcgMultiTcbInfo
-	var err error
 
-	extKeyUsage := []asn1.ObjectIdentifier{}
-
-	for _, ext := range c.Extensions {
-		if ext.Id.Equal(OidExtensionExtKeyUsage) { // OID for ExtKeyUsage extension
-			// Extract the OID value from the extension
-			_, err := asn1.Unmarshal(ext.Value, &extKeyUsage)
-			if err != nil {
-				t.Errorf("[ERROR]: Failed to unmarshal the Extended Key Usage extension: %v", err)
-				continue
-			}
-
-			if !ext.Critical {
-				t.Errorf("[ERROR]: The Extended Key Usage extension IS NOT CRITICAL, MUST BE CRITICAL")
-			}
-			break
-		}
+	extKeyUsage, err := getExtendedKeyUsages(extensions)
+	if err != nil {
+		t.Errorf("[ERROR]: ExtKeyUsage extension is missing: %v", err)
 	}
 
 	if len(extKeyUsage) == 0 {
@@ -267,7 +283,7 @@ func checkCertifyKeyExtendedKeyUsages(t *testing.T, c *x509.Certificate) (*TcgMu
 	isExtendedKeyUsageValid := false
 	var expectedKeyUsage asn1.ObjectIdentifier
 	expectedKeyUsageName := ""
-	if c.IsCA {
+	if ca {
 		expectedKeyUsage = OidExtensionTcgDiceKpEca
 		expectedKeyUsageName = "tcg-dice-kp-eca"
 	} else {
@@ -282,29 +298,49 @@ func checkCertifyKeyExtendedKeyUsages(t *testing.T, c *x509.Certificate) (*TcgMu
 		}
 	}
 	if !isExtendedKeyUsageValid {
-		t.Errorf("[ERROR]: Certificate has IsCA: %v  and does not contain specified key usage: %s", c.IsCA, expectedKeyUsageName)
+		t.Errorf("[ERROR]: Certificate has IsCA: %v  and does not contain specified key usage: %s", ca, expectedKeyUsageName)
 	}
-	return multiTcbInfo, err
 }
 
 // Checks for KeyUsage Extension as per spec
 // If IsCA = true, KeyUsage extension MUST contain DigitalSignature and KeyCertSign
 // If IsCA = false, KeyUsage extension MUST contain  only DigitalSignature
-func checkCertifyKeyExtensions(t *testing.T, c *x509.Certificate) {
+func checkCertifyKeyExtensions(t *testing.T, extensions []pkix.Extension, flags CertifyKeyFlags, label []byte) {
 	t.Helper()
+
+	bc, err := getBasicConstraints(extensions)
+	if err != nil {
+		t.Error(err)
+	}
+
+	checkCertifyKeyBasicConstraints(t, extensions, flags)
+	checkCertifyKeyExtendedKeyUsages(t, extensions, bc.IsCA)
+	checkCertifyKeyTcgUeidExtension(t, extensions, label)
+
+	// Check MultiTcbInfo Extension structure
+	_, err = getMultiTcbInfo(extensions)
+	if err != nil {
+		t.Error(err)
+	}
 
 	//Check for keyusage extension
 	var allowedKeyUsages x509.KeyUsage
-	if c.IsCA {
+
+	if bc.IsCA {
 		allowedKeyUsages = x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign
 	} else {
 		allowedKeyUsages = x509.KeyUsageDigitalSignature
 	}
 
-	certKeyUsageList := getKeyUsageNames(c.KeyUsage)
+	usage, err := getKeyUsage(extensions)
+	if err != nil {
+		t.Error(err)
+	}
+
+	certKeyUsageList := getKeyUsageNames(usage)
 	allowedKeyUsageList := getKeyUsageNames(allowedKeyUsages)
-	if c.KeyUsage != allowedKeyUsages {
-		t.Errorf("[ERROR]: Certificate has IsCA: %v and has got %v but want %v ", c.IsCA, certKeyUsageList, allowedKeyUsageList)
+	if usage != allowedKeyUsages {
+		t.Errorf("[ERROR]: Certificate KeyUsage got %v but want %v ", certKeyUsageList, allowedKeyUsageList)
 	}
 
 }
@@ -314,39 +350,20 @@ func checkCertifyKeyExtensions(t *testing.T, c *x509.Certificate) {
 // The BasicConstraints extension MUST be included
 // If CertifyKey AddIsCA is set, IsCA MUST be set to true.
 // If CertifyKey AddIsCA is NOT set, IsCA MUST be set to false
-func checkCertifyKeyBasicConstraints(t *testing.T, c *x509.Certificate, flags CertifyKeyFlags) {
+func checkCertifyKeyBasicConstraints(t *testing.T, extensions []pkix.Extension, flags CertifyKeyFlags) {
 	t.Helper()
 
 	flagsBuf := &bytes.Buffer{}
 	binary.Write(flagsBuf, binary.LittleEndian, flags)
 
-	flagIsCA := CertifyAddIsCA&flags != 0
-	if flagIsCA != c.IsCA {
-		t.Errorf("[ERROR]: ADD_IS_CA is set to %v but the basic constraint IsCA is set to %v", flagIsCA, c.IsCA)
-	}
-}
-
-// Validates X509 fields in certificate returned by CertifyKey command.
-func validateCertifyKeyCert(t *testing.T, c *x509.Certificate, flags CertifyKeyFlags, label []byte) {
-	t.Helper()
-
-	// Check for basic constraints extension
-	checkCertifyKeyBasicConstraints(t, c, flags)
-
-	// Check key usage extensions - DigitalSignature, CertSign
-	checkCertifyKeyExtensions(t, c)
-
-	// Check extended key usage extensions
-	checkCertifyKeyExtendedKeyUsages(t, c)
-
-	// Check critical UEID and Multi Tcb Info TCG extensions
-	// Check UEID extension
-	checkCertifyKeyTcgUeidExtension(t, c, label)
-
-	// Check MultiTcbInfo Extension structure
-	_, err := getMultiTcbInfo(c)
+	bc, err := getBasicConstraints(extensions)
 	if err != nil {
 		t.Error(err)
+	}
+
+	flagIsCA := CertifyAddIsCA&flags != 0
+	if flagIsCA != bc.IsCA {
+		t.Errorf("[ERROR]: ADD_IS_CA is set to %v but the basic constraint IsCA is set to %v", flagIsCA, bc.IsCA)
 	}
 }
 
@@ -439,15 +456,6 @@ func testCertifyKey(d TestDPEInstance, c DPEClient, t *testing.T, simulation boo
 	}
 	digestLen := profile.GetDigestSize()
 
-	var hashAlg asn1.ObjectIdentifier
-	if digestLen == 32 {
-		hashAlg = OidSHA256
-	} else if digestLen == 48 {
-		hashAlg = OidSHA384
-	} else {
-		t.Fatal("Unknown Hash Algorithm")
-	}
-
 	seqLabel := make([]byte, digestLen)
 	for i := range seqLabel {
 		seqLabel[i] = byte(i)
@@ -480,11 +488,11 @@ func testCertifyKey(d TestDPEInstance, c DPEClient, t *testing.T, simulation boo
 		// Check default context handle is unchanged
 		checkCertifyKeyRespHandle(*certifyKeyResp, t, handle)
 
-		// Check key returned in command response against certificate
-		checkCertifyKeyResponse(t, leafCert, *certifyKeyResp, hashAlg)
+		// Check public key and algorithm parameters are correct
+		checkPubKey(t, profile, leafCert.PublicKey, *certifyKeyResp)
 
-		// Validate that all X.509 fields conform with the format defined in the DPE iRoT profile
-		validateCertifyKeyCert(t, leafCert, params.Flags, params.Label)
+		// Check all extensions
+		checkCertifyKeyExtensions(t, leafCert.Extensions, params.Flags, params.Label)
 
 		// Ensure full certificate chain has valid signatures
 		// This also checks certificate lifetime, signatures as part of cert chain validation
@@ -503,19 +511,14 @@ func validateLeafCertChain(t *testing.T, certChain []*x509.Certificate, leafCert
 	t.Helper()
 	certsToProcess := []*x509.Certificate{leafCert}
 
-	// Remove unhandled critical extensions reported by x509 but defined in spec
+	// Remove unhandled critical extensions and EKUs by x509 but defined in spec
 	removeTcgDiceCriticalExtensions(t, certsToProcess)
-
-	// Remove unhandled extended key usages reported by x509 but defined in spec
 	removeTcgDiceExtendedKeyUsages(t, certsToProcess)
 
-	// Build verify options
-	opts := buildVerifyOptions(t, certChain)
-
 	// Certificate chain validation for leaf
+	opts := buildVerifyOptions(t, certChain)
 	chains, err := leafCert.Verify(opts)
 	if err != nil {
-		// Certificate chain cannot be built from leaf to root
 		t.Errorf("[ERROR]: Error verifying DPE leaf: %s", err.Error())
 	}
 
@@ -593,45 +596,31 @@ func getKeyUsageNames(keyUsage x509.KeyUsage) []string {
 	return keyUsageNames
 }
 
-// Checks CertifyKey command response against public key extracted from certificate returned in response
-func checkCertifyKeyResponse(t *testing.T, x509Cert *x509.Certificate, response CertifiedKey, hashAlg asn1.ObjectIdentifier) {
-	var err error
-
-	publicKeyDer, err := x509.MarshalPKIXPublicKey(x509Cert.PublicKey)
-	if err != nil {
-		t.Fatalf("[FATAL]: Could not marshal pub key: %v", err)
-	}
-
-	// Parse the DER-encoded public key
-	pubKeyInCert, err := x509.ParsePKIXPublicKey(publicKeyDer)
-	if err != nil {
-		t.Fatalf("[FATAL]: Failed to parse DER-encoded public key: %v", err)
-	}
-
-	if _, ok := pubKeyInCert.(*ecdsa.PublicKey); !ok {
-		t.Fatal("[FATAL]: Public key is not a ecdsa key")
-	}
-
+func checkPubKey(t *testing.T, p Profile, pubkey any, response CertifiedKey) {
 	var pubKeyInResponse ecdsa.PublicKey
-
-	if hashAlg.Equal(OidSHA384) {
-		pubKeyInResponse = ecdsa.PublicKey{
-			Curve: elliptic.P384(),
-			X:     new(big.Int).SetBytes(response.Pub.X),
-			Y:     new(big.Int).SetBytes(response.Pub.Y),
-		}
-	} else if hashAlg.Equal(OidSHA256) {
+	switch p {
+	case ProfileP256SHA256:
 		pubKeyInResponse = ecdsa.PublicKey{
 			Curve: elliptic.P256(),
 			X:     new(big.Int).SetBytes(response.Pub.X),
 			Y:     new(big.Int).SetBytes(response.Pub.Y),
 		}
-	} else {
-		t.Errorf("[ERROR]: Unsupported hash algorithm.")
-		return
+	case ProfileP384SHA384:
+		pubKeyInResponse = ecdsa.PublicKey{
+			Curve: elliptic.P384(),
+			X:     new(big.Int).SetBytes(response.Pub.X),
+			Y:     new(big.Int).SetBytes(response.Pub.Y),
+		}
+	default:
+		t.Errorf("[ERROR]: Unsupported profile %v", p)
 	}
 
-	if !(pubKeyInResponse.Equal(pubKeyInCert)) {
+	ecdsaPub, ok := pubkey.(*ecdsa.PublicKey)
+	if !ok {
+		t.Fatal("[FATAL]: Public key is not a ecdsa key")
+	}
+
+	if !(pubKeyInResponse.Equal(ecdsaPub)) {
 		t.Errorf("[ERROR]: Public key returned in response must match the Public Key Info in the certificate.")
 	}
 }
