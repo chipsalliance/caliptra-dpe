@@ -231,8 +231,18 @@ func GetSimulatorTargets() []TestTarget {
 		},
 		{
 			"DefaultSupport",
-			getTestTarget([]string{"AutoInit", "Simulation", "X509", "Csr", "IsCA", "RotateContext", "ExtendTci", "IsSymmetric"}),
+			getTestTarget([]string{"AutoInit", "Simulation", "X509", "Csr", "IsCA", "RotateContext", "ExtendTci", "IsSymmetric", "InternalDice", "InternalInfo"}),
 			AllTestCases,
+		},
+		{
+			"DeriveChild_MaxTCIs",
+			getTestTarget([]string{"AutoInit", "Simulation"}),
+			[]TestCase{DeriveChildMaxTCIsTestCase},
+		},
+		{
+			"DeriveChild_Simulation",
+			getTestTarget([]string{"AutoInit", "Simulation", "X509", "Csr", "IsCA", "RotateContext", "ExtendTci", "IsSymmetric", "InternalDice", "InternalInfo"}),
+			[]TestCase{DeriveChildSimulationTestCase},
 		},
 		{
 			"CertifyKey_WithoutExtendTci",

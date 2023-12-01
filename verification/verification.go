@@ -79,6 +79,12 @@ var SignSimulationTestCase = TestCase{
 var DeriveChildTestCase = TestCase{
 	"DeriveChild", TestDeriveChild, []string{"AutoInit"},
 }
+var DeriveChildSimulationTestCase = TestCase{
+	"DeriveChildSimulation", TestDeriveChildSimulation, []string{"AutoInit", "Simulation"},
+}
+var DeriveChildMaxTCIsTestCase = TestCase{
+	"DeriveChild_MaxTCIs", TestMaxTCIs, []string{"AutoInit"},
+}
 
 var AllTestCases = []TestCase{
 	CertifyKeyTestCase,

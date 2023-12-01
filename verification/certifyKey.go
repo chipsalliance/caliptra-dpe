@@ -351,7 +351,7 @@ func checkWithDerivedChildContextSimulation(d TestDPEInstance, c DPEClient, t *t
 			t.Errorf("[ERROR]: Error while cleaning up derived context, this may cause failure in subsequent tests: %s", err)
 		}
 		// Revert locality for other tests
-		d.SetLocality(0)
+		d.SetLocality(locality)
 	}()
 
 	// Switch to simulated child context locality to issue CertifyKey command
