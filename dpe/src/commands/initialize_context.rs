@@ -31,7 +31,6 @@ impl InitCtxCmd {
         self.contains(Self::DEFAULT_FLAG_MASK)
     }
 
-    #[cfg(test)]
     pub const fn new_simulation() -> InitCtxCmd {
         Self::SIMULATION_FLAG_MASK
     }

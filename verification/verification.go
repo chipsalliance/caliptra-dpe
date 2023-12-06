@@ -29,6 +29,9 @@ var InitializeContextSimulationTestCase = TestCase{
 var CertifyKeyTestCase = TestCase{
 	"CertifyKey", TestCertifyKey, []string{"AutoInit", "X509", "IsCA"},
 }
+var CertifyKeyCsrTestCase = TestCase{
+	"CertifyKeyCsr", TestCertifyKey_Csr, []string{"AutoInit", "Csr", "IsCA"},
+}
 var CertifyKeySimulationTestCase = TestCase{
 	"CertifyKeySimulation", TestCertifyKeySimulation, []string{"AutoInit", "Simulation", "X509", "IsCA"},
 }
@@ -77,6 +80,7 @@ var TpmPolicySigningTestCase = TestCase{
 
 var AllTestCases = []TestCase{
 	CertifyKeyTestCase,
+	CertifyKeyCsrTestCase,
 	CertifyKeySimulationTestCase,
 	GetCertificateChainTestCase,
 	TpmPolicySigningTestCase,

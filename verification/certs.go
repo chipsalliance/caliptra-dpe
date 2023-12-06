@@ -4,31 +4,127 @@ package verification
 
 import (
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/asn1"
 	"fmt"
 )
 
+// This file is used to test the certify key command.
+var (
+	OidExtensionKeyUsage               = asn1.ObjectIdentifier{2, 5, 29, 15}
+	OidExtensionAuthorityKeyIdentifier = asn1.ObjectIdentifier{2, 5, 29, 35}
+	OidExtensionBasicConstraints       = asn1.ObjectIdentifier{2, 5, 29, 19}
+	OidExtensionExtKeyUsage            = asn1.ObjectIdentifier{2, 5, 29, 37}
+	OidExtensionTcgDiceUeid            = asn1.ObjectIdentifier{2, 23, 133, 5, 4, 4}
+	OidExtensionTcgDiceMultiTcbInfo    = asn1.ObjectIdentifier{2, 23, 133, 5, 4, 5}
+	OidExtensionTcgDiceKpIdentityInit  = asn1.ObjectIdentifier{2, 23, 133, 5, 4, 100, 6}
+	OidExtensionTcgDiceKpIdentityLoc   = asn1.ObjectIdentifier{2, 23, 133, 5, 4, 100, 7}
+	OidExtensionTcgDiceKpAttestInit    = asn1.ObjectIdentifier{2, 23, 133, 5, 4, 100, 8}
+	OidExtensionTcgDiceKpAttestLoc     = asn1.ObjectIdentifier{2, 23, 133, 5, 4, 100, 9}
+	OidExtensionTcgDiceKpAssertInit    = asn1.ObjectIdentifier{2, 23, 133, 5, 4, 100, 10}
+	OidExtensionTcgDiceKpAssertLoc     = asn1.ObjectIdentifier{2, 23, 133, 5, 4, 100, 11}
+	OidExtensionTcgDiceKpEca           = asn1.ObjectIdentifier{2, 23, 133, 5, 4, 100, 12}
+	OidSHA256                          = asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 2, 1}
+	OidSHA384                          = asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 2, 2}
+)
+
+type BasicConstraints struct {
+	IsCA              bool `asn1`
+	PathLenConstraint int  `asn1:"optional"`
+}
+
 // A tcg-dice-MultiTcbInfo extension.
 // This extension SHOULD be marked as critical.
-func getMultiTcbInfo(c *x509.Certificate) (TcgMultiTcbInfo, error) {
+func getMultiTcbInfo(extensions []pkix.Extension) (TcgMultiTcbInfo, error) {
 	var multiTcbInfo TcgMultiTcbInfo
-
-	// Check MultiTcbInfo Extension
-	//tcg-dice-MultiTcbInfo extension
-	for _, ext := range c.Extensions {
-		if ext.Id.Equal(OidExtensionTcgDiceMultiTcbInfo) { // OID for Tcg Dice MultiTcbInfo
+	for _, ext := range extensions {
+		if ext.Id.Equal(OidExtensionTcgDiceMultiTcbInfo) {
 			if !ext.Critical {
 				return multiTcbInfo, fmt.Errorf("[ERROR]: TCG DICE MultiTcbInfo extension is not marked as CRITICAL")
 			}
 			_, err := asn1.Unmarshal(ext.Value, &multiTcbInfo)
 			if err != nil {
-				// multiTcb info is not provided in leaf
 				return multiTcbInfo, fmt.Errorf("[ERROR]: Failed to unmarshal MultiTcbInfo field: %v", err)
 			}
 			break
 		}
 	}
 	return multiTcbInfo, nil
+}
+
+func getBasicConstraints(extensions []pkix.Extension) (BasicConstraints, error) {
+	var bc BasicConstraints
+	for _, ext := range extensions {
+		if ext.Id.Equal(OidExtensionBasicConstraints) {
+			if !ext.Critical {
+				return bc, fmt.Errorf("[ERROR]: BasicConstraints extension is not marked as CRITICAL")
+			}
+			_, err := asn1.Unmarshal(ext.Value, &bc)
+			if err != nil {
+				return bc, fmt.Errorf("[ERROR]: Failed to unmarshal BasicConstraints extension: %v", err)
+			}
+			break
+		}
+	}
+	return bc, nil
+}
+
+func getUeid(extensions []pkix.Extension) (TcgUeidExtension, error) {
+	var ueid TcgUeidExtension
+	for _, ext := range extensions {
+		if ext.Id.Equal(OidExtensionTcgDiceUeid) {
+			if !ext.Critical {
+				return ueid, fmt.Errorf("[ERROR]: UEID extension is not marked as CRITICAL")
+			}
+			_, err := asn1.Unmarshal(ext.Value, &ueid)
+			if err != nil {
+				return ueid, fmt.Errorf("[ERROR]: Failed to unmarshal UEID extension: %v", err)
+			}
+			break
+		}
+	}
+	return ueid, nil
+}
+
+func getExtendedKeyUsages(extensions []pkix.Extension) ([]asn1.ObjectIdentifier, error) {
+	var eku []asn1.ObjectIdentifier
+	for _, ext := range extensions {
+		if ext.Id.Equal(OidExtensionExtKeyUsage) {
+			if !ext.Critical {
+				return eku, fmt.Errorf("[ERROR]: ExtKeyUsage extension is not marked as CRITICAL")
+			}
+			_, err := asn1.Unmarshal(ext.Value, &eku)
+			if err != nil {
+				return eku, fmt.Errorf("[ERROR]: Failed to unmarshal ExtKeyUsage extension: %v", err)
+			}
+			break
+		}
+	}
+	return eku, nil
+}
+
+func getKeyUsage(extensions []pkix.Extension) (x509.KeyUsage, error) {
+	var usageBits asn1.BitString
+	for _, ext := range extensions {
+		if ext.Id.Equal(OidExtensionKeyUsage) {
+			if !ext.Critical {
+				return x509.KeyUsage(0), fmt.Errorf("[ERROR]: KeyUsage extension is not marked as CRITICAL")
+			}
+			_, err := asn1.Unmarshal(ext.Value, &usageBits)
+			if err != nil {
+				return x509.KeyUsage(0), fmt.Errorf("[ERROR]: Failed to unmarshal KeyUsage extension: %v", err)
+			}
+			break
+		}
+	}
+
+	var usage int
+	for i := 0; i < 9; i++ {
+		if usageBits.At(i) != 0 {
+			usage |= 1 << uint(i)
+		}
+	}
+	return x509.KeyUsage(usage), nil
 }
 
 func getTcbInfoForHandle(c DPEClient, handle *ContextHandle) (*ContextHandle, DiceTcbInfo, error) {
@@ -59,7 +155,7 @@ func getTcbInfoForHandle(c DPEClient, handle *ContextHandle) (*ContextHandle, Di
 	}
 
 	// Get DICE information from MultiTcbInfo Extension
-	multiTcbInfo, err := getMultiTcbInfo(leafCert)
+	multiTcbInfo, err := getMultiTcbInfo(leafCert.Extensions)
 	if err != nil {
 		return outHandle, DiceTcbInfo{}, err
 	}

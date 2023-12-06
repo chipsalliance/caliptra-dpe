@@ -14,6 +14,7 @@ pub mod default;
 pub mod printer;
 
 pub const MAX_CHUNK_SIZE: usize = 2048;
+pub const MAX_SN_SIZE: usize = 20;
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 #[repr(u16)]
@@ -63,6 +64,12 @@ pub trait Platform {
     ///
     /// * `out` - Output buffer for issuer name to be written to.
     fn get_issuer_name(&mut self, out: &mut [u8; MAX_CHUNK_SIZE]) -> Result<usize, PlatformError>;
+
+    /// Retrives the issuer's Serial Number
+    ///
+    /// The issuer serial number is a big-endian integer which is at-most 20
+    /// bytes. It must adhere to all the requirements of an ASN.1 integer.
+    fn get_issuer_sn(&mut self, out: &mut [u8; MAX_SN_SIZE]) -> Result<usize, PlatformError>;
 
     fn get_vendor_id(&mut self) -> Result<u32, PlatformError>;
 
