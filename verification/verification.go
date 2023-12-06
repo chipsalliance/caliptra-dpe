@@ -74,12 +74,16 @@ var SignSymmetricTestCase = TestCase{
 var SignSimulationTestCase = TestCase{
 	"SignSimulation", TestSignSimulation, []string{"Simulation"},
 }
+var TpmPolicySigningTestCase = TestCase{
+	"TPMPolicySigning", TestTpmPolicySigning, []string{"AutoInit", "X509"},
+}
 
 var AllTestCases = []TestCase{
 	CertifyKeyTestCase,
 	CertifyKeyCsrTestCase,
 	CertifyKeySimulationTestCase,
 	GetCertificateChainTestCase,
+	TpmPolicySigningTestCase,
 	ExtendTCITestCase,
 	ExtendDerivedTciTestCase,
 	RotateContextTestCase,
