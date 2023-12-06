@@ -8,7 +8,6 @@ import (
 	"crypto/sha512"
 	"crypto/x509"
 	"encoding/binary"
-	"flag"
 	"io"
 	"math"
 	"math/big"
@@ -21,8 +20,6 @@ import (
 )
 
 var (
-	tpmPath = flag.String("tpm-path", "/dev/tpm0", "Path to the TPM device (character device or a Unix socket).")
-
 	handleNames = map[string][]tpm2.HandleType{
 		"all":       {tpm2.HandleTypeLoadedSession, tpm2.HandleTypeSavedSession, tpm2.HandleTypeTransient},
 		"loaded":    {tpm2.HandleTypeLoadedSession},
@@ -36,7 +33,7 @@ func flushAllContexts(t *testing.T, tpm io.ReadWriteCloser) {
 	for _, handleType := range handleNames["all"] {
 		handles, err := client.Handles(tpm, handleType)
 		if err != nil {
-			t.Fatalf("[FATAL]: Error getting handles %s: %v", *tpmPath, err)
+			t.Fatalf("[FATAL]: Error getting handles %s", err)
 		}
 		for _, handle := range handles {
 			if err = tpm2.FlushContext(tpm, handle); err != nil {
@@ -99,7 +96,7 @@ func TestTpmPolicySigning(d TestDPEInstance, c DPEClient, t *testing.T) {
 
 	defer func() {
 		if err := tpm.Close(); err != nil {
-			t.Fatalf("[FATAL]: Can't close TPM %s: %v", *tpmPath, err)
+			t.Fatalf("[FATAL]: Can't close TPM %s", err)
 		}
 	}()
 
@@ -137,12 +134,16 @@ func TestTpmPolicySigning(d TestDPEInstance, c DPEClient, t *testing.T) {
 	encodedSignature := getEncodedSignature(t, r, s, alg)
 
 	// Verify Policy with Signature
-	_, _, err = tpm2.PolicySigned(tpm, pkh, sessHandle, nonce, nil, nil, expiry, encodedSignature)
+	_, tkt, err = tpm2.PolicySigned(tpm, pkh, sessHandle, nonce, nil, nil, expiry, encodedSignature)
 	if err != nil {
 		t.Fatalf("[FATAL]: PolicySigned() failed: %v", err)
 	}
 
-	t.Log("PolicySigning validation is successful")
+	if tkt != nil {
+		t.Log("PolicySigning validation is successful, received ticket after policy validation")
+	} else {
+		t.Fatal("PolicySigning validation is failed, unable to receive ticket")
+	}
 }
 
 func getDigest(nonce []byte, expiry int32, digestLen int) []byte {
