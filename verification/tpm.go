@@ -91,7 +91,7 @@ func TestTpmPolicySigning(d TestDPEInstance, c DPEClient, t *testing.T) {
 
 	sessHandle, nonce, err := startTpmSession(t, tpm, alg)
 	if err != nil {
-		t.Fatalf("[FATAL]: Error in getting tpm nonce")
+		t.Fatalf("[FATAL]: Error in getting TPM nonce")
 	}
 
 	defer func() {
@@ -134,15 +134,15 @@ func TestTpmPolicySigning(d TestDPEInstance, c DPEClient, t *testing.T) {
 	encodedSignature := getEncodedSignature(t, r, s, alg)
 
 	// Verify Policy with Signature
-	_, tkt, err = tpm2.PolicySigned(tpm, pkh, sessHandle, nonce, nil, nil, expiry, encodedSignature)
+	_, tkt, err := tpm2.PolicySigned(tpm, pkh, sessHandle, nonce, nil, nil, expiry, encodedSignature)
 	if err != nil {
-		t.Fatalf("[FATAL]: PolicySigned() failed: %v", err)
+		t.Fatalf("[FATAL]: PolicySigning failed: %v", err)
 	}
 
 	if tkt != nil {
-		t.Log("PolicySigning validation is successful, received ticket after policy validation")
+		t.Log("Policy signing succeeded.")
 	} else {
-		t.Fatal("PolicySigning validation is failed, unable to receive ticket")
+		t.Fatal("Policy signing failed, unable to receive signed ticket associated with policy")
 	}
 }
 
