@@ -147,6 +147,21 @@ func TestCertifyKey_Csr(d TestDPEInstance, c DPEClient, t *testing.T) {
 		t.Fatalf("[FATAL]: Could not get Certificate Chain: %v", err)
 	}
 	certChain := checkCertificateChain(t, certChainBytes)
+	lastCertInCertChain := certChain[len(certChain)-1]
+
+	// Get DPE leaf cert
+	certifyKeyResp, err = c.CertifyKey(ctx, label, CertifyKeyX509, flags)
+	if err != nil {
+		t.Fatalf("[FATAL]: Could not certify key: %v", err)
+	}
+	leafCert := checkCertificateStructure(t, certifyKeyResp.Certificate)
+
+	// This library expects the issuer of the cert to match the issuer of the CMS.
+	//
+	// The last cert in the cert chain would be signed by the preceding cert
+	// so its issuer is not what the library expects. The DPE leaf cert is signed
+	// by the alias key so it's issuer will match the issuer of the CMS.
+	lastCertInCertChain.RawIssuer = leafCert.RawIssuer
 
 	// This library expects the cert to be in the Certificates field but DPE
 	// does not populate it. Add it so Verify succeeds.
@@ -157,7 +172,7 @@ func TestCertifyKey_Csr(d TestDPEInstance, c DPEClient, t *testing.T) {
 	//		those verifying the signatures have an alternate means of
 	//		obtaining necessary certificates (e.g., from a previous set
 	//      of certificates).
-	wrappedCSR.Certificates = append(wrappedCSR.Certificates, certChain...)
+	wrappedCSR.Certificates = append(wrappedCSR.Certificates, lastCertInCertChain)
 	err = wrappedCSR.Verify()
 	if err != nil {
 		t.Errorf("[ERROR]: Failed to verify CMS wrapper signature: %v", err)
