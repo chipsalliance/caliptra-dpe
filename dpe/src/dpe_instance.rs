@@ -74,6 +74,33 @@ impl DpeInstance {
         Ok(dpe)
     }
 
+    pub fn new_auto_init(
+        env: &mut DpeEnv<impl DpeTypes>,
+        support: Support,
+        tci_type: u32,
+        auto_init_measurement: [u8; DPE_PROFILE.get_hash_size()],
+    ) -> Result<DpeInstance, DpeErrorCode> {
+        // auto-init must be supported to add an auto init measurement
+        if !support.auto_init() {
+            return Err(DpeErrorCode::ArgumentNotSupported);
+        }
+        let mut dpe = Self::new(env, support)?;
+
+        let locality = env.platform.get_auto_init_locality()?;
+        let idx = dpe.get_active_context_pos(&ContextHandle::default(), locality)?;
+        let mut tmp_context = dpe.contexts[idx];
+        // add measurement to auto-initialized context
+        dpe.add_tci_measurement(
+            env,
+            &mut tmp_context,
+            &TciMeasurement(auto_init_measurement),
+            locality,
+        )?;
+        dpe.contexts[idx] = tmp_context;
+        dpe.contexts[idx].tci.tci_type = tci_type;
+        Ok(dpe)
+    }
+
     pub fn has_initialized(&self) -> bool {
         self.has_initialized.get()
     }
@@ -870,5 +897,36 @@ pub mod tests {
         dpe.contexts[12].state = ContextState::Active;
         // validation fails on a graph with multiple connected components
         assert_eq!(dpe.validate_context_tree(0), false);
+    }
+
+    #[test]
+    fn test_new_auto_init() {
+        let mut env = DpeEnv::<TestTypes> {
+            crypto: OpensslCrypto::new(),
+            platform: DefaultPlatform,
+        };
+        let tci_type = 0xdeadbeef_u32;
+        let auto_init_measurement = [0x1; DPE_PROFILE.get_hash_size()];
+        let auto_init_locality = env.platform.get_auto_init_locality().unwrap();
+        let mut dpe =
+            DpeInstance::new_auto_init(&mut env, SUPPORT, tci_type, auto_init_measurement).unwrap();
+
+        let idx = dpe
+            .get_active_context_pos(&ContextHandle::default(), auto_init_locality)
+            .unwrap();
+        assert_eq!(dpe.contexts[idx].tci.tci_type, tci_type);
+        assert_eq!(dpe.contexts[idx].tci.locality, auto_init_locality);
+        assert_eq!(dpe.contexts[idx].tci.tci_current.0, auto_init_measurement);
+        assert_eq!(dpe.contexts[idx].parent_idx, Context::ROOT_INDEX);
+        assert_eq!(dpe.contexts[idx].children, 0);
+        assert_eq!(dpe.contexts[idx].state, ContextState::Active);
+        assert_eq!(dpe.contexts[idx].handle, ContextHandle::default());
+        assert!(dpe.has_initialized.get());
+
+        // check that initialize context fails if new_auto_init was used
+        assert_eq!(
+            InitCtxCmd::new_use_default().execute(&mut dpe, &mut env, auto_init_locality),
+            Err(DpeErrorCode::ArgumentNotSupported)
+        );
     }
 }
