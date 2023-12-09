@@ -6,8 +6,8 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-openssl = ["dep:openssl"]
 default = ["dpe_profile_p256_sha256"]
+openssl = ["dep:openssl"]
 dpe_profile_p256_sha256 = []
 dpe_profile_p384_sha384 = []
 

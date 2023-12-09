@@ -7,8 +7,8 @@ edition = "2021"
 
 [features]
 default = ["dpe_profile_p256_sha256"]
-dpe_profile_p256_sha256 = []
-dpe_profile_p384_sha384 = []
+dpe_profile_p256_sha256 = ["platform/dpe_profile_p256_sha256"]
+dpe_profile_p384_sha384 = ["platform/dpe_profile_p384_sha384"]
 
 [dependencies]
 bitflags = "2.4.0"
@@ -24,7 +24,7 @@ asn1 = "0.13.0"
 openssl = "0.10.57"
 x509-parser = "0.15.1"
 crypto = {path = "../crypto", features = ["deterministic_rand", "openssl"]}
-platform = {path = "../platform", features = ["openssl"]}
+platform = {path = "../platform", default-features = false, features = ["openssl"]}
 cms = "0.2.2"
 der = "0.7.8"
 spki = "0.7.2"
