@@ -197,6 +197,11 @@ func loadPubKey(t *testing.T, pubKey any, tpm io.ReadWriteCloser, alg tpm2.Algor
 	// Create a tpm2.Public structure from the parsed ECDSA public key
 	switch pubKey := pubKey.(type) {
 	case *ecdsa.PublicKey:
+		byteSize := pubKey.Params().BitSize / 8
+		x := make([]byte, byteSize)
+		y := make([]byte, byteSize)
+		x = pubKey.X.FillBytes(x)
+		y = pubKey.Y.FillBytes(y)
 		tpmPublic = tpm2.Public{
 			Type:       tpm2.AlgECC, // ECDSA key type
 			NameAlg:    alg,
@@ -208,8 +213,8 @@ func loadPubKey(t *testing.T, pubKey any, tpm io.ReadWriteCloser, alg tpm2.Algor
 				},
 				CurveID: ec,
 				Point: tpm2.ECPoint{
-					XRaw: new(big.Int).SetBytes(pubKey.X.Bytes()).Bytes(),
-					YRaw: new(big.Int).SetBytes(pubKey.Y.Bytes()).Bytes(),
+					XRaw: x,
+					YRaw: y,
 				},
 			},
 		}
