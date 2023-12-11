@@ -96,6 +96,8 @@ impl Context {
         self.state = ContextState::Inactive;
         self.uses_internal_input_info = false.into();
         self.uses_internal_input_dice = false.into();
+        self.allow_ca = false.into();
+        self.allow_x509 = false.into();
         self.parent_idx = Self::ROOT_INDEX;
     }
 

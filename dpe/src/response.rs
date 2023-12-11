@@ -5,8 +5,8 @@ Abstract:
     DPE reponses and serialization.
 --*/
 use crate::{
-    context::ContextHandle, CURRENT_PROFILE_MAJOR_VERSION, CURRENT_PROFILE_MINOR_VERSION,
-    DPE_PROFILE, MAX_CERT_SIZE, MAX_HANDLES,
+    context::ContextHandle, validation::ValidationError, CURRENT_PROFILE_MAJOR_VERSION,
+    CURRENT_PROFILE_MINOR_VERSION, DPE_PROFILE, MAX_CERT_SIZE, MAX_HANDLES,
 };
 use crypto::CryptoError;
 use platform::PlatformError;
@@ -152,6 +152,7 @@ pub enum DpeErrorCode {
     MaxTcis = 0x1003,
     Platform(PlatformError) = 0x01000000,
     Crypto(CryptoError) = 0x02000000,
+    Validation(ValidationError) = 0x03000000,
 }
 
 impl From<PlatformError> for DpeErrorCode {
@@ -181,6 +182,7 @@ impl DpeErrorCode {
         match self {
             DpeErrorCode::Platform(e) => self.discriminant() | e.discriminant() as u32,
             DpeErrorCode::Crypto(e) => self.discriminant() | e.discriminant() as u32,
+            DpeErrorCode::Validation(e) => self.discriminant() | e.discriminant() as u32,
             _ => self.discriminant(),
         }
     }
