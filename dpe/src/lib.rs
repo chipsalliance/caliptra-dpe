@@ -14,6 +14,7 @@ pub mod context;
 pub mod dpe_instance;
 pub mod response;
 pub mod support;
+pub mod validation;
 
 use core::mem::size_of;
 use response::GetProfileResp;
