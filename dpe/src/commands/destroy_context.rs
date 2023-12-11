@@ -1,9 +1,10 @@
 // Licensed under the Apache-2.0 license.
 use super::CommandExecution;
 use crate::{
-    context::ContextHandle,
-    dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
+    context::{Context, ContextHandle, ContextState},
+    dpe_instance::{flags_iter, DpeEnv, DpeInstance, DpeTypes},
     response::{DpeErrorCode, Response, ResponseHdr},
+    MAX_HANDLES,
 };
 
 #[repr(C)]
@@ -26,7 +27,31 @@ impl CommandExecution for DestroyCtxCmd {
             return Err(DpeErrorCode::InvalidLocality);
         }
 
-        let to_destroy = (1 << idx) | dpe.get_descendants(context)?;
+        // mark consecutive retired parent contexts without active children to be destroyed
+        let mut retired_contexts = 0u32;
+        let mut parent_idx = context.parent_idx as usize;
+        loop {
+            if parent_idx == Context::ROOT_INDEX as usize {
+                break;
+            } else if parent_idx >= dpe.contexts.len() {
+                return Err(DpeErrorCode::InternalError);
+            }
+            let parent_context = &dpe.contexts[parent_idx];
+            // make sure the retired context does not have other active child contexts
+            if parent_context.state == ContextState::Retired
+                && flags_iter(parent_context.children, MAX_HANDLES).count() == 1
+            {
+                retired_contexts |= 1 << parent_idx;
+            } else {
+                break;
+            }
+
+            parent_idx = parent_context.parent_idx as usize;
+        }
+
+        // create a bitmask indicating that the current context, all its descendants, and its consecutive
+        // retired parent contexts should be destroyed
+        let to_destroy = (1 << idx) | dpe.get_descendants(context)? | retired_contexts;
 
         for (idx, c) in dpe.contexts.iter_mut().enumerate() {
             // Clears all the to_destroy bits in the children of every context
@@ -46,10 +71,11 @@ impl CommandExecution for DestroyCtxCmd {
 mod tests {
     use super::*;
     use crate::{
-        commands::{Command, CommandHdr, InitCtxCmd},
+        commands::{Command, CommandHdr, DeriveChildCmd, DeriveChildFlags, InitCtxCmd},
         context::{Context, ContextState},
         dpe_instance::tests::{TestTypes, SIMULATION_HANDLE, TEST_HANDLE, TEST_LOCALITIES},
-        support::Support,
+        support::{test::SUPPORT, Support},
+        DPE_PROFILE,
     };
     use crypto::OpensslCrypto;
     use platform::default::DefaultPlatform;
@@ -225,6 +251,141 @@ mod tests {
         assert_eq!(dpe.contexts[1].state, ContextState::Inactive);
         // check that context[2] is still a child of context[0]
         assert_eq!(dpe.contexts[0].children, 1 << 2);
+    }
+
+    #[test]
+    fn test_retired_parent_contexts_destroyed() {
+        let mut env = DpeEnv::<TestTypes> {
+            crypto: OpensslCrypto::new(),
+            platform: DefaultPlatform,
+        };
+        let mut dpe = DpeInstance::new(&mut env, SUPPORT).unwrap();
+
+        // create new context while preserving auto-initialized context
+        let handle_1 = match (DeriveChildCmd {
+            handle: ContextHandle::default(),
+            data: [0u8; DPE_PROFILE.get_tci_size()],
+            flags: DeriveChildFlags::RETAIN_PARENT | DeriveChildFlags::CHANGE_LOCALITY,
+            tci_type: 0,
+            target_locality: TEST_LOCALITIES[1],
+        })
+        .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
+        {
+            Ok(Response::DeriveChild(resp)) => resp.handle,
+            Ok(_) => panic!("Invalid response type"),
+            Err(e) => Err(e).unwrap(),
+        };
+
+        // retire context with handle 1 and create new context
+        let handle_2 = match (DeriveChildCmd {
+            handle: handle_1,
+            data: [0u8; DPE_PROFILE.get_tci_size()],
+            flags: DeriveChildFlags::empty(),
+            tci_type: 0,
+            target_locality: TEST_LOCALITIES[1],
+        })
+        .execute(&mut dpe, &mut env, TEST_LOCALITIES[1])
+        {
+            Ok(Response::DeriveChild(resp)) => resp.handle,
+            Ok(_) => panic!("Invalid response type"),
+            Err(e) => Err(e).unwrap(),
+        };
+
+        // retire context with handle 2 and create new context
+        let handle_3 = match (DeriveChildCmd {
+            handle: handle_2,
+            data: [0u8; DPE_PROFILE.get_tci_size()],
+            flags: DeriveChildFlags::empty(),
+            tci_type: 0,
+            target_locality: TEST_LOCALITIES[1],
+        })
+        .execute(&mut dpe, &mut env, TEST_LOCALITIES[1])
+        {
+            Ok(Response::DeriveChild(resp)) => resp.handle,
+            Ok(_) => panic!("Invalid response type"),
+            Err(e) => Err(e).unwrap(),
+        };
+
+        DestroyCtxCmd { handle: handle_3 }
+            .execute(&mut dpe, &mut env, TEST_LOCALITIES[1])
+            .unwrap();
+
+        // only the auto-initialized context should remain, context[1] and context[2] should be
+        // destroyed since they are in the chain of consecutive retired parents of the destroyed
+        // context.
+        assert_eq!(
+            dpe.count_contexts(|ctx| ctx.state != ContextState::Inactive)
+                .unwrap(),
+            1
+        );
+        assert_eq!(dpe.contexts[2].state, ContextState::Inactive);
+    }
+
+    #[test]
+    fn test_retired_parent_context_not_destroyed_if_it_has_other_active_children() {
+        let mut env = DpeEnv::<TestTypes> {
+            crypto: OpensslCrypto::new(),
+            platform: DefaultPlatform,
+        };
+        let mut dpe = DpeInstance::new(&mut env, SUPPORT).unwrap();
+
+        // create new context while preserving auto-initialized context
+        let parent_handle = match (DeriveChildCmd {
+            handle: ContextHandle::default(),
+            data: [0u8; DPE_PROFILE.get_tci_size()],
+            flags: DeriveChildFlags::RETAIN_PARENT | DeriveChildFlags::CHANGE_LOCALITY,
+            tci_type: 0,
+            target_locality: TEST_LOCALITIES[1],
+        })
+        .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
+        {
+            Ok(Response::DeriveChild(resp)) => resp.handle,
+            Ok(_) => panic!("Invalid response type"),
+            Err(e) => Err(e).unwrap(),
+        };
+
+        // derive one child from the parent
+        let parent_handle = match (DeriveChildCmd {
+            handle: parent_handle,
+            data: [0u8; DPE_PROFILE.get_tci_size()],
+            flags: DeriveChildFlags::RETAIN_PARENT,
+            tci_type: 0,
+            target_locality: TEST_LOCALITIES[1],
+        })
+        .execute(&mut dpe, &mut env, TEST_LOCALITIES[1])
+        {
+            Ok(Response::DeriveChild(resp)) => resp.parent_handle,
+            Ok(_) => panic!("Invalid response type"),
+            Err(e) => Err(e).unwrap(),
+        };
+
+        // derive another child while retiring the parent handle
+        let handle_b = match (DeriveChildCmd {
+            handle: parent_handle,
+            data: [0u8; DPE_PROFILE.get_tci_size()],
+            flags: DeriveChildFlags::empty(),
+            tci_type: 0,
+            target_locality: TEST_LOCALITIES[1],
+        })
+        .execute(&mut dpe, &mut env, TEST_LOCALITIES[1])
+        {
+            Ok(Response::DeriveChild(resp)) => resp.handle,
+            Ok(_) => panic!("Invalid response type"),
+            Err(e) => Err(e).unwrap(),
+        };
+
+        DestroyCtxCmd { handle: handle_b }
+            .execute(&mut dpe, &mut env, TEST_LOCALITIES[1])
+            .unwrap();
+
+        // Since the retired handle has another active context apart from handle_b, it
+        // shouldn't be destroyed.
+        assert_eq!(
+            dpe.count_contexts(|ctx| ctx.state != ContextState::Inactive)
+                .unwrap(),
+            3
+        );
+        assert_eq!(dpe.contexts[1].state, ContextState::Retired);
     }
 
     fn activate_dummy_context(
