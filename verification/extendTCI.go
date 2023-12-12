@@ -35,7 +35,7 @@ func TestExtendTCI(d TestDPEInstance, c DPEClient, t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	lastCumulative := tcbInfo.Fwids[1].Digest
+	lastCumulativeTCI := tcbInfo.Fwids[1].Digest
 
 	// Set current TCI value
 	_, err = c.ExtendTCI(handle, tciValue)
@@ -43,9 +43,17 @@ func TestExtendTCI(d TestDPEInstance, c DPEClient, t *testing.T) {
 		t.Fatalf("[FATAL]: Could not extend TCI: %v", err)
 	}
 
-	// Check current and cumulative measurement by CertifyKey
-	expectedCumulative := computeExpectedCumulative(lastCumulative, tciValue)
-	verifyMeasurements(c, t, handle, tciValue, expectedCumulative)
+	// Refresh TCB info
+	_, tcbInfo, err = getTcbInfoForHandle(c, handle)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Check current and cumulative measurement in DiceTcb info block
+	wantCurrentTCI := tciValue
+	if err = verifyDiceTcbDigest(tcbInfo, wantCurrentTCI, lastCumulativeTCI); err != nil {
+		t.Errorf("[ERROR]: %v", err)
+	}
 }
 
 func computeExpectedCumulative(lastCumulative []byte, tciValue []byte) []byte {
@@ -151,23 +159,5 @@ func TestExtendTciOnDerivedContexts(d TestDPEInstance, c DPEClient, t *testing.T
 	wantCumulativeTCI = computeExpectedCumulative(lastCumulative, extendTciValue)
 	if !bytes.Equal(childTcbInfo.Fwids[1].Digest, wantCumulativeTCI) {
 		t.Errorf("[ERROR]: Child node's cumulative TCI %x, expected %x", childTcbInfo.Fwids[1].Digest, wantCumulativeTCI)
-	}
-}
-
-func verifyMeasurements(c DPEClient, t *testing.T, handle *ContextHandle, expectedCurrent []byte, expectedCumulative []byte) {
-	handle, tcbInfo, err := getTcbInfoForHandle(c, handle)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Check that the last TcbInfo current/cumulative are as expected
-	current := tcbInfo.Fwids[0].Digest
-	cumulative := tcbInfo.Fwids[1].Digest
-	if !bytes.Equal(current, expectedCurrent) {
-		t.Errorf("[ERROR]: Unexpected TCI_CURRENT digest, want %v but got %v", expectedCurrent, current)
-	}
-
-	if !bytes.Equal(cumulative, expectedCumulative) {
-		t.Errorf("[ERROR]: Unexpected cumulative TCI value, want %v but got %v", expectedCumulative, cumulative)
 	}
 }
