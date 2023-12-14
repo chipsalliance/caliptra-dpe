@@ -1,7 +1,9 @@
 // Licensed under the Apache-2.0 license
 
+#[cfg(not(any(feature = "openssl", feature = "rustcrypto")))]
+compile_error!("must provide a crypto implementation");
+
 use clap::Parser;
-use crypto::OpensslCrypto;
 use log::{error, info, trace, warn};
 use platform::default::DefaultPlatform;
 use std::fs;
@@ -17,6 +19,12 @@ use dpe::{
     support::Support,
     DpeInstance,
 };
+
+#[cfg(feature = "rustcrypto")]
+use crypto::RustCryptoImpl;
+
+#[cfg(feature = "openssl")]
+use crypto::OpensslCrypto;
 
 const SOCKET_PATH: &str = "/tmp/dpe-sim.socket";
 
@@ -113,7 +121,11 @@ struct Args {
 struct SimTypes {}
 
 impl DpeTypes for SimTypes {
+    #[cfg(feature = "rustcrypto")]
+    type Crypto<'a> = RustCryptoImpl;
+    #[cfg(feature = "openssl")]
     type Crypto<'a> = OpensslCrypto;
+
     type Platform<'a> = DefaultPlatform;
 }
 
@@ -148,7 +160,7 @@ fn main() -> std::io::Result<()> {
     support.set(Support::IS_SYMMETRIC, args.supports_is_symmetric);
 
     let mut env = DpeEnv::<SimTypes> {
-        crypto: OpensslCrypto::new(),
+        crypto: <SimTypes as DpeTypes>::Crypto::new(),
         platform: DefaultPlatform,
     };
 

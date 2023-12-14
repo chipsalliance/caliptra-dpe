@@ -1,8 +1,19 @@
 // Licensed under the Apache-2.0 license
 
+#[cfg(all(feature = "openssl", feature = "rustcrypto"))]
+compile_error!("feature \"openssl\" and feature \"rustcrypto\" cannot be enabled at the same time, because they provide duplicate definitions");
+
 use crate::{Platform, PlatformError, MAX_CHUNK_SIZE, MAX_SN_SIZE};
 use core::cmp::min;
+
+#[cfg(feature = "openssl")]
 use openssl::x509::X509;
+
+#[cfg(feature = "rustcrypto")]
+use x509_cert::{
+    certificate::Certificate,
+    der::{DecodePem, Encode},
+};
 
 pub struct DefaultPlatform;
 
@@ -22,6 +33,47 @@ pub const TEST_CERT_PEM: &[u8] = include_bytes!("test_data/cert_256.pem");
 
 #[cfg(feature = "dpe_profile_p384_sha384")]
 pub const TEST_CERT_PEM: &[u8] = include_bytes!("test_data/cert_384.pem");
+
+impl DefaultPlatform {
+    #[cfg(feature = "openssl")]
+    fn parse_issuer_name() -> Vec<u8> {
+        X509::from_pem(TEST_CERT_PEM)
+            .unwrap()
+            .subject_name()
+            .to_der()
+            .unwrap()
+    }
+
+    #[cfg(feature = "openssl")]
+    fn parse_issuer_sn() -> Vec<u8> {
+        X509::from_pem(TEST_CERT_PEM)
+            .unwrap()
+            .serial_number()
+            .to_bn()
+            .unwrap()
+            .to_vec()
+    }
+
+    #[cfg(feature = "rustcrypto")]
+    fn parse_issuer_name() -> Vec<u8> {
+        Certificate::from_pem(TEST_CERT_PEM)
+            .unwrap()
+            .tbs_certificate
+            .subject
+            .to_der()
+            .unwrap()
+    }
+
+    #[cfg(feature = "rustcrypto")]
+    fn parse_issuer_sn() -> Vec<u8> {
+        Certificate::from_pem(TEST_CERT_PEM)
+            .unwrap()
+            .tbs_certificate
+            .serial_number
+            .as_bytes()
+            .to_vec()
+    }
+}
 
 impl Platform for DefaultPlatform {
     fn get_certificate_chain(
@@ -47,11 +99,7 @@ impl Platform for DefaultPlatform {
     }
 
     fn get_issuer_name(&mut self, out: &mut [u8; MAX_CHUNK_SIZE]) -> Result<usize, PlatformError> {
-        let issuer_name = X509::from_pem(TEST_CERT_PEM)
-            .unwrap()
-            .subject_name()
-            .to_der()
-            .unwrap();
+        let issuer_name = DefaultPlatform::parse_issuer_name();
         if issuer_name.len() > out.len() {
             return Err(PlatformError::IssuerNameError(0));
         }
@@ -60,12 +108,7 @@ impl Platform for DefaultPlatform {
     }
 
     fn get_issuer_sn(&mut self, out: &mut [u8; MAX_SN_SIZE]) -> Result<usize, PlatformError> {
-        let sn = X509::from_pem(TEST_CERT_PEM)
-            .unwrap()
-            .serial_number()
-            .to_bn()
-            .unwrap()
-            .to_vec();
+        let sn = DefaultPlatform::parse_issuer_sn();
         if sn.len() > out.len() {
             return Err(PlatformError::IssuerNameError(0));
         }
