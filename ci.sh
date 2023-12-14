@@ -53,8 +53,9 @@ function test_rust_targets() {
 # TODO: Support building the simulator for different profiles
 function run_verification_tests() {
   profile=$1
+  crypto=$2
 
-  cargo build --manifest-path simulator/Cargo.toml --features=$profile --no-default-features
+  cargo build --manifest-path simulator/Cargo.toml --features=$profile,$crypto --no-default-features
 
   ( cd verification
     go test -v
@@ -67,12 +68,14 @@ format_go_targets
 # Run tests for P256 profile
 build_rust_targets dpe_profile_p256_sha256
 test_rust_targets dpe_profile_p256_sha256
-run_verification_tests dpe_profile_p256_sha256
+run_verification_tests dpe_profile_p256_sha256 openssl
+run_verification_tests dpe_profile_p256_sha256 rustcrypto
 
 # Run tests for P384 profile
 build_rust_targets dpe_profile_p384_sha384
 test_rust_targets dpe_profile_p384_sha384
-run_verification_tests dpe_profile_p384_sha384
+run_verification_tests dpe_profile_p384_sha384 openssl
+run_verification_tests dpe_profile_p384_sha384 rustcrypto
 
 # Build fuzz target
 ( cd dpe/fuzz
