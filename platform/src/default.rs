@@ -1,19 +1,19 @@
 // Licensed under the Apache-2.0 license
 
-#[cfg(all(feature = "openssl", feature = "rustcrypto"))]
-compile_error!("feature \"openssl\" and feature \"rustcrypto\" cannot be enabled at the same time, because they provide duplicate definitions");
-
 use crate::{Platform, PlatformError, MAX_CHUNK_SIZE, MAX_SN_SIZE};
+use cfg_if::cfg_if;
 use core::cmp::min;
 
-#[cfg(feature = "openssl")]
-use openssl::x509::X509;
-
-#[cfg(feature = "rustcrypto")]
-use x509_cert::{
-    certificate::Certificate,
-    der::{DecodePem, Encode},
-};
+cfg_if! {
+    if #[cfg(feature = "openssl")] {
+        use openssl::x509::X509;
+    } else if  #[cfg(feature = "rustcrypto")] {
+        use x509_cert::{
+            certificate::Certificate,
+            der::{DecodePem, Encode},
+        };
+    }
+}
 
 pub struct DefaultPlatform;
 
@@ -35,43 +35,45 @@ pub const TEST_CERT_PEM: &[u8] = include_bytes!("test_data/cert_256.pem");
 pub const TEST_CERT_PEM: &[u8] = include_bytes!("test_data/cert_384.pem");
 
 impl DefaultPlatform {
-    #[cfg(feature = "openssl")]
-    fn parse_issuer_name() -> Vec<u8> {
-        X509::from_pem(TEST_CERT_PEM)
-            .unwrap()
-            .subject_name()
-            .to_der()
-            .unwrap()
-    }
+    cfg_if! {
+        if #[cfg(feature = "openssl")] {
+        fn parse_issuer_name() -> Vec<u8> {
+            X509::from_pem(TEST_CERT_PEM)
+                .unwrap()
+                .subject_name()
+                .to_der()
+                .unwrap()
+        }} else if  #[cfg(feature = "rustcrypto")] {
+               fn parse_issuer_name() -> Vec<u8> {
+            Certificate::from_pem(TEST_CERT_PEM)
+                .unwrap()
+                .tbs_certificate
+                .subject
+                .to_der()
+                .unwrap()
+        }
+    }}
 
-    #[cfg(feature = "openssl")]
-    fn parse_issuer_sn() -> Vec<u8> {
-        X509::from_pem(TEST_CERT_PEM)
-            .unwrap()
-            .serial_number()
-            .to_bn()
-            .unwrap()
-            .to_vec()
-    }
-
-    #[cfg(feature = "rustcrypto")]
-    fn parse_issuer_name() -> Vec<u8> {
-        Certificate::from_pem(TEST_CERT_PEM)
-            .unwrap()
-            .tbs_certificate
-            .subject
-            .to_der()
-            .unwrap()
-    }
-
-    #[cfg(feature = "rustcrypto")]
-    fn parse_issuer_sn() -> Vec<u8> {
-        Certificate::from_pem(TEST_CERT_PEM)
-            .unwrap()
-            .tbs_certificate
-            .serial_number
-            .as_bytes()
-            .to_vec()
+    cfg_if! {
+        if #[cfg(feature = "openssl")] {
+       fn parse_issuer_sn() -> Vec<u8> {
+            X509::from_pem(TEST_CERT_PEM)
+                .unwrap()
+                .serial_number()
+                .to_bn()
+                .unwrap()
+                .to_vec()
+        }
+        } else if  #[cfg(feature = "rustcrypto")] {
+          fn parse_issuer_sn() -> Vec<u8> {
+            Certificate::from_pem(TEST_CERT_PEM)
+                .unwrap()
+                .tbs_certificate
+                .serial_number
+                .as_bytes()
+                .to_vec()
+        }
+        }
     }
 }
 
