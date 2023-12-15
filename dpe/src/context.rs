@@ -96,7 +96,9 @@ impl Context {
         self.state = ContextState::Inactive;
         self.uses_internal_input_info = false.into();
         self.uses_internal_input_dice = false.into();
-        self.parent_idx = 0xFF;
+        self.allow_ca = false.into();
+        self.allow_x509 = false.into();
+        self.parent_idx = Self::ROOT_INDEX;
     }
 
     /// Return the list of children of the context with idx added.

@@ -74,6 +74,33 @@ impl DpeInstance {
         Ok(dpe)
     }
 
+    pub fn new_auto_init(
+        env: &mut DpeEnv<impl DpeTypes>,
+        support: Support,
+        tci_type: u32,
+        auto_init_measurement: [u8; DPE_PROFILE.get_hash_size()],
+    ) -> Result<DpeInstance, DpeErrorCode> {
+        // auto-init must be supported to add an auto init measurement
+        if !support.auto_init() {
+            return Err(DpeErrorCode::ArgumentNotSupported);
+        }
+        let mut dpe = Self::new(env, support)?;
+
+        let locality = env.platform.get_auto_init_locality()?;
+        let idx = dpe.get_active_context_pos(&ContextHandle::default(), locality)?;
+        let mut tmp_context = dpe.contexts[idx];
+        // add measurement to auto-initialized context
+        dpe.add_tci_measurement(
+            env,
+            &mut tmp_context,
+            &TciMeasurement(auto_init_measurement),
+            locality,
+        )?;
+        dpe.contexts[idx] = tmp_context;
+        dpe.contexts[idx].tci.tci_type = tci_type;
+        Ok(dpe)
+    }
+
     pub fn has_initialized(&self) -> bool {
         self.has_initialized.get()
     }
@@ -365,49 +392,6 @@ impl DpeInstance {
         }
 
         Ok(hasher.finish()?)
-    }
-
-    /// Determines if the context array represents a valid tree by checking that
-    /// there is only 1 connected component and that all nodes lead up to
-    /// the root node.
-    ///
-    /// # Arguments
-    ///
-    /// * `root_idx` - The index of the root context
-    pub fn validate_context_tree(&self, root_idx: usize) -> bool {
-        let mut seen = [false; MAX_HANDLES];
-
-        // dfs from the root node and try to discover invalid subtrees
-        if self.detect_invalid_subtree(root_idx, &mut seen) {
-            return false;
-        }
-
-        for (i, node_visited) in seen.iter().enumerate().take(MAX_HANDLES) {
-            // If a node was not seen when doing a dfs from the root, there must be multiple
-            // connected components or the root is not actually the root
-            if i != root_idx && self.contexts[i].state != ContextState::Inactive && !node_visited {
-                return false;
-            }
-        }
-        true
-    }
-
-    fn detect_invalid_subtree(&self, curr_idx: usize, seen: &mut [bool; MAX_HANDLES]) -> bool {
-        // if the current node was already visited we have a cycle
-        if curr_idx >= MAX_HANDLES
-            || self.contexts[curr_idx].state == ContextState::Inactive
-            || seen[curr_idx]
-        {
-            return true;
-        }
-        seen[curr_idx] = true;
-        // dfs on all child nodes
-        for child_idx in flags_iter(self.contexts[curr_idx].children, MAX_HANDLES) {
-            if child_idx >= MAX_HANDLES || self.detect_invalid_subtree(child_idx, seen) {
-                return true;
-            }
-        }
-        false
     }
 
     /// Count number of contexts satisfying some predicate
@@ -835,40 +819,33 @@ pub mod tests {
     }
 
     #[test]
-    fn test_validate_context_tree() {
+    fn test_new_auto_init() {
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe = DpeInstance::new(&mut env, SUPPORT).unwrap();
+        let tci_type = 0xdeadbeef_u32;
+        let auto_init_measurement = [0x1; DPE_PROFILE.get_hash_size()];
+        let auto_init_locality = env.platform.get_auto_init_locality().unwrap();
+        let mut dpe =
+            DpeInstance::new_auto_init(&mut env, SUPPORT, tci_type, auto_init_measurement).unwrap();
 
-        dpe.contexts[0].state = ContextState::Active;
-        dpe.contexts[0].children = 0b100;
-        dpe.contexts[1].state = ContextState::Active;
-        dpe.contexts[1].children = 0b100;
-        dpe.contexts[2].state = ContextState::Active;
-        // validation fails on graph where child has multiple parents
-        assert_eq!(dpe.validate_context_tree(0), false);
+        let idx = dpe
+            .get_active_context_pos(&ContextHandle::default(), auto_init_locality)
+            .unwrap();
+        assert_eq!(dpe.contexts[idx].tci.tci_type, tci_type);
+        assert_eq!(dpe.contexts[idx].tci.locality, auto_init_locality);
+        assert_eq!(dpe.contexts[idx].tci.tci_current.0, auto_init_measurement);
+        assert_eq!(dpe.contexts[idx].parent_idx, Context::ROOT_INDEX);
+        assert_eq!(dpe.contexts[idx].children, 0);
+        assert_eq!(dpe.contexts[idx].state, ContextState::Active);
+        assert_eq!(dpe.contexts[idx].handle, ContextHandle::default());
+        assert!(dpe.has_initialized.get());
 
-        dpe.contexts[0].children = 0b10;
-        // validation passes on a tree in the shape of a linked-list
-        assert_eq!(dpe.validate_context_tree(0), true);
-
-        dpe.contexts[2].children = 0b1;
-        // validation fails on circle graph
-        assert_eq!(dpe.validate_context_tree(0), false);
-
-        dpe.contexts[0].children |= 0b100;
-        dpe.contexts[1].children = 0;
-        dpe.contexts[2].children = 0;
-        // validation passes on a complete binary tree of size 2
-        assert_eq!(dpe.validate_context_tree(0), true);
-
-        dpe.contexts[10].state = ContextState::Active;
-        dpe.contexts[10].children = 1 << 11 | 1 << 12;
-        dpe.contexts[11].state = ContextState::Active;
-        dpe.contexts[12].state = ContextState::Active;
-        // validation fails on a graph with multiple connected components
-        assert_eq!(dpe.validate_context_tree(0), false);
+        // check that initialize context fails if new_auto_init was used
+        assert_eq!(
+            InitCtxCmd::new_use_default().execute(&mut dpe, &mut env, auto_init_locality),
+            Err(DpeErrorCode::ArgumentNotSupported)
+        );
     }
 }

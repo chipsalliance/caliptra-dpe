@@ -5,16 +5,17 @@ package verification
 import (
 	"bytes"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/asn1"
 	"encoding/binary"
 	"fmt"
-	"reflect"
 	"time"
 
 	"golang.org/x/exp/slices"
 )
 
 var (
+	OidExtensionKeyUsage               = asn1.ObjectIdentifier{2, 5, 29, 15}
 	OidExtensionAuthorityKeyIdentifier = asn1.ObjectIdentifier{2, 5, 29, 35}
 	OidExtensionBasicConstraints       = asn1.ObjectIdentifier{2, 5, 29, 19}
 	OidExtensionExtKeyUsage            = asn1.ObjectIdentifier{2, 5, 29, 37}
@@ -110,27 +111,103 @@ const (
 
 type TcgMultiTcbInfo = []DiceTcbInfo
 
+type BasicConstraints struct {
+	IsCA              bool `asn1:"boolean"`
+	PathLenConstraint int  `asn1:"optional"`
+}
+
 // A tcg-dice-MultiTcbInfo extension.
 // This extension SHOULD be marked as critical.
-func getMultiTcbInfo(c *x509.Certificate) (TcgMultiTcbInfo, error) {
+func getMultiTcbInfo(extensions []pkix.Extension) (TcgMultiTcbInfo, error) {
 	var multiTcbInfo TcgMultiTcbInfo
-
-	// Check MultiTcbInfo Extension
-	//tcg-dice-MultiTcbInfo extension
-	for _, ext := range c.Extensions {
-		if ext.Id.Equal(OidExtensionTcgDiceMultiTcbInfo) { // OID for Tcg Dice MultiTcbInfo
+	for _, ext := range extensions {
+		if ext.Id.Equal(OidExtensionTcgDiceMultiTcbInfo) {
 			if !ext.Critical {
-				return multiTcbInfo, fmt.Errorf("multiTcbInfo extension is not marked as CRITICAL")
+				return multiTcbInfo, fmt.Errorf("TCG DICE MultiTcbInfo extension is not marked as CRITICAL")
 			}
 			_, err := asn1.Unmarshal(ext.Value, &multiTcbInfo)
 			if err != nil {
-				// multiTcb info is not provided in leaf
-				return multiTcbInfo, fmt.Errorf("failed to unmarshal MultiTcbInfo field: %v", err)
+				return multiTcbInfo, fmt.Errorf("Failed to unmarshal MultiTcbInfo field: %v", err)
 			}
 			break
 		}
 	}
 	return multiTcbInfo, nil
+}
+
+func getBasicConstraints(extensions []pkix.Extension) (BasicConstraints, error) {
+	var bc BasicConstraints
+	for _, ext := range extensions {
+		if ext.Id.Equal(OidExtensionBasicConstraints) {
+			if !ext.Critical {
+				return bc, fmt.Errorf("BasicConstraints extension is not marked as CRITICAL")
+			}
+			_, err := asn1.Unmarshal(ext.Value, &bc)
+			if err != nil {
+				return bc, fmt.Errorf("Failed to unmarshal BasicConstraints extension: %v", err)
+			}
+			break
+		}
+	}
+	return bc, nil
+}
+
+func getUeid(extensions []pkix.Extension) (TcgUeidExtension, error) {
+	var ueid TcgUeidExtension
+	for _, ext := range extensions {
+		if ext.Id.Equal(OidExtensionTcgDiceUeid) {
+			if !ext.Critical {
+				return ueid, fmt.Errorf("UEID extension is not marked as CRITICAL")
+			}
+			_, err := asn1.Unmarshal(ext.Value, &ueid)
+			if err != nil {
+				return ueid, fmt.Errorf("Failed to unmarshal UEID extension: %v", err)
+			}
+			break
+		}
+	}
+	return ueid, nil
+}
+
+func getExtendedKeyUsages(extensions []pkix.Extension) ([]asn1.ObjectIdentifier, error) {
+	var eku []asn1.ObjectIdentifier
+	for _, ext := range extensions {
+		if ext.Id.Equal(OidExtensionExtKeyUsage) {
+			if !ext.Critical {
+				return eku, fmt.Errorf("ExtKeyUsage extension is not marked as CRITICAL")
+			}
+			_, err := asn1.Unmarshal(ext.Value, &eku)
+			if err != nil {
+				return eku, fmt.Errorf("Failed to unmarshal ExtKeyUsage extension: %v", err)
+			}
+			break
+		}
+	}
+	return eku, nil
+}
+
+func getKeyUsage(extensions []pkix.Extension) (x509.KeyUsage, error) {
+	var usageBits asn1.BitString
+	for _, ext := range extensions {
+		if ext.Id.Equal(OidExtensionKeyUsage) {
+			if !ext.Critical {
+				return x509.KeyUsage(0), fmt.Errorf("KeyUsage extension is not marked as CRITICAL")
+			}
+			_, err := asn1.Unmarshal(ext.Value, &usageBits)
+			if err != nil {
+				return x509.KeyUsage(0), fmt.Errorf("Failed to unmarshal KeyUsage extension: %v", err)
+			}
+			break
+		}
+	}
+
+	var usage int
+	for i := 0; i < 9; i++ {
+		if usageBits.At(i) != 0 {
+			usage |= 1 << uint(i)
+		}
+	}
+	return x509.KeyUsage(usage), nil
 }
 
 func getTcbInfoForHandle(c DPEClient, handle *ContextHandle) (*ContextHandle, DiceTcbInfo, error) {
@@ -139,7 +216,7 @@ func getTcbInfoForHandle(c DPEClient, handle *ContextHandle) (*ContextHandle, Di
 	// Get digest size
 	profile, err := c.GetProfile()
 	if err != nil {
-		return outHandle, DiceTcbInfo{}, fmt.Errorf("cannot get profile: %s", err)
+		return outHandle, DiceTcbInfo{}, fmt.Errorf("Cannot get profile: %s", err)
 	}
 
 	digestLen := profile.Profile.GetDigestSize()
@@ -147,7 +224,7 @@ func getTcbInfoForHandle(c DPEClient, handle *ContextHandle) (*ContextHandle, Di
 
 	certifiedKey, err := c.CertifyKey(outHandle, label, CertifyKeyX509, 0)
 	if err != nil {
-		return outHandle, DiceTcbInfo{}, fmt.Errorf("could not certify key: %s", err)
+		return outHandle, DiceTcbInfo{}, fmt.Errorf("Could not certify key: %s", err)
 	}
 
 	outHandle = &certifiedKey.Handle
@@ -161,13 +238,13 @@ func getTcbInfoForHandle(c DPEClient, handle *ContextHandle) (*ContextHandle, Di
 	}
 
 	// Get DICE information from MultiTcbInfo Extension
-	multiTcbInfo, err := getMultiTcbInfo(leafCert)
+	multiTcbInfo, err := getMultiTcbInfo(leafCert.Extensions)
 	if err != nil {
 		return outHandle, DiceTcbInfo{}, err
 	}
 
 	if len(multiTcbInfo) == 0 {
-		return outHandle, DiceTcbInfo{}, fmt.Errorf("certificate MutliTcbInfo is empty")
+		return outHandle, DiceTcbInfo{}, fmt.Errorf("Certificate MutliTcbInfo is empty")
 	}
 
 	return outHandle, multiTcbInfo[0], nil
@@ -200,7 +277,7 @@ func removeTcgDiceCriticalExtensions(certs []*x509.Certificate) error {
 	msg := ""
 	if len(unknownExtnMap) > 0 {
 		for certSubject, ext := range unknownExtnMap {
-			msg += fmt.Errorf("certificate \"%s\" has unhandled critical extension \"%s\"", certSubject, ext).Error()
+			msg += fmt.Errorf("Certificate \"%s\" has unhandled critical extension \"%s\"", certSubject, ext).Error()
 		}
 		return fmt.Errorf("%s", msg)
 	}
@@ -234,40 +311,9 @@ func removeTcgDiceExtendedKeyUsages(certs []*x509.Certificate) error {
 	msg := ""
 	if len(unknownKeyUsagesMap) > 0 {
 		for certSubject, ext := range unknownKeyUsagesMap {
-			msg += fmt.Errorf("certificate \"%s\" has unhandled critical extension \"%s\"", certSubject, ext).Error()
+			msg += fmt.Errorf("Certificate \"%s\" has unhandled critical extension \"%s\"", certSubject, ext).Error()
 		}
 		return fmt.Errorf("%s", msg)
-	}
-	return nil
-}
-
-// A tcg-dice-Ueid extension MUST be added
-// UEID extension be populated by the LABEL input parameter to CertifyKey command
-// The extension SHOULD be marked as critical
-func checkTcgUeidExtension(c *x509.Certificate, label []byte) error {
-	isFound := false
-	// Check UEID extension
-	for _, ext := range c.Extensions {
-		if ext.Id.Equal(OidExtensionTcgDiceUeid) {
-			isFound = true
-			if !ext.Critical {
-				return fmt.Errorf("tcg-dice-Ueid extension is NOT marked as CRITICAL")
-			}
-			var ueid TcgUeidExtension = TcgUeidExtension{}
-			_, err := asn1.Unmarshal(ext.Value, &ueid)
-			if err != nil {
-				return fmt.Errorf("unable to unmarshal value of UEID extension, %s", err.Error())
-			}
-
-			if !reflect.DeepEqual(ueid.Ueid, label) {
-				// Ueid extn value doen not match the label
-				return fmt.Errorf("tcg-dice-Ueid value does not match with the \"Label\" of certified key")
-			}
-			break
-		}
-	}
-	if !isFound {
-		return fmt.Errorf("tcg-dice-Ueid extension is missing")
 	}
 	return nil
 }
@@ -278,7 +324,7 @@ func checkDiceTcbVendorInfo(currentTcbInfo DiceTcbInfo, targetLocality uint32) e
 	expectedVendorInfo := make([]byte, 4)
 	binary.BigEndian.PutUint32(expectedVendorInfo, targetLocality)
 	if !bytes.Equal(currentTcbInfo.VendorInfo, expectedVendorInfo) {
-		err = fmt.Errorf("unexpected VendorInfo for current DICE TCB block, want %v but got %v", expectedVendorInfo, currentTcbInfo.VendorInfo)
+		err = fmt.Errorf("Unexpected VendorInfo for current DICE TCB block, want %v but got %v", expectedVendorInfo, currentTcbInfo.VendorInfo)
 	}
 	return err
 }
@@ -290,7 +336,7 @@ func checkCurrentDiceTcbTciType(currentTcbInfo DiceTcbInfo, expectedTciType uint
 	expectedTciTypeBytes := make([]byte, 4)
 	binary.BigEndian.PutUint32(expectedTciTypeBytes, expectedTciType)
 	if !bytes.Equal(currentTcbInfo.Type, expectedTciTypeBytes) {
-		err = fmt.Errorf("unexpected TCI type for current DICE TCB block, want %v but got %v", expectedTciTypeBytes, currentTcbInfo.Type)
+		err = fmt.Errorf("Unexpected TCI type for current DICE TCB block, want %v but got %v", expectedTciTypeBytes, currentTcbInfo.Type)
 	}
 	return err
 }
@@ -299,99 +345,10 @@ func checkCurrentDiceTcbTciType(currentTcbInfo DiceTcbInfo, expectedTciType uint
 func checkDiceTcbHashAlgorithm(currentTcbInfo DiceTcbInfo, hashAlg asn1.ObjectIdentifier) error {
 	for _, fwid := range currentTcbInfo.Fwids {
 		if !fwid.HashAlg.Equal(hashAlg) {
-			return fmt.Errorf("unexpected hash algorithm in FWID block, expected %s but got %s", hashAlg, fwid.HashAlg)
+			return fmt.Errorf("Unexpected hash algorithm in FWID block, expected %s but got %s", hashAlg, fwid.HashAlg)
 		}
 	}
 	return nil
-}
-
-// Checks whether certificate extended key usage is as per spec
-// OID for ExtendedKeyUsage Extension: 2.5.29.37
-// The ExtendedKeyUsage extension SHOULD be marked as critical
-// If IsCA = true, the extension SHOULD contain tcg-dice-kp-eca
-// If IsCA = false, the extension SHOULD contain tcg-dice-kp-attestLoc
-func checkExtendedKeyUsages(c *x509.Certificate) error {
-	extKeyUsage := []asn1.ObjectIdentifier{}
-
-	for _, ext := range c.Extensions {
-		if ext.Id.Equal(OidExtensionExtKeyUsage) { // OID for ExtKeyUsage extension
-			// Extract the OID value from the extension
-			_, err := asn1.Unmarshal(ext.Value, &extKeyUsage)
-			if err != nil {
-				return fmt.Errorf("unable to unmarshal the Extended Key Usage extension: %v", err)
-			}
-
-			if !ext.Critical {
-				return fmt.Errorf("extended key usage is not marked critical")
-			}
-			break
-		}
-	}
-
-	if len(extKeyUsage) == 0 {
-		return fmt.Errorf("extended key usage is empty")
-	}
-
-	// Iterate over the OIDs in the ExtKeyUsage extension
-	isExtendedKeyUsageValid := false
-	var expectedKeyUsage asn1.ObjectIdentifier
-	expectedKeyUsageName := ""
-	if c.IsCA {
-		expectedKeyUsage = OidExtensionTcgDiceKpEca
-		expectedKeyUsageName = "tcg-dice-kp-eca"
-	} else {
-		expectedKeyUsage = OidExtensionTcgDiceKpAttestLoc
-		expectedKeyUsageName = "tcg-dice-kp-attest-loc"
-	}
-
-	for _, oid := range extKeyUsage {
-		if oid.Equal(expectedKeyUsage) {
-			isExtendedKeyUsageValid = true
-			break
-		}
-	}
-	if !isExtendedKeyUsageValid {
-		return fmt.Errorf("certificate has IsCA: %v  and does not contain specified key usage: %s", c.IsCA, expectedKeyUsageName)
-	}
-	return nil
-}
-
-// Checks for KeyUsage Extension as per spec
-// If IsCA = true, KeyUsage extension MUST contain DigitalSignature and KeyCertSign
-// If IsCA = false, KeyUsage extension MUST contain  only DigitalSignature
-func checkKeyExtensions(c *x509.Certificate) error {
-	var allowedKeyUsages x509.KeyUsage
-	var err error
-
-	if c.IsCA {
-		allowedKeyUsages = x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign
-	} else {
-		allowedKeyUsages = x509.KeyUsageDigitalSignature
-	}
-
-	certKeyUsageList := getKeyUsageNames(c.KeyUsage)
-	allowedKeyUsageList := getKeyUsageNames(allowedKeyUsages)
-	if c.KeyUsage != allowedKeyUsages {
-		err = fmt.Errorf("certificate has IsCA: %v and has got %v but want %v", c.IsCA, certKeyUsageList, allowedKeyUsageList)
-	}
-	return err
-
-}
-
-// Validates basic constraints in certificate against the input flag passed to CertifyKey command
-// BasicConstraints extension MUST be included
-// If CertifyKey AddIsCA is set, IsCA MUST be set to true.
-// If CertifyKey AddIsCA is NOT set, IsCA MUST be set to false
-func checkBasicConstraints(c *x509.Certificate, flags CertifyKeyFlags) error {
-	var err error
-	flagsBuf := &bytes.Buffer{}
-	binary.Write(flagsBuf, binary.LittleEndian, flags)
-
-	flagIsCA := CertifyAddIsCA&flags != 0
-	if flagIsCA != c.IsCA {
-		err = fmt.Errorf("basic constraint IsCA must be %v, got %v", flagIsCA, c.IsCA)
-	}
-	return err
 }
 
 // Builds and verifies certificate chain.
@@ -419,12 +376,12 @@ func validateLeafCertChain(certChain []*x509.Certificate, leafCert *x509.Certifi
 	chains, err := leafCert.Verify(*opts)
 	if err != nil {
 		// Unable to build certificate chain from leaf to root
-		return fmt.Errorf("error verifying DPE leaf: %s", err.Error())
+		return fmt.Errorf("Error verifying DPE leaf: %s", err.Error())
 	}
 
 	// Log certificate chains linked to leaf
 	if len(chains) != 1 {
-		return fmt.Errorf("unexpected number of cert chains: %d", len(chains))
+		return fmt.Errorf("Unexpected number of cert chains: %d", len(chains))
 	}
 	return nil
 }
@@ -440,7 +397,7 @@ func buildVerifyOptions(certChain []*x509.Certificate) (*x509.VerifyOptions, err
 
 	for _, cert := range certChain[1:] {
 		if cert.Subject.String() == cert.Issuer.String() {
-			return nil, fmt.Errorf("found a self-signed certificate in middle of certificate chain returned by GetCertificateChain")
+			return nil, fmt.Errorf("Found a self-signed certificate in middle of certificate chain returned by GetCertificateChain")
 		}
 		intermediates.AddCert(cert)
 	}
@@ -504,14 +461,14 @@ func verifyDiceTcbDigest(tcbInfo DiceTcbInfo, wantCurrentTCI []byte, lastCumulat
 	// Check TCI_CURRENT
 	currentTCI := tcbInfo.Fwids[0].Digest
 	if !bytes.Equal(currentTCI, wantCurrentTCI) {
-		err = fmt.Errorf("unexpected TCI_CURRENT digest, want %v but got %v", wantCurrentTCI, currentTCI)
+		err = fmt.Errorf("Unexpected TCI_CURRENT digest, want %v but got %v", wantCurrentTCI, currentTCI)
 	}
 
 	// Check TCI_CUMULATIVE against expected cumulative TCI
 	wantCumulativeTCI := computeExpectedCumulative(lastCumulativeTCI, currentTCI)
 	cumulativeTCI := tcbInfo.Fwids[1].Digest
 	if !bytes.Equal(cumulativeTCI, wantCumulativeTCI) {
-		err = fmt.Errorf("unexpected TCI_CUMULATIVE value, want %v but got %v", wantCumulativeTCI, cumulativeTCI)
+		err = fmt.Errorf("Unexpected TCI_CUMULATIVE value, want %v but got %v", wantCumulativeTCI, cumulativeTCI)
 	}
 	return err
 }
@@ -531,12 +488,12 @@ func validateDiceTcbFwids(leafCertBytes []byte, currentTcis [][]byte, digestLen 
 
 	// Get DICE information from MultiTcbInfo Extension
 	var multiTcbInfo []DiceTcbInfo
-	if multiTcbInfo, err = getMultiTcbInfo(leafCert); err != nil {
+	if multiTcbInfo, err = getMultiTcbInfo(leafCert.Extensions); err != nil {
 		return err
 	}
 
 	if len(multiTcbInfo) == 0 {
-		return fmt.Errorf("certificate MutliTcbInfo is empty")
+		return fmt.Errorf("Certificate MutliTcbInfo is empty")
 	}
 
 	// Calculate expected cumulative value
@@ -546,11 +503,11 @@ func validateDiceTcbFwids(leafCertBytes []byte, currentTcis [][]byte, digestLen 
 	// It must have default TCI value
 	lastIndex := len(multiTcbInfo) - 1
 	if !bytes.Equal(multiTcbInfo[lastIndex].Fwids[0].Digest, defaultTci) {
-		return fmt.Errorf("current TCI value for first TCB block, want %v but got %v", defaultTci, multiTcbInfo[lastIndex].Fwids[0].Digest)
+		return fmt.Errorf("Current TCI value for first TCB block, want %v but got %v", defaultTci, multiTcbInfo[lastIndex].Fwids[0].Digest)
 	}
 
 	if !bytes.Equal(multiTcbInfo[lastIndex].Fwids[1].Digest, defaultTci) {
-		return fmt.Errorf("cumulative TCI value for first TCB block, want %v but got %v", defaultTci, multiTcbInfo[lastIndex].Fwids[1].Digest)
+		return fmt.Errorf("Cumulative TCI value for first TCB block, want %v but got %v", defaultTci, multiTcbInfo[lastIndex].Fwids[1].Digest)
 	}
 
 	// Check cumulative, current TCI of other indices if any

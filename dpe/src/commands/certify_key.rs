@@ -10,7 +10,7 @@ use crate::{
 };
 use bitflags::bitflags;
 use crypto::Crypto;
-use platform::{Platform, MAX_CHUNK_SIZE};
+use platform::{Platform, MAX_CHUNK_SIZE, MAX_SN_SIZE};
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, zerocopy::FromBytes, zerocopy::AsBytes)]
@@ -183,11 +183,13 @@ impl CommandExecution for CertifyKeyCmd {
                 let csr_sig = env
                     .crypto
                     .ecdsa_sign_with_alias(DPE_PROFILE.alg_len(), &csr_digest)?;
+                let mut issuer_sn = [0u8; MAX_SN_SIZE];
+                let sn_len = env.platform.get_issuer_sn(&mut issuer_sn)?;
 
                 let mut cms_writer = CertWriter::new(&mut cert, true);
                 bytes_written = cms_writer.encode_cms(
                     &csr_buffer[..bytes_written],
-                    &subject_name.serial.bytes()[..20], // Serial number must be truncated to 20 bytes
+                    &issuer_sn[..sn_len], // Serial number must be truncated to 20 bytes
                     &issuer_name[..issuer_len],
                     &csr_sig,
                 )?;
@@ -472,6 +474,7 @@ mod tests {
         // validate signer identifier
         let sid = &signer_info.sid;
         let mut subj_serial = [0u8; DPE_PROFILE.get_hash_size() * 2];
+        let mut issuer_serial = [0u8; MAX_SN_SIZE];
         let pub_key = EcdsaPub {
             x: CryptoBuf::new(&certify_resp.derived_pubkey_x).unwrap(),
             y: CryptoBuf::new(&certify_resp.derived_pubkey_y).unwrap(),
@@ -479,10 +482,11 @@ mod tests {
         env.crypto
             .get_pubkey_serial(DPE_PROFILE.alg_len(), &pub_key, &mut subj_serial)
             .unwrap();
+        env.platform.get_issuer_sn(&mut issuer_serial).unwrap();
         match sid {
             SignerIdentifier::IssuerAndSerialNumber(issuer_and_serial_number) => {
                 let cert_serial_number = &issuer_and_serial_number.serial_number;
-                assert_eq!(&subj_serial[..20], cert_serial_number.as_bytes());
+                assert_eq!(&issuer_serial, cert_serial_number.as_bytes());
 
                 let mut issuer_name = [0u8; MAX_CHUNK_SIZE];
                 let issuer_len = env.platform.get_issuer_name(&mut issuer_name).unwrap();

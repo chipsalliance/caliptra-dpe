@@ -1,7 +1,7 @@
 // Licensed under the Apache-2.0 license.
 use super::CommandExecution;
 use crate::{
-    context::{ActiveContextArgs, Context, ContextHandle, ContextState, ContextType},
+    context::{ActiveContextArgs, Context, ContextHandle, ContextState},
     dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
     response::{DeriveChildResp, DpeErrorCode, Response, ResponseHdr},
     tci::TciMeasurement,
@@ -205,7 +205,7 @@ impl CommandExecution for DeriveChildCmd {
         // Create a temporary context to mutate so that we avoid mutating internal state upon an error.
         let mut tmp_child_context = Context::new();
         tmp_child_context.activate(&ActiveContextArgs {
-            context_type: ContextType::Normal,
+            context_type: dpe.contexts[parent_idx].context_type,
             locality: target_locality,
             handle: &child_handle,
             tci_type: self.tci_type,
@@ -258,6 +258,7 @@ mod tests {
             tests::{TEST_DIGEST, TEST_LABEL},
             CertifyKeyCmd, CertifyKeyFlags, Command, CommandHdr, InitCtxCmd, SignCmd, SignFlags,
         },
+        context::ContextType,
         dpe_instance::tests::{TestTypes, RANDOM_HANDLE, SIMULATION_HANDLE, TEST_LOCALITIES},
         support::Support,
         MAX_HANDLES,

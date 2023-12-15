@@ -7,14 +7,20 @@ edition = "2021"
 
 [features]
 openssl = ["dep:openssl", "dep:hkdf", "dep:sha2"]
+rustcrypto = ["dep:hkdf", "dep:hmac", "dep:p256", "dep:p384", "dep:rand", "dep:sha2", "dep:base64ct", "dep:ecdsa", "dep:sec1"]
 deterministic_rand = ["dep:rand"]
 
 [dependencies]
 arrayvec = { version = "0.7.4", default-features = false, features = ["zeroize"] }
-hkdf = {version = "0.12.3", optional = true}
+ecdsa = { version = "0.16.9", optional = true, features = ["pem"]}
+hkdf = { version = "0.12.3", optional = true }
+hmac = {version="0.12.1", optional = true}
 openssl = {version = "0.10.57", optional = true}
-rand = {version = "0.8.5", optional = true}
-sha2 = {version = "0.10.6", optional = true}
+p256 = {version= "0.13.2", optional = true}
+p384 = {version= "0.13.0", optional = true}
+rand = { version = "0.8.5", optional = true }
+sec1 = {version="0.7.3", optional = true}
+sha2 = { version = "0.10.6", optional = true }
 zeroize = { version = "1.6.0", default-features = false, features = ["zeroize_derive"] }
 
 [dev-dependencies]
@@ -24,3 +30,8 @@ strum_macros = "0.24"
 [build-dependencies]
 openssl = {version = "0.10.57", optional = true}
 rand = {version = "0.8.5", optional = true}
+p256 = {version= "0.13.2", optional = true}
+p384 = {version= "0.13.0", optional = true}
+ecdsa = { version = "0.16.9", optional = true, features = ["pem"]}
+base64ct = {version= "1.6.0", optional= true}
+sec1 = {version="0.7.3", optional = true}

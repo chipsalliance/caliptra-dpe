@@ -31,6 +31,9 @@ var InitializeContextSimulationTestCase = TestCase{
 var CertifyKeyTestCase = TestCase{
 	"CertifyKey", TestCertifyKey, []string{"AutoInit", "X509", "IsCA", "RotateContext", "ExtendTci"},
 }
+var CertifyKeyCsrTestCase = TestCase{
+	"CertifyKeyCsr", TestCertifyKey_Csr, []string{"AutoInit", "Csr", "IsCA"},
+}
 var CertifyKeySimulationTestCase = TestCase{
 	"CertifyKeySimulation", TestCertifyKeySimulation, []string{"AutoInit", "Simulation", "X509", "IsCA", "RotateContext", "ExtendTci"},
 }
@@ -85,11 +88,16 @@ var DeriveChildSimulationTestCase = TestCase{
 var DeriveChildMaxTCIsTestCase = TestCase{
 	"DeriveChild_MaxTCIs", TestMaxTCIs, []string{"AutoInit"},
 }
+var TpmPolicySigningTestCase = TestCase{
+	"TPMPolicySigning", TestTpmPolicySigning, []string{"AutoInit", "X509"},
+}
 
 var AllTestCases = []TestCase{
 	CertifyKeyTestCase,
+	CertifyKeyCsrTestCase,
 	CertifyKeySimulationTestCase,
 	GetCertificateChainTestCase,
+	TpmPolicySigningTestCase,
 	ExtendTCITestCase,
 	ExtendDerivedTciTestCase,
 	RotateContextTestCase,
