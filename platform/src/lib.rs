@@ -3,12 +3,12 @@ Licensed under the Apache-2.0 license.
 Abstract:
     Generic trait definition of platform.
 --*/
-#![cfg_attr(not(any(feature = "openssl", test)), no_std)]
+#![cfg_attr(not(any(feature = "openssl", feature = "rustcrypto", test)), no_std)]
 
 #[cfg(feature = "openssl")]
 pub use openssl::x509::X509;
 
-#[cfg(feature = "openssl")]
+#[cfg(any(feature = "openssl", feature = "rustcrypto"))]
 pub mod default;
 
 pub mod printer;

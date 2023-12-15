@@ -1,7 +1,6 @@
 // Licensed under the Apache-2.0 license
 
-use crate::{AlgLen, Crypto, CryptoBuf, CryptoError, Digest, EcdsaPub, Hasher, HmacSig};
-use hkdf::Hkdf;
+use crate::{hkdf::*, AlgLen, Crypto, CryptoBuf, CryptoError, Digest, EcdsaPub, Hasher, HmacSig};
 use openssl::{
     bn::{BigNum, BigNumContext},
     ec::{EcGroup, EcKey, EcPoint},
@@ -14,7 +13,6 @@ use openssl::{
 };
 #[cfg(feature = "deterministic_rand")]
 use rand::{rngs::StdRng, RngCore, SeedableRng};
-use sha2::{Sha256, Sha384};
 
 impl From<ErrorStack> for CryptoError {
     fn from(e: ErrorStack) -> Self {
@@ -27,12 +25,6 @@ impl From<ErrorStack> for CryptoError {
         };
 
         CryptoError::CryptoLibError(e_code)
-    }
-}
-
-impl From<hkdf::InvalidLength> for CryptoError {
-    fn from(_: hkdf::InvalidLength) -> Self {
-        CryptoError::HashError(0)
     }
 }
 
@@ -136,22 +128,7 @@ impl Crypto for OpensslCrypto {
         measurement: &Digest,
         info: &[u8],
     ) -> Result<Self::Cdi, CryptoError> {
-        match algs {
-            AlgLen::Bit256 => {
-                let hk = Hkdf::<Sha256>::new(Some(info), measurement.bytes());
-                let mut cdi = [0u8; AlgLen::Bit256.size()];
-                hk.expand(measurement.bytes(), &mut cdi)?;
-
-                Ok(cdi.to_vec())
-            }
-            AlgLen::Bit384 => {
-                let hk = Hkdf::<Sha384>::new(Some(info), measurement.bytes());
-                let mut cdi = [0u8; AlgLen::Bit384.size()];
-                hk.expand(measurement.bytes(), &mut cdi)?;
-
-                Ok(cdi.to_vec())
-            }
-        }
+        hkdf_derive_cdi(algs, measurement, info)
     }
 
     fn derive_key_pair(
@@ -161,22 +138,7 @@ impl Crypto for OpensslCrypto {
         label: &[u8],
         info: &[u8],
     ) -> Result<(Self::PrivKey, EcdsaPub), CryptoError> {
-        let priv_key = match algs {
-            AlgLen::Bit256 => {
-                let hk = Hkdf::<Sha256>::new(Some(info), cdi);
-                let mut priv_key = [0u8; AlgLen::Bit256.size()];
-                hk.expand(label, &mut priv_key)?;
-
-                CryptoBuf::new(&priv_key).unwrap()
-            }
-            AlgLen::Bit384 => {
-                let hk = Hkdf::<Sha384>::new(Some(info), cdi);
-                let mut priv_key = [0u8; AlgLen::Bit384.size()];
-                hk.expand(label, &mut priv_key)?;
-
-                CryptoBuf::new(&priv_key).unwrap()
-            }
-        };
+        let priv_key = hkdf_get_priv_key(algs, cdi, label, info)?;
 
         let ec_priv_key = OpensslCrypto::ec_key_from_priv_key(algs, &priv_key)?;
         let nid = OpensslCrypto::get_curve(algs);

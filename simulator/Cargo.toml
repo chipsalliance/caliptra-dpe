@@ -6,18 +6,20 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = ["dpe_profile_p256_sha256"]
+default = ["dpe_profile_p256_sha256", "openssl"]
 dpe_profile_p256_sha256 = ["dpe/dpe_profile_p256_sha256", "platform/dpe_profile_p256_sha256"]
 dpe_profile_p384_sha384 = ["dpe/dpe_profile_p384_sha384", "platform/dpe_profile_p384_sha384"]
+openssl = ["dep:openssl", "crypto/openssl", "platform/openssl"]
+rustcrypto = ["crypto/rustcrypto", "platform/rustcrypto"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 ctrlc = { version = "3.0", features = ["termination"] }
-openssl = "0.10.57"
+openssl = {version="0.10.57", optional = true}
 clap = { version = "4.1.8", features = ["derive"] }
 log = "0.4.17"
 env_logger = "0.10.0"
 dpe = { path = "../dpe", default-features = false }
-crypto = { path = "../crypto", default-features = false, features = ["openssl"] }
-platform = { path = "../platform", default-features = false, features = ["openssl"] }
+crypto = { path = "../crypto", default-features = false }
+platform = { path = "../platform", default-features = false}

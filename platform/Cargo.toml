@@ -6,11 +6,14 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = ["dpe_profile_p256_sha256"]
+default = ["dpe_profile_p256_sha256", "openssl", "rustcrypto"]
 openssl = ["dep:openssl"]
+rustcrypto = ["dep:x509-cert"]
 dpe_profile_p256_sha256 = []
 dpe_profile_p384_sha384 = []
 
 [dependencies]
+cfg-if = "1.0.0"
 openssl = {version = "0.10.57", optional = true}
 ufmt = { git = "https://github.com/korran/ufmt.git", rev = "1d0743c1ffffc68bc05ca8eeb81c166192863f33", features = ["inline"] }
+x509-cert = {version = "0.2.4", optional = true}
