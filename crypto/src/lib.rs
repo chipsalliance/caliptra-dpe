@@ -11,7 +11,6 @@ pub use signer::*;
 
 #[cfg(feature = "rustcrypto")]
 pub use crate::rustcrypto::*;
-pub use signer::*;
 
 #[cfg(feature = "openssl")]
 pub mod openssl;
