@@ -23,8 +23,6 @@ func TestDeriveChild(d TestDPEInstance, c DPEClient, t *testing.T) {
 	}
 
 	digestLen := profile.GetDigestSize()
-	currentLocality := d.GetLocality()
-	otherLocality := currentLocality + 1
 
 	// Child context handle returned will be the default context handle when MakeDefault flag is set
 	if resp, err = c.DeriveChild(handle, make([]byte, digestLen), MakeDefault, 0, 0); err != nil {
@@ -66,7 +64,7 @@ func TestDeriveChild(d TestDPEInstance, c DPEClient, t *testing.T) {
 
 	// Now, there is no default handle, setting RetainParent flag should succeed
 	if resp, err = c.DeriveChild(handle, make([]byte, digestLen), RetainParent, 0, 0); err != nil {
-		t.Errorf("[Error]: Error while making child context handle as default handle: %s", err)
+		t.Errorf("[ERROR]: Error while making child context handle as default handle: %s", err)
 	}
 	handle = &resp.NewContextHandle
 	parentHandle := resp.ParentContextHandle
@@ -74,17 +72,41 @@ func TestDeriveChild(d TestDPEInstance, c DPEClient, t *testing.T) {
 	if parentHandle == InvalidatedContextHandle {
 		t.Errorf("[ERROR]: Incorrect handle. Should return retained handle, but returned invalidated handle %v", parentHandle)
 	}
+}
 
-	// Create child context in other locality and make it default
-	if resp, err = c.DeriveChild(handle, make([]byte, digestLen), MakeDefault|ChangeLocality, 0, otherLocality); err != nil {
-		t.Errorf("[ERROR]: Error while creating child context handle in other locality: %s", err)
+func TestChangeLocality(d TestDPEInstance, c DPEClient, t *testing.T) {
+	var resp *DeriveChildResp
+	simulation := false
+	handle := getInitialContextHandle(d, c, t, simulation)
+	// Clean up contexts
+	defer func() {
+		err := c.DestroyContext(handle, DestroyDescendants)
+		if err != nil {
+			t.Errorf("[ERROR]: Error while cleaning contexts, this may cause failure in subsequent tests: %s", err)
+		}
+	}()
+
+	// Get digest size
+	profile, err := GetTransportProfile(d)
+	if err != nil {
+		t.Fatalf("Could not get profile: %v", err)
+	}
+
+	if !d.HasLocalityControl() {
+		t.Skip("WARNING: DPE profile does not have control over locality. Skipping this test...")
+	}
+
+	digestLen := profile.GetDigestSize()
+	currentLocality := d.GetLocality()
+	otherLocality := currentLocality + 1
+
+	// Create child context in other locality
+	if resp, err = c.DeriveChild(handle, make([]byte, digestLen), ChangeLocality, 0, otherLocality); err != nil {
+		t.Fatalf("[ERROR]: Error while creating child context handle in other locality: %s", err)
 	}
 	handle = &resp.NewContextHandle
-	if resp.NewContextHandle != DefaultContextHandle {
-		t.Fatalf("[FATAL]: Incorrect handle. Should return default handle, but returned %v", *handle)
-	}
 
-	// Finally, restore locality of handle for other tests
+	// Revert to same locality from other locality
 	prevLocality := currentLocality
 	d.SetLocality(otherLocality)
 
@@ -93,30 +115,70 @@ func TestDeriveChild(d TestDPEInstance, c DPEClient, t *testing.T) {
 	}
 	handle = &resp.NewContextHandle
 	d.SetLocality(prevLocality)
+}
 
-	// Remove unwanted handles
-	if err = c.DestroyContext(handle, DestroyDescendants); err != nil {
-		t.Errorf("[ERROR]: Error while destroying unwanted child context handles: %s", err)
-	}
+// Checks whether the DeriveChild input flags - InternalDiceInfo, InternalInputInfo are supported
+// while creating child contexts when these features are supported in DPE profile.
+func TestInternalInputFlags(d TestDPEInstance, c DPEClient, t *testing.T) {
+	var resp *DeriveChildResp
+	simulation := false
+	handle := getInitialContextHandle(d, c, t, simulation)
+	defer func() {
+		c.DestroyContext(handle, DestroyDescendants)
+	}()
 
-	// Restore default handle
-	handle, err = c.RotateContextHandle(&parentHandle, RotateContextHandleFlags(TargetIsDefault))
+	// Get digest size
+	profile, err := GetTransportProfile(d)
 	if err != nil {
-		t.Errorf("[ERROR]: Error while restoring parent context handle as default context handle, this may cause failure in subsequent tests: %s", err)
+		t.Fatalf("Could not get profile: %v", err)
 	}
 
+	digestLen := profile.GetDigestSize()
 	// Internal input flags
-	if resp, err = c.DeriveChild(handle, make([]byte, digestLen), InternalInputDice, 0, 0); err != nil {
-		t.Errorf("[Error]: Error while making child context handle as default handle: %s", err)
+	if d.GetSupport().InternalDice {
+		if resp, err = c.DeriveChild(handle, make([]byte, digestLen), DeriveChildFlags(InternalInputDice), 0, 0); err != nil {
+			t.Errorf("[ERROR]: Error while making child context handle as default handle: %s", err)
+		}
+		handle = &resp.NewContextHandle
+	} else {
+		t.Skip("[WARNING]: Profile has no support for \"InternalInputDice\" flag. Skipping the validation for this flag...")
+	}
+
+	if d.GetSupport().InternalInfo {
+		if resp, err = c.DeriveChild(handle, make([]byte, digestLen), DeriveChildFlags(InternalInputInfo), 0, 0); err != nil {
+			t.Errorf("[ERROR]: Error while making child context handle as default handle: %s", err)
+		}
+		handle = &resp.NewContextHandle
+	} else {
+		t.Skip("[WARNING]: Profile has no support for \"InternalInputInfo\" flag. Skipping the validation for this flag...")
+	}
+}
+
+// Checks the privilege escalation of child
+// When commands try to make use of features that are unsupported by child context, they fail.
+func TestPrivilegesEscalation(d TestDPEInstance, c DPEClient, t *testing.T) {
+	var err error
+	simulation := false
+	handle := getInitialContextHandle(d, c, t, simulation)
+
+	// Get digest size
+	profile, err := GetTransportProfile(d)
+	if err != nil {
+		t.Fatalf("Could not get profile: %v", err)
+	}
+
+	digestLen := profile.GetDigestSize()
+
+	// Create a child TCI node with no special privileges
+	resp, err := c.DeriveChild(handle,
+		make([]byte, digestLen),
+		DeriveChildFlags(0),
+		0, 0)
+	if err != nil {
+		t.Fatalf("[FATAL]: Error encountered in getting child context: %v", err)
 	}
 	handle = &resp.NewContextHandle
 
-	if resp, err = c.DeriveChild(handle, make([]byte, digestLen), InternalInputInfo, 0, 0); err != nil {
-		t.Errorf("[Error]: Error while making child context handle as default handle: %s", err)
-	}
-	handle = &resp.NewContextHandle
-
-	// Privilege escalation of child
 	// Adding new privileges to child that parent does NOT possess will cause failure
 	_, err = c.DeriveChild(handle,
 		make([]byte, digestLen),
@@ -128,8 +190,7 @@ func TestDeriveChild(d TestDPEInstance, c DPEClient, t *testing.T) {
 		t.Errorf("[ERROR]: Incorrect error type. Should return %q, but returned %q", StatusInvalidArgument, err)
 	}
 
-	// Privilege escalation for commands run in child context
-	// Similarly, when commands like CertifyKey try to make use of features that are unsupported
+	// Similarly, when commands like CertifyKey try to make use of features/flags that are unsupported
 	// by child context, it will fail.
 	if _, err = c.CertifyKey(handle, make([]byte, digestLen), CertifyKeyX509, CertifyAddIsCA); err == nil {
 		t.Errorf("[ERROR]: Should return %q, but returned no error", StatusInvalidArgument)
@@ -222,7 +283,6 @@ func TestDeriveChildSimulation(d TestDPEInstance, c DPEClient, t *testing.T) {
 		}
 	}()
 
-	// Switch to simulated child context locality to issue CertifyKey command
 	d.SetLocality(locality + 1)
 
 	defer func() {
@@ -244,17 +304,6 @@ func TestDeriveChildSimulation(d TestDPEInstance, c DPEClient, t *testing.T) {
 		t.Errorf("[ERROR]: Incorrect error type. Should return %q, but returned %q", StatusInvalidArgument, err)
 	}
 
-	// Internal input flags
-	if resp, err = c.DeriveChild(handle, make([]byte, digestLen), InternalInputDice, 0, 0); err != nil {
-		t.Errorf("[ERROR]: Error while making child context handle as default handle: %s", err)
-	}
-	handle = &resp.NewContextHandle
-
-	if resp, err = c.DeriveChild(handle, make([]byte, digestLen), InternalInputInfo, 0, 0); err != nil {
-		t.Errorf("[ERROR]: Error while making child context handle as default handle: %s", err)
-	}
-	handle = &resp.NewContextHandle
-
 	// Setting RetainParent flag should not invalidate the parent handle
 	if resp, err = c.DeriveChild(handle, make([]byte, digestLen), RetainParent, 0, 0); err != nil {
 		t.Fatalf("[FATAL]: Error while making child context and retaining parent handle %s", err)
@@ -263,26 +312,5 @@ func TestDeriveChildSimulation(d TestDPEInstance, c DPEClient, t *testing.T) {
 
 	if resp.ParentContextHandle == InvalidatedContextHandle {
 		t.Errorf("[ERROR]: Incorrect handle. Should return retained handle, but returned invalidated handle %v", parentHandle)
-	}
-
-	// Privilege escalation of child
-	// Adding new privileges to child that parent does NOT possess will cause failure
-	_, err = c.DeriveChild(handle,
-		make([]byte, digestLen),
-		DeriveChildFlags(InputAllowX509|InputAllowCA),
-		0, 0)
-	if err == nil {
-		t.Errorf("[ERROR]: Should return %q, but returned no error", StatusInvalidArgument)
-	} else if !errors.Is(err, StatusInvalidArgument) {
-		t.Errorf("[ERROR]: Incorrect error type. Should return %q, but returned %q", StatusInvalidArgument, err)
-	}
-
-	// Privilege escalation for commands run in child context
-	// Similarly, when commands like CertifyKey try to make use of features that are unsupported
-	// by child context, it will fail.
-	if _, err = c.CertifyKey(handle, make([]byte, digestLen), CertifyKeyX509, CertifyAddIsCA); err == nil {
-		t.Errorf("[ERROR]: Should return %q, but returned no error", StatusInvalidArgument)
-	} else if !errors.Is(err, StatusInvalidArgument) {
-		t.Errorf("[ERROR]: Incorrect error type. Should return %q, but returned %q", StatusInvalidArgument, err)
 	}
 }

@@ -231,8 +231,33 @@ func GetSimulatorTargets() []TestTarget {
 		},
 		{
 			"DefaultSupport",
-			getTestTarget([]string{"AutoInit", "Simulation", "X509", "Csr", "IsCA", "RotateContext", "ExtendTci", "IsSymmetric", "InternalDice", "InternalInfo"}),
+			getTestTarget([]string{"AutoInit", "Simulation", "X509", "Csr", "IsCA", "RotateContext", "IsSymmetric", "ExtendTci"}),
 			AllTestCases,
+		},
+		{
+			"CertifyKey_TcbValidation",
+			getTestTarget([]string{"AutoInit", "Simulation", "X509", "Csr", "IsCA", "RotateContext", "ExtendTci"}),
+			[]TestCase{DiceTcbValidationTestCase, TcbValidationSimulationTestCase},
+		},
+		{
+			"DeriveChild",
+			getTestTarget([]string{"AutoInit", "X509", "IsCA"}),
+			[]TestCase{DeriveChildTestCase},
+		},
+		{
+			"DeriveChild_Simulation",
+			getTestTarget([]string{"AutoInit", "Simulation", "X509", "IsCA"}),
+			[]TestCase{DeriveChildSimulationTestCase},
+		},
+		{
+			"DeriveChild_PrivilegeEscalation",
+			getTestTarget([]string{"AutoInit", "X509", "IsCA"}),
+			[]TestCase{DeriveChildPrivilegeEscalationTestCase},
+		},
+		{
+			"DeriveChild_InputFlags",
+			getTestTarget([]string{"AutoInit", "Simulation", "InternalDice", "InternalInfo"}),
+			[]TestCase{DeriveChildInputFlagsTestCase},
 		},
 		{
 			"DeriveChild_MaxTCIs",
@@ -240,14 +265,9 @@ func GetSimulatorTargets() []TestTarget {
 			[]TestCase{DeriveChildMaxTCIsTestCase},
 		},
 		{
-			"DeriveChild_Simulation",
-			getTestTarget([]string{"AutoInit", "Simulation", "X509", "Csr", "IsCA", "RotateContext", "ExtendTci", "IsSymmetric", "InternalDice", "InternalInfo"}),
-			[]TestCase{DeriveChildSimulationTestCase},
-		},
-		{
-			"CertifyKey_WithoutExtendTci",
-			getTestTarget([]string{"AutoInit", "X509"}),
-			[]TestCase{CertifyKeyWithoutExtendTciTestCase},
+			"DeriveChild_ChangeLocality",
+			getTestTarget([]string{"AutoInit", "Simulation"}),
+			[]TestCase{DeriveChildLocalityTestCase},
 		},
 		{
 			"GetProfile_Simulation",

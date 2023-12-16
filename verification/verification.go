@@ -26,19 +26,20 @@ var InitializeContextTestCase = TestCase{
 var InitializeContextSimulationTestCase = TestCase{
 	"InitializeContextSimulation", TestInitializeSimulation, []string{"Simulation"},
 }
-
-// ExtendTci is required for tci_cumulative in fwid, RotateContext handle for restore parent context after using child context
 var CertifyKeyTestCase = TestCase{
-	"CertifyKey", TestCertifyKey, []string{"AutoInit", "X509", "IsCA", "RotateContext", "ExtendTci"},
+	"CertifyKey", TestCertifyKey, []string{"AutoInit", "X509", "IsCA", "RotateContext"},
+}
+var CertifyKeySimulationTestCase = TestCase{
+	"CertifyKeySimulation", TestCertifyKeySimulation, []string{"AutoInit", "Simulation", "X509", "IsCA", "RotateContext"},
 }
 var CertifyKeyCsrTestCase = TestCase{
 	"CertifyKeyCsr", TestCertifyKey_Csr, []string{"AutoInit", "Csr", "IsCA"},
 }
-var CertifyKeySimulationTestCase = TestCase{
-	"CertifyKeySimulation", TestCertifyKeySimulation, []string{"AutoInit", "Simulation", "X509", "IsCA", "RotateContext", "ExtendTci"},
+var DiceTcbValidationTestCase = TestCase{
+	"CheckDiceTcbInfo", TestDiceTcbInfo, []string{"AutoInit", "X509", "IsCA", "RotateContext", "ExtendTci"},
 }
-var CertifyKeyWithoutExtendTciTestCase = TestCase{
-	"CertifyKeyWithoutExtendTciSupport", TestCertifyKeyWithoutExtendTciSupport, []string{"AutoInit", "X509"},
+var TcbValidationSimulationTestCase = TestCase{
+	"CheckDiceTcbInfoInSimulationMode", TestDiceTcbInfoSimulation, []string{"AutoInit", "Simulation", "X509", "IsCA", "RotateContext", "ExtendTci"},
 }
 var GetCertificateChainTestCase = TestCase{
 	"GetCertificateChain", TestGetCertificateChain, []string{"AutoInit", "X509"},
@@ -83,10 +84,19 @@ var DeriveChildTestCase = TestCase{
 	"DeriveChild", TestDeriveChild, []string{"AutoInit"},
 }
 var DeriveChildSimulationTestCase = TestCase{
-	"DeriveChildSimulation", TestDeriveChildSimulation, []string{"AutoInit", "Simulation"},
+	"DeriveChildSimulation", TestDeriveChildSimulation, []string{"AutoInit", "Simulation", "X509", "InternalDice", "InternalInfo"},
 }
 var DeriveChildMaxTCIsTestCase = TestCase{
 	"DeriveChild_MaxTCIs", TestMaxTCIs, []string{"AutoInit"},
+}
+var DeriveChildLocalityTestCase = TestCase{
+	"DeriveChild_ChangeLocality", TestChangeLocality, []string{"AutoInit"},
+}
+var DeriveChildPrivilegeEscalationTestCase = TestCase{
+	"DeriveChild_PrivilegeEscalation", TestPrivilegesEscalation, []string{"AutoInit", "X509", "IsCA"},
+}
+var DeriveChildInputFlagsTestCase = TestCase{
+	"DeriveChild_InputFlagsSupport", TestInternalInputFlags, []string{"AutoInit", "InternalDice", "InternalInfo"},
 }
 var TpmPolicySigningTestCase = TestCase{
 	"TPMPolicySigning", TestTpmPolicySigning, []string{"AutoInit", "X509"},
@@ -105,7 +115,6 @@ var AllTestCases = []TestCase{
 	SignAsymmetricTestCase,
 	SignSymmetricTestCase,
 	SignSimulationTestCase,
-	DeriveChildTestCase,
 	GetProfileTestCase,
 	InitializeContextTestCase,
 	InitializeContextSimulationTestCase,
