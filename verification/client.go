@@ -7,6 +7,7 @@ import (
 )
 
 const (
+	// MaxChunkSize is the max size of a DPE certificate chunk
 	MaxChunkSize = 2048
 )
 
@@ -16,29 +17,34 @@ type Transport interface {
 	SendCmd(buf []byte) ([]byte, error)
 }
 
+// DPEPubKey is an ECC public point
 // TODO: Include curve
 type DPEPubKey struct {
 	X []byte
 	Y []byte
 }
 
+// CertifiedKey is a response from DPE CertifyKey
 type CertifiedKey struct {
 	Handle      ContextHandle
 	Pub         DPEPubKey
 	Certificate []byte
 }
 
+// DPETCI holds the current and cumulative measurements for a DPE TCI node
 type DPETCI struct {
 	CumulativeTCI []byte
 	CurrentTCI    []byte
 }
 
+// DPESignedHash is the response from DPE Sign
 type DPESignedHash struct {
 	Handle           ContextHandle
 	HmacOrSignatureR []byte
 	SignatureS       []byte
 }
 
+// DPEClient is a generic interface to a DPE instance
 type DPEClient interface {
 	InitializeContext(flags InitCtxFlags) (*ContextHandle, error)
 	GetProfile() (*GetProfileResp, error)
@@ -51,6 +57,7 @@ type DPEClient interface {
 	ExtendTCI(handle *ContextHandle, inputData []byte) (*ContextHandle, error)
 }
 
+// NewClient returns a new DPE client
 func NewClient(t Transport, p Profile) (DPEClient, error) {
 	switch p {
 	case ProfileP256SHA256:

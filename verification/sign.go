@@ -12,7 +12,7 @@ import (
 	"testing"
 )
 
-// Obtain and validate signature of asymmetric signing.
+// TestAsymmetricSigning obtains and validates signature of asymmetric signing.
 // Check whether the digital signature returned by Sign command can be verified
 // using public key in signing key certificate returned by CertifyKey command.
 // Inspite of the DPE profile supporting symmetric key, for symmetric signing it must be enabled
@@ -81,7 +81,7 @@ func TestAsymmetricSigning(d TestDPEInstance, c DPEClient, t *testing.T) {
 	}
 }
 
-// Check command fails in simulated context because this context does not allow signing.
+// TestSignSimulation cheks command fails in simulated context because this context does not allow signing.
 // This is because simulation context does not allow using context's private key.
 func TestSignSimulation(d TestDPEInstance, c DPEClient, t *testing.T) {
 	useSimulation := true
@@ -111,7 +111,7 @@ func TestSignSimulation(d TestDPEInstance, c DPEClient, t *testing.T) {
 	}
 }
 
-// Obtain HMAC (symmetric signature) generated and compare for varying label inputs.
+// TestSymmetricSigning obtains HMAC (symmetric signature) generated and compares for varying label inputs.
 // Signature created is deterministic and depends on label passed to command.
 // This is because label is used by DPE in symmetric key derivation.
 // Invoking Sign command multiple times with same label and same content (TBS) should return same signature
