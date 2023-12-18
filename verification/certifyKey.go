@@ -26,17 +26,21 @@ import (
 	"golang.org/x/exp/slices"
 )
 
+// TcgDiceCriticalExtensions are the OIDs of DICE extensions which must be
+// marked as critical
 var TcgDiceCriticalExtensions = [...]string{
 	OidExtensionTcgDiceMultiTcbInfo.String(),
 	OidExtensionTcgDiceUeid.String(),
 }
 
+// TcgDiceExtendedKeyUsages are the DICE OIDs expected to be present in the DPE
+// leaf EKU extension
 var TcgDiceExtendedKeyUsages = [...]string{
 	OidExtensionTcgDiceKpIdentityLoc.String(),
 	OidExtensionTcgDiceKpAttestLoc.String(),
 }
 
-// tcg-dice-Ueid OBJECT IDENTIFIER ::= {tcg-dice 4}
+// TcgUeidExtension is tcg-dice-Ueid OBJECT IDENTIFIER ::= {tcg-dice 4}
 //
 //	TcgUeid ::== SEQUENCE {
 //			ueid OCTET STRING
@@ -45,42 +49,44 @@ type TcgUeidExtension struct {
 	Ueid []uint8 `asn1:"ueid,implicit"`
 }
 
-// tcg-dice-MultiTcbInfo OBJECT IDENTIFIER ::= {tcg-dice 5}
-// DiceTcbInfoSeq ::= SEQUENCE SIZE (1..MAX) OF DiceTcbInfo
-//
-// tcg-dice-TcbInfo OBJECT IDENTIFIER ::= {tcg-dice 1}
-//
-// DiceTcbInfo 	::== SEQUENCE {
-// 		vendor		[0] IMPLICIT UTF8String OPTIONAL,
-// 		model 		[1] IMPLICIT UTF8String OPTIONAL,
-// 		version 	[2] IMPLICIT UTF8String OPTIONAL,
-// 		svn 		[3] IMPLICIT INTEGER OPTIONAL,
-// 		layer 		[4] IMPLICIT INTEGER OPTIONAL,
-// 		index 		[5] IMPLICIT INTEGER OPTIONAL,
-// 		fwids 		[6] IMPLICIT FWIDLIST OPTIONAL,
-// 		flags 		[7] IMPLICIT OperationalFlags OPTIONAL,
-//		vendorInfo 	[8] IMPLICIT OCTET STRING OPTIONAL,
-// 		type 		[9] IMPLICIT OCTET STRING OPTIONAL,
-// }
-//
-// FWIDLIST ::== SEQUENCE SIZE (1..MAX) OF FWID
-// FWID ::== SEQUENCE {
-// 		hashAlg 	OBJECT IDENTIFIER,
-// 		digest 		OCTET STRING
-// }
-//
-// OperationalFlags ::= BIT STRING {
-// 		notConfigured (0),
-// 		notSecure (1),
-// 		recovery (2),
-//  	debug (3)
-// }
-
+// Fwid represents a TCG DICE FWID stucture
 type Fwid struct {
 	HashAlg asn1.ObjectIdentifier
 	Digest  []byte
 }
 
+// DiceTcbInfo represents the following ASN.1 structures
+// tcg-dice-MultiTcbInfo OBJECT IDENTIFIER ::= {tcg-dice 5}
+// DiceTcbInfoSeq ::= SEQUENCE SIZE (1..MAX) OF DiceTcbInfo
+//
+// tcg-dice-TcbInfo OBJECT IDENTIFIER ::= {tcg-dice 1}
+//
+//	DiceTcbInfo 	::== SEQUENCE {
+//			vendor		[0] IMPLICIT UTF8String OPTIONAL,
+//			model 		[1] IMPLICIT UTF8String OPTIONAL,
+//			version 	[2] IMPLICIT UTF8String OPTIONAL,
+//			svn 		[3] IMPLICIT INTEGER OPTIONAL,
+//			layer 		[4] IMPLICIT INTEGER OPTIONAL,
+//			index 		[5] IMPLICIT INTEGER OPTIONAL,
+//			fwids 		[6] IMPLICIT FWIDLIST OPTIONAL,
+//			flags 		[7] IMPLICIT OperationalFlags OPTIONAL,
+//			vendorInfo 	[8] IMPLICIT OCTET STRING OPTIONAL,
+//			type 		[9] IMPLICIT OCTET STRING OPTIONAL,
+//	}
+//
+// FWIDLIST ::== SEQUENCE SIZE (1..MAX) OF FWID
+//
+//	FWID ::== SEQUENCE {
+//			hashAlg 	OBJECT IDENTIFIER,
+//			digest 		OCTET STRING
+//	}
+//
+//	OperationalFlags ::= BIT STRING {
+//			notConfigured (0),
+//			notSecure (1),
+//			recovery (2),
+//	 	debug (3)
+//	}
 type DiceTcbInfo struct {
 	Vendor     string          `asn1:"optional,tag:0,utf8"`
 	Model      string          `asn1:"optional,tag:1,utf8"`
@@ -94,8 +100,10 @@ type DiceTcbInfo struct {
 	Type       []byte          `asn1:"optional,tag:9"`
 }
 
+// OperationalFlag represents the TCBInfo Operational Flags field
 type OperationalFlag int
 
+// TCG spec-defined operational flags
 const (
 	NotConfigured OperationalFlag = iota
 	NotSecure
@@ -103,22 +111,27 @@ const (
 	Recovery
 )
 
+// TcgMultiTcbInfo represents a sequence of TCBInfos
 type TcgMultiTcbInfo = []DiceTcbInfo
 
+// CertifyKeyParams holds configurable paramters to CertifyKey for test-cases
 type CertifyKeyParams struct {
 	Label []byte
 	Flags CertifyKeyFlags
 }
 
+// TestCertifyKey tests calling CertifyKey
 func TestCertifyKey(d TestDPEInstance, c DPEClient, t *testing.T) {
 	testCertifyKey(d, c, t, false)
 }
 
+// TestCertifyKeySimulation tests calling CertifyKey on simulation contexts
 func TestCertifyKeySimulation(d TestDPEInstance, c DPEClient, t *testing.T) {
 	testCertifyKey(d, c, t, true)
 }
 
-func TestCertifyKey_Csr(d TestDPEInstance, c DPEClient, t *testing.T) {
+// TestCertifyKeyCsr tests calling CeritifyKey with type = CSR
+func TestCertifyKeyCsr(d TestDPEInstance, c DPEClient, t *testing.T) {
 	ctx := getInitialContextHandle(d, c, t, false)
 
 	profile, err := GetTransportProfile(d)

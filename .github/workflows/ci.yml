@@ -30,6 +30,10 @@ jobs:
         run: |
           echo "Build-Test: release_ref=$(git rev-parse HEAD)"
 
+      - name: Install golint
+        run: |
+          go install golang.org/x/lint/golint@latest
+
       # The runner image has rustup with stable (with clippy and rustfmt). So we
       # just need to update to use the most recent stable.
       - name: Update rustup

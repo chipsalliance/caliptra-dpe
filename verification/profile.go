@@ -8,12 +8,13 @@ import "fmt"
 type Profile uint32
 
 const (
-	// NIST P-256, SHA-256
+	// ProfileP256SHA256 is NIST P-256, SHA-256
 	ProfileP256SHA256 Profile = 1
-	// NIST P-384, SHA-384
+	// ProfileP384SHA384 is NIST P-384, SHA-384
 	ProfileP384SHA384 Profile = 2
 )
 
+// GetDigestSize gets the digest size of the profile's supported hash algorithm
 func (p Profile) GetDigestSize() int {
 	switch p {
 	case ProfileP256SHA256:
@@ -24,6 +25,7 @@ func (p Profile) GetDigestSize() int {
 	return 0
 }
 
+// GetECCIntSize gets the ECC int size of the profile's supported ECC curve
 func (p Profile) GetECCIntSize() int {
 	switch p {
 	case ProfileP256SHA256:
@@ -54,6 +56,7 @@ type Curve interface {
 // NISTP256Parameter represents a NIST P-256 curve parameter, i.e., an x, y, r, or s value.
 type NISTP256Parameter [32]byte
 
+// Bytes returns a big-endian byte slice of a P256 int
 func (p NISTP256Parameter) Bytes() []byte {
 	return p[:]
 }
@@ -61,6 +64,7 @@ func (p NISTP256Parameter) Bytes() []byte {
 // NISTP384Parameter represents a NIST P-384 curve parameter, i.e., an x, y, r, or s value.
 type NISTP384Parameter [48]byte
 
+// Bytes returns a big-endian byte slice of a P384 int
 func (p NISTP384Parameter) Bytes() []byte {
 	return p[:]
 }
@@ -75,6 +79,7 @@ type DigestAlgorithm interface {
 // SHA256Digest represents a SHA-256 digest value.
 type SHA256Digest [32]byte
 
+// Bytes returns a byte slice of the SHA256 digest
 func (d SHA256Digest) Bytes() []byte {
 	return d[:]
 }
@@ -82,6 +87,7 @@ func (d SHA256Digest) Bytes() []byte {
 // SHA384Digest represents a SHA-384 digest value.
 type SHA384Digest [48]byte
 
+// Bytes returns a byte slice of the SHA384 digest
 func (d SHA384Digest) Bytes() []byte {
 	return d[:]
 }

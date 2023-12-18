@@ -63,6 +63,7 @@ func startTpmSession(t *testing.T, tpm io.ReadWriteCloser, alg tpm2.Algorithm) (
 	return sessHandle, nonce, nil
 }
 
+// TestTpmPolicySigning tests using DPE to satisfy TPM PolicySigned
 func TestTpmPolicySigning(d TestDPEInstance, c DPEClient, t *testing.T) {
 	simulation := false
 	ctx := getInitialContextHandle(d, c, t, simulation)

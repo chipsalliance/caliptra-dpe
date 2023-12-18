@@ -7,6 +7,7 @@ import (
 	"testing"
 )
 
+// TestRotateContextHandle tests the RotateContextHandle command
 func TestRotateContextHandle(d TestDPEInstance, c DPEClient, t *testing.T) {
 	simulation := false
 	handle := getInitialContextHandle(d, c, t, simulation)
@@ -40,6 +41,8 @@ func TestRotateContextHandle(d TestDPEInstance, c DPEClient, t *testing.T) {
 	}
 }
 
+// TestRotateContextHandleSimulation tests calling RotateContextHandle on
+// simulation contexts
 func TestRotateContextHandleSimulation(d TestDPEInstance, c DPEClient, t *testing.T) {
 	simulation := true
 	handle := getInitialContextHandle(d, c, t, simulation)

@@ -7,9 +7,11 @@ import (
 	"testing"
 )
 
+// InvalidHandle is a sample DPE handle which is very unlikely to be valid
 var InvalidHandle = ContextHandle{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}
 
-// Checks whether error is reported when non-existent handle is passed as input to DPE commands.
+// TestInvalidHandle checks whether error is reported when non-existent handle
+// is passed as input to DPE commands.
 // Exceptions are - GetProfile, InitializeContext, GetCertificateChain, commands
 // which do not need context handle as input parameter.
 func TestInvalidHandle(d TestDPEInstance, c DPEClient, t *testing.T) {
@@ -65,7 +67,8 @@ func TestInvalidHandle(d TestDPEInstance, c DPEClient, t *testing.T) {
 	}
 }
 
-// Checks whether error is reported when caller from one locality issues DPE commands in another locality.
+// TestWrongLocality checks whether error is reported when caller from one
+// locality issues DPE commands in another locality.
 // Exceptions are - GetProfile, InitializeContext, GetCertificateChain, commands
 // which do not need context handle as input and hence locality is irrelevant.
 func TestWrongLocality(d TestDPEInstance, c DPEClient, t *testing.T) {
@@ -132,7 +135,8 @@ func TestWrongLocality(d TestDPEInstance, c DPEClient, t *testing.T) {
 	}
 }
 
-// Checks whether error is reported while using commands that are turned off in DPE.
+// TestUnsupportedCommand checks whether error is reported while using commands
+// that are turned off in DPE.
 // DPE commands - RotateContextHandle, ExtendTCI, require support to be enabled in DPE profile
 // before being called.
 func TestUnsupportedCommand(d TestDPEInstance, c DPEClient, t *testing.T) {
@@ -159,7 +163,8 @@ func TestUnsupportedCommand(d TestDPEInstance, c DPEClient, t *testing.T) {
 	}
 }
 
-// Checks whether error is reported while enabling command flags that are turned off in DPE.
+// TestUnsupportedCommandFlag checks whether error is reported while enabling
+// command flags that are turned off in DPE.
 // The DPE command may be available but some of its flags may not be supported by DPE.
 // DPE profile supports the below attributes.
 // Simulation	: Allows caller to request for context iniitialization in simulation mode

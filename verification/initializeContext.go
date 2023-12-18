@@ -9,6 +9,7 @@ import (
 
 // This file is used to test the initialize context command.
 
+// TestInitializeContext tests calling InitializeContext
 func TestInitializeContext(d TestDPEInstance, c DPEClient, t *testing.T) {
 	for _, locality := range d.GetSupportedLocalities() {
 		d.SetLocality(locality)
@@ -16,6 +17,7 @@ func TestInitializeContext(d TestDPEInstance, c DPEClient, t *testing.T) {
 	}
 }
 
+// TestInitializeSimulation tests calling InitializeContext simulation mode
 func TestInitializeSimulation(d TestDPEInstance, c DPEClient, t *testing.T) {
 	for _, locality := range d.GetSupportedLocalities() {
 		d.SetLocality(locality)

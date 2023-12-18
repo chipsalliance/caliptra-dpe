@@ -37,6 +37,7 @@ function format_rust_targets() {
 function format_go_targets() {
   ( cd verification
     test -z "$(gofmt -l .)"
+    test -z "$(golint)"
   )
 }
 
