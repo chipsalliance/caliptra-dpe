@@ -8,6 +8,7 @@ import (
 )
 
 var DefaultContextHandle = ContextHandle{0}
+var InvalidatedContextHandle = ContextHandle{255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255}
 
 const (
 	CmdMagic  uint32 = 0x44504543

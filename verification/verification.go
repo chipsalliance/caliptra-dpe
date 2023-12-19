@@ -27,16 +27,19 @@ var InitializeContextSimulationTestCase = TestCase{
 	"InitializeContextSimulation", TestInitializeSimulation, []string{"Simulation"},
 }
 var CertifyKeyTestCase = TestCase{
-	"CertifyKey", TestCertifyKey, []string{"AutoInit", "X509", "IsCA", "RotateContext", "ExtendTci"},
+	"CertifyKey", TestCertifyKey, []string{"AutoInit", "X509", "IsCA", "RotateContext"},
 }
 var CertifyKeySimulationTestCase = TestCase{
-	"CertifyKeySimulation", TestCertifyKeySimulation, []string{"AutoInit", "Simulation", "X509", "IsCA", "RotateContext", "ExtendTci"},
-}
-var CertifyKeyWithoutExtendTciTestCase = TestCase{
-	"CertifyKeyWithoutExtendTciSupport", TestCertifyKeyWithoutExtendTciSupport, []string{"AutoInit", "X509"},
+	"CertifyKeySimulation", TestCertifyKeySimulation, []string{"AutoInit", "Simulation", "X509", "IsCA", "RotateContext"},
 }
 var CertifyKeyCsrTestCase = TestCase{
 	"CertifyKeyCsr", TestCertifyKey_Csr, []string{"AutoInit", "Csr", "IsCA"},
+}
+var DiceTcbValidationTestCase = TestCase{
+	"CheckDiceTcbInfo", TestDiceTcbInfo, []string{"AutoInit", "X509", "IsCA", "RotateContext", "ExtendTci"},
+}
+var DiceTcbValidationSimulationTestCase = TestCase{
+	"CheckDiceTcbInfoInSimulationMode", TestDiceTcbInfoSimulation, []string{"AutoInit", "Simulation", "X509", "IsCA", "RotateContext", "ExtendTci"},
 }
 var GetCertificateChainTestCase = TestCase{
 	"GetCertificateChain", TestGetCertificateChain, []string{"AutoInit", "X509"},

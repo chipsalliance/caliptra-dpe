@@ -36,46 +36,12 @@ func TestCertifyKeySimulation(d TestDPEInstance, c DPEClient, t *testing.T) {
 	testCertifyKey(d, c, t, true)
 }
 
-// Checks whether FWID array omits index-1 when extend TCI is not supported in DPE profile.
-func TestCertifyKeyWithoutExtendTciSupport(d TestDPEInstance, c DPEClient, t *testing.T) {
-	simulation := false
-	handle := getInitialContextHandle(d, c, t, simulation)
+func TestDiceTcbInfo(d TestDPEInstance, c DPEClient, t *testing.T) {
+	testDiceTcbInfo(d, c, t, false)
+}
 
-	profile, err := GetTransportProfile(d)
-	if err != nil {
-		t.Fatalf("Could not get profile: %v", err)
-	}
-	digestLen := profile.GetDigestSize()
-
-	// Get DPE leaf certificate from CertifyKey
-	certifiedKey, err := c.CertifyKey(handle, make([]byte, digestLen), CertifyKeyX509, CertifyKeyFlags(0))
-	if err != nil {
-		t.Fatalf("[FATAL]: Could not certify key: %v", err)
-	}
-
-	leafCertBytes := certifiedKey.Certificate
-	var leafCert *x509.Certificate
-
-	if leafCert, err = x509.ParseCertificate(leafCertBytes); err != nil {
-		t.Errorf("[ERROR]: Could not parse leaf certificate %s", err)
-	}
-
-	multiTcbInfo, err := getMultiTcbInfo(leafCert.Extensions)
-	if err != nil {
-		t.Errorf("[ERROR]: Could not parse multi TCB information: extension %s", err)
-	}
-
-	if len(multiTcbInfo) == 0 {
-		t.Errorf("[ERROR]: Certificate MutliTcbInfo is empty")
-	}
-
-	// Check whether fwids array has only fwids[0] i.e, TCI_CURRENT measurement
-	// and TCI_CUMULATIVE i.e fwids[1] is omitted in every Dice TCB info block
-	for i, tcbinfo := range multiTcbInfo {
-		if len(tcbinfo.Fwids) != 1 {
-			t.Errorf("Extend TCI is not supported by profile, expected FWIDs length in block-%d is %d but got %d", i, 1, len(tcbinfo.Fwids))
-		}
-	}
+func TestDiceTcbInfoSimulation(d TestDPEInstance, c DPEClient, t *testing.T) {
+	testDiceTcbInfo(d, c, t, true)
 }
 
 func TestCertifyKey_Csr(d TestDPEInstance, c DPEClient, t *testing.T) {
@@ -216,26 +182,35 @@ func testCertifyKey(d TestDPEInstance, c DPEClient, t *testing.T, simulation boo
 			t.Errorf("[ERROR]: %v", err)
 		}
 
+		_, err = getMultiTcbInfo(leafCert.Extensions)
+		if err != nil {
+			t.Errorf("[ERROR]: Could not parse multi TCB information: extension %s", err)
+		}
+
 		// Reassign handle for simulation mode.
 		// However, this does not impact in default mode because
 		// same default context handle is returned in default mode.
 		handle = &certifyKeyResp.Handle
 	}
-	// DeriveChild to add more TCIs and call CertifyKey again.
-	if simulation {
-		handle = checkWithDerivedChildContextSimulation(d, c, t, handle)
-	} else {
-		checkWithDerivedChildContext(d, c, t, handle)
-	}
 }
 
-// Checks Multi Tcb Info for context derived from non-simulation mode
-// Check CertifyKey command after adding more TCIs by DeriveChild command.
-// The MultiTcbInfo extension has a DiceTcbInfo block for each TCI node.
+// Checks Multi Tcb Info for context derived from non-simulation mode by adding more TCIs by DeriveChild command.
+// MultiTcbInfo extension has a DiceTcbInfo block for each TCI node.
 // In a DiceTcbInfo block of a given TCI node,
 //   - the "type" field must contain 4-byte tciType is provided by a client to DeriveChild.
 //   - the "fwid" field must contain cumulative TCI measurement.
-func checkWithDerivedChildContext(d TestDPEInstance, c DPEClient, t *testing.T, handle *ContextHandle) {
+func testDiceTcbInfo(d TestDPEInstance, c DPEClient, t *testing.T, simulation bool) {
+	handle := getInitialContextHandle(d, c, t, simulation)
+	if simulation {
+		// Clean up contexts
+		defer func() {
+			err := c.DestroyContext(handle, DestroyDescendants)
+			if err != nil {
+				t.Errorf("[ERROR]: Error while cleaning contexts, this may cause failure in subsequent tests: %s", err)
+			}
+		}()
+	}
+
 	profile, err := GetTransportProfile(d)
 	if err != nil {
 		t.Fatalf("Could not get profile: %v", err)
@@ -254,27 +229,13 @@ func checkWithDerivedChildContext(d TestDPEInstance, c DPEClient, t *testing.T, 
 		childTCI1[i] = byte(i + 1)
 	}
 
-	// Set tciType to verify in multiTcbInfo extension
+	// Set tciType to verify in UEID extension
 	tciType := uint32(2)
 
-	// Preserve parent context to restore for subsequent tests
-	parentHandle, err := c.RotateContextHandle(handle, RotateContextHandleFlags(0))
-	if err != nil {
-		t.Errorf("[ERROR]: Error while rotating parent context handle, this may cause failure in subsequent tests: %s", err)
-	}
-
-	// Deferred call to restore default context handle for subsequent tests
-	defer func() {
-		_, err = c.RotateContextHandle(parentHandle, RotateContextHandleFlags(TargetIsDefault))
-		if err != nil {
-			t.Errorf("[ERROR]: Error while restoring parent context handle as default context handle, this may cause failure in subsequent tests: %s", err)
-		}
-	}()
-
 	// Derive Child context with input data, tag it and check TCI_CUMULATIVE
-	childCtx, err := c.DeriveChild(parentHandle,
+	childCtx, err := c.DeriveChild(handle,
 		childTCI1,
-		DeriveChildFlags(InputAllowX509|RetainParent),
+		DeriveChildFlags(InputAllowX509),
 		tciType,
 		0)
 
@@ -282,19 +243,10 @@ func checkWithDerivedChildContext(d TestDPEInstance, c DPEClient, t *testing.T, 
 		t.Fatalf("[FATAL]: Error while creating child handle: %s", err)
 	}
 
-	childHandle := &childCtx.NewContextHandle
-	parentHandle = &childCtx.ParentContextHandle
-
-	// Clean up contexts
-	defer func() {
-		err := c.DestroyContext(childHandle, DestroyDescendants)
-		if err != nil {
-			t.Errorf("[ERROR]: Error while cleaning up derived context, this may cause failure in subsequent tests: %s", err)
-		}
-	}()
+	handle = &childCtx.NewContextHandle
 
 	var childTcbInfo DiceTcbInfo
-	childHandle, childTcbInfo, err = getTcbInfoForHandle(c, childHandle)
+	handle, childTcbInfo, err = getTcbInfoForHandle(c, handle)
 	if err != nil {
 		t.Fatalf("[FATAL]: Could not get TcbInfo: %v", err)
 	}
@@ -327,7 +279,7 @@ func checkWithDerivedChildContext(d TestDPEInstance, c DPEClient, t *testing.T, 
 		childTCI2[i] = byte(i + 2)
 	}
 
-	childCtx, err = c.DeriveChild(childHandle,
+	childCtx, err = c.DeriveChild(handle,
 		childTCI2,
 		DeriveChildFlags(InputAllowX509),
 		tciType,
@@ -337,15 +289,15 @@ func checkWithDerivedChildContext(d TestDPEInstance, c DPEClient, t *testing.T, 
 		t.Fatalf("[FATAL]: Error while creating child handle: %s", err)
 	}
 
-	childHandle = &childCtx.NewContextHandle
+	handle = &childCtx.NewContextHandle
 
 	// Get latest TCB information
-	certifiedKey, err := c.CertifyKey(childHandle, childTCI2, CertifyKeyX509, 0)
+	certifiedKey, err := c.CertifyKey(handle, childTCI2, CertifyKeyX509, 0)
 	if err != nil {
 		t.Fatalf("[FATAL]: Could not certify key: %s", err)
 	}
 
-	childHandle = &certifiedKey.Handle
+	handle = &certifiedKey.Handle
 	leafCertBytes := certifiedKey.Certificate
 
 	// Build list of tci_current for validation and use it for validating TCI measurements
@@ -353,118 +305,6 @@ func checkWithDerivedChildContext(d TestDPEInstance, c DPEClient, t *testing.T, 
 	if err = validateDiceTcbFwids(leafCertBytes, currentTCIs, digestLen); err != nil {
 		t.Errorf("[ERROR]: %v", err)
 	}
-}
-
-// Checks Multi Tcb Info for context derived from simulation mode
-func checkWithDerivedChildContextSimulation(d TestDPEInstance, c DPEClient, t *testing.T, handle *ContextHandle) *ContextHandle {
-	profile, err := GetTransportProfile(d)
-	if err != nil {
-		t.Fatalf("Could not get profile: %v", err)
-	}
-	digestLen := profile.GetDigestSize()
-
-	var hashAlg asn1.ObjectIdentifier
-	if digestLen == 32 {
-		hashAlg = OidSHA256
-	} else if digestLen == 48 {
-		hashAlg = OidSHA384
-	}
-
-	childTCI := make([]byte, digestLen)
-	for i := range childTCI {
-		childTCI[i] = byte(i)
-	}
-
-	// Set tciType to verify in UEID extension
-	tciType := uint32(2)
-
-	locality := d.GetLocality()
-
-	// Derive Child context with input data, tag it and check TCI_CUMULATIVE
-	childCtx, err := c.DeriveChild(handle,
-		childTCI,
-		DeriveChildFlags(InputAllowX509|ChangeLocality|RetainParent),
-		tciType,
-		locality+1) // Switch locality to derive child context from Simulation context
-
-	if err != nil {
-		t.Fatalf("[FATAL]: Error while creating child handle: %s", err)
-	}
-
-	handle = &childCtx.NewContextHandle
-	parentHandle := &childCtx.ParentContextHandle
-
-	// Clean up contexts
-	defer func() {
-		err := c.DestroyContext(handle, DestroyDescendants)
-		if err != nil {
-			t.Errorf("[ERROR]: Error while cleaning up derived context, this may cause failure in subsequent tests: %s", err)
-		}
-		// Revert locality for other tests
-		d.SetLocality(0)
-	}()
-
-	// Switch to simulated child context locality to issue CertifyKey command
-	d.SetLocality(locality + 1)
-
-	// Make CertifyKey call and get current MultiTcbInfo
-	var leafCert *x509.Certificate
-
-	certifiedKey, err := c.CertifyKey(handle, childTCI, CertifyKeyX509, 0)
-	if err != nil {
-		t.Errorf("[ERROR]: Could not certify key: %s", err)
-	}
-
-	handle = &certifiedKey.Handle // Update handle
-	leafCertBytes := certifiedKey.Certificate
-
-	if leafCert, err = x509.ParseCertificate(leafCertBytes); err != nil {
-		t.Errorf("[ERROR]: Could not parse certificate: %s", err)
-	}
-
-	multiTcbInfo, err := getMultiTcbInfo(leafCert.Extensions)
-	if err != nil {
-		t.Errorf("[ERROR]: Could not parse multi TCB info extension: %s", err)
-	}
-
-	if len(multiTcbInfo) == 0 {
-		t.Errorf("[ERROR]: Certificate MutliTcbInfo is empty")
-	}
-
-	childTcbInfo := multiTcbInfo[0]
-	if !bytes.Equal(childTcbInfo.Fwids[0].Digest, childTCI) {
-		t.Errorf("[ERROR]: Got current TCI %x, expected %x", childTcbInfo.Fwids[0].Digest, childTCI)
-	}
-
-	// Preform checks on multi Tcb info of child TCI node
-	// Check vendorInfo field
-	if err = checkDiceTcbVendorInfo(childTcbInfo, d.GetLocality()); err != nil {
-		t.Errorf("[ERROR]: %v", err)
-	}
-
-	// Check type field
-	if err = checkCurrentDiceTcbTciType(childTcbInfo, tciType); err != nil {
-		t.Errorf("[ERROR]: %v", err)
-	}
-
-	// Check hash algorithm
-	if err = checkDiceTcbHashAlgorithm(childTcbInfo, hashAlg); err != nil {
-		t.Errorf("[ERROR]: %v", err)
-	}
-
-	// Extend TCI support is mandatory for this validation
-	if !d.GetSupport().ExtendTci {
-		t.Errorf("ExtendTCI is unsupported by profile, unable to run tests to verify TCI_CUMULATIVE measurements")
-		return parentHandle
-	}
-
-	// Check all dice tcb measurements
-	// Build list of tci_current for validation
-	currentTCIs := [][]byte{childTCI}
-	if err = validateDiceTcbFwids(certifiedKey.Certificate, currentTCIs, digestLen); err != nil {
-		t.Errorf("[ERROR]: %v", err)
-	}
-	return parentHandle
 }
 
 func checkPubKey(t *testing.T, p Profile, pubkey any, response CertifiedKey) {
