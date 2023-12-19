@@ -28,10 +28,12 @@ type CertifyKeyParams struct {
 	Flags CertifyKeyFlags
 }
 
+// TestCertifyKey tests calling CertifyKey
 func TestCertifyKey(d TestDPEInstance, c DPEClient, t *testing.T) {
 	testCertifyKey(d, c, t, false)
 }
 
+// TestCertifyKeySimulation tests calling CertifyKey on simulation contexts
 func TestCertifyKeySimulation(d TestDPEInstance, c DPEClient, t *testing.T) {
 	testCertifyKey(d, c, t, true)
 }
@@ -44,7 +46,8 @@ func TestDiceTcbInfoSimulation(d TestDPEInstance, c DPEClient, t *testing.T) {
 	testDiceTcbInfo(d, c, t, true)
 }
 
-func TestCertifyKey_Csr(d TestDPEInstance, c DPEClient, t *testing.T) {
+// TestCertifyKeyCsr tests calling CeritifyKey with type = CSR
+func TestCertifyKeyCsr(d TestDPEInstance, c DPEClient, t *testing.T) {
 	ctx := getInitialContextHandle(d, c, t, false)
 
 	profile, err := GetTransportProfile(d)

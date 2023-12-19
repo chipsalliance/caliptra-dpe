@@ -111,6 +111,7 @@ const (
 
 type TcgMultiTcbInfo = []DiceTcbInfo
 
+// BasicConstraints represents an X.509 BasicConstraints extension
 type BasicConstraints struct {
 	IsCA              bool `asn1:"boolean"`
 	PathLenConstraint int  `asn1:"optional"`

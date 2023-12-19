@@ -6,11 +6,12 @@ import (
 	"reflect"
 )
 
-func HasSupportNeeded(d TestDPEInstance, support_needed []string) bool {
+// HasSupportNeeded returns whether `d` supports all the features in `support_needed`
+func HasSupportNeeded(d TestDPEInstance, supportNeeded []string) bool {
 	support := d.GetSupport()
 	value := reflect.ValueOf(support)
-	for i := 0; i < len(support_needed); i++ {
-		support := reflect.Indirect(value).FieldByName(support_needed[i])
+	for i := 0; i < len(supportNeeded); i++ {
+		support := reflect.Indirect(value).FieldByName(supportNeeded[i])
 		if !support.Bool() {
 			return false
 		}
@@ -19,7 +20,7 @@ func HasSupportNeeded(d TestDPEInstance, support_needed []string) bool {
 	return true
 }
 
-// An extension to the main DPE transport interface with test hooks.
+// TestDPEInstance is an extension to the main DPE transport interface with test hooks.
 type TestDPEInstance interface {
 	Transport
 	// If power control is unavailable for the given device, return false from
@@ -54,7 +55,7 @@ type TestDPEInstance interface {
 	// Returns the minor version of the profile the instance implements.
 	GetProfileMinorVersion() uint16
 	// Returns the Vendor ID of the profile.
-	GetProfileVendorId() uint32
+	GetProfileVendorID() uint32
 	// Returns the vendor's product SKU.
 	GetProfileVendorSku() uint32
 }
