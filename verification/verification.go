@@ -159,6 +159,11 @@ var AllTestCases = []TestCase{
 	WrongLocalityTestCase,
 }
 
+var IrreversibleTestCases = []TestCase{
+	DeriveChildTestCase,
+	DeriveChildSimulationTestCase,
+}
+
 // RunTargetTestCases runs all test cases for target
 func RunTargetTestCases(target TestTarget, t *testing.T) {
 	// This needs to be in a separate function to make sure it is powered off before running the

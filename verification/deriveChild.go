@@ -77,7 +77,7 @@ func TestDeriveChild(d TestDPEInstance, c DPEClient, t *testing.T) {
 // Validates DerivedChild command with ChangeLocality flag.
 func TestChangeLocality(d TestDPEInstance, c DPEClient, t *testing.T) {
 	if !d.HasLocalityControl() {
-		t.Skip("WARNING: DPE profile does not have control over locality. Skipping this test...")
+		t.Skip("WARNING: DPE target does not have control over locality. Skipping this test...")
 	}
 
 	var resp *DeriveChildResp
@@ -237,7 +237,7 @@ func TestMaxTCIs(d TestDPEInstance, c DPEClient, t *testing.T) {
 
 func TestDeriveChildSimulation(d TestDPEInstance, c DPEClient, t *testing.T) {
 	if !d.HasLocalityControl() {
-		t.Skip("WARNING: DPE profile does not have control over locality, DeriveContext in Simulation mode cannot be tested without this support. Skipping this test...")
+		t.Skip("WARNING: DPE target does not have control over locality, DeriveContext in Simulation mode cannot be tested without this support. Skipping this test...")
 	}
 	var resp *DeriveChildResp
 
