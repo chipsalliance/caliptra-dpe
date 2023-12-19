@@ -13,6 +13,7 @@ dpe_profile_p256_sha256 = []
 dpe_profile_p384_sha384 = []
 
 [dependencies]
+arrayvec = { version = "0.7.4", default-features = false, features = ["zeroize"] }
 cfg-if = "1.0.0"
 openssl = {version = "0.10.57", optional = true}
 ufmt = { git = "https://github.com/korran/ufmt.git", rev = "1d0743c1ffffc68bc05ca8eeb81c166192863f33", features = ["inline"] }

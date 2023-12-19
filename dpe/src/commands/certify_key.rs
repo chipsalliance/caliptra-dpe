@@ -10,7 +10,7 @@ use crate::{
 };
 use bitflags::bitflags;
 use crypto::Crypto;
-use platform::{Platform, MAX_CHUNK_SIZE, MAX_SN_SIZE};
+use platform::{Platform, MAX_CHUNK_SIZE};
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, zerocopy::FromBytes, zerocopy::AsBytes)]
@@ -114,6 +114,7 @@ impl CommandExecution for CertifyKeyCmd {
                 if issuer_len > MAX_CHUNK_SIZE {
                     return Err(DpeErrorCode::InternalError);
                 }
+                let cert_validity = env.platform.get_cert_validity()?;
                 let mut bytes_written = tbs_writer.encode_ecdsa_tbs(
                     /*serial=*/
                     &subject_name.serial.bytes()[..20], // Serial number must be truncated to 20 bytes
@@ -121,6 +122,7 @@ impl CommandExecution for CertifyKeyCmd {
                     &subject_name,
                     &pub_key,
                     &measurements,
+                    cert_validity,
                 )?;
                 if bytes_written > MAX_CERT_SIZE {
                     return Err(DpeErrorCode::InternalError);
@@ -183,16 +185,11 @@ impl CommandExecution for CertifyKeyCmd {
                 let csr_sig = env
                     .crypto
                     .ecdsa_sign_with_alias(DPE_PROFILE.alg_len(), &csr_digest)?;
-                let mut issuer_sn = [0u8; MAX_SN_SIZE];
-                let sn_len = env.platform.get_issuer_sn(&mut issuer_sn)?;
+                let sid = env.platform.get_signer_identifier()?;
 
                 let mut cms_writer = CertWriter::new(&mut cert, true);
-                bytes_written = cms_writer.encode_cms(
-                    &csr_buffer[..bytes_written],
-                    &issuer_sn[..sn_len], // Serial number must be truncated to 20 bytes
-                    &issuer_name[..issuer_len],
-                    &csr_sig,
-                )?;
+                bytes_written =
+                    cms_writer.encode_cms(&csr_buffer[..bytes_written], &csr_sig, &sid)?;
                 u32::try_from(bytes_written).map_err(|_| DpeErrorCode::InternalError)?
             }
             _ => return Err(DpeErrorCode::InvalidArgument),
@@ -473,27 +470,17 @@ mod tests {
 
         // validate signer identifier
         let sid = &signer_info.sid;
-        let mut subj_serial = [0u8; DPE_PROFILE.get_hash_size() * 2];
-        let mut issuer_serial = [0u8; MAX_SN_SIZE];
-        let pub_key = EcdsaPub {
-            x: CryptoBuf::new(&certify_resp.derived_pubkey_x).unwrap(),
-            y: CryptoBuf::new(&certify_resp.derived_pubkey_y).unwrap(),
-        };
-        env.crypto
-            .get_pubkey_serial(DPE_PROFILE.alg_len(), &pub_key, &mut subj_serial)
-            .unwrap();
-        env.platform.get_issuer_sn(&mut issuer_serial).unwrap();
         match sid {
             SignerIdentifier::IssuerAndSerialNumber(issuer_and_serial_number) => {
                 let cert_serial_number = &issuer_and_serial_number.serial_number;
-                assert_eq!(&issuer_serial, cert_serial_number.as_bytes());
+                let cert_issuer_name = &issuer_and_serial_number.issuer.to_der().unwrap();
 
-                let mut issuer_name = [0u8; MAX_CHUNK_SIZE];
-                let issuer_len = env.platform.get_issuer_name(&mut issuer_name).unwrap();
-                assert_eq!(
-                    &issuer_name[..issuer_len],
-                    &issuer_and_serial_number.issuer.to_der().unwrap()
-                )
+                let platform::SignerIdentifier::IssuerAndSerialNumber {issuer_name, serial_number}  = env.platform.get_signer_identifier().unwrap() else {
+                    panic!("Error: Signer Identifier is not IssuerAndSerialNumber in default platform!")
+                };
+
+                assert_eq!(serial_number.as_bytes(), cert_serial_number.as_bytes());
+                assert_eq!(issuer_name.as_bytes(), cert_issuer_name.as_bytes())
             }
             _ => panic!("Error: Signer Identifier is not IssuerAndSerialNumber!"),
         };
@@ -553,6 +540,14 @@ mod tests {
         assert!(cri_sig.verify(cri_digest.bytes(), &pub_key).unwrap());
 
         // validate subject_name
+        let mut subj_serial = [0u8; DPE_PROFILE.get_hash_size() * 2];
+        let pub_key = EcdsaPub {
+            x: CryptoBuf::new(&certify_resp.derived_pubkey_x).unwrap(),
+            y: CryptoBuf::new(&certify_resp.derived_pubkey_y).unwrap(),
+        };
+        env.crypto
+            .get_pubkey_serial(DPE_PROFILE.alg_len(), &pub_key, &mut subj_serial)
+            .unwrap();
         let subject_name = Name {
             cn: DirectoryString::PrintableString(b"DPE Leaf"),
             serial: DirectoryString::PrintableString(&subj_serial),

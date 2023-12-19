@@ -8,6 +8,8 @@ Abstract:
 #[cfg(feature = "openssl")]
 pub use openssl::x509::X509;
 
+pub use arrayvec::ArrayVec;
+
 #[cfg(any(feature = "openssl", feature = "rustcrypto"))]
 pub mod default;
 
@@ -16,6 +18,20 @@ pub mod printer;
 pub const MAX_CHUNK_SIZE: usize = 2048;
 pub const MAX_SN_SIZE: usize = 20;
 
+pub enum SignerIdentifier {
+    IssuerAndSerialNumber {
+        issuer_name: ArrayVec<u8, { MAX_CHUNK_SIZE }>,
+        serial_number: ArrayVec<u8, { MAX_SN_SIZE }>,
+    },
+    SubjectKeyIdentifier(ArrayVec<u8, { MAX_CHUNK_SIZE }>),
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub struct CertValidity<'a> {
+    pub not_before: &'a str,
+    pub not_after: &'a str,
+}
+
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 #[repr(u16)]
 pub enum PlatformError {
@@ -23,6 +39,8 @@ pub enum PlatformError {
     NotImplemented = 0x2,
     IssuerNameError(u32) = 0x3,
     PrintError(u32) = 0x4,
+    SerialNumberError(u32) = 0x5,
+    SubjectKeyIdentifierError(u32) = 0x6,
 }
 
 impl PlatformError {
@@ -39,6 +57,8 @@ impl PlatformError {
             PlatformError::NotImplemented => None,
             PlatformError::IssuerNameError(code) => Some(*code),
             PlatformError::PrintError(code) => Some(*code),
+            PlatformError::SerialNumberError(code) => Some(*code),
+            PlatformError::SubjectKeyIdentifierError(code) => Some(*code),
         }
     }
 }
@@ -65,11 +85,11 @@ pub trait Platform {
     /// * `out` - Output buffer for issuer name to be written to.
     fn get_issuer_name(&mut self, out: &mut [u8; MAX_CHUNK_SIZE]) -> Result<usize, PlatformError>;
 
-    /// Retrives the issuer's Serial Number
+    /// Retrieves a CMS Content Info's signer identifier
     ///
-    /// The issuer serial number is a big-endian integer which is at-most 20
-    /// bytes. It must adhere to all the requirements of an ASN.1 integer.
-    fn get_issuer_sn(&mut self, out: &mut [u8; MAX_SN_SIZE]) -> Result<usize, PlatformError>;
+    /// This function can simply return an error if the DPE does not support CSRs.
+    /// Otherwise, the platform can choose either SubjectKeyIdentifier or IssuerAndSerialNumber.
+    fn get_signer_identifier(&mut self) -> Result<SignerIdentifier, PlatformError>;
 
     fn get_vendor_id(&mut self) -> Result<u32, PlatformError>;
 
@@ -78,4 +98,12 @@ pub trait Platform {
     fn get_auto_init_locality(&mut self) -> Result<u32, PlatformError>;
 
     fn write_str(&mut self, str: &str) -> Result<(), PlatformError>;
+
+    /// Retrieves the DPE certificate's validity period
+    ///
+    /// Each output string should represent a valid ISO 8601 date and time
+    /// in the yyyyMMddHHmmss format followed by a timezone.
+    ///
+    /// Example: 99991231235959Z is December 31st, 9999 23:59:59 UTC
+    fn get_cert_validity<'a>(&mut self) -> Result<CertValidity<'a>, PlatformError>;
 }

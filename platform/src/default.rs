@@ -1,6 +1,7 @@
 // Licensed under the Apache-2.0 license
 
-use crate::{Platform, PlatformError, MAX_CHUNK_SIZE, MAX_SN_SIZE};
+use crate::{CertValidity, Platform, PlatformError, SignerIdentifier, MAX_CHUNK_SIZE};
+use arrayvec::ArrayVec;
 use cfg_if::cfg_if;
 use core::cmp::min;
 
@@ -9,6 +10,8 @@ pub struct DefaultPlatform;
 pub const AUTO_INIT_LOCALITY: u32 = 0;
 pub const VENDOR_ID: u32 = 0;
 pub const VENDOR_SKU: u32 = 0;
+pub const NOT_BEFORE: &str = "20230227000000Z";
+pub const NOT_AFTER: &str = "99991231235959Z";
 
 // Run ./generate.sh to generate all test certs and test private keys
 #[cfg(feature = "dpe_profile_p256_sha256")]
@@ -33,7 +36,7 @@ cfg_if! {
                 pub fn parse_issuer_name() -> Vec<u8> {
                     X509::from_pem(TEST_CERT_PEM)
                         .unwrap()
-                        .subject_name()
+                        .issuer_name()
                         .to_der()
                         .unwrap()
                 }
@@ -60,7 +63,7 @@ cfg_if! {
                     Certificate::from_pem(TEST_CERT_PEM)
                         .unwrap()
                         .tbs_certificate
-                        .subject
+                        .issuer
                         .to_der()
                         .unwrap()
                 }
@@ -109,13 +112,22 @@ impl Platform for DefaultPlatform {
         Ok(issuer_name.len())
     }
 
-    fn get_issuer_sn(&mut self, out: &mut [u8; MAX_SN_SIZE]) -> Result<usize, PlatformError> {
+    fn get_signer_identifier(&mut self) -> Result<SignerIdentifier, PlatformError> {
+        let mut issuer_name = [0u8; MAX_CHUNK_SIZE];
+        let issuer_len = self.get_issuer_name(&mut issuer_name)?;
         let sn = parse::DefaultPlatform::parse_issuer_sn();
-        if sn.len() > out.len() {
-            return Err(PlatformError::IssuerNameError(0));
-        }
-        out[..sn.len()].copy_from_slice(&sn);
-        Ok(sn.len())
+        let mut issuer_name_vec = ArrayVec::new();
+        issuer_name_vec
+            .try_extend_from_slice(&issuer_name[..issuer_len])
+            .map_err(|_| PlatformError::IssuerNameError(0))?;
+        let mut serial_number_vec = ArrayVec::new();
+        serial_number_vec
+            .try_extend_from_slice(&sn)
+            .map_err(|_| PlatformError::SerialNumberError(0))?;
+        Ok(SignerIdentifier::IssuerAndSerialNumber {
+            issuer_name: issuer_name_vec,
+            serial_number: serial_number_vec,
+        })
     }
 
     fn get_vendor_id(&mut self) -> Result<u32, PlatformError> {
@@ -133,5 +145,12 @@ impl Platform for DefaultPlatform {
     fn write_str(&mut self, str: &str) -> Result<(), PlatformError> {
         print!("{str}");
         Ok(())
+    }
+
+    fn get_cert_validity<'a>(&mut self) -> Result<CertValidity<'a>, PlatformError> {
+        Ok(CertValidity {
+            not_before: NOT_BEFORE,
+            not_after: NOT_AFTER,
+        })
     }
 }
