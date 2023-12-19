@@ -231,13 +231,13 @@ func GetSimulatorTargets() []TestTarget {
 		},
 		{
 			"DefaultSupport",
-			getTestTarget([]string{"AutoInit", "Simulation", "X509", "Csr", "IsCA", "RotateContext", "IsSymmetric", "ExtendTci"}),
+			getTestTarget([]string{"AutoInit", "Simulation", "X509", "Csr", "IsCA", "RotateContext", "ExtendTci", "IsSymmetric"}),
 			AllTestCases,
 		},
 		{
 			"CertifyKey_TcbValidation",
 			getTestTarget([]string{"AutoInit", "Simulation", "X509", "Csr", "IsCA", "RotateContext", "ExtendTci"}),
-			[]TestCase{DiceTcbValidationTestCase, TcbValidationSimulationTestCase},
+			[]TestCase{DiceTcbValidationTestCase, DiceTcbValidationSimulationTestCase},
 		},
 		{
 			"DeriveChild",

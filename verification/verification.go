@@ -38,7 +38,7 @@ var CertifyKeyCsrTestCase = TestCase{
 var DiceTcbValidationTestCase = TestCase{
 	"CheckDiceTcbInfo", TestDiceTcbInfo, []string{"AutoInit", "X509", "IsCA", "RotateContext", "ExtendTci"},
 }
-var TcbValidationSimulationTestCase = TestCase{
+var DiceTcbValidationSimulationTestCase = TestCase{
 	"CheckDiceTcbInfoInSimulationMode", TestDiceTcbInfoSimulation, []string{"AutoInit", "Simulation", "X509", "IsCA", "RotateContext", "ExtendTci"},
 }
 var GetCertificateChainTestCase = TestCase{
