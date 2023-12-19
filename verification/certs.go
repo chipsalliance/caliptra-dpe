@@ -28,6 +28,7 @@ var (
 	OidSHA384                          = asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 2, 2}
 )
 
+// BasicConstraints represents an X.509 BasicConstraints extension
 type BasicConstraints struct {
 	IsCA              bool `asn1`
 	PathLenConstraint int  `asn1:"optional"`

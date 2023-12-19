@@ -4,8 +4,10 @@ package verification
 
 import "fmt"
 
+// Status is a DPE status code
 type Status uint32
 
+// All spec-defined DPE status codes
 const (
 	StatusInternalError        Status = 1
 	StatusInvalidCommand       Status = 2
@@ -21,6 +23,7 @@ const (
 	StatusRandError            Status = 0x1007
 )
 
+// Error returns an informational string for all DPE error codes
 func (s Status) Error() string {
 	switch s {
 	case StatusInternalError:

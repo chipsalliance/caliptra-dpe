@@ -11,7 +11,8 @@ import (
 	"testing"
 )
 
-// Check whether the ExtendTCI command updates the current TCI and cumulative TCI.
+// TestExtendTCI checks whether the ExtendTCI command updates the current TCI
+// and cumulative TCI.
 func TestExtendTCI(d TestDPEInstance, c DPEClient, t *testing.T) {
 	var err error
 	useSimulation := false // To indicate that simulation context is not used
@@ -61,7 +62,8 @@ func computeExpectedCumulative(lastCumulative []byte, tciValue []byte) []byte {
 	return hasher.Sum(nil)
 }
 
-// Check whether the ExtendTCI command with derived child context.
+// TestExtendTciOnDerivedContexts checks whether the ExtendTCI command with
+// derived child context.
 func TestExtendTciOnDerivedContexts(d TestDPEInstance, c DPEClient, t *testing.T) {
 	useSimulation := false // To indicate that simulation context is not used
 

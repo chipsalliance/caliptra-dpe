@@ -15,22 +15,25 @@ import (
 	"time"
 )
 
+// Constants for configuring expected values from the DPE simulator
 const (
 	simulatorSocketPath = "/tmp/dpe-sim.socket"
 
-	DPE_SIMULATOR_AUTO_INIT_LOCALITY    uint32 = 0
-	DPE_SIMULATOR_OTHER_LOCALITY        uint32 = 0x4f544852
-	DPE_SIMULATOR_MAX_TCI_NODES         uint32 = 24
-	DPE_SIMULATOR_MAJOR_PROFILE_VERSION uint16 = CURRENT_PROFILE_MAJOR_VERSION
-	DPE_SIMULATOR_MINOR_PROFILE_VERSION uint16 = CURRENT_PROFILE_MINOR_VERSION
-	DPE_SIMULATOR_VENDOR_ID             uint32 = 0
-	DPE_SIMULATOR_VENDOR_SKU            uint32 = 0
+	DPESimulatorAutoInitLocality    uint32 = 0
+	DPESimulatorOtherLocality       uint32 = 0x4f544852
+	DPESimulatorMaxTCINodes         uint32 = 24
+	DPESimulatorMajorProfileVersion uint16 = CurrentProfileMajorVersion
+	DPESimulatorMinorProfileVersion uint16 = CurrentProfileMinorVersion
+	DPESimulatorVendorID            uint32 = 0
+	DPESimulatorVendorSKU           uint32 = 0
 )
 
+// TargetExe is the simulator executable to use for this test target
 var TargetExe *string
 
+// DpeSimulator is a handle to a DPE simulator instance
 type DpeSimulator struct {
-	exe_path        string
+	exePath         string
 	cmd             *exec.Cmd
 	supports        Support
 	currentLocality uint32
@@ -38,12 +41,12 @@ type DpeSimulator struct {
 	Transport
 }
 
-// Simulator can be started and stopped.
+// HasPowerControl returns whether the simulator can be started and stopped.
 func (s *DpeSimulator) HasPowerControl() bool {
 	return true
 }
 
-// Start the simulator.
+// PowerOn starts the simulator.
 func (s *DpeSimulator) PowerOn() error {
 	args := []string{}
 	if s.supports.Simulation {
@@ -77,7 +80,7 @@ func (s *DpeSimulator) PowerOn() error {
 		args = append(args, "--supports-internal-dice")
 	}
 
-	s.cmd = exec.Command(s.exe_path, args...)
+	s.cmd = exec.Command(s.exePath, args...)
 	s.cmd.Stdout = os.Stdout
 	err := s.cmd.Start()
 	if err != nil {
@@ -89,7 +92,7 @@ func (s *DpeSimulator) PowerOn() error {
 	return nil
 }
 
-// Kill the simulator in a way that it can cleanup before closing.
+// PowerOff kills the simulator in a way that it can cleanup before closing.
 func (s *DpeSimulator) PowerOff() error {
 	if s.cmd != nil {
 		err := s.cmd.Process.Signal(syscall.SIGTERM)
@@ -105,15 +108,15 @@ func (s *DpeSimulator) PowerOff() error {
 
 // Wait for the simulator to come alive. Timeout at 15 seconds.
 func (s *DpeSimulator) waitForPower(on bool) bool {
-	timeout_seconds := 15
-	checks_per_sec := 50
+	timeoutSeconds := 15
+	checksPerSec := 50
 
-	for i := 0; i < checks_per_sec*timeout_seconds; i++ {
+	for i := 0; i < checksPerSec*timeoutSeconds; i++ {
 		// Check if the socket file has been created.
 		if fileExists(simulatorSocketPath) == on {
 			return true
 		}
-		time.Sleep(time.Duration(1000/checks_per_sec) * time.Millisecond)
+		time.Sleep(time.Duration(1000/checksPerSec) * time.Millisecond)
 	}
 	return false
 }
@@ -126,6 +129,7 @@ func fileExists(filename string) bool {
 	return !info.IsDir()
 }
 
+// SendCmd sends a DPE command to the simulator
 func (s *DpeSimulator) SendCmd(buf []byte) ([]byte, error) {
 	// Connect to DPE instance.
 	conn, err := net.Dial("unix", simulatorSocketPath)
@@ -143,11 +147,11 @@ func (s *DpeSimulator) SendCmd(buf []byte) ([]byte, error) {
 	}
 
 	// Send the prepended command.
-	num_sent, err := conn.Write(prepended.Bytes())
+	numSent, err := conn.Write(prepended.Bytes())
 	if err != nil {
 		return nil, err
 	}
-	if num_sent != len(prepended.Bytes()) {
+	if numSent != len(prepended.Bytes()) {
 		return nil, errors.New("didn't send the whole command")
 	}
 
@@ -155,73 +159,88 @@ func (s *DpeSimulator) SendCmd(buf []byte) ([]byte, error) {
 	return io.ReadAll(conn)
 }
 
+// GetSupport gets supported DPE features from the simulator
 func (s *DpeSimulator) GetSupport() *Support {
 	return &s.supports
 }
 
+// GetIsInitialized gets whether DPE is initialized
 func (s *DpeSimulator) GetIsInitialized() bool {
 	return s.supports.AutoInit || s.isInitialized
 }
 
+// SetIsInitialized sets whether DPE is initialized
 func (s *DpeSimulator) SetIsInitialized(isInitialized bool) {
 	s.isInitialized = isInitialized
 }
 
+// GetSupportedLocalities gets the list of localities the simulator supports
 func (s *DpeSimulator) GetSupportedLocalities() []uint32 {
-	return []uint32{DPE_SIMULATOR_AUTO_INIT_LOCALITY, DPE_SIMULATOR_OTHER_LOCALITY}
+	return []uint32{DPESimulatorAutoInitLocality, DPESimulatorOtherLocality}
 }
 
+// HasLocalityControl returns whehter the simulator can artificially set the
+// locality of the caller. The simulator target can always control the locality.
 func (s *DpeSimulator) HasLocalityControl() bool {
 	return true
 }
 
+// SetLocality sets the locality of this caller
 func (s *DpeSimulator) SetLocality(locality uint32) {
 	s.currentLocality = locality
 }
 
+// GetLocality gets the locality of the current caller
 func (s *DpeSimulator) GetLocality() uint32 {
 	return s.currentLocality
 }
 
+// GetMaxTciNodes gets the max number of TCI nodes the DPE supports
 func (s *DpeSimulator) GetMaxTciNodes() uint32 {
-	return DPE_SIMULATOR_MAX_TCI_NODES
+	return DPESimulatorMaxTCINodes
 }
 
+// GetProfileMajorVersion gets the major profile version supported by this DPE
 func (s *DpeSimulator) GetProfileMajorVersion() uint16 {
-	return DPE_SIMULATOR_MAJOR_PROFILE_VERSION
+	return DPESimulatorMajorProfileVersion
 }
 
+// GetProfileMinorVersion gets the minor profile version supported by this DPE
 func (s *DpeSimulator) GetProfileMinorVersion() uint16 {
-	return DPE_SIMULATOR_MINOR_PROFILE_VERSION
+	return DPESimulatorMinorProfileVersion
 }
 
-func (s *DpeSimulator) GetProfileVendorId() uint32 {
-	return DPE_SIMULATOR_VENDOR_ID
+// GetProfileVendorID gets the vendor ID of this DPE
+func (s *DpeSimulator) GetProfileVendorID() uint32 {
+	return DPESimulatorVendorID
 }
 
+// GetProfileVendorSku gets the vendor SKU of this DPE
 func (s *DpeSimulator) GetProfileVendorSku() uint32 {
-	return DPE_SIMULATOR_VENDOR_SKU
+	return DPESimulatorVendorSKU
 }
 
-// Get the simulator target
-func GetSimulatorTarget(support_needed []string, target_exe string) TestDPEInstance {
+// GetSimulatorTarget gets the simulator target
+func GetSimulatorTarget(supportNeeded []string, targetExe string) TestDPEInstance {
 
 	value := reflect.ValueOf(DpeSimulator{}.supports)
 	fields := reflect.Indirect(value)
 	fVal := reflect.New(reflect.TypeOf(DpeSimulator{}.supports))
 
-	for i := 0; i < len(support_needed); i++ {
+	for i := 0; i < len(supportNeeded); i++ {
 		for j := 0; j < value.NumField(); j++ {
-			if fields.Type().Field(j).Name == support_needed[i] {
+			if fields.Type().Field(j).Name == supportNeeded[i] {
 				fVal.Elem().Field(j).SetBool(true)
 			}
 		}
 	}
 	support := fVal.Elem().Interface().(Support)
-	var instance TestDPEInstance = &DpeSimulator{exe_path: target_exe, supports: support}
+	var instance TestDPEInstance = &DpeSimulator{exePath: targetExe, supports: support}
 	return instance
 }
 
+// GetSimulatorTargets gets different simulator targets with different support
+// vectors to run the verification tests against
 func GetSimulatorTargets() []TestTarget {
 	return []TestTarget{
 		{
@@ -345,6 +364,6 @@ func GetSimulatorTargets() []TestTarget {
 // Get the test target for simulator/emulator
 func getTestTarget(supportNeeded []string) TestDPEInstance {
 	instance := GetSimulatorTarget(supportNeeded, *TargetExe)
-	instance.SetLocality(DPE_SIMULATOR_AUTO_INIT_LOCALITY)
+	instance.SetLocality(DPESimulatorAutoInitLocality)
 	return instance
 }

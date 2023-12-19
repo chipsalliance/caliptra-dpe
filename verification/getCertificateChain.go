@@ -13,6 +13,7 @@ import (
 	"github.com/zmap/zlint/v3/lint"
 )
 
+// TestGetCertificateChain tests calling GetCertificateChain
 func TestGetCertificateChain(d TestDPEInstance, client DPEClient, t *testing.T) {
 	certChain, err := client.GetCertificateChain()
 	if err != nil {
