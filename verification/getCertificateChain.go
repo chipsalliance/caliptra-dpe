@@ -102,29 +102,21 @@ func checkCertificateChain(t *testing.T, certData []byte) []*x509.Certificate {
 // Build certificate chain and calls to validateSignature on each chain.
 func validateCertChain(t *testing.T, certChain []*x509.Certificate) {
 	t.Helper()
-	var err error
 
 	certsToProcess := certChain
 
 	// Remove unhandled critical extensions reported by x509 but defined in spec
-	if err = removeTcgDiceCriticalExtensions(certsToProcess); err != nil {
-		t.Errorf("[ERROR]: %v", err)
-	}
+	removeTcgDiceCriticalExtensions(t, certsToProcess)
 
 	// Remove unhandled extended key usages reported by x509 but defined in spec
-	if err = removeTcgDiceExtendedKeyUsages(certsToProcess); err != nil {
-		t.Errorf("[ERROR]: %v", err)
-	}
+	removeTcgDiceExtendedKeyUsages(t, certsToProcess)
 
 	// Build verify options
-	opts, err := buildVerifyOptions(certChain)
-	if err != nil {
-		t.Errorf("[ERROR]: %v", err)
-	}
+	opts := buildVerifyOptions(t, certChain)
 
 	// Certificate chain validation for each intermediate certificate
 	for _, cert := range certChain {
-		chains, err := cert.Verify(*opts)
+		chains, err := cert.Verify(opts)
 		if err != nil {
 			t.Errorf("[ERROR]: Error in Certificate Chain of %s: %s", cert.Subject, err.Error())
 		}

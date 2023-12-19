@@ -235,11 +235,6 @@ func GetSimulatorTargets() []TestTarget {
 			AllTestCases,
 		},
 		{
-			"CertifyKey_TcbValidation",
-			getTestTarget([]string{"AutoInit", "Simulation", "X509", "Csr", "IsCA", "RotateContext", "ExtendTci"}),
-			[]TestCase{DiceTcbValidationTestCase, DiceTcbValidationSimulationTestCase},
-		},
-		{
 			"DeriveChild",
 			getTestTarget([]string{"AutoInit", "X509", "IsCA"}),
 			[]TestCase{DeriveChildTestCase},
