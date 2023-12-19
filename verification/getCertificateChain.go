@@ -122,7 +122,7 @@ func validateCertChain(t *testing.T, certChain []*x509.Certificate) {
 			t.Errorf("[ERROR]: Error in Certificate Chain of %s: %s", cert.Subject, err.Error())
 		}
 
-		// Log certificate chains linked to each cetificate in chain
+		// Log certificate chains linked to each certificate in chain
 		if len(chains) != 1 {
 			t.Errorf("[ERROR]: validateCertChain certificate chain is empty")
 		}

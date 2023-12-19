@@ -49,7 +49,7 @@ type TcgUeidExtension struct {
 	Ueid []uint8 `asn1:"ueid,implicit"`
 }
 
-// Fwid represents a TCG DICE FWID stucture
+// Fwid represents a TCG DICE FWID structure
 type Fwid struct {
 	HashAlg asn1.ObjectIdentifier
 	Digest  []byte
@@ -114,7 +114,7 @@ const (
 // TcgMultiTcbInfo represents a sequence of TCBInfos
 type TcgMultiTcbInfo = []DiceTcbInfo
 
-// CertifyKeyParams holds configurable paramters to CertifyKey for test-cases
+// CertifyKeyParams holds configurable parameters to CertifyKey for test-cases
 type CertifyKeyParams struct {
 	Label []byte
 	Flags CertifyKeyFlags
@@ -208,7 +208,7 @@ func TestCertifyKeyCsr(d TestDPEInstance, c DPEClient, t *testing.T) {
 }
 
 // Ignores critical extensions that are unknown to x509 package
-// but atleast defined in DPE certificate profile specification.
+// but at least defined in DPE certificate profile specification.
 // UnhandledCriticalExtensions may have only custom extensions mentioned in spec
 // unknownExtnMap collects extensions unknown to both x509 and the DICE certificate profiles spec.
 // positive case expects the unknownExtnMap to be empty.
@@ -241,7 +241,7 @@ func removeTcgDiceCriticalExtensions(t *testing.T, certs []*x509.Certificate) {
 }
 
 // Ignores extended key usages that are unknown to x509 package
-// but atleast defined in DPE certificate profile specification.
+// but at least defined in DPE certificate profile specification.
 // UnhandledExtendedKeyUsages may have only custom key usages mentioned in spec
 // unknownKeyUsagesMap collects keyusages unknown to both x509 and the DICE certificate profiles spec.
 // positive case expects the unknownKeyUsagesMap to be empty.
