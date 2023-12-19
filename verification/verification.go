@@ -101,6 +101,9 @@ var DeriveChildInputFlagsTestCase = TestCase{
 var TpmPolicySigningTestCase = TestCase{
 	"TPMPolicySigning", TestTpmPolicySigning, []string{"AutoInit", "X509"},
 }
+var SpdmE2ETestCase = TestCase{
+	"SpdmE2E", TestWithSpdmResponder, []string{"AutoInit", "ExtendTci"},
+}
 
 var AllTestCases = []TestCase{
 	CertifyKeyTestCase,

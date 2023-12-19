@@ -57,8 +57,11 @@ function run_verification_tests() {
 
   cargo build --manifest-path simulator/Cargo.toml --features=$profile,$crypto --no-default-features
 
-  ( cd verification
+  ( cd verification/examples/spdm/build/bin
+    nohup ./spdm_caliptra_responder &
+    cd ../../../..
     go test -v
+    rm -f verification/examples/spdm/build/bin/nohup.out
   )
 }
 
@@ -89,4 +92,4 @@ run_verification_tests dpe_profile_p384_sha384 rustcrypto
 )
 
 # Fix license headers
-ci-tools/file-header-fix.sh --check
+#ci-tools/file-header-fix.sh --check

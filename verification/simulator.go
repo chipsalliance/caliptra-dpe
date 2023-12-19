@@ -231,7 +231,7 @@ func GetSimulatorTargets() []TestTarget {
 		},
 		{
 			"DefaultSupport",
-			getTestTarget([]string{"AutoInit", "Simulation", "X509", "Csr", "IsCA", "RotateContext", "IsSymmetric", "ExtendTci"}),
+			getTestTarget([]string{"AutoInit", "Simulation", "X509", "Csr", "IsCA", "RotateContext", "ExtendTci", "IsSymmetric"}),
 			AllTestCases,
 		},
 		{
@@ -268,6 +268,11 @@ func GetSimulatorTargets() []TestTarget {
 			"DeriveChild_ChangeLocality",
 			getTestTarget([]string{"AutoInit", "Simulation"}),
 			[]TestCase{DeriveChildLocalityTestCase},
+		},
+		{
+			"SpdmSupport",
+			getTestTarget([]string{"AutoInit", "X509", "ExtendTci"}),
+			[]TestCase{SpdmE2ETestCase},
 		},
 		{
 			"GetProfile_Simulation",
