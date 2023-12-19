@@ -12,6 +12,7 @@ use crate::{
 };
 use bitflags::bitflags;
 use crypto::{EcdsaPub, EcdsaSig};
+use platform::{CertValidity, SignerIdentifier};
 
 pub enum DirectoryString<'a> {
     PrintableString(&'a [u8]),
@@ -86,6 +87,7 @@ impl CertWriter<'_> {
 
     const X509_V3: u64 = 2;
     const CMS_V1: u64 = 1;
+    const CMS_V3: u64 = 3;
     const CSR_V0: u64 = 0;
 
     const ECDSA_OID: &[u8] = match DPE_PROFILE {
@@ -143,11 +145,6 @@ impl CertWriter<'_> {
 
     // RFC 2985 1.2.840.113549.1.9.14
     const EXTENSION_REQUEST_OID: &[u8] = &[0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x09, 0x0E];
-
-    // All DPE certs are valid from January 1st, 2023 00:00:00 until
-    // December 31st, 9999 23:59:59
-    const NOT_BEFORE: &str = "20230227000000Z";
-    const NOT_AFTER: &str = "99991231235959Z";
 
     /// Build new CertWriter that writes output to `cert`
     ///
@@ -261,9 +258,9 @@ impl CertWriter<'_> {
     }
 
     /// If `tagged`, include the tag and size fields
-    fn get_validity_size(tagged: bool) -> Result<usize, DpeErrorCode> {
-        let len = Self::get_bytes_size(Self::NOT_BEFORE.as_bytes(), true)?
-            + Self::get_bytes_size(Self::NOT_AFTER.as_bytes(), true)?;
+    fn get_validity_size(validity: CertValidity<'_>, tagged: bool) -> Result<usize, DpeErrorCode> {
+        let len = Self::get_bytes_size(validity.not_before.as_bytes(), true)?
+            + Self::get_bytes_size(validity.not_after.as_bytes(), true)?;
         Self::get_structure_size(len, tagged)
     }
 
@@ -473,13 +470,14 @@ impl CertWriter<'_> {
         subject_name: &Name,
         pubkey: &EcdsaPub,
         measurements: &MeasurementData,
+        validity: CertValidity<'_>,
         tagged: bool,
     ) -> Result<usize, DpeErrorCode> {
         let tbs_size = Self::get_version_size(/*tagged=*/ true)?
             + Self::get_integer_bytes_size(serial_number, /*tagged=*/ true)?
             + Self::get_ecdsa_sig_alg_id_size(/*tagged=*/ true)?
             + issuer_der.len()
-            + Self::get_validity_size(/*tagged=*/ true)?
+            + Self::get_validity_size(validity, /*tagged=*/ true)?
             + Self::get_rdn_size(subject_name, /*tagged=*/ true)?
             + Self::get_ecdsa_subject_pubkey_info_size(pubkey, /*tagged=*/ true)?
             + Self::get_extensions_size(
@@ -507,20 +505,26 @@ impl CertWriter<'_> {
         Self::get_structure_size(cert_req_info_size, tagged)
     }
 
+    /// Get the size of the CMS version which differs based on the SignerIdentifier
+    fn get_cms_version_size(sid: &SignerIdentifier) -> Result<usize, DpeErrorCode> {
+        match sid {
+            SignerIdentifier::IssuerAndSerialNumber {
+                issuer_name: _,
+                serial_number: _,
+            } => Self::get_integer_size(Self::CMS_V1, true),
+            SignerIdentifier::SubjectKeyIdentifier(_) => Self::get_integer_size(Self::CMS_V3, true),
+        }
+    }
+
     /// Get the size of the ASN.1 SignerInfo structure
     /// If `tagged`, include the tag and size fields
     fn get_signer_info_size(
-        serial_number: &[u8],
-        issuer_der: &[u8],
         sig: &EcdsaSig,
+        sid: &SignerIdentifier,
         tagged: bool,
     ) -> Result<usize, DpeErrorCode> {
-        let signer_info_size = Self::get_integer_size(Self::CMS_V1, true)?
-            + Self::get_issuer_and_serial_number_size(
-                serial_number,
-                issuer_der,
-                /*tagged=*/ true,
-            )?
+        let signer_info_size = Self::get_cms_version_size(sid)?
+            + Self::get_signer_identifier_size(sid, /*tagged=*/ true)?
             + Self::get_hash_alg_id_size(/*tagged=*/ true)?
             + Self::get_ecdsa_sig_alg_id_size(/*tagged=*/ true)?
             + Self::get_ecdsa_signature_octet_string_size(sig, /*tagged=*/ true)?;
@@ -532,20 +536,19 @@ impl CertWriter<'_> {
     /// If `tagged`, include the tag and size fields
     fn get_signed_data_size(
         csr: &[u8],
-        serial_number: &[u8],
-        issuer_der: &[u8],
         sig: &EcdsaSig,
+        sid: &SignerIdentifier,
         tagged: bool,
         explicit: bool,
     ) -> Result<usize, DpeErrorCode> {
-        let signed_data_size = Self::get_integer_size(Self::CMS_V1, true)?
+        let signed_data_size = Self::get_cms_version_size(sid)?
             + Self::get_structure_size(
                 Self::get_hash_alg_id_size(/*tagged=*/ true)?,
                 /*tagged=*/ true,
             )?
             + Self::get_encap_content_info_size(csr, /*tagged=*/ true)?
             + Self::get_structure_size(
-                Self::get_signer_info_size(serial_number, issuer_der, sig, /*tagged=*/ true)?,
+                Self::get_signer_info_size(sig, sid, /*tagged=*/ true)?,
                 /*tagged=*/ true,
             )?;
 
@@ -553,6 +556,31 @@ impl CertWriter<'_> {
         let explicit_signed_data_size = Self::get_structure_size(signed_data_size, explicit)?;
 
         Self::get_structure_size(explicit_signed_data_size, tagged)
+    }
+
+    /// Get the size of the ASN.1 SignerIdentifier structure
+    /// If `tagged`, include the tag and size fields
+    fn get_signer_identifier_size(
+        sid: &SignerIdentifier,
+        tagged: bool,
+    ) -> Result<usize, DpeErrorCode> {
+        match sid {
+            SignerIdentifier::IssuerAndSerialNumber {
+                issuer_name,
+                serial_number,
+            } => Self::get_issuer_and_serial_number_size(
+                serial_number,
+                issuer_name,
+                /*tagged=*/ tagged,
+            ),
+            SignerIdentifier::SubjectKeyIdentifier(subject_key_identifier) => {
+                Ok(Self::get_subject_key_identifier_size(
+                    subject_key_identifier,
+                    /*tagged=*/ tagged,
+                    /*explicit=*/ true,
+                )?)
+            }
+        }
     }
 
     /// Get the size of the ASN.1 IssuerAndSerialNumber structure
@@ -566,6 +594,21 @@ impl CertWriter<'_> {
             Self::get_integer_bytes_size(serial_number, /*tagged=*/ true)? + issuer_der.len();
 
         Self::get_structure_size(issuer_and_serial_number_size, tagged)
+    }
+
+    /// Get the size of the ASN.1 SubjectKeyIdentifier structure
+    /// If `tagged`, include the tag and size fields
+    fn get_subject_key_identifier_size(
+        subject_key_identifier: &[u8],
+        tagged: bool,
+        explicit: bool,
+    ) -> Result<usize, DpeErrorCode> {
+        let subject_key_identifier_size = subject_key_identifier.len();
+
+        // Determine whether to include the explicit tag wrapping in the size calculation
+        let explicit_bytes_size = Self::get_structure_size(subject_key_identifier_size, explicit)?;
+
+        Self::get_structure_size(explicit_bytes_size, tagged)
     }
 
     fn get_econtent_size(
@@ -842,20 +885,20 @@ impl CertWriter<'_> {
         Ok(bytes_written)
     }
 
-    // Encode ASN.1 Validity which never expires
-    fn encode_validity(&mut self) -> Result<usize, DpeErrorCode> {
-        let seq_size = Self::get_validity_size(/*tagged=*/ false)?;
+    // Encode ASN.1 Validity according to Platform
+    fn encode_validity(&mut self, validity: CertValidity<'_>) -> Result<usize, DpeErrorCode> {
+        let seq_size = Self::get_validity_size(validity, /*tagged=*/ false)?;
 
         let mut bytes_written = self.encode_tag_field(Self::SEQUENCE_TAG)?;
         bytes_written += self.encode_size_field(seq_size)?;
 
         bytes_written += self.encode_tag_field(Self::GENERALIZE_TIME_TAG)?;
-        bytes_written += self.encode_size_field(Self::NOT_BEFORE.len())?;
-        bytes_written += self.encode_bytes(Self::NOT_BEFORE.as_bytes())?;
+        bytes_written += self.encode_size_field(validity.not_before.len())?;
+        bytes_written += self.encode_bytes(validity.not_before.as_bytes())?;
 
         bytes_written += self.encode_tag_field(Self::GENERALIZE_TIME_TAG)?;
-        bytes_written += self.encode_size_field(Self::NOT_AFTER.len())?;
-        bytes_written += self.encode_bytes(Self::NOT_AFTER.as_bytes())?;
+        bytes_written += self.encode_size_field(validity.not_after.len())?;
+        bytes_written += self.encode_bytes(validity.not_after.as_bytes())?;
 
         Ok(bytes_written)
     }
@@ -1305,6 +1348,19 @@ impl CertWriter<'_> {
         Ok(bytes_written)
     }
 
+    /// Encodes an integer representing the CMS version which is dependent on the SignerIdentifier
+    ///
+    /// If the SignerIdentifier is IssuerAndSerialNumber the version is 1, otherwise it is 3.
+    fn encode_cms_version(&mut self, sid: &SignerIdentifier) -> Result<usize, DpeErrorCode> {
+        match sid {
+            SignerIdentifier::IssuerAndSerialNumber {
+                issuer_name: _,
+                serial_number: _,
+            } => self.encode_integer(Self::CMS_V1),
+            SignerIdentifier::SubjectKeyIdentifier(_) => self.encode_integer(Self::CMS_V3),
+        }
+    }
+
     /// Encode a SignedData
     ///
     /// This function does not populate the certificates or crls fields.
@@ -1320,36 +1376,25 @@ impl CertWriter<'_> {
     #[allow(clippy::identity_op)]
     fn encode_signed_data(
         &mut self,
-        serial_number: &[u8],
-        issuer_name: &[u8],
         csr: &[u8],
         sig: &EcdsaSig,
+        sid: &SignerIdentifier,
     ) -> Result<usize, DpeErrorCode> {
         // SignedData is EXPLICIT field number 0
         let mut bytes_written =
             self.encode_byte(Self::CONTEXT_SPECIFIC | Self::CONSTRUCTED | 0x0)?;
         bytes_written += self.encode_size_field(Self::get_signed_data_size(
-            csr,
-            serial_number,
-            issuer_name,
-            sig,
-            /*tagged=*/ true,
-            /*explicit=*/ false,
+            csr, sig, sid, /*tagged=*/ true, /*explicit=*/ false,
         )?)?;
 
         // SignedData sequence
         bytes_written += self.encode_tag_field(Self::SEQUENCE_TAG)?;
         bytes_written += self.encode_size_field(Self::get_signed_data_size(
-            csr,
-            serial_number,
-            issuer_name,
-            sig,
-            /*tagged=*/ false,
-            /*explicit=*/ false,
+            csr, sig, sid, /*tagged=*/ false, /*explicit=*/ false,
         )?)?;
 
         // CMS version
-        bytes_written += self.encode_integer(Self::CMS_V1)?;
+        bytes_written += self.encode_cms_version(sid)?;
 
         // digestAlgorithms
         bytes_written += self.encode_tag_field(Self::SET_OF_TAG)?;
@@ -1362,13 +1407,9 @@ impl CertWriter<'_> {
 
         // signerInfos
         bytes_written += self.encode_tag_field(Self::SET_OF_TAG)?;
-        bytes_written += self.encode_size_field(Self::get_signer_info_size(
-            serial_number,
-            issuer_name,
-            sig,
-            /*tagged=*/ true,
-        )?)?;
-        bytes_written += self.encode_signer_info(serial_number, issuer_name, sig)?;
+        bytes_written +=
+            self.encode_size_field(Self::get_signer_info_size(sig, sid, /*tagged=*/ true)?)?;
+        bytes_written += self.encode_signer_info(sig, sid)?;
 
         Ok(bytes_written)
     }
@@ -1428,22 +1469,20 @@ impl CertWriter<'_> {
     /// }
     pub fn encode_signer_info(
         &mut self,
-        serial_number: &[u8],
-        issuer_name: &[u8],
         sig: &EcdsaSig,
+        sid: &SignerIdentifier,
     ) -> Result<usize, DpeErrorCode> {
-        let signer_info_size =
-            Self::get_signer_info_size(serial_number, issuer_name, sig, /*tagged=*/ false)?;
+        let signer_info_size = Self::get_signer_info_size(sig, sid, /*tagged=*/ false)?;
 
         // SignerInfo Sequence
         let mut bytes_written = self.encode_tag_field(Self::SEQUENCE_TAG)?;
         bytes_written += self.encode_size_field(signer_info_size)?;
 
         // CMS version
-        bytes_written += self.encode_integer(Self::CMS_V1)?;
+        bytes_written += self.encode_cms_version(sid)?;
 
         // SignerIdentifier
-        bytes_written += self.encode_issuer_and_serial_number(serial_number, issuer_name)?;
+        bytes_written += self.encode_signer_identifier(sid)?;
 
         // digestAlgorithm
         bytes_written += self.encode_hash_alg_id()?;
@@ -1455,6 +1494,24 @@ impl CertWriter<'_> {
         bytes_written += self.encode_ecdsa_signature_octet_string(sig)?;
 
         Ok(bytes_written)
+    }
+
+    /// Encode a SignerIdentifier
+    ///
+    /// SignerIdentifier ::= CHOICE {
+    ///     issuerAndSerialNumber IssuerAndSerialNumber,
+    ///     subjectKeyIdentifier [0] SubjectKeyIdentifier
+    /// }
+    fn encode_signer_identifier(&mut self, sid: &SignerIdentifier) -> Result<usize, DpeErrorCode> {
+        match sid {
+            SignerIdentifier::IssuerAndSerialNumber {
+                issuer_name,
+                serial_number,
+            } => self.encode_issuer_and_serial_number(serial_number, issuer_name),
+            SignerIdentifier::SubjectKeyIdentifier(subject_key_identifier) => {
+                self.encode_subject_key_identifier(subject_key_identifier)
+            }
+        }
     }
 
     /// Encode an IssuerAndSerialNumber
@@ -1483,6 +1540,35 @@ impl CertWriter<'_> {
 
         // serialNumber
         bytes_written += self.encode_integer_bytes(serial_number)?;
+
+        Ok(bytes_written)
+    }
+
+    /// Encode a SubjectKeyIdentifier
+    ///
+    /// SubjectKeyIdentifier ::= OCTET STRING
+    #[allow(clippy::identity_op)]
+    fn encode_subject_key_identifier(
+        &mut self,
+        subject_key_identifier: &[u8],
+    ) -> Result<usize, DpeErrorCode> {
+        // SubjectKeyIdentifier is EXPLICIT field number 0
+        let mut bytes_written =
+            self.encode_byte(Self::CONTEXT_SPECIFIC | Self::CONSTRUCTED | 0x0)?;
+        bytes_written += self.encode_size_field(Self::get_subject_key_identifier_size(
+            subject_key_identifier,
+            /*tagged=*/ true,
+            /*explicit=*/ false,
+        )?)?;
+
+        // SubjectKeyIdentifier OCTET STRING
+        bytes_written += self.encode_tag_field(Self::OCTET_STRING_TAG)?;
+        bytes_written += self.encode_size_field(Self::get_subject_key_identifier_size(
+            subject_key_identifier,
+            /*tagged=*/ false,
+            /*explicit=*/ false,
+        )?)?;
+        bytes_written += self.encode_bytes(subject_key_identifier)?;
 
         Ok(bytes_written)
     }
@@ -1554,6 +1640,7 @@ impl CertWriter<'_> {
     /// * `subject_name` - The subject name RDN struct to encode.
     /// * `pubkey` - ECDSA Public key.
     /// * `measurements` - DPE measurement data.
+    /// * `validity` - Time period in which certificate is valid.
     pub fn encode_ecdsa_tbs(
         &mut self,
         serial_number: &[u8],
@@ -1561,6 +1648,7 @@ impl CertWriter<'_> {
         subject_name: &Name,
         pubkey: &EcdsaPub,
         measurements: &MeasurementData,
+        validity: CertValidity<'_>,
     ) -> Result<usize, DpeErrorCode> {
         let tbs_size = Self::get_tbs_size(
             serial_number,
@@ -1568,6 +1656,7 @@ impl CertWriter<'_> {
             subject_name,
             pubkey,
             measurements,
+            validity,
             /*tagged=*/ false,
         )?;
 
@@ -1588,7 +1677,7 @@ impl CertWriter<'_> {
         bytes_written += self.encode_bytes(issuer_name)?;
 
         // validity
-        bytes_written += self.encode_validity()?;
+        bytes_written += self.encode_validity(validity)?;
 
         // subject
         bytes_written += self.encode_rdn(subject_name)?;
@@ -1726,18 +1815,12 @@ impl CertWriter<'_> {
     pub fn encode_cms(
         &mut self,
         csr: &[u8],
-        serial_number: &[u8],
-        issuer_name: &[u8],
         sig: &EcdsaSig,
+        sid: &SignerIdentifier,
     ) -> Result<usize, DpeErrorCode> {
         let size = Self::get_structure_size(Self::ID_SIGNED_DATA_OID.len(), /*tagged=*/ true)?
             + Self::get_signed_data_size(
-                csr,
-                serial_number,
-                issuer_name,
-                sig,
-                /*tagged=*/ true,
-                /*explicit=*/ true,
+                csr, sig, sid, /*tagged=*/ true, /*explicit=*/ true,
             )?;
 
         let cms_size = Self::get_structure_size(size, false)?;
@@ -1746,7 +1829,7 @@ impl CertWriter<'_> {
         bytes_written += self.encode_size_field(cms_size)?;
         bytes_written += self.encode_oid(Self::ID_SIGNED_DATA_OID)?;
 
-        bytes_written += self.encode_signed_data(serial_number, issuer_name, csr, sig)?;
+        bytes_written += self.encode_signed_data(csr, sig, sid)?;
 
         Ok(bytes_written)
     }
@@ -1758,6 +1841,7 @@ mod tests {
     use crate::x509::{CertWriter, DirectoryString, MeasurementData, Name};
     use crate::DPE_PROFILE;
     use crypto::{CryptoBuf, EcdsaPub, EcdsaSig};
+    use platform::CertValidity;
     use std::str;
     use x509_parser::certificate::X509CertificateParser;
     use x509_parser::nom::Parser;
@@ -2003,6 +2087,11 @@ mod tests {
             supports_extend_tci: true,
         };
 
+        let validity = CertValidity {
+            not_before: "20230227000000Z",
+            not_after: "99991231235959Z",
+        };
+
         let bytes_written = w
             .encode_ecdsa_tbs(
                 &test_serial,
@@ -2010,6 +2099,7 @@ mod tests {
                 &test_subject_name,
                 &test_pub,
                 &measurements,
+                validity,
             )
             .unwrap();
 
@@ -2063,6 +2153,11 @@ mod tests {
             supports_extend_tci: true,
         };
 
+        let validity = CertValidity {
+            not_before: "20230227000000Z",
+            not_after: "99991231235959Z",
+        };
+
         let mut tbs_writer = CertWriter::new(cert_buf, true);
         let bytes_written = tbs_writer
             .encode_ecdsa_tbs(
@@ -2071,6 +2166,7 @@ mod tests {
                 &TEST_SUBJECT_NAME,
                 &test_pub,
                 &measurements,
+                validity,
             )
             .unwrap();
 
