@@ -1,5 +1,10 @@
 // Licensed under the Apache-2.0 license
 
+// Package verification provides verification tests for implementations of the DPE iRoT profile.
+//
+// This packages also includes a modular DPE client that can be used to
+// communicate with DPE over different transports. A transport for the DPE
+// rust simulator is provided in this package.
 package verification
 
 import (
@@ -86,7 +91,7 @@ var UnsupportedCommand = TestCase{
 
 // UnsupportedCommandFlag tests calling unsupported commands flags
 var UnsupportedCommandFlag = TestCase{
-	"CheckSupportForCommmandFlag", TestUnsupportedCommandFlag, []string{"AutoInit", "RotateContext", "ExtendTci"},
+	"CheckSupportForCommandFlag", TestUnsupportedCommandFlag, []string{"AutoInit", "RotateContext", "ExtendTci"},
 }
 
 // RotateContextTestCase tests RotateContext
