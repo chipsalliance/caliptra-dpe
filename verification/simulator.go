@@ -179,7 +179,7 @@ func (s *DpeSimulator) GetSupportedLocalities() []uint32 {
 	return []uint32{DPESimulatorAutoInitLocality, DPESimulatorOtherLocality}
 }
 
-// HasLocalityControl returns whehter the simulator can artificially set the
+// HasLocalityControl returns whether the simulator can artificially set the
 // locality of the caller. The simulator target can always control the locality.
 func (s *DpeSimulator) HasLocalityControl() bool {
 	return true

@@ -1,6 +1,6 @@
 # DPE Simulator
 
-The DPE simulator is a userspace simulator which serves as a DPE intance.
+The DPE simulator is a userspace simulator which serves as a DPE instance.
 
 ## Transport
 

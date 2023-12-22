@@ -245,7 +245,7 @@ func getTcbInfoForHandle(c DPEClient, handle *ContextHandle) (*ContextHandle, Di
 	}
 
 	if len(multiTcbInfo) == 0 {
-		return outHandle, DiceTcbInfo{}, fmt.Errorf("Certificate MutliTcbInfo is empty")
+		return outHandle, DiceTcbInfo{}, fmt.Errorf("Certificate MultiTcbInfo is empty")
 	}
 
 	return outHandle, multiTcbInfo[0], nil
