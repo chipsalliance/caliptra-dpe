@@ -9,6 +9,7 @@ import (
 
 // DefaultContextHandle is the default DPE context handle
 var DefaultContextHandle = ContextHandle{0}
+var InvalidatedContextHandle = ContextHandle{255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255}
 
 // Profile-defined constants
 const (

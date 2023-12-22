@@ -44,14 +44,22 @@ var CertifyKeyTestCase = TestCase{
 	"CertifyKey", TestCertifyKey, []string{"AutoInit", "X509", "IsCA"},
 }
 
+// CertifyKeySimulationTestCase tests CertifyKey on Simulation mode contexts
+var CertifyKeySimulationTestCase = TestCase{
+	"CertifyKeySimulation", TestCertifyKeySimulation, []string{"AutoInit", "Simulation", "X509", "IsCA"},
+}
+
 // CertifyKeyCsrTestCase tests CertifyKey with type = CSR
 var CertifyKeyCsrTestCase = TestCase{
 	"CertifyKeyCsr", TestCertifyKeyCsr, []string{"AutoInit", "Csr", "IsCA"},
 }
 
-// CertifyKeySimulationTestCase tests CertifyKey on Simulation mode contexts
-var CertifyKeySimulationTestCase = TestCase{
-	"CertifyKeySimulation", TestCertifyKeySimulation, []string{"AutoInit", "Simulation", "X509", "IsCA"},
+var DiceTcbValidationTestCase = TestCase{
+	"CheckDiceTcbInfo", TestDiceTcbInfo, []string{"AutoInit", "X509", "IsCA", "RotateContext", "ExtendTci"},
+}
+
+var DiceTcbValidationSimulationTestCase = TestCase{
+	"CheckDiceTcbInfoInSimulationMode", TestDiceTcbInfoSimulation, []string{"AutoInit", "Simulation", "X509", "IsCA", "RotateContext", "ExtendTci"},
 }
 
 // GetCertificateChainTestCase tests GetCertificateChain
