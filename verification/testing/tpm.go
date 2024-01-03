@@ -13,6 +13,7 @@ import (
 	"math/big"
 	"testing"
 
+	dpe "github.com/chipsalliance/caliptra-dpe/verification/client"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm-tools/simulator"
 	"github.com/google/go-tpm/legacy/tpm2"
@@ -64,22 +65,22 @@ func startTpmSession(t *testing.T, tpm io.ReadWriteCloser, alg tpm2.Algorithm) (
 }
 
 // TestTpmPolicySigning tests using DPE to satisfy TPM PolicySigned
-func TestTpmPolicySigning(d TestDPEInstance, c DPEClient, t *testing.T) {
+func TestTpmPolicySigning(d dpe.TestDPEInstance, c dpe.DPEClient, t *testing.T) {
 	simulation := false
 	ctx := getInitialContextHandle(d, c, t, simulation)
 	var ec tpm2.EllipticCurve
 	var alg tpm2.Algorithm
 
-	profile, err := GetTransportProfile(d)
+	profile, err := dpe.GetTransportProfile(d)
 	if err != nil {
 		t.Fatalf("Could not get profile: %v", err)
 	}
 	digestLen := profile.GetDigestSize()
 
-	if digestLen == len(SHA256Digest{0}) {
+	if digestLen == len(dpe.SHA256Digest{0}) {
 		alg = tpm2.AlgSHA256
 		ec = tpm2.CurveNISTP256
-	} else if digestLen == len(SHA384Digest{0}) {
+	} else if digestLen == len(dpe.SHA384Digest{0}) {
 		alg = tpm2.AlgSHA384
 		ec = tpm2.CurveNISTP384
 	}
@@ -113,12 +114,12 @@ func TestTpmPolicySigning(d TestDPEInstance, c DPEClient, t *testing.T) {
 	}
 
 	// Get signed hash from DPE
-	signResp, err := c.Sign(ctx, seqLabel, SignFlags(0), digest)
+	signResp, err := c.Sign(ctx, seqLabel, dpe.SignFlags(0), digest)
 	if err != nil {
 		t.Fatalf("[FATAL]: Could not sign: %v", err)
 	}
 
-	certifyKeyResp, err := c.CertifyKey(&(signResp.Handle), seqLabel, CertifyKeyX509, CertifyKeyFlags(0))
+	certifyKeyResp, err := c.CertifyKey(&(signResp.Handle), seqLabel, dpe.CertifyKeyX509, dpe.CertifyKeyFlags(0))
 	if err != nil {
 		t.Fatalf("[FATAL]: Could not CertifyKey: %v", err)
 	}
@@ -155,10 +156,10 @@ func getDigest(nonce []byte, expiry int32, digestLen int) []byte {
 	toDigest := append(nonce, expBytes...)
 
 	digest := make([]byte, digestLen)
-	if digestLen == len(SHA256Digest{0}) {
+	if digestLen == len(dpe.SHA256Digest{0}) {
 		hash := sha256.Sum256(toDigest)
 		digest = hash[:]
-	} else if digestLen == len(SHA384Digest{0}) {
+	} else if digestLen == len(dpe.SHA384Digest{0}) {
 		hash := sha512.Sum384(toDigest)
 		digest = hash[:]
 	}

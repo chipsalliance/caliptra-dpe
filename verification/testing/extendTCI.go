@@ -9,11 +9,13 @@ import (
 	"hash"
 
 	"testing"
+
+	"github.com/chipsalliance/caliptra-dpe/verification/client"
 )
 
 // TestExtendTCI checks whether the ExtendTCI command updates the current TCI
 // and cumulative TCI.
-func TestExtendTCI(d TestDPEInstance, c DPEClient, t *testing.T) {
+func TestExtendTCI(d client.TestDPEInstance, c client.DPEClient, t *testing.T) {
 	var err error
 	useSimulation := false // To indicate that simulation context is not used
 
@@ -21,7 +23,7 @@ func TestExtendTCI(d TestDPEInstance, c DPEClient, t *testing.T) {
 	handle := getInitialContextHandle(d, c, t, useSimulation)
 
 	// Get digest size
-	profile, err := GetTransportProfile(d)
+	profile, err := client.GetTransportProfile(d)
 	if err != nil {
 		t.Fatalf("[FATAL]: Could not get profile: %v", err)
 	}
@@ -64,14 +66,14 @@ func computeExpectedCumulative(lastCumulative []byte, tciValue []byte) []byte {
 
 // TestExtendTciOnDerivedContexts checks whether the ExtendTCI command with
 // derived child context.
-func TestExtendTciOnDerivedContexts(d TestDPEInstance, c DPEClient, t *testing.T) {
+func TestExtendTciOnDerivedContexts(d client.TestDPEInstance, c client.DPEClient, t *testing.T) {
 	useSimulation := false // To indicate that simulation context is not used
 
 	// Get default context handle
 	handle := getInitialContextHandle(d, c, t, useSimulation)
 
 	// Get digest size
-	profile, err := GetTransportProfile(d)
+	profile, err := client.GetTransportProfile(d)
 	if err != nil {
 		t.Fatalf("[FATAL]: Could not get profile: %v", err)
 	}
@@ -89,21 +91,21 @@ func TestExtendTciOnDerivedContexts(d TestDPEInstance, c DPEClient, t *testing.T
 	}
 
 	// Preserve parent context to restore for subsequent tests.
-	parentHandle, err := c.RotateContextHandle(handle, RotateContextHandleFlags(0))
+	parentHandle, err := c.RotateContextHandle(handle, client.RotateContextHandleFlags(0))
 	if err != nil {
 		t.Errorf("[ERROR]: Error while rotating parent context handle, this may cause failure in subsequent tests: %s", err)
 	}
 
 	// Change parent back to default context
 	defer func() {
-		_, err = c.RotateContextHandle(parentHandle, RotateContextHandleFlags(TargetIsDefault))
+		_, err = c.RotateContextHandle(parentHandle, client.RotateContextHandleFlags(client.TargetIsDefault))
 		if err != nil {
 			t.Errorf("[ERROR]: Error while restoring parent context handle as default context handle, this may cause failure in subsequent tests: %s", err)
 		}
 	}()
 
 	// Derive Child context with input data, tag it and check TCI_CUMULATIVE
-	childCtx, err := c.DeriveChild(parentHandle, tciValue, DeriveChildFlags(RetainParent|InputAllowX509), 0, 0)
+	childCtx, err := c.DeriveChild(parentHandle, tciValue, client.DeriveChildFlags(client.RetainParent|client.InputAllowX509), 0, 0)
 	if err != nil {
 		t.Fatalf("[FATAL]: Error while creating default child handle in default context: %s", err)
 	}
@@ -113,7 +115,7 @@ func TestExtendTciOnDerivedContexts(d TestDPEInstance, c DPEClient, t *testing.T
 
 	// Clean up contexts
 	defer func() {
-		err := c.DestroyContext(childHandle, DestroyDescendants)
+		err := c.DestroyContext(childHandle, client.DestroyDescendants)
 		if err != nil {
 			t.Errorf("[ERROR]: Error while cleaning up derived context, this may cause failure in subsequent tests: %s", err)
 		}
@@ -156,7 +158,7 @@ func TestExtendTciOnDerivedContexts(d TestDPEInstance, c DPEClient, t *testing.T
 	}
 }
 
-func verifyMeasurements(c DPEClient, t *testing.T, handle *ContextHandle, expectedCurrent []byte, expectedCumulative []byte) {
+func verifyMeasurements(c client.DPEClient, t *testing.T, handle *client.ContextHandle, expectedCurrent []byte, expectedCumulative []byte) {
 	handle, tcbInfo, err := getTcbInfoForHandle(c, handle)
 	if err != nil {
 		t.Fatal(err)

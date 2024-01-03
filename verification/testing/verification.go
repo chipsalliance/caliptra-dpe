@@ -9,10 +9,12 @@ package verification
 
 import (
 	"testing"
+
+	"github.com/chipsalliance/caliptra-dpe/verification/client"
 )
 
 // DpeTestFunc is the function template that a DPE test case must implement
-type DpeTestFunc func(d TestDPEInstance, c DPEClient, t *testing.T)
+type DpeTestFunc func(d client.TestDPEInstance, c client.DPEClient, t *testing.T)
 
 // TestCase is metadata for a DPE test case
 type TestCase struct {
@@ -21,11 +23,11 @@ type TestCase struct {
 	SupportNeeded []string
 }
 
-// TestTarget is a TestDPEInstance and corresponding list of test cases to run
+// TestTarget is a client.TestDPEInstance and corresponding list of test cases to run
 // against that target.
 type TestTarget struct {
 	Name      string
-	D         TestDPEInstance
+	D         client.TestDPEInstance
 	TestCases []TestCase
 }
 
@@ -44,7 +46,7 @@ var CertifyKeyTestCase = TestCase{
 	"CertifyKey", TestCertifyKey, []string{"AutoInit", "X509", "IsCA"},
 }
 
-// CertifyKeyCsrTestCase tests CertifyKey with type = CSR
+// client.CertifyKeyCsrTestCase tests CertifyKey with type = CSR
 var CertifyKeyCsrTestCase = TestCase{
 	"CertifyKeyCsr", TestCertifyKeyCsr, []string{"AutoInit", "Csr", "IsCA"},
 }
@@ -158,19 +160,19 @@ func RunTargetTestCases(target TestTarget, t *testing.T) {
 		defer target.D.PowerOff()
 	}
 
-	profile, err := GetTransportProfile(target.D)
+	profile, err := client.GetTransportProfile(target.D)
 	if err != nil {
 		t.Fatalf("Could not get profile: %v", err)
 	}
 
-	c, err := NewClient(target.D, profile)
+	c, err := client.NewClient(target.D, profile)
 	if err != nil {
 		t.Fatalf("Could not initialize client: %v", err)
 	}
 
 	for _, test := range target.TestCases {
 		t.Run(target.Name+"-"+test.Name, func(t *testing.T) {
-			if !HasSupportNeeded(target.D, test.SupportNeeded) {
+			if !client.HasSupportNeeded(target.D, test.SupportNeeded) {
 				t.Skipf("Warning: Target does not have required support, skipping test.")
 			}
 

@@ -19,6 +19,7 @@ import (
 
 	"go.mozilla.org/pkcs7"
 
+	"github.com/chipsalliance/caliptra-dpe/verification/client"
 	zx509 "github.com/zmap/zcrypto/x509"
 	zlint "github.com/zmap/zlint/v3"
 	"github.com/zmap/zlint/v3/lint"
@@ -117,34 +118,34 @@ type TcgMultiTcbInfo = []DiceTcbInfo
 // CertifyKeyParams holds configurable parameters to CertifyKey for test-cases
 type CertifyKeyParams struct {
 	Label []byte
-	Flags CertifyKeyFlags
+	Flags client.CertifyKeyFlags
 }
 
 // TestCertifyKey tests calling CertifyKey
-func TestCertifyKey(d TestDPEInstance, c DPEClient, t *testing.T) {
+func TestCertifyKey(d client.TestDPEInstance, c client.DPEClient, t *testing.T) {
 	testCertifyKey(d, c, t, false)
 }
 
 // TestCertifyKeySimulation tests calling CertifyKey on simulation contexts
-func TestCertifyKeySimulation(d TestDPEInstance, c DPEClient, t *testing.T) {
+func TestCertifyKeySimulation(d client.TestDPEInstance, c client.DPEClient, t *testing.T) {
 	testCertifyKey(d, c, t, true)
 }
 
-// TestCertifyKeyCsr tests calling CeritifyKey with type = CSR
-func TestCertifyKeyCsr(d TestDPEInstance, c DPEClient, t *testing.T) {
+// Testclient.CertifyKeyCsr tests calling CeritifyKey with type = CSR
+func TestCertifyKeyCsr(d client.TestDPEInstance, c client.DPEClient, t *testing.T) {
 	ctx := getInitialContextHandle(d, c, t, false)
 
-	profile, err := GetTransportProfile(d)
+	profile, err := client.GetTransportProfile(d)
 	if err != nil {
 		t.Fatalf("Could not get profile: %v", err)
 	}
 	digestLen := profile.GetDigestSize()
 
-	flags := CertifyKeyFlags(0)
+	flags := client.CertifyKeyFlags(0)
 	label := make([]byte, digestLen)
 
 	// Get DPE leaf certificate from CertifyKey
-	certifyKeyResp, err := c.CertifyKey(ctx, label, CertifyKeyCsr, flags)
+	certifyKeyResp, err := c.CertifyKey(ctx, label, client.CertifyKeyCsr, flags)
 	if err != nil {
 		t.Fatalf("[FATAL]: Could not certify key: %v", err)
 	}
@@ -163,7 +164,7 @@ func TestCertifyKeyCsr(d TestDPEInstance, c DPEClient, t *testing.T) {
 	lastCertInCertChain := certChain[len(certChain)-1]
 
 	// Get DPE leaf cert
-	certifyKeyResp, err = c.CertifyKey(ctx, label, CertifyKeyX509, flags)
+	certifyKeyResp, err = c.CertifyKey(ctx, label, client.CertifyKeyX509, flags)
 	if err != nil {
 		t.Fatalf("[FATAL]: Could not certify key: %v", err)
 	}
@@ -333,7 +334,7 @@ func checkCertifyKeyExtendedKeyUsages(t *testing.T, extensions []pkix.Extension,
 // Checks for KeyUsage Extension as per spec
 // If IsCA = true, KeyUsage extension MUST contain DigitalSignature and KeyCertSign
 // If IsCA = false, KeyUsage extension MUST contain  only DigitalSignature
-func checkCertifyKeyExtensions(t *testing.T, extensions []pkix.Extension, flags CertifyKeyFlags, label []byte) {
+func checkCertifyKeyExtensions(t *testing.T, extensions []pkix.Extension, flags client.CertifyKeyFlags, label []byte) {
 	t.Helper()
 
 	bc, err := getBasicConstraints(extensions)
@@ -378,7 +379,7 @@ func checkCertifyKeyExtensions(t *testing.T, extensions []pkix.Extension, flags 
 // The BasicConstraints extension MUST be included
 // If CertifyKey AddIsCA is set, IsCA MUST be set to true.
 // If CertifyKey AddIsCA is NOT set, IsCA MUST be set to false
-func checkCertifyKeyBasicConstraints(t *testing.T, extensions []pkix.Extension, flags CertifyKeyFlags) {
+func checkCertifyKeyBasicConstraints(t *testing.T, extensions []pkix.Extension, flags client.CertifyKeyFlags) {
 	t.Helper()
 
 	flagsBuf := &bytes.Buffer{}
@@ -389,7 +390,7 @@ func checkCertifyKeyBasicConstraints(t *testing.T, extensions []pkix.Extension, 
 		t.Error(err)
 	}
 
-	flagIsCA := CertifyAddIsCA&flags != 0
+	flagIsCA := client.CertifyAddIsCA&flags != 0
 	if flagIsCA != bc.IsCA {
 		t.Errorf("[ERROR]: ADD_IS_CA is set to %v but the basic constraint IsCA is set to %v", flagIsCA, bc.IsCA)
 	}
@@ -470,15 +471,15 @@ func checkCertificateStructure(t *testing.T, certBytes []byte) *x509.Certificate
 	return x509Cert
 }
 
-func testCertifyKey(d TestDPEInstance, c DPEClient, t *testing.T, simulation bool) {
+func testCertifyKey(d client.TestDPEInstance, c client.DPEClient, t *testing.T, simulation bool) {
 	handle := getInitialContextHandle(d, c, t, simulation)
 	defer func() {
 		if simulation {
-			c.DestroyContext(handle, DestroyDescendants)
+			c.DestroyContext(handle, client.DestroyDescendants)
 		}
 	}()
 
-	profile, err := GetTransportProfile(d)
+	profile, err := client.GetTransportProfile(d)
 	if err != nil {
 		t.Fatalf("Could not get profile: %v", err)
 	}
@@ -490,13 +491,13 @@ func testCertifyKey(d TestDPEInstance, c DPEClient, t *testing.T, simulation boo
 	}
 
 	certifyKeyParams := []CertifyKeyParams{
-		{Label: make([]byte, digestLen), Flags: CertifyKeyFlags(0)},
-		{Label: seqLabel, Flags: CertifyKeyFlags(0)},
+		{Label: make([]byte, digestLen), Flags: client.CertifyKeyFlags(0)},
+		{Label: seqLabel, Flags: client.CertifyKeyFlags(0)},
 	}
 
 	for _, params := range certifyKeyParams {
 		// Get DPE leaf certificate from CertifyKey
-		certifyKeyResp, err := c.CertifyKey(handle, params.Label, CertifyKeyX509, params.Flags)
+		certifyKeyResp, err := c.CertifyKey(handle, params.Label, client.CertifyKeyX509, params.Flags)
 		if err != nil {
 			t.Fatalf("[FATAL]: Could not certify key: %v", err)
 		}
@@ -624,16 +625,16 @@ func getKeyUsageNames(keyUsage x509.KeyUsage) []string {
 	return keyUsageNames
 }
 
-func checkPubKey(t *testing.T, p Profile, pubkey any, response CertifiedKey) {
+func checkPubKey(t *testing.T, p client.Profile, pubkey any, response client.CertifiedKey) {
 	var pubKeyInResponse ecdsa.PublicKey
 	switch p {
-	case ProfileP256SHA256:
+	case client.ProfileP256SHA256:
 		pubKeyInResponse = ecdsa.PublicKey{
 			Curve: elliptic.P256(),
 			X:     new(big.Int).SetBytes(response.Pub.X),
 			Y:     new(big.Int).SetBytes(response.Pub.Y),
 		}
-	case ProfileP384SHA384:
+	case client.ProfileP384SHA384:
 		pubKeyInResponse = ecdsa.PublicKey{
 			Curve: elliptic.P384(),
 			X:     new(big.Int).SetBytes(response.Pub.X),
@@ -654,8 +655,8 @@ func checkPubKey(t *testing.T, p Profile, pubkey any, response CertifiedKey) {
 }
 
 // Checks whether the context handle is unchanged after certifyKey command when default context handle is used.
-func checkCertifyKeyRespHandle(res CertifiedKey, t *testing.T, handle *ContextHandle) {
-	if *handle != DefaultContextHandle {
+func checkCertifyKeyRespHandle(res client.CertifiedKey, t *testing.T, handle *client.ContextHandle) {
+	if *handle != client.DefaultContextHandle {
 		t.Logf("[LOG]: Handle is not default context, skipping check...")
 		return
 	}

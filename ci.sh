@@ -58,7 +58,7 @@ function run_verification_tests() {
 
   cargo build --manifest-path simulator/Cargo.toml --features=$profile,$crypto --no-default-features
 
-  ( cd verification
+  ( cd verification/testing
     go test -v
   )
 }

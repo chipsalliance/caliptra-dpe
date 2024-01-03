@@ -8,13 +8,14 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/chipsalliance/caliptra-dpe/verification/client"
 	zx509 "github.com/zmap/zcrypto/x509"
 	zlint "github.com/zmap/zlint/v3"
 	"github.com/zmap/zlint/v3/lint"
 )
 
 // TestGetCertificateChain tests calling GetCertificateChain
-func TestGetCertificateChain(d TestDPEInstance, client DPEClient, t *testing.T) {
+func TestGetCertificateChain(d client.TestDPEInstance, client client.DPEClient, t *testing.T) {
 	certChain, err := client.GetCertificateChain()
 	if err != nil {
 		t.Fatalf("[FATAL]: Could not get Certificate Chain: %v", err)

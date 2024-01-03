@@ -4,12 +4,14 @@ package verification
 
 import (
 	"testing"
+
+	"github.com/chipsalliance/caliptra-dpe/verification/client"
 )
 
 // This file is used to test the get profile command.
 
 // TestGetProfile tests calling GetProfile
-func TestGetProfile(d TestDPEInstance, client DPEClient, t *testing.T) {
+func TestGetProfile(d client.TestDPEInstance, client client.DPEClient, t *testing.T) {
 	const minTCINodes uint32 = 8
 
 	for _, locality := range d.GetSupportedLocalities() {
