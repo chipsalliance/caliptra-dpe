@@ -1,6 +1,6 @@
 // Licensed under the Apache-2.0 license
 
-package verification
+package client
 
 import (
 	"fmt"

@@ -13,6 +13,8 @@ import (
 	"reflect"
 	"syscall"
 	"time"
+
+	"github.com/chipsalliance/caliptra-dpe/verification/client"
 )
 
 // Constants for configuring expected values from the DPE simulator
@@ -22,8 +24,8 @@ const (
 	DPESimulatorAutoInitLocality    uint32 = 0
 	DPESimulatorOtherLocality       uint32 = 0x4f544852
 	DPESimulatorMaxTCINodes         uint32 = 24
-	DPESimulatorMajorProfileVersion uint16 = CurrentProfileMajorVersion
-	DPESimulatorMinorProfileVersion uint16 = CurrentProfileMinorVersion
+	DPESimulatorMajorProfileVersion uint16 = client.CurrentProfileMajorVersion
+	DPESimulatorMinorProfileVersion uint16 = client.CurrentProfileMinorVersion
 	DPESimulatorVendorID            uint32 = 0
 	DPESimulatorVendorSKU           uint32 = 0
 )
@@ -35,10 +37,10 @@ var TargetExe *string
 type DpeSimulator struct {
 	exePath         string
 	cmd             *exec.Cmd
-	supports        Support
+	supports        client.Support
 	currentLocality uint32
 	isInitialized   bool
-	Transport
+	client.Transport
 }
 
 // HasPowerControl returns whether the simulator can be started and stopped.
@@ -160,7 +162,7 @@ func (s *DpeSimulator) SendCmd(buf []byte) ([]byte, error) {
 }
 
 // GetSupport gets supported DPE features from the simulator
-func (s *DpeSimulator) GetSupport() *Support {
+func (s *DpeSimulator) GetSupport() *client.Support {
 	return &s.supports
 }
 
@@ -221,7 +223,7 @@ func (s *DpeSimulator) GetProfileVendorSku() uint32 {
 }
 
 // GetSimulatorTarget gets the simulator target
-func GetSimulatorTarget(supportNeeded []string, targetExe string) TestDPEInstance {
+func GetSimulatorTarget(supportNeeded []string, targetExe string) client.TestDPEInstance {
 
 	value := reflect.ValueOf(DpeSimulator{}.supports)
 	fields := reflect.Indirect(value)
@@ -234,8 +236,8 @@ func GetSimulatorTarget(supportNeeded []string, targetExe string) TestDPEInstanc
 			}
 		}
 	}
-	support := fVal.Elem().Interface().(Support)
-	var instance TestDPEInstance = &DpeSimulator{exePath: targetExe, supports: support}
+	support := fVal.Elem().Interface().(client.Support)
+	var instance client.TestDPEInstance = &DpeSimulator{exePath: targetExe, supports: support}
 	return instance
 }
 
@@ -332,7 +334,7 @@ func GetSimulatorTargets() []TestTarget {
 }
 
 // Get the test target for simulator/emulator
-func getTestTarget(supportNeeded []string) TestDPEInstance {
+func getTestTarget(supportNeeded []string) client.TestDPEInstance {
 	instance := GetSimulatorTarget(supportNeeded, *TargetExe)
 	instance.SetLocality(DPESimulatorAutoInitLocality)
 	return instance

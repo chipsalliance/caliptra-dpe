@@ -7,6 +7,8 @@ import (
 	"crypto/x509/pkix"
 	"encoding/asn1"
 	"fmt"
+
+	"github.com/chipsalliance/caliptra-dpe/verification/client"
 )
 
 // This file is used to test the certify key command.
@@ -128,7 +130,7 @@ func getKeyUsage(extensions []pkix.Extension) (x509.KeyUsage, error) {
 	return x509.KeyUsage(usage), nil
 }
 
-func getTcbInfoForHandle(c DPEClient, handle *ContextHandle) (*ContextHandle, DiceTcbInfo, error) {
+func getTcbInfoForHandle(c client.DPEClient, handle *client.ContextHandle) (*client.ContextHandle, DiceTcbInfo, error) {
 	outHandle := handle
 
 	// Get digest size
@@ -140,7 +142,7 @@ func getTcbInfoForHandle(c DPEClient, handle *ContextHandle) (*ContextHandle, Di
 	digestLen := profile.Profile.GetDigestSize()
 	label := make([]byte, digestLen)
 
-	certifiedKey, err := c.CertifyKey(outHandle, label, CertifyKeyX509, 0)
+	certifiedKey, err := c.CertifyKey(outHandle, label, client.CertifyKeyX509, 0)
 	if err != nil {
 		return outHandle, DiceTcbInfo{}, fmt.Errorf("Could not certify key: %s", err)
 	}

@@ -10,6 +10,8 @@ import (
 	"errors"
 	"math/big"
 	"testing"
+
+	"github.com/chipsalliance/caliptra-dpe/verification/client"
 )
 
 // TestAsymmetricSigning obtains and validates signature of asymmetric signing.
@@ -17,11 +19,11 @@ import (
 // using public key in signing key certificate returned by CertifyKey command.
 // Inspite of the DPE profile supporting symmetric key, for symmetric signing it must be enabled
 // explicitly in Sign command flags. Else asymmetric signing is used as default.
-func TestAsymmetricSigning(d TestDPEInstance, c DPEClient, t *testing.T) {
+func TestAsymmetricSigning(d client.TestDPEInstance, c client.DPEClient, t *testing.T) {
 	useSimulation := false
 	handle := getInitialContextHandle(d, c, t, useSimulation)
 	// Get digest size
-	profile, err := GetTransportProfile(d)
+	profile, err := client.GetTransportProfile(d)
 	if err != nil {
 		t.Fatalf("Could not get profile: %v", err)
 	}
@@ -29,7 +31,7 @@ func TestAsymmetricSigning(d TestDPEInstance, c DPEClient, t *testing.T) {
 	digestLen := profile.GetDigestSize()
 
 	// Validate asymmetric signature generated
-	flags := SignFlags(0)
+	flags := client.SignFlags(0)
 
 	seqLabel := make([]byte, digestLen)
 	for i := range seqLabel {
@@ -47,7 +49,7 @@ func TestAsymmetricSigning(d TestDPEInstance, c DPEClient, t *testing.T) {
 	}
 
 	// Get signing key certificate using CertifyKey command
-	certifiedKey, err := c.CertifyKey(handle, seqLabel, CertifyKeyX509, CertifyKeyFlags(0))
+	certifiedKey, err := c.CertifyKey(handle, seqLabel, client.CertifyKeyX509, client.CertifyKeyFlags(0))
 	if err != nil {
 		t.Fatalf("[FATAL]: Could not CertifyKey: %v", err)
 	}
@@ -83,31 +85,31 @@ func TestAsymmetricSigning(d TestDPEInstance, c DPEClient, t *testing.T) {
 
 // TestSignSimulation cheks command fails in simulated context because this context does not allow signing.
 // This is because simulation context does not allow using context's private key.
-func TestSignSimulation(d TestDPEInstance, c DPEClient, t *testing.T) {
+func TestSignSimulation(d client.TestDPEInstance, c client.DPEClient, t *testing.T) {
 	useSimulation := true
 	handle := getInitialContextHandle(d, c, t, useSimulation)
 	defer func() {
-		c.DestroyContext(handle, DestroyDescendants)
+		c.DestroyContext(handle, client.DestroyDescendants)
 	}()
 
 	// Get digest size
-	profile, err := GetTransportProfile(d)
+	profile, err := client.GetTransportProfile(d)
 	if err != nil {
 		t.Fatalf("Could not get profile: %v", err)
 	}
 
 	digestLen := profile.GetDigestSize()
 
-	if _, err := c.Sign(handle, make([]byte, digestLen), SignFlags(IsSymmetric), make([]byte, digestLen)); err == nil {
-		t.Fatalf("[FATAL]: Should return %q, but returned no error", StatusInvalidArgument)
-	} else if !errors.Is(err, StatusInvalidArgument) {
-		t.Fatalf("[FATAL]: Incorrect error type. Should return %q, but returned %q", StatusInvalidArgument, err)
+	if _, err := c.Sign(handle, make([]byte, digestLen), client.SignFlags(client.IsSymmetric), make([]byte, digestLen)); err == nil {
+		t.Fatalf("[FATAL]: Should return %q, but returned no error", client.StatusInvalidArgument)
+	} else if !errors.Is(err, client.StatusInvalidArgument) {
+		t.Fatalf("[FATAL]: Incorrect error type. Should return %q, but returned %q", client.StatusInvalidArgument, err)
 	}
 
-	if _, err := c.Sign(handle, make([]byte, digestLen), SignFlags(0), make([]byte, digestLen)); err == nil {
-		t.Fatalf("[FATAL]: Should return %q, but returned no error", StatusInvalidArgument)
-	} else if !errors.Is(err, StatusInvalidArgument) {
-		t.Fatalf("[FATAL]: Incorrect error type. Should return %q, but returned %q", StatusInvalidArgument, err)
+	if _, err := c.Sign(handle, make([]byte, digestLen), client.SignFlags(0), make([]byte, digestLen)); err == nil {
+		t.Fatalf("[FATAL]: Should return %q, but returned no error", client.StatusInvalidArgument)
+	} else if !errors.Is(err, client.StatusInvalidArgument) {
+		t.Fatalf("[FATAL]: Incorrect error type. Should return %q, but returned %q", client.StatusInvalidArgument, err)
 	}
 }
 
@@ -116,12 +118,12 @@ func TestSignSimulation(d TestDPEInstance, c DPEClient, t *testing.T) {
 // This is because label is used by DPE in symmetric key derivation.
 // Invoking Sign command multiple times with same label and same content (TBS) should return same signature
 // but it should return different signatures for different labels despite having the same content (To Be Signed content).
-func TestSymmetricSigning(d TestDPEInstance, c DPEClient, t *testing.T) {
+func TestSymmetricSigning(d client.TestDPEInstance, c client.DPEClient, t *testing.T) {
 	useSimulation := false
 	handle := getInitialContextHandle(d, c, t, useSimulation)
 
 	// Get digest size
-	profile, err := GetTransportProfile(d)
+	profile, err := client.GetTransportProfile(d)
 	if err != nil {
 		t.Fatalf("Could not get profile: %v", err)
 	}
@@ -137,13 +139,13 @@ func TestSymmetricSigning(d TestDPEInstance, c DPEClient, t *testing.T) {
 		tbs[i] = byte(i)
 	}
 
-	signedData, err := c.Sign(handle, label, SignFlags(IsSymmetric), tbs)
+	signedData, err := c.Sign(handle, label, client.SignFlags(client.IsSymmetric), tbs)
 	if err != nil {
 		t.Fatalf("[FATAL]: Error while signing %v", err)
 	}
 
 	// Rerun with same label and compare signature emitted.
-	signedDataWithSameLabel, err := c.Sign(handle, label, SignFlags(IsSymmetric), tbs)
+	signedDataWithSameLabel, err := c.Sign(handle, label, client.SignFlags(client.IsSymmetric), tbs)
 	if err != nil {
 		t.Fatalf("[FATAL]: Error while signing %v", err)
 	}
@@ -159,7 +161,7 @@ func TestSymmetricSigning(d TestDPEInstance, c DPEClient, t *testing.T) {
 		newLabel[i] = byte(0)
 	}
 
-	signedDataWithDiffLabel, err := c.Sign(handle, newLabel, SignFlags(IsSymmetric), tbs)
+	signedDataWithDiffLabel, err := c.Sign(handle, newLabel, client.SignFlags(client.IsSymmetric), tbs)
 	if err != nil {
 		t.Fatalf("[FATAL]: Error while signing %v", err)
 	}
