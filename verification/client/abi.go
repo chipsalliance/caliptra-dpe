@@ -525,14 +525,19 @@ func (c *DPEABI[_, _]) GetProfile() (*GetProfileResp, error) {
 }
 
 func (c *DPEABI[_, Digest]) CertifyKey(handle *ContextHandle, label []byte, format CertifyKeyFormat, flags CertifyKeyFlags) (*CertifiedKey, error) {
-	if len(label) != len(Digest(label)) {
+	if len(label) != DigestLen[Digest]() {
 		return nil, fmt.Errorf("invalid label length")
+	}
+
+	l, err := NewDigest[Digest](label)
+	if err != nil {
+		return nil, err
 	}
 
 	cmd := CertifyKeyReq[Digest]{
 		ContextHandle: *handle,
 		Flags:         flags,
-		Label:         Digest(label),
+		Label:         l,
 		Format:        format,
 	}
 
@@ -572,13 +577,18 @@ func (c *DPEABI[_, _]) GetCertificateChain() ([]byte, error) {
 }
 
 func (c *DPEABI[_, Digest]) DeriveChild(handle *ContextHandle, inputData []byte, flags DeriveChildFlags, tciType uint32, targetLocality uint32) (*DeriveChildResp, error) {
-	if len(inputData) != len(Digest(inputData)) {
+	if len(inputData) != DigestLen[Digest]() {
 		return nil, fmt.Errorf("invalid digest length")
+	}
+
+	input, err := NewDigest[Digest](inputData)
+	if err != nil {
+		return nil, err
 	}
 
 	cmd := DeriveChildReq[Digest]{
 		ContextHandle:  *handle,
-		InputData:      Digest(inputData),
+		InputData:      input,
 		Flags:          flags,
 		TciType:        tciType,
 		TargetLocality: targetLocality,
@@ -604,19 +614,30 @@ func (c *DPEABI[_, _]) RotateContextHandle(handle *ContextHandle, flags RotateCo
 }
 
 func (c *DPEABI[_, Digest]) Sign(handle *ContextHandle, label []byte, flags SignFlags, toBeSigned []byte) (*DPESignedHash, error) {
-	if len(label) != len(Digest(label)) {
+	dLen := DigestLen[Digest]()
+	if len(label) != dLen {
 		return nil, fmt.Errorf("invalid label length")
 	}
 
-	if len(toBeSigned) != len(Digest(toBeSigned)) {
+	if len(toBeSigned) != dLen {
 		return nil, fmt.Errorf("invalid toBeSigned length")
+	}
+
+	l, err := NewDigest[Digest](label)
+	if err != nil {
+		return nil, err
+	}
+
+	tbs, err := NewDigest[Digest](toBeSigned)
+	if err != nil {
+		return nil, err
 	}
 
 	cmd := SignReq[Digest]{
 		ContextHandle: *handle,
-		Label:         Digest(label),
+		Label:         l,
 		Flags:         flags,
-		ToBeSigned:    Digest(toBeSigned),
+		ToBeSigned:    tbs,
 	}
 	resp, err := c.SignABI(&cmd)
 	if err != nil {
@@ -634,13 +655,18 @@ func (c *DPEABI[_, Digest]) Sign(handle *ContextHandle, label []byte, flags Sign
 
 func (c *DPEABI[_, Digest]) ExtendTCI(handle *ContextHandle, inputData []byte) (*ContextHandle, error) {
 
-	if len(inputData) != len(Digest(inputData)) {
+	if len(inputData) != DigestLen[Digest]() {
 		return nil, fmt.Errorf("invalid digest length")
+	}
+
+	input, err := NewDigest[Digest](inputData)
+	if err != nil {
+		return nil, err
 	}
 
 	cmd := ExtendTCIReq[Digest]{
 		ContextHandle: *handle,
-		InputData:     Digest(inputData),
+		InputData:     input,
 	}
 
 	resp, err := c.ExtendTCIABI(&cmd)

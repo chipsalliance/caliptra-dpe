@@ -2,7 +2,10 @@
 
 package client
 
-import "fmt"
+import (
+	"fmt"
+	"reflect"
+)
 
 // Profile represents a supported algorithm profile (i.e., hash algorithm and ECC curve).
 type Profile uint32
@@ -53,6 +56,10 @@ type Curve interface {
 	Bytes() []byte
 }
 
+func CurveIntLen[C Curve]() int {
+	return reflect.TypeOf((*C)(nil)).Elem().Len()
+}
+
 // NISTP256Parameter represents a NIST P-256 curve parameter, i.e., an x, y, r, or s value.
 type NISTP256Parameter [32]byte
 
@@ -74,6 +81,24 @@ type DigestAlgorithm interface {
 	SHA256Digest | SHA384Digest
 
 	Bytes() []byte
+}
+
+func NewDigest[D DigestAlgorithm](b []byte) (D, error) {
+	var d D
+	switch tmp := any(&d).(type) {
+	case *SHA256Digest:
+		copy(tmp[:], b[:])
+	case *SHA384Digest:
+		copy(tmp[:], b[:])
+	default:
+		return d, fmt.Errorf("Invalid digest type %v", reflect.TypeOf(tmp))
+	}
+
+	return d, nil
+}
+
+func DigestLen[D DigestAlgorithm]() int {
+	return reflect.TypeOf((*D)(nil)).Elem().Len()
 }
 
 // SHA256Digest represents a SHA-256 digest value.
