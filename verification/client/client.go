@@ -1,5 +1,7 @@
 // Licensed under the Apache-2.0 license
 
+// Package client provides a modular DPE client that can be used to
+// communicate with DPE over different transports.
 package client
 
 import (
