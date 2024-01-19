@@ -134,18 +134,18 @@ impl Crypto for RustCryptoImpl {
     ) -> Result<EcdsaSig, CryptoError> {
         match algs {
             AlgLen::Bit256 => {
-                let signing_key = p256::ecdsa::SigningKey::read_sec1_pem_file(concat!(
+                let signing_key = p256::ecdsa::SigningKey::from_sec1_pem(include_str!(concat!(
                     env!("OUT_DIR"),
                     "/alias_priv_256.pem"
-                ))?;
+                )))?;
                 let sig: p256::ecdsa::Signature = signing_key.sign_prehash(digest.bytes())?;
                 sig.try_into()
             }
             AlgLen::Bit384 => {
-                let signing_key = p384::ecdsa::SigningKey::read_sec1_pem_file(concat!(
+                let signing_key = p384::ecdsa::SigningKey::from_sec1_pem(include_str!(concat!(
                     env!("OUT_DIR"),
                     "/alias_priv_384.pem"
-                ))?;
+                )))?;
                 let sig: p384::ecdsa::Signature = signing_key.sign_prehash(digest.bytes())?;
                 sig.try_into()
             }
