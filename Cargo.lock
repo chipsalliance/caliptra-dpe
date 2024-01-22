@@ -416,6 +416,7 @@ dependencies = [
  "der",
  "openssl",
  "platform",
+ "rand",
  "spki",
  "ufmt",
  "x509-parser",

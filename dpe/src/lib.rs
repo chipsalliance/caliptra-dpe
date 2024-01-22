@@ -24,7 +24,11 @@ pub mod x509;
 use zerocopy::{AsBytes, FromBytes};
 
 const MAX_CERT_SIZE: usize = 2048;
+#[cfg(not(feature = "arbitrary_max_handles"))]
 pub const MAX_HANDLES: usize = 24;
+#[cfg(feature = "arbitrary_max_handles")]
+include!(concat!(env!("OUT_DIR"), "/arbitrary_max_handles.rs"));
+
 const CURRENT_PROFILE_MAJOR_VERSION: u16 = 0;
 const CURRENT_PROFILE_MINOR_VERSION: u16 = 8;
 
