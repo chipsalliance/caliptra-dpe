@@ -9,6 +9,18 @@ edition = "2021"
 default = ["dpe_profile_p256_sha256"]
 dpe_profile_p256_sha256 = ["platform/dpe_profile_p256_sha256"]
 dpe_profile_p384_sha384 = ["platform/dpe_profile_p384_sha384"]
+# Run ARBITRARY_MAX_HANDLES=n cargo build --features arbitrary_max_handles to use this feature
+arbitrary_max_handles = []
+disable_simulation = []
+disable_extend_tci = []
+disable_auto_init = []
+disable_rotate_context = []
+disable_x509 = []
+disable_csr = []
+disable_is_symmetric = []
+disable_internal_info = []
+disable_internal_dice = []
+disable_is_ca = []
 
 [dependencies]
 bitflags = "2.4.0"
@@ -28,3 +40,4 @@ platform = {path = "../platform", default-features = false, features = ["openssl
 cms = "0.2.2"
 der = "0.7.8"
 spki = "0.7.2"
+rand = "0.8.5"

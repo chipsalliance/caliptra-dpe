@@ -59,10 +59,11 @@ impl DpeInstance {
         env: &mut DpeEnv<impl DpeTypes>,
         support: Support,
     ) -> Result<DpeInstance, DpeErrorCode> {
+        let updated_support = support.preprocess_support();
         const CONTEXT_INITIALIZER: Context = Context::new();
         let mut dpe = DpeInstance {
             contexts: [CONTEXT_INITIALIZER; MAX_HANDLES],
-            support,
+            support: updated_support,
             has_initialized: false.into(),
             reserved: [0u8; 3],
         };
@@ -80,11 +81,12 @@ impl DpeInstance {
         tci_type: u32,
         auto_init_measurement: [u8; DPE_PROFILE.get_hash_size()],
     ) -> Result<DpeInstance, DpeErrorCode> {
+        let updated_support = support.preprocess_support();
         // auto-init must be supported to add an auto init measurement
-        if !support.auto_init() {
+        if !updated_support.auto_init() {
             return Err(DpeErrorCode::ArgumentNotSupported);
         }
-        let mut dpe = Self::new(env, support)?;
+        let mut dpe = Self::new(env, updated_support)?;
 
         let locality = env.platform.get_auto_init_locality()?;
         let idx = dpe.get_active_context_pos(&ContextHandle::default(), locality)?;

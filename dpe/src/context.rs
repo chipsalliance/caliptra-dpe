@@ -257,22 +257,24 @@ impl<'a> Iterator for ChildToRootIter<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 
     const CONTEXT_INITIALIZER: Context = Context::new();
 
     #[test]
     fn test_child_to_root_iter() {
         let mut contexts = [CONTEXT_INITIALIZER; MAX_HANDLES];
-        let root_index = CHAIN_INDICES[0];
-        assert_eq!(MAX_HANDLES, CHAIN_INDICES.len());
+        let chain_indices = get_chain_indices();
+        let root_index = chain_indices[0];
+        assert_eq!(MAX_HANDLES, chain_indices.len());
 
         // Put the context's index in the handle to make it easy to find later.
         contexts[root_index].handle = ContextHandle([root_index as u8; ContextHandle::SIZE]);
         contexts[root_index].state = ContextState::Retired;
 
         // Assign all of the children's parents and put their index in the handle.
-        for (parent_chain_idx, child_idx) in CHAIN_INDICES.iter().skip(1).enumerate() {
-            let parent_idx = CHAIN_INDICES[parent_chain_idx];
+        for (parent_chain_idx, child_idx) in chain_indices.iter().skip(1).enumerate() {
+            let parent_idx = chain_indices[parent_chain_idx];
             let context = &mut contexts[*child_idx];
             context.parent_idx = parent_idx as u8;
             context.handle = ContextHandle([*child_idx as u8; ContextHandle::SIZE]);
@@ -280,9 +282,9 @@ mod tests {
         }
 
         let mut count = 0;
-        let leaf_index = CHAIN_INDICES[CHAIN_INDICES.len() - 1];
+        let leaf_index = chain_indices[chain_indices.len() - 1];
 
-        for (answer, status) in CHAIN_INDICES
+        for (answer, status) in chain_indices
             .iter()
             .rev()
             .zip(ChildToRootIter::new(leaf_index, &contexts))
@@ -295,7 +297,7 @@ mod tests {
         }
 
         // Check we didn't accidentally skip any.
-        assert_eq!(CHAIN_INDICES.len(), count);
+        assert_eq!(chain_indices.len(), count);
     }
 
     #[test]
@@ -372,32 +374,15 @@ mod tests {
     ///
     /// The context's parent context index is the previous value.
     ///
-    /// So `dpe.contexts[2]` is the parent of `dpe.contexts[4]` which is the parent of
-    /// `dpe.contexts[1]` etc.
-    const CHAIN_INDICES: [usize; MAX_HANDLES] = [
-        2,
-        4,
-        1,
-        13,
-        MAX_HANDLES - 1,
-        3,
-        0,
-        9,
-        5,
-        6,
-        7,
-        8,
-        10,
-        11,
-        12,
-        14,
-        15,
-        16,
-        17,
-        18,
-        19,
-        20,
-        21,
-        22,
-    ];
+    /// So `dpe.contexts[chain_indices[0]]` is the parent of `dpe.contexts[chain_indices[1]]` which is the parent of
+    /// `dpe.contexts[chain_indices[2]]` etc. The chain_indices vector is a random permutation of numbers in [0, MAX_HANDLES).
+    fn get_chain_indices() -> Vec<usize> {
+        let mut chain_indices: Vec<usize> = (0..MAX_HANDLES).collect();
+        const SEED: [u8; 32] = [0xFF; 32];
+        let mut seeded_rng = StdRng::from_seed(SEED);
+
+        chain_indices.shuffle(&mut seeded_rng);
+        println!("{:?}", chain_indices);
+        chain_indices
+    }
 }

@@ -3,7 +3,7 @@ use bitflags::bitflags;
 use zerocopy::{AsBytes, FromBytes};
 use zeroize::Zeroize;
 
-#[derive(Default, AsBytes, FromBytes, Zeroize)]
+#[derive(Default, AsBytes, FromBytes, Zeroize, Copy, Clone)]
 #[repr(C)]
 pub struct Support(u32);
 
@@ -52,6 +52,51 @@ impl Support {
     }
     pub fn is_ca(&self) -> bool {
         self.contains(Support::IS_CA)
+    }
+    pub fn preprocess_support(&self) -> Support {
+        #[allow(unused_mut)]
+        let mut support = Support::empty();
+        #[cfg(feature = "disable_simulation")]
+        {
+            support.insert(Support::SIMULATION);
+        }
+        #[cfg(feature = "disable_extend_tci")]
+        {
+            support.insert(Support::EXTEND_TCI);
+        }
+        #[cfg(feature = "disable_auto_init")]
+        {
+            support.insert(Support::AUTO_INIT);
+        }
+        #[cfg(feature = "disable_rotate_context")]
+        {
+            support.insert(Support::ROTATE_CONTEXT);
+        }
+        #[cfg(feature = "disable_x509")]
+        {
+            support.insert(Support::X509);
+        }
+        #[cfg(feature = "disable_csr")]
+        {
+            support.insert(Support::CSR);
+        }
+        #[cfg(feature = "disable_is_symmetric")]
+        {
+            support.insert(Support::IS_SYMMETRIC);
+        }
+        #[cfg(feature = "disable_internal_info")]
+        {
+            support.insert(Support::INTERNAL_INFO);
+        }
+        #[cfg(feature = "disable_internal_dice")]
+        {
+            support.insert(Support::INTERNAL_DICE);
+        }
+        #[cfg(feature = "disable_is_ca")]
+        {
+            support.insert(Support::IS_CA);
+        }
+        self.difference(support)
     }
 }
 
