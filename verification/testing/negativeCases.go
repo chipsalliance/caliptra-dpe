@@ -18,7 +18,7 @@ var InvalidHandle = client.ContextHandle{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 1
 // which do not need context handle as input parameter.
 func TestInvalidHandle(d client.TestDPEInstance, c client.DPEClient, t *testing.T) {
 	ctx := getInitialContextHandle(d, c, t, true)
-	defer c.DestroyContext(ctx, client.DestroyDescendants)
+	defer c.DestroyContext(ctx)
 
 	profile, err := client.GetTransportProfile(d)
 	if err != nil {
@@ -26,11 +26,11 @@ func TestInvalidHandle(d client.TestDPEInstance, c client.DPEClient, t *testing.
 	}
 	digestLen := profile.GetDigestSize()
 
-	// Check DeriveChild with invalid handle
-	if _, err := c.DeriveChild(&InvalidHandle, make([]byte, digestLen), 0, 0, 0); err == nil {
-		t.Errorf("[ERROR]: DeriveChild should return %q, but returned no error", client.StatusInvalidHandle)
+	// Check DeriveContext with invalid handle
+	if _, err := c.DeriveContext(&InvalidHandle, make([]byte, digestLen), 0, 0, 0); err == nil {
+		t.Errorf("[ERROR]: DeriveContext should return %q, but returned no error", client.StatusInvalidHandle)
 	} else if !errors.Is(err, client.StatusInvalidHandle) {
-		t.Errorf("[ERROR]: Incorrect error type. DeriveChild should return %q, but returned %q", client.StatusInvalidHandle, err)
+		t.Errorf("[ERROR]: Incorrect error type. DeriveContext should return %q, but returned %q", client.StatusInvalidHandle, err)
 	}
 
 	// Check CertifyKey with invalid handle
@@ -55,17 +55,10 @@ func TestInvalidHandle(d client.TestDPEInstance, c client.DPEClient, t *testing.
 	}
 
 	// Check DestroyContext with invalid handle
-	if err := c.DestroyContext(&InvalidHandle, 0); err == nil {
+	if err := c.DestroyContext(&InvalidHandle); err == nil {
 		t.Errorf("[ERROR]: DestroyContext should return %q, but returned no error", client.StatusInvalidHandle)
 	} else if !errors.Is(err, client.StatusInvalidHandle) {
 		t.Errorf("[ERROR]: Incorrect error type. DestroyContext should return %q, but returned %q", client.StatusInvalidHandle, err)
-	}
-
-	// Check ExtendTCI with invalid handle
-	if _, err := c.ExtendTCI(&InvalidHandle, make([]byte, digestLen)); err == nil {
-		t.Errorf("[ERROR]: ExtendTCI should return %q, but returned no error", client.StatusInvalidHandle)
-	} else if !errors.Is(err, client.StatusInvalidHandle) {
-		t.Errorf("[ERROR]: Incorrect error type. ExtendTCI should return %q, but returned %q", client.StatusInvalidHandle, err)
 	}
 }
 
@@ -94,11 +87,11 @@ func TestWrongLocality(d client.TestDPEInstance, c client.DPEClient, t *testing.
 
 	digestLen := profile.GetDigestSize()
 
-	// Check DeriveChild from wrong context
-	if _, err := c.DeriveChild(handle, make([]byte, digestLen), 0, 0, 0); err == nil {
-		t.Errorf("[ERROR]: DeriveChild should return %q, but returned no error", client.StatusInvalidLocality)
+	// Check DeriveContext from wrong context
+	if _, err := c.DeriveContext(handle, make([]byte, digestLen), 0, 0, 0); err == nil {
+		t.Errorf("[ERROR]: DeriveContext should return %q, but returned no error", client.StatusInvalidLocality)
 	} else if !errors.Is(err, client.StatusInvalidLocality) {
-		t.Errorf("[ERROR]: Incorrect error type. DeriveChild should return %q, but returned %q", client.StatusInvalidLocality, err)
+		t.Errorf("[ERROR]: Incorrect error type. DeriveContext should return %q, but returned %q", client.StatusInvalidLocality, err)
 	}
 
 	// Check CertifyKey from wrong locality
@@ -123,45 +116,25 @@ func TestWrongLocality(d client.TestDPEInstance, c client.DPEClient, t *testing.
 	}
 
 	// Check DestroyContext from wrong locality
-	if err := c.DestroyContext(handle, 0); err == nil {
+	if err := c.DestroyContext(handle); err == nil {
 		t.Errorf("[ERROR]: DestroyContext should return %q, but returned no error", client.StatusInvalidLocality)
 	} else if !errors.Is(err, client.StatusInvalidLocality) {
 		t.Errorf("[ERROR]: Incorrect error type. DestroyContext should return %q, but returned %q", client.StatusInvalidLocality, err)
-	}
-
-	// Check ExtendTCI from wrong locality
-	if _, err := c.ExtendTCI(handle, make([]byte, digestLen)); err == nil {
-		t.Errorf("[ERROR]: ExtendTCI should return %q, but returned no error", client.StatusInvalidLocality)
-	} else if !errors.Is(err, client.StatusInvalidLocality) {
-		t.Errorf("[ERROR]: Incorrect error type. ExtendTCI should return %q, but returned %q", client.StatusInvalidLocality, err)
 	}
 }
 
 // TestUnsupportedCommand checks whether error is reported while using commands
 // that are turned off in DPE.
-// DPE commands - RotateContextHandle, ExtendTCI, require support to be enabled in DPE profile
+// DPE commands - RotateContextHandle requires support to be enabled in DPE profile
 // before being called.
 func TestUnsupportedCommand(d client.TestDPEInstance, c client.DPEClient, t *testing.T) {
 	ctx := &client.DefaultContextHandle
-
-	profile, err := client.GetTransportProfile(d)
-	if err != nil {
-		t.Fatalf("Could not get profile: %v", err)
-	}
-	digestLen := profile.GetDigestSize()
 
 	// Check whether RotateContextHandle is unsupported by DPE profile
 	if _, err := c.RotateContextHandle(ctx, client.RotateContextHandleFlags(client.TargetIsDefault)); err == nil {
 		t.Errorf("[ERROR]: RotateContextHandle is not supported by DPE, should return %q, but returned no error", client.StatusInvalidCommand)
 	} else if !errors.Is(err, client.StatusInvalidCommand) {
 		t.Errorf("[ERROR]: Incorrect error type. RotateContextHandle is not supported by DPE, should return %q, but returned %q", client.StatusInvalidCommand, err)
-	}
-
-	// Check whether ExtendTCI is unsupported by DPE profile
-	if _, err := c.ExtendTCI(ctx, make([]byte, digestLen)); err == nil {
-		t.Errorf("[ERROR]: ExtendTCI is not supported by DPE, should return %q, but returned no error", client.StatusInvalidCommand)
-	} else if !errors.Is(err, client.StatusInvalidCommand) {
-		t.Errorf("[ERROR]: Incorrect error type. ExtendTCI is not supported by DPE, should return %q, but returned %q", client.StatusInvalidCommand, err)
 	}
 }
 
@@ -221,30 +194,30 @@ func TestUnsupportedCommandFlag(d client.TestDPEInstance, c client.DPEClient, t 
 	}
 
 	// Check whether error is returned since InternalInfo usage is unsupported by DPE profile
-	if _, err := c.DeriveChild(handle, make([]byte, digestLen), client.DeriveChildFlags(client.InternalInputInfo), 0, 0); err == nil {
-		t.Errorf("[ERROR]:InternalInfo is not supported by DPE, DeriveChild should return %q, but returned no error", client.StatusArgumentNotSupported)
+	if _, err := c.DeriveContext(handle, make([]byte, digestLen), client.DeriveContextFlags(client.InternalInputInfo), 0, 0); err == nil {
+		t.Errorf("[ERROR]:InternalInfo is not supported by DPE, DeriveContext should return %q, but returned no error", client.StatusArgumentNotSupported)
 	} else if !errors.Is(err, client.StatusArgumentNotSupported) {
-		t.Errorf("[ERROR]: Incorrect error type. InternalInfo is not supported by DPE, DeriveChild should return %q, but returned %q", client.StatusArgumentNotSupported, err)
+		t.Errorf("[ERROR]: Incorrect error type. InternalInfo is not supported by DPE, DeriveContext should return %q, but returned %q", client.StatusArgumentNotSupported, err)
 	}
 
 	// Check whether error is returned since InternalDice usgae is unsupported by DPE profile
-	if _, err := c.DeriveChild(handle, make([]byte, digestLen), client.DeriveChildFlags(client.InternalInputDice), 0, 0); err == nil {
-		t.Errorf("[ERROR]:InternalDice is not supported by DPE, DeriveChild should return %q, but returned no error", client.StatusArgumentNotSupported)
+	if _, err := c.DeriveContext(handle, make([]byte, digestLen), client.DeriveContextFlags(client.InternalInputDice), 0, 0); err == nil {
+		t.Errorf("[ERROR]:InternalDice is not supported by DPE, DeriveContext should return %q, but returned no error", client.StatusArgumentNotSupported)
 	} else if !errors.Is(err, client.StatusArgumentNotSupported) {
-		t.Errorf("[ERROR]: Incorrect error type. InternalDice is not supported by DPE, DeriveChild should return %q, but returned %q", client.StatusArgumentNotSupported, err)
+		t.Errorf("[ERROR]: Incorrect error type. InternalDice is not supported by DPE, DeriveContext should return %q, but returned %q", client.StatusArgumentNotSupported, err)
 	}
 
 	// Check whether error is returned since InternalInfo usage is unsupported by DPE profile
-	if _, err := c.DeriveChild(handle, make([]byte, digestLen), client.DeriveChildFlags(client.InputAllowCA), 0, 0); err == nil {
-		t.Errorf("[ERROR]:IS_CA is not supported by DPE, DeriveChild should return %q, but returned no error", client.StatusArgumentNotSupported)
+	if _, err := c.DeriveContext(handle, make([]byte, digestLen), client.DeriveContextFlags(client.InputAllowCA), 0, 0); err == nil {
+		t.Errorf("[ERROR]:IS_CA is not supported by DPE, DeriveContext should return %q, but returned no error", client.StatusArgumentNotSupported)
 	} else if !errors.Is(err, client.StatusArgumentNotSupported) {
-		t.Errorf("[ERROR]: Incorrect error type. IS_CA is not supported by DPE, DeriveChild should return %q, but returned %q", client.StatusArgumentNotSupported, err)
+		t.Errorf("[ERROR]: Incorrect error type. IS_CA is not supported by DPE, DeriveContext should return %q, but returned %q", client.StatusArgumentNotSupported, err)
 	}
 
 	// Check whether error is returned since InternalDice usgae is unsupported by DPE profile
-	if _, err := c.DeriveChild(handle, make([]byte, digestLen), client.DeriveChildFlags(client.InputAllowX509), 0, 0); err == nil {
-		t.Errorf("[ERROR]:X509 is not supported by DPE, DeriveChild should return %q, but returned no error", client.StatusArgumentNotSupported)
+	if _, err := c.DeriveContext(handle, make([]byte, digestLen), client.DeriveContextFlags(client.InputAllowX509), 0, 0); err == nil {
+		t.Errorf("[ERROR]:X509 is not supported by DPE, DeriveContext should return %q, but returned no error", client.StatusArgumentNotSupported)
 	} else if !errors.Is(err, client.StatusArgumentNotSupported) {
-		t.Errorf("[ERROR]: Incorrect error type. X509 is not supported by DPE, DeriveChild should return %q, but returned %q", client.StatusArgumentNotSupported, err)
+		t.Errorf("[ERROR]: Incorrect error type. X509 is not supported by DPE, DeriveContext should return %q, but returned %q", client.StatusArgumentNotSupported, err)
 	}
 }

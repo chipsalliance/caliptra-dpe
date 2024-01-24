@@ -460,7 +460,7 @@ func testCertifyKey(d client.TestDPEInstance, c client.DPEClient, t *testing.T, 
 	handle := getInitialContextHandle(d, c, t, simulation)
 	defer func() {
 		if simulation {
-			c.DestroyContext(handle, client.DestroyDescendants)
+			c.DestroyContext(handle)
 		}
 	}()
 
@@ -517,7 +517,7 @@ func testCertifyKey(d client.TestDPEInstance, c client.DPEClient, t *testing.T, 
 		// same default context handle is returned in default mode.
 		handle = &certifyKeyResp.Handle
 	}
-	// TODO: When DeriveChild is implemented, call it here to add more TCIs and call CertifyKey again.
+	// TODO: When DeriveContext is implemented, call it here to add more TCIs and call CertifyKey again.
 }
 
 // Builds and verifies certificate chain.

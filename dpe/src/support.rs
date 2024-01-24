@@ -10,7 +10,7 @@ pub struct Support(u32);
 bitflags! {
     impl Support: u32 {
         const SIMULATION = 1u32 << 31;
-        const EXTEND_TCI = 1u32 << 30;
+        const RECURSIVE = 1u32 << 30;
         const AUTO_INIT = 1u32 << 29;
         const ROTATE_CONTEXT = 1u32 << 27;
         const X509 = 1u32 << 26;
@@ -19,6 +19,7 @@ bitflags! {
         const INTERNAL_INFO = 1u32 << 22;
         const INTERNAL_DICE = 1u32 << 21;
         const IS_CA = 1u32 << 20;
+        const RETAIN_PARENT_CONTEXT = 1u32 << 19;
     }
 }
 
@@ -26,8 +27,8 @@ impl Support {
     pub fn simulation(&self) -> bool {
         self.contains(Support::SIMULATION)
     }
-    pub fn extend_tci(&self) -> bool {
-        self.contains(Support::EXTEND_TCI)
+    pub fn recursive(&self) -> bool {
+        self.contains(Support::RECURSIVE)
     }
     pub fn auto_init(&self) -> bool {
         self.contains(Support::AUTO_INIT)
@@ -53,6 +54,9 @@ impl Support {
     pub fn is_ca(&self) -> bool {
         self.contains(Support::IS_CA)
     }
+    pub fn retain_parent_context(&self) -> bool {
+        self.contains(Support::RETAIN_PARENT_CONTEXT)
+    }
     pub fn preprocess_support(&self) -> Support {
         #[allow(unused_mut)]
         let mut support = Support::empty();
@@ -60,9 +64,9 @@ impl Support {
         {
             support.insert(Support::SIMULATION);
         }
-        #[cfg(feature = "disable_extend_tci")]
+        #[cfg(feature = "disable_recursive")]
         {
-            support.insert(Support::EXTEND_TCI);
+            support.insert(Support::RECURSIVE);
         }
         #[cfg(feature = "disable_auto_init")]
         {
@@ -96,6 +100,10 @@ impl Support {
         {
             support.insert(Support::IS_CA);
         }
+        #[cfg(feature = "disable_retain_parent_context")]
+        {
+            support.insert(Support::RETAIN_PARENT_CONTEXT);
+        }
         self.difference(support)
     }
 }
@@ -109,7 +117,8 @@ pub mod test {
         Support::SIMULATION,
         Support::AUTO_INIT,
         Support::ROTATE_CONTEXT,
-        Support::X509
+        Support::X509,
+        Support::RETAIN_PARENT_CONTEXT
     );
 
     #[test]
@@ -117,8 +126,8 @@ pub mod test {
         // Supports simulation flag.
         let flags = Support::SIMULATION.bits();
         assert_eq!(flags, 1 << 31);
-        // Supports extended TCI flag.
-        let flags = Support::EXTEND_TCI.bits();
+        // Supports recursive flag.
+        let flags = Support::RECURSIVE.bits();
         assert_eq!(flags, 1 << 30);
         // Supports auto-init.
         let flags = Support::AUTO_INIT.bits();
@@ -144,6 +153,8 @@ pub mod test {
         // Supports is ca.
         let flags = Support::IS_CA.bits();
         assert_eq!(flags, 1 << 20);
+        let flags = Support::RETAIN_PARENT_CONTEXT.bits();
+        assert_eq!(flags, 1 << 19);
         // Supports a couple combos.
         let flags = (Support::SIMULATION
             | Support::AUTO_INIT
@@ -156,7 +167,7 @@ pub mod test {
             (1 << 31) | (1 << 29) | (1 << 27) | (1 << 25) | (1 << 21)
         );
         let flags =
-            (Support::EXTEND_TCI | Support::X509 | Support::IS_SYMMETRIC | Support::INTERNAL_INFO)
+            (Support::RECURSIVE | Support::X509 | Support::IS_SYMMETRIC | Support::INTERNAL_INFO)
                 .bits();
         assert_eq!(flags, (1 << 30) | (1 << 26) | (1 << 24) | (1 << 22));
         // Supports everything.
@@ -173,6 +184,7 @@ pub mod test {
                 | (1 << 22)
                 | (1 << 21)
                 | (1 << 20)
+                | (1 << 19)
         );
     }
 }

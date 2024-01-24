@@ -133,9 +133,9 @@ mod tests {
         commands::{
             certify_key::CertifyKeyCmd,
             certify_key::CertifyKeyFlags,
-            derive_child::DeriveChildFlags,
+            derive_context::DeriveContextFlags,
             tests::{TEST_DIGEST, TEST_LABEL},
-            Command, CommandHdr, DeriveChildCmd, InitCtxCmd,
+            Command, CommandHdr, DeriveContextCmd, InitCtxCmd,
         },
         dpe_instance::tests::{TestTypes, RANDOM_HANDLE, SIMULATION_HANDLE, TEST_LOCALITIES},
         support::{test::SUPPORT, Support},
@@ -255,10 +255,10 @@ mod tests {
         let mut dpe = DpeInstance::new(&mut env, SUPPORT).unwrap();
 
         for i in 0..3 {
-            DeriveChildCmd {
+            DeriveContextCmd {
                 handle: ContextHandle::default(),
                 data: [i; DPE_PROFILE.get_hash_size()],
-                flags: DeriveChildFlags::MAKE_DEFAULT | DeriveChildFlags::INPUT_ALLOW_X509,
+                flags: DeriveContextFlags::MAKE_DEFAULT | DeriveContextFlags::INPUT_ALLOW_X509,
                 tci_type: i as u32,
                 target_locality: 0,
             }

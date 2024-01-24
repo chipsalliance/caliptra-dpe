@@ -54,8 +54,8 @@ func (s *DpeSimulator) PowerOn() error {
 	if s.supports.Simulation {
 		args = append(args, "--supports-simulation")
 	}
-	if s.supports.ExtendTci {
-		args = append(args, "--supports-extend-tci")
+	if s.supports.Recursive {
+		args = append(args, "--supports-recursive")
 	}
 	if s.supports.AutoInit {
 		args = append(args, "--supports-auto-init")
@@ -80,6 +80,9 @@ func (s *DpeSimulator) PowerOn() error {
 	}
 	if s.supports.InternalDice {
 		args = append(args, "--supports-internal-dice")
+	}
+	if s.supports.RetainParentContext {
+		args = append(args, "--supports-retain-parent-context")
 	}
 
 	s.cmd = exec.Command(s.exePath, args...)
@@ -252,7 +255,7 @@ func GetSimulatorTargets() []TestTarget {
 		},
 		{
 			"DefaultSupport",
-			getTestTarget([]string{"AutoInit", "Simulation", "X509", "Csr", "IsCA", "RotateContext", "ExtendTci", "IsSymmetric"}),
+			getTestTarget([]string{"AutoInit", "Simulation", "X509", "Csr", "IsCA", "RotateContext", "Recursive", "IsSymmetric"}),
 			AllTestCases,
 		},
 		{
@@ -261,8 +264,8 @@ func GetSimulatorTargets() []TestTarget {
 			[]TestCase{GetProfileTestCase},
 		},
 		{
-			"GetProfile_ExtendTCI",
-			getTestTarget([]string{"ExtendTci"}),
+			"GetProfile_Recursive",
+			getTestTarget([]string{"Recursive"}),
 			[]TestCase{GetProfileTestCase},
 		},
 		{
@@ -306,18 +309,23 @@ func GetSimulatorTargets() []TestTarget {
 			[]TestCase{GetProfileTestCase},
 		},
 		{
+			"GetProfile_RetainParentContext",
+			getTestTarget([]string{"RetainParentContext"}),
+			[]TestCase{GetProfileTestCase},
+		},
+		{
 			"GetProfile_Combo01",
 			getTestTarget([]string{"Simulation", "AutoInit", "RotateContext", "Csr", "InternalDice", "IsCA"}),
 			[]TestCase{GetProfileTestCase},
 		},
 		{
 			"GetProfile_Combo02",
-			getTestTarget([]string{"ExtendTci", "X509", "InternalInfo"}),
+			getTestTarget([]string{"Recursive", "X509", "InternalInfo"}),
 			[]TestCase{GetProfileTestCase},
 		},
 		{
 			"GetProfile_All",
-			getTestTarget([]string{"Simulation", "ExtendTci", "AutoInit", "RotateContext", "X509", "Csr", "IsSymmetric", "InternalInfo", "InternalDice", "IsCA"}),
+			getTestTarget([]string{"Simulation", "Recursive", "AutoInit", "RotateContext", "X509", "Csr", "IsSymmetric", "InternalInfo", "InternalDice", "IsCA"}),
 			[]TestCase{GetProfileTestCase},
 		},
 		{
@@ -327,7 +335,7 @@ func GetSimulatorTargets() []TestTarget {
 		},
 		{
 			"NegativeCase_UnsupportedFeatureByDPE",
-			getTestTarget([]string{"AutoInit", "RotateContext", "ExtendTci"}),
+			getTestTarget([]string{"AutoInit", "RotateContext"}),
 			[]TestCase{UnsupportedCommandFlag},
 		},
 	}

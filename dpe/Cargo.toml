@@ -12,7 +12,7 @@ dpe_profile_p384_sha384 = ["platform/dpe_profile_p384_sha384"]
 # Run ARBITRARY_MAX_HANDLES=n cargo build --features arbitrary_max_handles to use this feature
 arbitrary_max_handles = []
 disable_simulation = []
-disable_extend_tci = []
+disable_recursive = []
 disable_auto_init = []
 disable_rotate_context = []
 disable_x509 = []
@@ -21,6 +21,7 @@ disable_is_symmetric = []
 disable_internal_info = []
 disable_internal_dice = []
 disable_is_ca = []
+disable_retain_parent_context = []
 
 [dependencies]
 bitflags = "2.4.0"

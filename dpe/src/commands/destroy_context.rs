@@ -71,7 +71,7 @@ impl CommandExecution for DestroyCtxCmd {
 mod tests {
     use super::*;
     use crate::{
-        commands::{Command, CommandHdr, DeriveChildCmd, DeriveChildFlags, InitCtxCmd},
+        commands::{Command, CommandHdr, DeriveContextCmd, DeriveContextFlags, InitCtxCmd},
         context::{Context, ContextState},
         dpe_instance::tests::{TestTypes, SIMULATION_HANDLE, TEST_HANDLE, TEST_LOCALITIES},
         support::{test::SUPPORT, Support},
@@ -262,46 +262,46 @@ mod tests {
         let mut dpe = DpeInstance::new(&mut env, SUPPORT).unwrap();
 
         // create new context while preserving auto-initialized context
-        let handle_1 = match (DeriveChildCmd {
+        let handle_1 = match (DeriveContextCmd {
             handle: ContextHandle::default(),
             data: [0u8; DPE_PROFILE.get_tci_size()],
-            flags: DeriveChildFlags::RETAIN_PARENT | DeriveChildFlags::CHANGE_LOCALITY,
+            flags: DeriveContextFlags::RETAIN_PARENT_CONTEXT | DeriveContextFlags::CHANGE_LOCALITY,
             tci_type: 0,
             target_locality: TEST_LOCALITIES[1],
         })
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         {
-            Ok(Response::DeriveChild(resp)) => resp.handle,
+            Ok(Response::DeriveContext(resp)) => resp.handle,
             Ok(_) => panic!("Invalid response type"),
             Err(e) => Err(e).unwrap(),
         };
 
         // retire context with handle 1 and create new context
-        let handle_2 = match (DeriveChildCmd {
+        let handle_2 = match (DeriveContextCmd {
             handle: handle_1,
             data: [0u8; DPE_PROFILE.get_tci_size()],
-            flags: DeriveChildFlags::empty(),
+            flags: DeriveContextFlags::empty(),
             tci_type: 0,
             target_locality: TEST_LOCALITIES[1],
         })
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[1])
         {
-            Ok(Response::DeriveChild(resp)) => resp.handle,
+            Ok(Response::DeriveContext(resp)) => resp.handle,
             Ok(_) => panic!("Invalid response type"),
             Err(e) => Err(e).unwrap(),
         };
 
         // retire context with handle 2 and create new context
-        let handle_3 = match (DeriveChildCmd {
+        let handle_3 = match (DeriveContextCmd {
             handle: handle_2,
             data: [0u8; DPE_PROFILE.get_tci_size()],
-            flags: DeriveChildFlags::empty(),
+            flags: DeriveContextFlags::empty(),
             tci_type: 0,
             target_locality: TEST_LOCALITIES[1],
         })
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[1])
         {
-            Ok(Response::DeriveChild(resp)) => resp.handle,
+            Ok(Response::DeriveContext(resp)) => resp.handle,
             Ok(_) => panic!("Invalid response type"),
             Err(e) => Err(e).unwrap(),
         };
@@ -330,46 +330,46 @@ mod tests {
         let mut dpe = DpeInstance::new(&mut env, SUPPORT).unwrap();
 
         // create new context while preserving auto-initialized context
-        let parent_handle = match (DeriveChildCmd {
+        let parent_handle = match (DeriveContextCmd {
             handle: ContextHandle::default(),
             data: [0u8; DPE_PROFILE.get_tci_size()],
-            flags: DeriveChildFlags::RETAIN_PARENT | DeriveChildFlags::CHANGE_LOCALITY,
+            flags: DeriveContextFlags::RETAIN_PARENT_CONTEXT | DeriveContextFlags::CHANGE_LOCALITY,
             tci_type: 0,
             target_locality: TEST_LOCALITIES[1],
         })
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         {
-            Ok(Response::DeriveChild(resp)) => resp.handle,
+            Ok(Response::DeriveContext(resp)) => resp.handle,
             Ok(_) => panic!("Invalid response type"),
             Err(e) => Err(e).unwrap(),
         };
 
         // derive one child from the parent
-        let parent_handle = match (DeriveChildCmd {
+        let parent_handle = match (DeriveContextCmd {
             handle: parent_handle,
             data: [0u8; DPE_PROFILE.get_tci_size()],
-            flags: DeriveChildFlags::RETAIN_PARENT,
+            flags: DeriveContextFlags::RETAIN_PARENT_CONTEXT,
             tci_type: 0,
             target_locality: TEST_LOCALITIES[1],
         })
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[1])
         {
-            Ok(Response::DeriveChild(resp)) => resp.parent_handle,
+            Ok(Response::DeriveContext(resp)) => resp.parent_handle,
             Ok(_) => panic!("Invalid response type"),
             Err(e) => Err(e).unwrap(),
         };
 
         // derive another child while retiring the parent handle
-        let handle_b = match (DeriveChildCmd {
+        let handle_b = match (DeriveContextCmd {
             handle: parent_handle,
             data: [0u8; DPE_PROFILE.get_tci_size()],
-            flags: DeriveChildFlags::empty(),
+            flags: DeriveContextFlags::empty(),
             tci_type: 0,
             target_locality: TEST_LOCALITIES[1],
         })
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[1])
         {
-            Ok(Response::DeriveChild(resp)) => resp.handle,
+            Ok(Response::DeriveContext(resp)) => resp.handle,
             Ok(_) => panic!("Invalid response type"),
             Err(e) => Err(e).unwrap(),
         };

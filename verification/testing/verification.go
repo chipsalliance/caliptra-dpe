@@ -57,16 +57,6 @@ var GetCertificateChainTestCase = TestCase{
 	"GetCertificateChain", TestGetCertificateChain, []string{"AutoInit", "X509"},
 }
 
-// ExtendTCITestCase tests ExtendTci
-var ExtendTCITestCase = TestCase{
-	"ExtendTCITestCase", TestExtendTCI, []string{"AutoInit", "ExtendTci"},
-}
-
-// ExtendDerivedTciTestCase tests ExtendTci on derived child contexts
-var ExtendDerivedTciTestCase = TestCase{
-	"ExtendDerivedTciTestCase", TestExtendTciOnDerivedContexts, []string{"AutoInit", "ExtendTci"},
-}
-
 // GetProfileTestCase tests GetProfile
 var GetProfileTestCase = TestCase{
 	"GetProfile", TestGetProfile, []string{},
@@ -74,12 +64,12 @@ var GetProfileTestCase = TestCase{
 
 // InvalidHandleTestCase tests various commands with invalid context handles
 var InvalidHandleTestCase = TestCase{
-	"CheckInvalidHandle", TestInvalidHandle, []string{"Simulation", "RotateContext", "ExtendTci"},
+	"CheckInvalidHandle", TestInvalidHandle, []string{"Simulation", "RotateContext"},
 }
 
 // WrongLocalityTestCase tests various commands with invalid localities
 var WrongLocalityTestCase = TestCase{
-	"CheckWrongLocality", TestWrongLocality, []string{"AutoInit", "RotateContext", "ExtendTci"},
+	"CheckWrongLocality", TestWrongLocality, []string{"AutoInit", "RotateContext"},
 }
 
 // UnsupportedCommand tests calling unsupported commands
@@ -89,7 +79,7 @@ var UnsupportedCommand = TestCase{
 
 // UnsupportedCommandFlag tests calling unsupported commands flags
 var UnsupportedCommandFlag = TestCase{
-	"CheckSupportForCommandFlag", TestUnsupportedCommandFlag, []string{"AutoInit", "RotateContext", "ExtendTci"},
+	"CheckSupportForCommandFlag", TestUnsupportedCommandFlag, []string{"AutoInit", "RotateContext"},
 }
 
 // RotateContextTestCase tests RotateContext
@@ -129,8 +119,6 @@ var AllTestCases = []TestCase{
 	CertifyKeySimulationTestCase,
 	GetCertificateChainTestCase,
 	TpmPolicySigningTestCase,
-	ExtendTCITestCase,
-	ExtendDerivedTciTestCase,
 	RotateContextTestCase,
 	RotateContextSimulationTestCase,
 	SignAsymmetricTestCase,

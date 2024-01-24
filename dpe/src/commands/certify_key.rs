@@ -100,7 +100,7 @@ impl CommandExecution for CertifyKeyCmd {
             label: &self.label,
             tci_nodes: &nodes[..tcb_count],
             is_ca: self.uses_is_ca(),
-            supports_extend_tci: dpe.support.extend_tci(),
+            supports_recursive: dpe.support.recursive(),
         };
 
         let mut issuer_name = [0u8; MAX_CHUNK_SIZE];

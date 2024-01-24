@@ -89,7 +89,7 @@ func TestSignSimulation(d client.TestDPEInstance, c client.DPEClient, t *testing
 	useSimulation := true
 	handle := getInitialContextHandle(d, c, t, useSimulation)
 	defer func() {
-		c.DestroyContext(handle, client.DestroyDescendants)
+		c.DestroyContext(handle)
 	}()
 
 	// Get digest size
