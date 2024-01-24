@@ -137,12 +137,11 @@ impl DpeInstance {
         let resp = match command {
             Command::GetProfile => Ok(Response::GetProfile(self.get_profile(&mut env.platform)?)),
             Command::InitCtx(cmd) => cmd.execute(self, env, locality),
-            Command::DeriveChild(cmd) => cmd.execute(self, env, locality),
+            Command::DeriveContext(cmd) => cmd.execute(self, env, locality),
             Command::CertifyKey(cmd) => cmd.execute(self, env, locality),
             Command::Sign(cmd) => cmd.execute(self, env, locality),
             Command::RotateCtx(cmd) => cmd.execute(self, env, locality),
             Command::DestroyCtx(cmd) => cmd.execute(self, env, locality),
-            Command::ExtendTci(cmd) => cmd.execute(self, env, locality),
             Command::GetCertificateChain(cmd) => cmd.execute(self, env, locality),
         };
 
@@ -283,7 +282,7 @@ impl DpeInstance {
             }
 
             // TODO: The root node isn't a real node with measurements and
-            // shouldn't be in the cert. But we don't support DeriveChild yet,
+            // shouldn't be in the cert. But we don't support DeriveContext yet,
             // so this is the only node we can create to test cert creation.
             nodes[out_idx] = curr.tci;
             out_idx += 1;
@@ -440,7 +439,7 @@ impl Iterator for FlagsIter {
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::commands::{DeriveChildCmd, DeriveChildFlags};
+    use crate::commands::{DeriveContextCmd, DeriveContextFlags};
     use crate::response::NewHandleResp;
     use crate::support::test::SUPPORT;
     use crate::{commands::CommandHdr, CURRENT_PROFILE_MAJOR_VERSION};
@@ -668,10 +667,10 @@ pub mod tests {
         let mut last_cdi = vec![];
 
         for i in 0..3 {
-            DeriveChildCmd {
+            DeriveContextCmd {
                 handle: ContextHandle::default(),
                 data: [i; DPE_PROFILE.get_hash_size()],
-                flags: DeriveChildFlags::MAKE_DEFAULT,
+                flags: DeriveContextFlags::MAKE_DEFAULT,
                 tci_type: i as u32,
                 target_locality: 0,
             }
@@ -723,10 +722,10 @@ pub mod tests {
         let parent_context_idx = dpe
             .get_active_context_pos(&ContextHandle::default(), TEST_LOCALITIES[0])
             .unwrap();
-        DeriveChildCmd {
+        DeriveContextCmd {
             handle: ContextHandle::default(),
             data: [0; DPE_PROFILE.get_hash_size()],
-            flags: DeriveChildFlags::MAKE_DEFAULT | DeriveChildFlags::INTERNAL_INPUT_INFO,
+            flags: DeriveContextFlags::MAKE_DEFAULT | DeriveContextFlags::INTERNAL_INPUT_INFO,
             tci_type: 0u32,
             target_locality: 0,
         }
@@ -779,10 +778,10 @@ pub mod tests {
         let parent_context_idx = dpe
             .get_active_context_pos(&ContextHandle::default(), TEST_LOCALITIES[0])
             .unwrap();
-        DeriveChildCmd {
+        DeriveContextCmd {
             handle: ContextHandle::default(),
             data: [0; DPE_PROFILE.get_hash_size()],
-            flags: DeriveChildFlags::MAKE_DEFAULT | DeriveChildFlags::INTERNAL_INPUT_DICE,
+            flags: DeriveContextFlags::MAKE_DEFAULT | DeriveContextFlags::INTERNAL_INPUT_DICE,
             tci_type: 0u32,
             target_locality: 0,
         }

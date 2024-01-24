@@ -51,12 +51,11 @@ fn handle_request(dpe: &mut DpeInstance, env: &mut DpeEnv<impl DpeTypes>, stream
     let response_code = match response {
         Response::GetProfile(ref res) => res.resp_hdr.status,
         Response::InitCtx(ref res) => res.resp_hdr.status,
-        Response::DeriveChild(ref res) => res.resp_hdr.status,
+        Response::DeriveContext(ref res) => res.resp_hdr.status,
         Response::RotateCtx(ref res) => res.resp_hdr.status,
         Response::CertifyKey(ref res) => res.resp_hdr.status,
         Response::Sign(ref res) => res.resp_hdr.status,
         Response::DestroyCtx(ref resp_hdr) => resp_hdr.status,
-        Response::ExtendTci(ref res) => res.resp_hdr.status,
         Response::GetCertificateChain(ref res) => res.resp_hdr.status,
         Response::Error(ref resp_hdr) => resp_hdr.status,
     };
@@ -81,9 +80,9 @@ struct Args {
     #[arg(long)]
     supports_simulation: bool,
 
-    /// Supports the ExtendTci command.
+    /// Supports the RECURSIVE extension to DeriveContext.
     #[arg(long)]
-    supports_extend_tci: bool,
+    supports_recursive: bool,
 
     /// Automatically initializes the default context.
     #[arg(long)]
@@ -109,13 +108,17 @@ struct Args {
     #[arg(long)]
     supports_is_symmetric: bool,
 
-    /// Supports the INTERNAL_INPUT_INFO extension to DeriveChild
+    /// Supports the INTERNAL_INPUT_INFO extension to DeriveContext
     #[arg(long)]
     supports_internal_info: bool,
 
-    /// Supports the INTERNAL_INPUT_DICE extension to DeriveChild
+    /// Supports the INTERNAL_INPUT_DICE extension to DeriveContext
     #[arg(long)]
     supports_internal_dice: bool,
+
+    /// Supports the RETAIN_PARENT_CONTEXT extension to DeriveContext
+    #[arg(long)]
+    supports_retain_parent_context: bool,
 }
 
 struct SimTypes {}
@@ -152,12 +155,16 @@ fn main() -> std::io::Result<()> {
     support.set(Support::AUTO_INIT, args.supports_auto_init);
     support.set(Support::X509, args.supports_x509);
     support.set(Support::CSR, args.supports_csr);
-    support.set(Support::EXTEND_TCI, args.supports_extend_tci);
+    support.set(Support::RECURSIVE, args.supports_recursive);
     support.set(Support::ROTATE_CONTEXT, args.supports_rotate_context);
     support.set(Support::INTERNAL_DICE, args.supports_internal_dice);
     support.set(Support::INTERNAL_INFO, args.supports_internal_info);
     support.set(Support::IS_CA, args.supports_is_ca);
     support.set(Support::IS_SYMMETRIC, args.supports_is_symmetric);
+    support.set(
+        Support::RETAIN_PARENT_CONTEXT,
+        args.supports_retain_parent_context,
+    );
 
     let mut env = DpeEnv::<SimTypes> {
         crypto: <SimTypes as DpeTypes>::Crypto::new(),

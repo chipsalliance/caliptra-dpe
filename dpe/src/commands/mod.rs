@@ -4,14 +4,13 @@ Licensed under the Apache-2.0 license.
 Abstract:
     DPE Commands and deserialization.
 --*/
-pub use self::derive_child::{DeriveChildCmd, DeriveChildFlags};
+pub use self::derive_context::{DeriveContextCmd, DeriveContextFlags};
 pub use self::destroy_context::DestroyCtxCmd;
 pub use self::get_certificate_chain::GetCertificateChainCmd;
 pub use self::initialize_context::InitCtxCmd;
 
 pub use self::certify_key::{CertifyKeyCmd, CertifyKeyFlags};
 
-use self::extend_tci::ExtendTciCmd;
 pub use self::rotate_context::{RotateCtxCmd, RotateCtxFlags};
 pub use self::sign::{SignCmd, SignFlags};
 
@@ -24,9 +23,8 @@ use core::mem::size_of;
 use zerocopy::FromBytes;
 
 mod certify_key;
-mod derive_child;
+mod derive_context;
 mod destroy_context;
-mod extend_tci;
 mod get_certificate_chain;
 mod initialize_context;
 mod rotate_context;
@@ -36,25 +34,23 @@ mod sign;
 pub enum Command {
     GetProfile,
     InitCtx(InitCtxCmd),
-    DeriveChild(DeriveChildCmd),
+    DeriveContext(DeriveContextCmd),
     CertifyKey(CertifyKeyCmd),
     Sign(SignCmd),
     RotateCtx(RotateCtxCmd),
     DestroyCtx(DestroyCtxCmd),
-    ExtendTci(ExtendTciCmd),
     GetCertificateChain(GetCertificateChainCmd),
 }
 
 impl Command {
     pub const GET_PROFILE: u32 = 0x01;
     pub const INITIALIZE_CONTEXT: u32 = 0x07;
-    pub const DERIVE_CHILD: u32 = 0x08;
+    pub const DERIVE_CONTEXT: u32 = 0x08;
     pub const CERTIFY_KEY: u32 = 0x09;
     pub const SIGN: u32 = 0x0A;
     pub const ROTATE_CONTEXT_HANDLE: u32 = 0x0e;
     pub const DESTROY_CONTEXT: u32 = 0x0f;
-    pub const GET_CERTIFICATE_CHAIN: u32 = 0x80;
-    pub const EXTEND_TCI: u32 = 0x81;
+    pub const GET_CERTIFICATE_CHAIN: u32 = 0x10;
 
     /// Returns the command with its parameters given a slice of bytes.
     ///
@@ -68,7 +64,7 @@ impl Command {
         match header.cmd_id {
             Command::GET_PROFILE => Ok(Command::GetProfile),
             Command::INITIALIZE_CONTEXT => Self::parse_command(Command::InitCtx, bytes),
-            Command::DERIVE_CHILD => Self::parse_command(Command::DeriveChild, bytes),
+            Command::DERIVE_CONTEXT => Self::parse_command(Command::DeriveContext, bytes),
             Command::CERTIFY_KEY => Self::parse_command(Command::CertifyKey, bytes),
             Command::SIGN => Self::parse_command(Command::Sign, bytes),
             Command::ROTATE_CONTEXT_HANDLE => Self::parse_command(Command::RotateCtx, bytes),
@@ -76,7 +72,6 @@ impl Command {
             Command::GET_CERTIFICATE_CHAIN => {
                 Self::parse_command(Command::GetCertificateChain, bytes)
             }
-            Command::EXTEND_TCI => Self::parse_command(Command::ExtendTci, bytes),
             _ => Err(DpeErrorCode::InvalidCommand),
         }
     }
@@ -96,12 +91,11 @@ impl From<Command> for u32 {
         match cmd {
             Command::GetProfile => Command::GET_PROFILE,
             Command::InitCtx(_) => Command::INITIALIZE_CONTEXT,
-            Command::DeriveChild(_) => Command::DERIVE_CHILD,
+            Command::DeriveContext(_) => Command::DERIVE_CONTEXT,
             Command::CertifyKey(_) => Command::CERTIFY_KEY,
             Command::Sign(_) => Command::SIGN,
             Command::RotateCtx(_) => Command::ROTATE_CONTEXT_HANDLE,
             Command::DestroyCtx(_) => Command::DESTROY_CONTEXT,
-            Command::ExtendTci(_) => Command::EXTEND_TCI,
             Command::GetCertificateChain(_) => Command::GET_CERTIFICATE_CHAIN,
         }
     }

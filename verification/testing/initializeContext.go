@@ -63,7 +63,7 @@ func testInitContext(d client.TestDPEInstance, c client.DPEClient, t *testing.T,
 		if err != nil {
 			t.Fatal("Failed to create a simulation context.")
 		}
-		defer c.DestroyContext(handle, client.DestroyDescendants)
+		defer c.DestroyContext(handle)
 
 		// Could prove difficult to prove it is a cryptographically secure random.
 		if *handle == client.ContextHandle([16]byte{0}) {

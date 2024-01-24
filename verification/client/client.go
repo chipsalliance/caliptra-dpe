@@ -52,11 +52,10 @@ type DPEClient interface {
 	GetProfile() (*GetProfileResp, error)
 	CertifyKey(handle *ContextHandle, label []byte, format CertifyKeyFormat, flags CertifyKeyFlags) (*CertifiedKey, error)
 	GetCertificateChain() ([]byte, error)
-	DestroyContext(handle *ContextHandle, flags DestroyCtxFlags) error
-	DeriveChild(handle *ContextHandle, inputData []byte, flags DeriveChildFlags, tciType uint32, targetLocality uint32) (*DeriveChildResp, error)
+	DestroyContext(handle *ContextHandle) error
+	DeriveContext(handle *ContextHandle, inputData []byte, flags DeriveContextFlags, tciType uint32, targetLocality uint32) (*DeriveContextResp, error)
 	RotateContextHandle(handle *ContextHandle, flags RotateContextHandleFlags) (*ContextHandle, error)
 	Sign(handle *ContextHandle, label []byte, flags SignFlags, toBeSigned []byte) (*DPESignedHash, error)
-	ExtendTCI(handle *ContextHandle, inputData []byte) (*ContextHandle, error)
 }
 
 // NewClient returns a new DPE client

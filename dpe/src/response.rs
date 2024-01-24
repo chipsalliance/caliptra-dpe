@@ -17,12 +17,11 @@ use zerocopy::AsBytes;
 pub enum Response {
     GetProfile(GetProfileResp),
     InitCtx(NewHandleResp),
-    DeriveChild(DeriveChildResp),
+    DeriveContext(DeriveContextResp),
     RotateCtx(NewHandleResp),
     CertifyKey(CertifyKeyResp),
     Sign(SignResp),
     DestroyCtx(ResponseHdr),
-    ExtendTci(NewHandleResp),
     GetCertificateChain(GetCertificateChainResp),
     Error(ResponseHdr),
 }
@@ -32,12 +31,11 @@ impl Response {
         match self {
             Response::GetProfile(res) => res.as_bytes(),
             Response::InitCtx(res) => res.as_bytes(),
-            Response::DeriveChild(res) => res.as_bytes(),
+            Response::DeriveContext(res) => res.as_bytes(),
             Response::RotateCtx(res) => res.as_bytes(),
             Response::CertifyKey(res) => res.as_bytes(),
             Response::Sign(res) => res.as_bytes(),
             Response::DestroyCtx(res) => res.as_bytes(),
-            Response::ExtendTci(res) => res.as_bytes(),
             Response::GetCertificateChain(res) => res.as_bytes(),
             Response::Error(res) => res.as_bytes(),
         }
@@ -105,7 +103,7 @@ pub struct NewHandleResp {
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, zerocopy::AsBytes, zerocopy::FromBytes)]
-pub struct DeriveChildResp {
+pub struct DeriveContextResp {
     pub resp_hdr: ResponseHdr,
     pub handle: ContextHandle,
     pub parent_handle: ContextHandle,

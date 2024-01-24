@@ -3,7 +3,7 @@ use super::CommandExecution;
 use crate::{
     context::{ActiveContextArgs, Context, ContextHandle, ContextState},
     dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
-    response::{DeriveChildResp, DpeErrorCode, Response, ResponseHdr},
+    response::{DeriveContextResp, DpeErrorCode, Response, ResponseHdr},
     tci::TciMeasurement,
     DPE_PROFILE,
 };
@@ -11,57 +11,63 @@ use bitflags::bitflags;
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, zerocopy::FromBytes, zerocopy::AsBytes)]
-pub struct DeriveChildFlags(u32);
+pub struct DeriveContextFlags(u32);
 
 bitflags! {
-    impl DeriveChildFlags: u32 {
+    impl DeriveContextFlags: u32 {
         const INTERNAL_INPUT_INFO = 1u32 << 31;
         const INTERNAL_INPUT_DICE = 1u32 << 30;
-        const RETAIN_PARENT = 1u32 << 29;
+        const RETAIN_PARENT_CONTEXT = 1u32 << 29;
         const MAKE_DEFAULT = 1u32 << 28;
         const CHANGE_LOCALITY = 1u32 << 27;
         const INPUT_ALLOW_CA = 1u32 << 26;
         const INPUT_ALLOW_X509 = 1u32 << 25;
+        const RECURSIVE = 1u32 << 24;
     }
 }
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, zerocopy::FromBytes, zerocopy::AsBytes)]
-pub struct DeriveChildCmd {
+pub struct DeriveContextCmd {
     pub handle: ContextHandle,
     pub data: [u8; DPE_PROFILE.get_hash_size()],
-    pub flags: DeriveChildFlags,
+    pub flags: DeriveContextFlags,
     pub tci_type: u32,
     pub target_locality: u32,
 }
 
-impl DeriveChildCmd {
+impl DeriveContextCmd {
     const fn uses_internal_info_input(&self) -> bool {
-        self.flags.contains(DeriveChildFlags::INTERNAL_INPUT_INFO)
+        self.flags.contains(DeriveContextFlags::INTERNAL_INPUT_INFO)
     }
 
     const fn uses_internal_dice_input(&self) -> bool {
-        self.flags.contains(DeriveChildFlags::INTERNAL_INPUT_DICE)
+        self.flags.contains(DeriveContextFlags::INTERNAL_INPUT_DICE)
     }
 
     pub const fn retains_parent(&self) -> bool {
-        self.flags.contains(DeriveChildFlags::RETAIN_PARENT)
+        self.flags
+            .contains(DeriveContextFlags::RETAIN_PARENT_CONTEXT)
     }
 
     const fn makes_default(&self) -> bool {
-        self.flags.contains(DeriveChildFlags::MAKE_DEFAULT)
+        self.flags.contains(DeriveContextFlags::MAKE_DEFAULT)
     }
 
     pub const fn changes_locality(&self) -> bool {
-        self.flags.contains(DeriveChildFlags::CHANGE_LOCALITY)
+        self.flags.contains(DeriveContextFlags::CHANGE_LOCALITY)
     }
 
     const fn allows_ca(&self) -> bool {
-        self.flags.contains(DeriveChildFlags::INPUT_ALLOW_CA)
+        self.flags.contains(DeriveContextFlags::INPUT_ALLOW_CA)
     }
 
     const fn allows_x509(&self) -> bool {
-        self.flags.contains(DeriveChildFlags::INPUT_ALLOW_X509)
+        self.flags.contains(DeriveContextFlags::INPUT_ALLOW_X509)
+    }
+
+    pub const fn is_recursive(&self) -> bool {
+        self.flags.contains(DeriveContextFlags::RECURSIVE)
     }
 
     /// Whether it is okay to make a default context.
@@ -156,7 +162,7 @@ impl DeriveChildCmd {
     }
 }
 
-impl CommandExecution for DeriveChildCmd {
+impl CommandExecution for DeriveContextCmd {
     fn execute(
         &self,
         dpe: &mut DpeInstance,
@@ -166,6 +172,7 @@ impl CommandExecution for DeriveChildCmd {
         // Make sure the operation is supported.
         if (!dpe.support.internal_info() && self.uses_internal_info_input())
             || (!dpe.support.internal_dice() && self.uses_internal_dice_input())
+            || (!dpe.support.retain_parent_context() && self.retains_parent())
         {
             return Err(DpeErrorCode::ArgumentNotSupported);
         }
@@ -178,13 +185,10 @@ impl CommandExecution for DeriveChildCmd {
         let parent_idx = dpe.get_active_context_pos(&self.handle, locality)?;
         if (!dpe.contexts[parent_idx].allow_ca() && self.allows_ca())
             || (!dpe.contexts[parent_idx].allow_x509() && self.allows_x509())
+            || (self.is_recursive() && self.retains_parent())
         {
             return Err(DpeErrorCode::InvalidArgument);
         }
-
-        let child_idx = dpe
-            .get_next_inactive_context_pos()
-            .ok_or(DpeErrorCode::MaxTcis)?;
 
         let target_locality = if !self.changes_locality() {
             locality
@@ -192,60 +196,96 @@ impl CommandExecution for DeriveChildCmd {
             self.target_locality
         };
 
-        if !self.safe_to_make_child(dpe, parent_idx, target_locality)? {
-            return Err(DpeErrorCode::InvalidArgument);
-        }
+        if self.is_recursive() {
+            let mut tmp_context = dpe.contexts[parent_idx];
+            if tmp_context.tci.tci_type != self.tci_type {
+                return Err(DpeErrorCode::InvalidArgument);
+            }
+            dpe.add_tci_measurement(
+                env,
+                &mut tmp_context,
+                &TciMeasurement(self.data),
+                target_locality,
+            )?;
 
-        let child_handle = if self.makes_default() {
-            ContextHandle::default()
+            // Rotate the handle if it isn't the default context.
+            dpe.roll_onetime_use_handle(env, parent_idx)?;
+
+            dpe.contexts[parent_idx] = Context {
+                handle: dpe.contexts[parent_idx].handle,
+                ..tmp_context
+            };
+
+            // No child context created so handle is unmeaningful
+            Ok(Response::DeriveContext(DeriveContextResp {
+                handle: ContextHandle::default(),
+                parent_handle: dpe.contexts[parent_idx].handle,
+                resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
+            }))
         } else {
-            dpe.generate_new_handle(env)?
-        };
+            let child_idx = dpe
+                .get_next_inactive_context_pos()
+                .ok_or(DpeErrorCode::MaxTcis)?;
 
-        // Create a temporary context to mutate so that we avoid mutating internal state upon an error.
-        let mut tmp_child_context = Context::new();
-        tmp_child_context.activate(&ActiveContextArgs {
-            context_type: dpe.contexts[parent_idx].context_type,
-            locality: target_locality,
-            handle: &child_handle,
-            tci_type: self.tci_type,
-            parent_idx: parent_idx as u8,
-            allow_ca: self.allows_ca(),
-            allow_x509: self.allows_x509(),
-        });
+            if !self.safe_to_make_child(dpe, parent_idx, target_locality)? {
+                return Err(DpeErrorCode::InvalidArgument);
+            }
 
-        dpe.add_tci_measurement(
-            env,
-            &mut tmp_child_context,
-            &TciMeasurement(self.data),
-            target_locality,
-        )?;
+            let child_handle = if self.makes_default() {
+                ContextHandle::default()
+            } else {
+                dpe.generate_new_handle(env)?
+            };
 
-        tmp_child_context.uses_internal_input_info = self.uses_internal_info_input().into();
-        tmp_child_context.uses_internal_input_dice = self.uses_internal_dice_input().into();
+            let allow_ca = self.allows_ca();
+            let allow_x509 = self.allows_x509();
+            let uses_internal_input_info = self.uses_internal_info_input();
+            let uses_internal_input_dice = self.uses_internal_dice_input();
 
-        // Copy the parent context to mutate so that we avoid mutating internal state upon an error.
-        let mut tmp_parent_context = dpe.contexts[parent_idx];
-        if !self.retains_parent() {
-            tmp_parent_context.state = ContextState::Retired;
-            tmp_parent_context.handle = ContextHandle([0xff; ContextHandle::SIZE]);
-        } else if !tmp_parent_context.handle.is_default() {
-            tmp_parent_context.handle = dpe.generate_new_handle(env)?;
+            // Create a temporary context to mutate so that we avoid mutating internal state upon an error.
+            let mut tmp_child_context = Context::new();
+            tmp_child_context.activate(&ActiveContextArgs {
+                context_type: dpe.contexts[parent_idx].context_type,
+                locality: target_locality,
+                handle: &child_handle,
+                tci_type: self.tci_type,
+                parent_idx: parent_idx as u8,
+                allow_ca,
+                allow_x509,
+                uses_internal_input_info,
+                uses_internal_input_dice,
+            });
+
+            dpe.add_tci_measurement(
+                env,
+                &mut tmp_child_context,
+                &TciMeasurement(self.data),
+                target_locality,
+            )?;
+
+            // Copy the parent context to mutate so that we avoid mutating internal state upon an error.
+            let mut tmp_parent_context = dpe.contexts[parent_idx];
+            if !self.retains_parent() {
+                tmp_parent_context.state = ContextState::Retired;
+                tmp_parent_context.handle = ContextHandle([0xff; ContextHandle::SIZE]);
+            } else if !tmp_parent_context.handle.is_default() {
+                tmp_parent_context.handle = dpe.generate_new_handle(env)?;
+            }
+
+            // Add child to the parent's list of children.
+            let children_with_child_idx = tmp_parent_context.add_child(child_idx)?;
+            tmp_parent_context.children = children_with_child_idx;
+
+            // At this point we cannot error out anymore, so it is safe to set the updated child and parent contexts.
+            dpe.contexts[child_idx] = tmp_child_context;
+            dpe.contexts[parent_idx] = tmp_parent_context;
+
+            Ok(Response::DeriveContext(DeriveContextResp {
+                handle: child_handle,
+                parent_handle: dpe.contexts[parent_idx].handle,
+                resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
+            }))
         }
-
-        // Add child to the parent's list of children.
-        let children_with_child_idx = tmp_parent_context.add_child(child_idx)?;
-        tmp_parent_context.children = children_with_child_idx;
-
-        // At this point we cannot error out anymore, so it is safe to set the updated child and parent contexts.
-        dpe.contexts[child_idx] = tmp_child_context;
-        dpe.contexts[parent_idx] = tmp_parent_context;
-
-        Ok(Response::DeriveChild(DeriveChildResp {
-            handle: child_handle,
-            parent_handle: dpe.contexts[parent_idx].handle,
-            resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
-        }))
     }
 }
 
@@ -263,29 +303,90 @@ mod tests {
         support::Support,
         MAX_HANDLES,
     };
-    use crypto::OpensslCrypto;
+    use crypto::{Crypto, Hasher, OpensslCrypto};
     use openssl::x509::X509;
     use openssl::{bn::BigNum, ecdsa::EcdsaSig};
     use platform::default::DefaultPlatform;
     use zerocopy::AsBytes;
 
-    const TEST_DERIVE_CHILD_CMD: DeriveChildCmd = DeriveChildCmd {
+    const TEST_DERIVE_CONTEXT_CMD: DeriveContextCmd = DeriveContextCmd {
         handle: SIMULATION_HANDLE,
         data: TEST_DIGEST,
-        flags: DeriveChildFlags(0x1234_5678),
+        flags: DeriveContextFlags(0x1234_5678),
         tci_type: 0x9876_5432,
         target_locality: 0x10CA_1171,
     };
 
     #[test]
-    fn test_deserialize_derive_child() {
-        let mut command = CommandHdr::new_for_test(Command::DERIVE_CHILD)
+    fn test_deserialize_derive_context() {
+        let mut command = CommandHdr::new_for_test(Command::DERIVE_CONTEXT)
             .as_bytes()
             .to_vec();
-        command.extend(TEST_DERIVE_CHILD_CMD.as_bytes());
+        command.extend(TEST_DERIVE_CONTEXT_CMD.as_bytes());
         assert_eq!(
-            Ok(Command::DeriveChild(TEST_DERIVE_CHILD_CMD)),
+            Ok(Command::DeriveContext(TEST_DERIVE_CONTEXT_CMD)),
             Command::deserialize(&command)
+        );
+    }
+
+    #[test]
+    fn test_support() {
+        let mut env = DpeEnv::<TestTypes> {
+            crypto: OpensslCrypto::new(),
+            platform: DefaultPlatform,
+        };
+        let mut dpe = DpeInstance::new(
+            &mut env,
+            Support::AUTO_INIT | Support::INTERNAL_INFO | Support::RETAIN_PARENT_CONTEXT,
+        )
+        .unwrap();
+
+        assert_eq!(
+            Err(DpeErrorCode::ArgumentNotSupported),
+            DeriveContextCmd {
+                handle: ContextHandle::default(),
+                data: [0; DPE_PROFILE.get_tci_size()],
+                flags: DeriveContextFlags::INTERNAL_INPUT_DICE,
+                tci_type: 0,
+                target_locality: 0
+            }
+            .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
+        );
+
+        dpe = DpeInstance::new(
+            &mut env,
+            Support::AUTO_INIT | Support::INTERNAL_DICE | Support::RETAIN_PARENT_CONTEXT,
+        )
+        .unwrap();
+
+        assert_eq!(
+            Err(DpeErrorCode::ArgumentNotSupported),
+            DeriveContextCmd {
+                handle: ContextHandle::default(),
+                data: [0; DPE_PROFILE.get_tci_size()],
+                flags: DeriveContextFlags::INTERNAL_INPUT_INFO,
+                tci_type: 0,
+                target_locality: 0
+            }
+            .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
+        );
+
+        let mut dpe = DpeInstance::new(
+            &mut env,
+            Support::AUTO_INIT | Support::INTERNAL_INFO | Support::INTERNAL_DICE,
+        )
+        .unwrap();
+
+        assert_eq!(
+            Err(DpeErrorCode::ArgumentNotSupported),
+            DeriveContextCmd {
+                handle: ContextHandle::default(),
+                data: [0; DPE_PROFILE.get_tci_size()],
+                flags: DeriveContextFlags::RETAIN_PARENT_CONTEXT,
+                tci_type: 0,
+                target_locality: 0
+            }
+            .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         );
     }
 
@@ -304,10 +405,10 @@ mod tests {
         // Make sure it can detect wrong locality.
         assert_eq!(
             Err(DpeErrorCode::InvalidLocality),
-            DeriveChildCmd {
+            DeriveContextCmd {
                 handle: ContextHandle::default(),
                 data: [0; DPE_PROFILE.get_tci_size()],
-                flags: DeriveChildFlags::empty(),
+                flags: DeriveContextFlags::empty(),
                 tci_type: 0,
                 target_locality: 0
             }
@@ -325,10 +426,10 @@ mod tests {
 
         // Fill all contexts with children (minus the auto-init context).
         for _ in 0..MAX_HANDLES - 1 {
-            DeriveChildCmd {
+            DeriveContextCmd {
                 handle: ContextHandle::default(),
                 data: [0; DPE_PROFILE.get_tci_size()],
-                flags: DeriveChildFlags::MAKE_DEFAULT,
+                flags: DeriveContextFlags::MAKE_DEFAULT,
                 tci_type: 0,
                 target_locality: 0,
             }
@@ -339,10 +440,10 @@ mod tests {
         // Try to create one too many.
         assert_eq!(
             Err(DpeErrorCode::MaxTcis),
-            DeriveChildCmd {
+            DeriveContextCmd {
                 handle: ContextHandle::default(),
                 data: [0; DPE_PROFILE.get_tci_size()],
-                flags: DeriveChildFlags::empty(),
+                flags: DeriveContextFlags::empty(),
                 tci_type: 0,
                 target_locality: 0
             }
@@ -361,10 +462,10 @@ mod tests {
         let parent_idx = dpe
             .get_active_context_pos(&ContextHandle::default(), TEST_LOCALITIES[0])
             .unwrap();
-        DeriveChildCmd {
+        DeriveContextCmd {
             handle: ContextHandle::default(),
             data: [0; DPE_PROFILE.get_tci_size()],
-            flags: DeriveChildFlags::MAKE_DEFAULT | DeriveChildFlags::CHANGE_LOCALITY,
+            flags: DeriveContextFlags::MAKE_DEFAULT | DeriveContextFlags::CHANGE_LOCALITY,
             tci_type: 7,
             target_locality: TEST_LOCALITIES[1],
         }
@@ -392,10 +493,10 @@ mod tests {
         };
         let mut dpe = DpeInstance::new(&mut env, Support::AUTO_INIT).unwrap();
 
-        DeriveChildCmd {
+        DeriveContextCmd {
             handle: ContextHandle::default(),
             data: [0; DPE_PROFILE.get_tci_size()],
-            flags: DeriveChildFlags::MAKE_DEFAULT | DeriveChildFlags::CHANGE_LOCALITY,
+            flags: DeriveContextFlags::MAKE_DEFAULT | DeriveContextFlags::CHANGE_LOCALITY,
             tci_type: 7,
             target_locality: TEST_LOCALITIES[1],
         }
@@ -421,15 +522,15 @@ mod tests {
 
         // Make sure child handle is default when creating default child.
         assert_eq!(
-            Ok(Response::DeriveChild(DeriveChildResp {
+            Ok(Response::DeriveContext(DeriveContextResp {
                 handle: ContextHandle::default(),
                 parent_handle: ContextHandle([0xff; ContextHandle::SIZE]),
                 resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
             })),
-            DeriveChildCmd {
+            DeriveContextCmd {
                 handle: ContextHandle::default(),
                 data: [0; DPE_PROFILE.get_tci_size()],
-                flags: DeriveChildFlags::MAKE_DEFAULT,
+                flags: DeriveContextFlags::MAKE_DEFAULT,
                 tci_type: 0,
                 target_locality: 0,
             }
@@ -438,15 +539,15 @@ mod tests {
 
         // Make sure child has a random handle when not creating default.
         assert_eq!(
-            Ok(Response::DeriveChild(DeriveChildResp {
+            Ok(Response::DeriveContext(DeriveContextResp {
                 handle: RANDOM_HANDLE,
                 parent_handle: ContextHandle([0xff; ContextHandle::SIZE]),
                 resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
             })),
-            DeriveChildCmd {
+            DeriveContextCmd {
                 handle: ContextHandle::default(),
                 data: [0; DPE_PROFILE.get_tci_size()],
-                flags: DeriveChildFlags::empty(),
+                flags: DeriveContextFlags::empty(),
                 tci_type: 0,
                 target_locality: 0,
             }
@@ -462,7 +563,11 @@ mod tests {
         };
         let mut dpe = DpeInstance::new(
             &mut env,
-            Support::INTERNAL_INFO | Support::X509 | Support::AUTO_INIT | Support::ROTATE_CONTEXT,
+            Support::INTERNAL_INFO
+                | Support::X509
+                | Support::AUTO_INIT
+                | Support::ROTATE_CONTEXT
+                | Support::RETAIN_PARENT_CONTEXT,
         )
         .unwrap();
 
@@ -477,16 +582,16 @@ mod tests {
             Err(e) => Err(e).unwrap(),
         };
 
-        let parent_handle = match (DeriveChildCmd {
+        let parent_handle = match (DeriveContextCmd {
             handle,
             data: [0; DPE_PROFILE.get_tci_size()],
-            flags: DeriveChildFlags::RETAIN_PARENT,
+            flags: DeriveContextFlags::RETAIN_PARENT_CONTEXT,
             tci_type: 0,
             target_locality: 0,
         })
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         {
-            Ok(Response::DeriveChild(resp)) => resp.parent_handle,
+            Ok(Response::DeriveContext(resp)) => resp.parent_handle,
             Ok(_) => panic!("Invalid response type"),
             Err(e) => Err(e).unwrap(),
         };
@@ -511,16 +616,17 @@ mod tests {
             Err(e) => Err(e).unwrap(),
         };
 
-        let parent_handle = match (DeriveChildCmd {
+        let parent_handle = match (DeriveContextCmd {
             handle: new_context_handle,
             data: [0; DPE_PROFILE.get_tci_size()],
-            flags: DeriveChildFlags::RETAIN_PARENT | DeriveChildFlags::INTERNAL_INPUT_INFO,
+            flags: DeriveContextFlags::RETAIN_PARENT_CONTEXT
+                | DeriveContextFlags::INTERNAL_INPUT_INFO,
             tci_type: 0,
             target_locality: 0,
         })
         .execute(&mut dpe, &mut env, 0)
         {
-            Ok(Response::DeriveChild(resp)) => resp.parent_handle,
+            Ok(Response::DeriveContext(resp)) => resp.parent_handle,
             Ok(_) => panic!("Invalid response type"),
             Err(e) => Err(e).unwrap(),
         };
@@ -551,19 +657,23 @@ mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe = DpeInstance::new(&mut env, Support::AUTO_INIT).unwrap();
+        let mut dpe = DpeInstance::new(
+            &mut env,
+            Support::AUTO_INIT | Support::RETAIN_PARENT_CONTEXT,
+        )
+        .unwrap();
 
         // Make sure the parent handle is non-sense when not retaining.
         assert_eq!(
-            Ok(Response::DeriveChild(DeriveChildResp {
+            Ok(Response::DeriveContext(DeriveContextResp {
                 handle: ContextHandle::default(),
                 parent_handle: ContextHandle([0xff; ContextHandle::SIZE]),
                 resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
             })),
-            DeriveChildCmd {
+            DeriveContextCmd {
                 handle: ContextHandle::default(),
                 data: [0; DPE_PROFILE.get_tci_size()],
-                flags: DeriveChildFlags::MAKE_DEFAULT,
+                flags: DeriveContextFlags::MAKE_DEFAULT,
                 tci_type: 0,
                 target_locality: 0,
             }
@@ -572,17 +682,17 @@ mod tests {
 
         // Make sure the default parent handle stays the default handle when retained.
         assert_eq!(
-            Ok(Response::DeriveChild(DeriveChildResp {
+            Ok(Response::DeriveContext(DeriveContextResp {
                 handle: ContextHandle::default(),
                 parent_handle: ContextHandle::default(),
                 resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
             })),
-            DeriveChildCmd {
+            DeriveContextCmd {
                 handle: ContextHandle::default(),
                 data: [0; DPE_PROFILE.get_tci_size()],
-                flags: DeriveChildFlags::RETAIN_PARENT
-                    | DeriveChildFlags::MAKE_DEFAULT
-                    | DeriveChildFlags::CHANGE_LOCALITY,
+                flags: DeriveContextFlags::RETAIN_PARENT_CONTEXT
+                    | DeriveContextFlags::MAKE_DEFAULT
+                    | DeriveContextFlags::CHANGE_LOCALITY,
                 tci_type: 0,
                 target_locality: TEST_LOCALITIES[1],
             }
@@ -598,14 +708,14 @@ mod tests {
         dpe.contexts[old_default_idx].handle = ContextHandle([0x1; ContextHandle::SIZE]);
 
         // Make sure neither the parent nor the child handles are default.
-        let Response::DeriveChild(DeriveChildResp {
+        let Response::DeriveContext(DeriveContextResp {
             handle,
             parent_handle,
             resp_hdr,
-        }) = DeriveChildCmd {
+        }) = DeriveContextCmd {
             handle: dpe.contexts[old_default_idx].handle,
             data: [0; DPE_PROFILE.get_tci_size()],
-            flags: DeriveChildFlags::RETAIN_PARENT,
+            flags: DeriveContextFlags::RETAIN_PARENT_CONTEXT,
             tci_type: 0,
             target_locality: 0,
         }
@@ -622,10 +732,10 @@ mod tests {
 
     #[test]
     fn test_safe_to_make_default() {
-        let mut make_default_in_0 = DeriveChildCmd {
+        let mut make_default_in_0 = DeriveContextCmd {
             handle: ContextHandle::default(),
             data: TciMeasurement::default().0,
-            flags: DeriveChildFlags::MAKE_DEFAULT,
+            flags: DeriveContextFlags::MAKE_DEFAULT,
             tci_type: 0,
             target_locality: 0,
         };
@@ -649,7 +759,7 @@ mod tests {
         // This should never be possible, but there no contexts but somehow the is a default context
         assert!(!make_default_in_0.safe_to_make_default(parent_idx, Some(parent_idx), 0));
 
-        make_default_in_0.flags |= DeriveChildFlags::RETAIN_PARENT;
+        make_default_in_0.flags |= DeriveContextFlags::RETAIN_PARENT_CONTEXT;
 
         // Retain parent and make default in another locality that doesn't have a default.
         assert!(make_default_in_0.safe_to_make_default(parent_idx, None, 0));
@@ -661,10 +771,10 @@ mod tests {
 
     #[test]
     fn test_safe_to_make_non_default() {
-        let non_default = DeriveChildCmd {
+        let non_default = DeriveContextCmd {
             handle: ContextHandle::default(),
             data: TciMeasurement::default().0,
-            flags: DeriveChildFlags(0),
+            flags: DeriveContextFlags(0),
             tci_type: 0,
             target_locality: 0,
         };
@@ -683,13 +793,17 @@ mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe = DpeInstance::new(&mut env, Support::AUTO_INIT).unwrap();
+        let mut dpe = DpeInstance::new(
+            &mut env,
+            Support::AUTO_INIT | Support::RETAIN_PARENT_CONTEXT,
+        )
+        .unwrap();
 
         assert_eq!(
-            DeriveChildCmd {
+            DeriveContextCmd {
                 handle: ContextHandle::default(),
                 data: TciMeasurement::default().0,
-                flags: DeriveChildFlags::RETAIN_PARENT,
+                flags: DeriveContextFlags::RETAIN_PARENT_CONTEXT,
                 tci_type: 0,
                 target_locality: 0,
             }
@@ -704,14 +818,18 @@ mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe = DpeInstance::new(&mut env, Support::AUTO_INIT).unwrap();
+        let mut dpe = DpeInstance::new(
+            &mut env,
+            Support::AUTO_INIT | Support::RETAIN_PARENT_CONTEXT,
+        )
+        .unwrap();
 
-        DeriveChildCmd {
+        DeriveContextCmd {
             handle: ContextHandle::default(),
             data: [0; DPE_PROFILE.get_tci_size()],
-            flags: DeriveChildFlags::RETAIN_PARENT
-                | DeriveChildFlags::MAKE_DEFAULT
-                | DeriveChildFlags::CHANGE_LOCALITY,
+            flags: DeriveContextFlags::RETAIN_PARENT_CONTEXT
+                | DeriveContextFlags::MAKE_DEFAULT
+                | DeriveContextFlags::CHANGE_LOCALITY,
             tci_type: 7,
             target_locality: TEST_LOCALITIES[1],
         }
@@ -719,15 +837,86 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            DeriveChildCmd {
+            DeriveContextCmd {
                 handle: ContextHandle::default(),
                 data: [0; DPE_PROFILE.get_tci_size()],
-                flags: DeriveChildFlags::RETAIN_PARENT | DeriveChildFlags::CHANGE_LOCALITY,
+                flags: DeriveContextFlags::RETAIN_PARENT_CONTEXT
+                    | DeriveContextFlags::CHANGE_LOCALITY,
                 tci_type: 7,
                 target_locality: TEST_LOCALITIES[1],
             }
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0]),
             Err(DpeErrorCode::InvalidArgument)
         );
+    }
+
+    #[test]
+    fn test_recursive() {
+        let mut env = DpeEnv::<TestTypes> {
+            crypto: OpensslCrypto::new(),
+            platform: DefaultPlatform,
+        };
+        let mut dpe = DpeInstance::new(
+            &mut env,
+            Support::AUTO_INIT
+                | Support::RECURSIVE
+                | Support::INTERNAL_DICE
+                | Support::INTERNAL_INFO,
+        )
+        .unwrap();
+
+        assert_eq!(
+            Ok(Response::DeriveContext(DeriveContextResp {
+                handle: ContextHandle::default(),
+                parent_handle: ContextHandle::default(),
+                resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
+            })),
+            DeriveContextCmd {
+                handle: ContextHandle::default(),
+                data: [1; DPE_PROFILE.get_tci_size()],
+                flags: DeriveContextFlags::MAKE_DEFAULT
+                    | DeriveContextFlags::RECURSIVE
+                    | DeriveContextFlags::INTERNAL_INPUT_INFO
+                    | DeriveContextFlags::INTERNAL_INPUT_DICE,
+                tci_type: 0,
+                target_locality: 0,
+            }
+            .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
+        );
+
+        DeriveContextCmd {
+            handle: ContextHandle::default(),
+            data: [2; DPE_PROFILE.get_tci_size()],
+            flags: DeriveContextFlags::MAKE_DEFAULT
+                | DeriveContextFlags::RECURSIVE
+                | DeriveContextFlags::INTERNAL_INPUT_INFO
+                | DeriveContextFlags::INTERNAL_INPUT_DICE,
+            tci_type: 0,
+            target_locality: 0,
+        }
+        .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
+        .unwrap();
+
+        let child_idx = dpe
+            .get_active_context_pos(&ContextHandle::default(), 0)
+            .unwrap();
+        // ensure flags are unchanged
+        assert!(dpe.contexts[child_idx].allow_ca());
+        assert!(dpe.contexts[child_idx].allow_x509());
+        assert!(!dpe.contexts[child_idx].uses_internal_input_info());
+        assert!(!dpe.contexts[child_idx].uses_internal_input_dice());
+
+        // check tci_cumulative correctly computed
+        let mut hasher = env.crypto.hash_initialize(DPE_PROFILE.alg_len()).unwrap();
+        hasher.update(&[0u8; DPE_PROFILE.get_hash_size()]).unwrap();
+        hasher.update(&[1u8; DPE_PROFILE.get_hash_size()]).unwrap();
+        let temp_digest = hasher.finish().unwrap();
+        let mut hasher_2 = env.crypto.hash_initialize(DPE_PROFILE.alg_len()).unwrap();
+        hasher_2.update(temp_digest.bytes()).unwrap();
+        hasher_2
+            .update(&[2u8; DPE_PROFILE.get_hash_size()])
+            .unwrap();
+        let digest = hasher_2.finish().unwrap();
+        assert_eq!(digest.bytes(), dpe.contexts[child_idx].tci.tci_cumulative.0);
     }
 }

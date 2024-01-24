@@ -24,29 +24,29 @@ type CommandCode uint32
 
 // Support is the set of features a DPE supports
 type Support struct {
-	Simulation    bool
-	ExtendTci     bool
-	AutoInit      bool
-	RotateContext bool
-	X509          bool
-	Csr           bool
-	IsSymmetric   bool
-	InternalInfo  bool
-	InternalDice  bool
-	IsCA          bool
+	Simulation          bool
+	Recursive           bool
+	AutoInit            bool
+	RotateContext       bool
+	X509                bool
+	Csr                 bool
+	IsSymmetric         bool
+	InternalInfo        bool
+	InternalDice        bool
+	IsCA                bool
+	RetainParentContext bool
 }
 
 // All DPE profile command codes
 const (
 	CommandGetProfile          CommandCode = 0x1
 	CommandInitializeContext   CommandCode = 0x7
-	CommandDeriveChild         CommandCode = 0x8
+	CommandDeriveContext       CommandCode = 0x8
 	CommandCertifyKey          CommandCode = 0x9
 	CommandSign                CommandCode = 0xa
 	CommandRotateContextHandle CommandCode = 0xe
 	CommandDestroyContext      CommandCode = 0xf
-	CommandGetCertificateChain CommandCode = 0x80
-	CommandExtendTCI           CommandCode = 0x81
+	CommandGetCertificateChain CommandCode = 0x10
 )
 
 // CommandHdr is the DPE command header common to all commands
@@ -80,27 +80,9 @@ const (
 // ContextHandle is a DPE context handle
 type ContextHandle [16]byte
 
-// DestroyCtxFlags is input flags to DestroyContext
-type DestroyCtxFlags uint32
-
-// Supported flags to DestroyContext
-const (
-	DestroyDescendants DestroyCtxFlags = 1 << 31
-)
-
 // DestroyCtxCmd is input parameters to DestroyContext
 type DestroyCtxCmd struct {
 	handle ContextHandle
-	flags  DestroyCtxFlags
-}
-
-// NewDestroyCtx creates a new DestroyContext command
-func NewDestroyCtx(handle ContextHandle, destroyDescendants bool) *DestroyCtxCmd {
-	flags := DestroyCtxFlags(0)
-	if destroyDescendants {
-		flags |= DestroyDescendants
-	}
-	return &DestroyCtxCmd{handle: handle, flags: flags}
 }
 
 // InitCtxResp is the response parameters from InitializeContext
@@ -183,31 +165,32 @@ type RotatedContextHandle struct {
 	NewContextHandle ContextHandle
 }
 
-// DeriveChildFlags is the input flags to DeriveChild
-type DeriveChildFlags uint32
+// DeriveContextFlags is the input flags to DeriveContext
+type DeriveContextFlags uint32
 
-// Supported flags to DeriveChild
+// Supported flags to DeriveContext
 const (
-	InternalInputInfo DeriveChildFlags = 1 << 31
-	InternalInputDice DeriveChildFlags = 1 << 30
-	RetainParent      DeriveChildFlags = 1 << 29
-	MakeDefault       DeriveChildFlags = 1 << 28
-	ChangeLocality    DeriveChildFlags = 1 << 27
-	InputAllowCA      DeriveChildFlags = 1 << 26
-	InputAllowX509    DeriveChildFlags = 1 << 25
+	InternalInputInfo   DeriveContextFlags = 1 << 31
+	InternalInputDice   DeriveContextFlags = 1 << 30
+	RetainParentContext DeriveContextFlags = 1 << 29
+	MakeDefault         DeriveContextFlags = 1 << 28
+	ChangeLocality      DeriveContextFlags = 1 << 27
+	InputAllowCA        DeriveContextFlags = 1 << 26
+	InputAllowX509      DeriveContextFlags = 1 << 25
+	Recursive           DeriveContextFlags = 1 << 24
 )
 
-// DeriveChildReq is the input request to DeriveChild
-type DeriveChildReq[Digest DigestAlgorithm] struct {
+// DeriveContextReq is the input request to DeriveContext
+type DeriveContextReq[Digest DigestAlgorithm] struct {
 	ContextHandle  ContextHandle
 	InputData      Digest
-	Flags          DeriveChildFlags
+	Flags          DeriveContextFlags
 	TciType        uint32
 	TargetLocality uint32
 }
 
-// DeriveChildResp is the output response from DeriveChild
-type DeriveChildResp struct {
+// DeriveContextResp is the output response from DeriveContext
+type DeriveContextResp struct {
 	NewContextHandle    ContextHandle
 	ParentContextHandle ContextHandle
 }
@@ -233,17 +216,6 @@ type SignResp[Digest DigestAlgorithm] struct {
 	NewContextHandle ContextHandle
 	HmacOrSignatureR Digest
 	SignatureS       Digest
-}
-
-// ExtendTCIReq is the input request to ExtendTCI
-type ExtendTCIReq[Digest DigestAlgorithm] struct {
-	ContextHandle ContextHandle
-	InputData     Digest
-}
-
-// ExtendTCIResp is the output response from ExtendTCI
-type ExtendTCIResp struct {
-	NewContextHandle ContextHandle
 }
 
 // DPEABI is a connection to a DPE instance, parameterized by hash algorithm and ECC curve.
@@ -463,11 +435,11 @@ func (c *DPEABI[_, _]) GetCertificateChainABI() (*GetCertificateChainResp, error
 	return &certs, nil
 }
 
-// DeriveChildABI calls DPE DeriveChild command.
-func (c *DPEABI[_, Digest]) DeriveChildABI(cmd *DeriveChildReq[Digest]) (*DeriveChildResp, error) {
-	var respStruct DeriveChildResp
+// DeriveContextABI calls DPE DeriveContext command.
+func (c *DPEABI[_, Digest]) DeriveContextABI(cmd *DeriveContextReq[Digest]) (*DeriveContextResp, error) {
+	var respStruct DeriveContextResp
 
-	_, err := execCommand(c.transport, CommandDeriveChild, c.Profile, cmd, &respStruct)
+	_, err := execCommand(c.transport, CommandDeriveContext, c.Profile, cmd, &respStruct)
 	if err != nil {
 		return nil, err
 	}
@@ -492,18 +464,6 @@ func (c *DPEABI[_, Digest]) SignABI(cmd *SignReq[Digest]) (*SignResp[Digest], er
 	var respStruct SignResp[Digest]
 
 	_, err := execCommand(c.transport, CommandSign, c.Profile, cmd, &respStruct)
-	if err != nil {
-		return nil, err
-	}
-
-	return &respStruct, nil
-}
-
-// ExtendTCIABI calls the DPE ExtendTCI command.
-func (c *DPEABI[_, Digest]) ExtendTCIABI(cmd *ExtendTCIReq[Digest]) (*ExtendTCIResp, error) {
-	var respStruct ExtendTCIResp
-
-	_, err := execCommand(c.transport, CommandExtendTCI, c.Profile, cmd, &respStruct)
 	if err != nil {
 		return nil, err
 	}
@@ -563,10 +523,9 @@ func (c *DPEABI[_, Digest]) CertifyKey(handle *ContextHandle, label []byte, form
 }
 
 // DestroyContext calls DPE DestroyContext command
-func (c *DPEABI[_, _]) DestroyContext(handle *ContextHandle, flags DestroyCtxFlags) error {
+func (c *DPEABI[_, _]) DestroyContext(handle *ContextHandle) error {
 	cmd := DestroyCtxCmd{
 		handle: *handle,
-		flags:  flags,
 	}
 
 	return c.DestroyContextABI(&cmd)
@@ -582,8 +541,8 @@ func (c *DPEABI[_, _]) GetCertificateChain() ([]byte, error) {
 	return resp.CertificateChain, nil
 }
 
-// DeriveChild calls DPE DeriveChild command
-func (c *DPEABI[_, Digest]) DeriveChild(handle *ContextHandle, inputData []byte, flags DeriveChildFlags, tciType uint32, targetLocality uint32) (*DeriveChildResp, error) {
+// DeriveContext calls DPE DeriveContext command
+func (c *DPEABI[_, Digest]) DeriveContext(handle *ContextHandle, inputData []byte, flags DeriveContextFlags, tciType uint32, targetLocality uint32) (*DeriveContextResp, error) {
 	if len(inputData) != DigestLen[Digest]() {
 		return nil, fmt.Errorf("invalid digest length")
 	}
@@ -593,14 +552,14 @@ func (c *DPEABI[_, Digest]) DeriveChild(handle *ContextHandle, inputData []byte,
 		return nil, err
 	}
 
-	cmd := DeriveChildReq[Digest]{
+	cmd := DeriveContextReq[Digest]{
 		ContextHandle:  *handle,
 		InputData:      input,
 		Flags:          flags,
 		TciType:        tciType,
 		TargetLocality: targetLocality,
 	}
-	resp, err := c.DeriveChildABI(&cmd)
+	resp, err := c.DeriveContextABI(&cmd)
 	if err != nil {
 		return nil, err
 	}
@@ -662,38 +621,13 @@ func (c *DPEABI[_, Digest]) Sign(handle *ContextHandle, label []byte, flags Sign
 	return signedResp, nil
 }
 
-// ExtendTCI calls DPE ExtendTCI command
-func (c *DPEABI[_, Digest]) ExtendTCI(handle *ContextHandle, inputData []byte) (*ContextHandle, error) {
-
-	if len(inputData) != DigestLen[Digest]() {
-		return nil, fmt.Errorf("invalid digest length")
-	}
-
-	input, err := NewDigest[Digest](inputData)
-	if err != nil {
-		return nil, err
-	}
-
-	cmd := ExtendTCIReq[Digest]{
-		ContextHandle: *handle,
-		InputData:     input,
-	}
-
-	resp, err := c.ExtendTCIABI(&cmd)
-	if err != nil {
-		return nil, err
-	}
-
-	return &resp.NewContextHandle, nil
-}
-
 // ToFlags converts support to the profile-defined support flags format
 func (s *Support) ToFlags() uint32 {
 	flags := uint32(0)
 	if s.Simulation {
 		flags |= (1 << 31)
 	}
-	if s.ExtendTci {
+	if s.Recursive {
 		flags |= (1 << 30)
 	}
 	if s.AutoInit {
@@ -719,6 +653,9 @@ func (s *Support) ToFlags() uint32 {
 	}
 	if s.IsCA {
 		flags |= (1 << 20)
+	}
+	if s.RetainParentContext {
+		flags |= (1 << 19)
 	}
 	return flags
 }

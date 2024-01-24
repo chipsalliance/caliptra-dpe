@@ -76,6 +76,8 @@ impl CommandExecution for InitCtxCmd {
             parent_idx: Context::ROOT_INDEX,
             allow_ca: true,
             allow_x509: true,
+            uses_internal_input_info: false,
+            uses_internal_input_dice: false,
         });
         Ok(Response::InitCtx(NewHandleResp {
             handle,

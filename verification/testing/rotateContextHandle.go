@@ -49,7 +49,7 @@ func TestRotateContextHandleSimulation(d client.TestDPEInstance, c client.DPECli
 	simulation := true
 	handle := getInitialContextHandle(d, c, t, simulation)
 	defer func() {
-		c.DestroyContext(handle, client.DestroyDescendants)
+		c.DestroyContext(handle)
 	}()
 
 	// Check whether the rotated context handle is a random context handle

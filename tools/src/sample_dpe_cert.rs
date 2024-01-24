@@ -4,7 +4,7 @@ use std::env;
 use {
     crypto::OpensslCrypto,
     dpe::commands::{
-        self, CertifyKeyCmd, CertifyKeyFlags, CommandHdr, DeriveChildCmd, DeriveChildFlags,
+        self, CertifyKeyCmd, CertifyKeyFlags, CommandHdr, DeriveContextCmd, DeriveContextFlags,
     },
     dpe::context::ContextHandle,
     dpe::dpe_instance::{DpeEnv, DpeTypes},
@@ -22,7 +22,7 @@ impl DpeTypes for TestTypes {
     type Platform<'a> = DefaultPlatform;
 }
 
-// Call DeriveChild on the default context so the generated cert will have a
+// Call DeriveContext on the default context so the generated cert will have a
 // TcbInfo populated.
 fn add_tcb_info(
     dpe: &mut DpeInstance,
@@ -30,15 +30,15 @@ fn add_tcb_info(
     data: &[u8; DPE_PROFILE.get_hash_size()],
     tci_type: u32,
 ) {
-    let cmd = DeriveChildCmd {
+    let cmd = DeriveContextCmd {
         handle: ContextHandle::default(),
         data: *data,
-        flags: DeriveChildFlags::INPUT_ALLOW_X509 | DeriveChildFlags::MAKE_DEFAULT,
+        flags: DeriveContextFlags::INPUT_ALLOW_X509 | DeriveContextFlags::MAKE_DEFAULT,
         tci_type,
         target_locality: 0, // Unused since flag isn't set
     };
     let cmd_body = cmd.as_bytes().to_vec();
-    let cmd_hdr = CommandHdr::new_for_test(dpe::commands::Command::DERIVE_CHILD)
+    let cmd_hdr = CommandHdr::new_for_test(dpe::commands::Command::DERIVE_CONTEXT)
         .as_bytes()
         .to_vec();
     let mut command = cmd_hdr;
@@ -48,7 +48,7 @@ fn add_tcb_info(
 
     let _ = match resp {
         // Expect CertifyKey response return an error in all other cases.
-        Response::DeriveChild(res) => res,
+        Response::DeriveContext(res) => res,
         Response::Error(res) => panic!("Error response {}", res.status),
         _ => panic!("Unexpected Response"),
     };

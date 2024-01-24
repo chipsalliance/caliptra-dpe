@@ -87,6 +87,8 @@ impl Context {
         self.locality = args.locality;
         self.allow_ca = args.allow_ca.into();
         self.allow_x509 = args.allow_x509.into();
+        self.uses_internal_input_info = args.uses_internal_input_info.into();
+        self.uses_internal_input_dice = args.uses_internal_input_dice.into();
     }
 
     /// Destroy this context so it can no longer be used until it is re-initialized. The default
@@ -198,6 +200,8 @@ pub struct ActiveContextArgs<'a> {
     pub parent_idx: u8,
     pub allow_ca: bool,
     pub allow_x509: bool,
+    pub uses_internal_input_info: bool,
+    pub uses_internal_input_dice: bool,
 }
 
 pub(crate) struct ChildToRootIter<'a> {

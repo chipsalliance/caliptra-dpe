@@ -48,7 +48,7 @@ pub struct MeasurementData<'a> {
     pub label: &'a [u8],
     pub tci_nodes: &'a [TciNodeData],
     pub is_ca: bool,
-    pub supports_extend_tci: bool,
+    pub supports_recursive: bool,
 }
 
 pub struct CertWriter<'a> {
@@ -330,11 +330,11 @@ impl CertWriter<'_> {
     /// extension fields. Only include the size of the structure itself.
     fn get_tcb_info_size(
         node: &TciNodeData,
-        supports_extend_tci: bool,
+        supports_recursive: bool,
         tagged: bool,
     ) -> Result<usize, DpeErrorCode> {
         let fwid0_size = Self::get_fwid_size(&node.tci_current.0, /*tagged=*/ true)?;
-        let fwid1_size = if supports_extend_tci {
+        let fwid1_size = if supports_recursive {
             Self::get_fwid_size(&node.tci_cumulative.0, /*tagged=*/ true)?
         } else {
             0
@@ -361,7 +361,7 @@ impl CertWriter<'_> {
         let tcb_infos_size = measurements.tci_nodes.len()
             * Self::get_tcb_info_size(
                 &measurements.tci_nodes[0],
-                measurements.supports_extend_tci,
+                measurements.supports_recursive,
                 /*tagged=*/ true,
             )?;
 
@@ -1044,10 +1044,10 @@ impl CertWriter<'_> {
     fn encode_tcb_info(
         &mut self,
         node: &TciNodeData,
-        supports_extend_tci: bool,
+        supports_recursive: bool,
     ) -> Result<usize, DpeErrorCode> {
         let tcb_info_size =
-            Self::get_tcb_info_size(node, supports_extend_tci, /*tagged=*/ false)?;
+            Self::get_tcb_info_size(node, supports_recursive, /*tagged=*/ false)?;
         // TcbInfo sequence
         let mut bytes_written = self.encode_byte(Self::SEQUENCE_TAG)?;
         bytes_written += self.encode_size_field(tcb_info_size)?;
@@ -1056,7 +1056,7 @@ impl CertWriter<'_> {
         // IMPLICIT [6] Constructed
         let fwid_size = Self::get_fwid_size(&node.tci_current.0, /*tagged=*/ true)?;
         bytes_written += self.encode_byte(Self::CONTEXT_SPECIFIC | Self::CONSTRUCTED | 0x06)?;
-        if supports_extend_tci {
+        if supports_recursive {
             bytes_written += self.encode_size_field(fwid_size * 2)?;
         } else {
             bytes_written += self.encode_size_field(fwid_size)?;
@@ -1066,8 +1066,8 @@ impl CertWriter<'_> {
         bytes_written += self.encode_fwid(&node.tci_current)?;
 
         // fwid[1] journey measurement
-        // Omit fwid[1] from tcb_info if DPE_PROFILE does not support extend_tci
-        if supports_extend_tci {
+        // Omit fwid[1] from tcb_info if DPE_PROFILE does not support recursive
+        if supports_recursive {
             bytes_written += self.encode_fwid(&node.tci_cumulative)?;
         }
 
@@ -1110,7 +1110,7 @@ impl CertWriter<'_> {
         let tcb_infos_size = if !measurements.tci_nodes.is_empty() {
             Self::get_tcb_info_size(
                 &measurements.tci_nodes[0],
-                measurements.supports_extend_tci,
+                measurements.supports_recursive,
                 /*tagged=*/ true,
             )? * measurements.tci_nodes.len()
         } else {
@@ -1128,7 +1128,7 @@ impl CertWriter<'_> {
 
         // Encode multiple tcg-dice-TcbInfos
         for node in measurements.tci_nodes {
-            bytes_written += self.encode_tcb_info(node, measurements.supports_extend_tci)?;
+            bytes_written += self.encode_tcb_info(node, measurements.supports_recursive)?;
         }
 
         Ok(bytes_written)
@@ -1987,14 +1987,14 @@ mod tests {
 
         let mut cert = [0u8; 256];
         let mut w = CertWriter::new(&mut cert, true);
-        let mut supports_extend_tci = true;
-        let mut bytes_written = w.encode_tcb_info(&node, supports_extend_tci).unwrap();
+        let mut supports_recursive = true;
+        let mut bytes_written = w.encode_tcb_info(&node, supports_recursive).unwrap();
 
         let mut parsed_tcb_info = asn1::parse_single::<TcbInfo>(&cert[..bytes_written]).unwrap();
 
         assert_eq!(
             bytes_written,
-            CertWriter::get_tcb_info_size(&node, supports_extend_tci, true).unwrap()
+            CertWriter::get_tcb_info_size(&node, supports_recursive, true).unwrap()
         );
 
         // FWIDs
@@ -2013,16 +2013,16 @@ mod tests {
             node.locality.to_be_bytes()
         );
 
-        // test tbs_info with supports_extend_tci = false
-        supports_extend_tci = false;
+        // test tbs_info with supports_recursive = false
+        supports_recursive = false;
         w = CertWriter::new(&mut cert, true);
-        bytes_written = w.encode_tcb_info(&node, supports_extend_tci).unwrap();
+        bytes_written = w.encode_tcb_info(&node, supports_recursive).unwrap();
 
         parsed_tcb_info = asn1::parse_single::<TcbInfo>(&cert[..bytes_written]).unwrap();
 
         assert_eq!(
             bytes_written,
-            CertWriter::get_tcb_info_size(&node, supports_extend_tci, true).unwrap()
+            CertWriter::get_tcb_info_size(&node, supports_recursive, true).unwrap()
         );
 
         // Check that only FWID[0] is present
@@ -2084,7 +2084,7 @@ mod tests {
             label: &[0xCC; DPE_PROFILE.get_hash_size()],
             tci_nodes: &[node],
             is_ca: false,
-            supports_extend_tci: true,
+            supports_recursive: true,
         };
 
         let validity = CertValidity {
@@ -2150,7 +2150,7 @@ mod tests {
             label: &[0; DPE_PROFILE.get_hash_size()],
             tci_nodes: &[node],
             is_ca,
-            supports_extend_tci: true,
+            supports_recursive: true,
         };
 
         let validity = CertValidity {
