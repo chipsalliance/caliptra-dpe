@@ -16,7 +16,7 @@ const (
 	RespMagic uint32 = 0x44504552
 
 	CurrentProfileMajorVersion uint16 = 0
-	CurrentProfileMinorVersion uint16 = 8
+	CurrentProfileMinorVersion uint16 = 9
 )
 
 // CommandCode is a DPE command code
@@ -37,17 +37,62 @@ type Support struct {
 	RetainParentContext bool
 }
 
-// All DPE profile command codes
-const (
-	CommandGetProfile          CommandCode = 0x1
-	CommandInitializeContext   CommandCode = 0x7
-	CommandDeriveContext       CommandCode = 0x8
-	CommandCertifyKey          CommandCode = 0x9
-	CommandSign                CommandCode = 0xa
-	CommandRotateContextHandle CommandCode = 0xe
-	CommandDestroyContext      CommandCode = 0xf
-	CommandGetCertificateChain CommandCode = 0x10
-)
+// profileCommandCodes holds command codes for a specific revision of the
+// DPE iRoT profile.
+type profileCommandCodes struct {
+	GetProfile          CommandCode
+	InitializeContext   CommandCode
+	DeriveContext       CommandCode
+	CertifyKey          CommandCode
+	Sign                CommandCode
+	RotateContextHandle CommandCode
+	DestroyContext      CommandCode
+	GetCertificateChain CommandCode
+}
+
+// profileInfo holds constants defined in a specific version of the DPE iRoT
+// profile.
+type profileInfo struct {
+	MajorVersion uint16
+	MinorVersion uint16
+	Codes        profileCommandCodes
+}
+
+// getProfileInfoV08 returns profile info for v0.8 of the DPE iRoT profile
+func getProfileInfoV08() profileInfo {
+	return profileInfo{
+		Codes: profileCommandCodes{
+			GetProfile:          0x1,
+			InitializeContext:   0x5,
+			DeriveContext:       0x6,
+			CertifyKey:          0x7,
+			Sign:                0x8,
+			RotateContextHandle: 0xE,
+			DestroyContext:      0xF,
+			GetCertificateChain: 0x80,
+		},
+		MajorVersion: 0,
+		MinorVersion: 8,
+	}
+}
+
+// getProfileInfoV09 returns profile info for v0.9 of the DPE iRoT profile
+func getProfileInfoV09() profileInfo {
+	return profileInfo{
+		Codes: profileCommandCodes{
+			GetProfile:          0x1,
+			InitializeContext:   0x7,
+			DeriveContext:       0x8,
+			CertifyKey:          0x9,
+			Sign:                0xa,
+			RotateContextHandle: 0xe,
+			DestroyContext:      0xf,
+			GetCertificateChain: 0x10,
+		},
+		MajorVersion: 0,
+		MinorVersion: 9,
+	}
+}
 
 // CommandHdr is the DPE command header common to all commands
 type CommandHdr struct {
@@ -221,6 +266,7 @@ type SignResp[Digest DigestAlgorithm] struct {
 // DPEABI is a connection to a DPE instance, parameterized by hash algorithm and ECC curve.
 type DPEABI[CurveParameter Curve, Digest DigestAlgorithm] struct {
 	transport    Transport
+	constants    profileInfo
 	Profile      Profile
 	MajorVersion uint16
 	MinorVersion uint16
@@ -275,8 +321,18 @@ func newDPEABI[C Curve, D DigestAlgorithm](t Transport) (*DPEABI[C, D], error) {
 		return nil, err
 	}
 
+	var constants profileInfo
+	if rsp.MajorVersion == 0 && rsp.MinorVersion == 8 {
+		constants = getProfileInfoV08()
+	} else if rsp.MajorVersion == 0 && rsp.MinorVersion == 9 {
+		constants = getProfileInfoV09()
+	} else {
+		return nil, fmt.Errorf("unknown DPE profile version %d.%d", rsp.MajorVersion, rsp.MinorVersion)
+	}
+
 	return &DPEABI[C, D]{
 		transport:    t,
+		constants:    constants,
 		Profile:      rsp.Profile,
 		MajorVersion: rsp.MajorVersion,
 		MinorVersion: rsp.MinorVersion,
@@ -300,7 +356,7 @@ func NewDPEABI384(t Transport) (*DPEABI[NISTP384Parameter, SHA384Digest], error)
 func (c *DPEABI[_, _]) InitializeContextABI(cmd *InitCtxCmd) (*InitCtxResp, error) {
 	var respStruct InitCtxResp
 
-	if _, err := execCommand(c.transport, CommandInitializeContext, c.Profile, cmd, &respStruct); err != nil {
+	if _, err := execCommand(c.transport, c.constants.Codes.InitializeContext, c.Profile, cmd, &respStruct); err != nil {
 		return nil, err
 	}
 
@@ -333,7 +389,9 @@ func getProfile(t Transport) (*GetProfileResp, error) {
 		Flags        uint32
 	}{}
 
-	respHdr, err := execCommand(t, CommandGetProfile, 0, cmd, &respStruct)
+	// GetProfile command code is 1 in all revisions of the spec
+	getProfile := CommandCode(0x1)
+	respHdr, err := execCommand(t, getProfile, 0, cmd, &respStruct)
 	if err != nil {
 		return nil, err
 	}
@@ -360,7 +418,7 @@ func (c *DPEABI[_, _]) DestroyContextABI(cmd *DestroyCtxCmd) error {
 	// DestroyContext does not return any parameters.
 	respStruct := struct{}{}
 
-	if _, err := execCommand(c.transport, CommandDestroyContext, c.Profile, cmd, &respStruct); err != nil {
+	if _, err := execCommand(c.transport, c.constants.Codes.DestroyContext, c.Profile, cmd, &respStruct); err != nil {
 		return err
 	}
 
@@ -378,7 +436,7 @@ func (c *DPEABI[CurveParameter, Digest]) CertifyKeyABI(cmd *CertifyKeyReq[Digest
 		Certificate       [2048]byte
 	}{}
 
-	_, err := execCommand(c.transport, CommandCertifyKey, c.Profile, cmd, &respStruct)
+	_, err := execCommand(c.transport, c.constants.Codes.CertifyKey, c.Profile, cmd, &respStruct)
 	if err != nil {
 		return nil, err
 	}
@@ -412,7 +470,7 @@ func (c *DPEABI[_, _]) GetCertificateChainABI() (*GetCertificateChainResp, error
 			CertificateChain [2048]byte
 		}{}
 
-		_, err := execCommand(c.transport, CommandGetCertificateChain, c.Profile, cmd, &respStruct)
+		_, err := execCommand(c.transport, c.constants.Codes.GetCertificateChain, c.Profile, cmd, &respStruct)
 		if err == StatusInvalidArgument {
 			// This indicates that there are no more bytes to be read in certificate chain
 			break
@@ -439,7 +497,7 @@ func (c *DPEABI[_, _]) GetCertificateChainABI() (*GetCertificateChainResp, error
 func (c *DPEABI[_, Digest]) DeriveContextABI(cmd *DeriveContextReq[Digest]) (*DeriveContextResp, error) {
 	var respStruct DeriveContextResp
 
-	_, err := execCommand(c.transport, CommandDeriveContext, c.Profile, cmd, &respStruct)
+	_, err := execCommand(c.transport, c.constants.Codes.DeriveContext, c.Profile, cmd, &respStruct)
 	if err != nil {
 		return nil, err
 	}
@@ -451,7 +509,7 @@ func (c *DPEABI[_, Digest]) DeriveContextABI(cmd *DeriveContextReq[Digest]) (*De
 func (c *DPEABI[_, Digest]) RotateContextABI(cmd *RotateContextHandleCmd) (*RotatedContextHandle, error) {
 	var respStruct RotatedContextHandle
 
-	_, err := execCommand(c.transport, CommandRotateContextHandle, c.Profile, cmd, &respStruct)
+	_, err := execCommand(c.transport, c.constants.Codes.RotateContextHandle, c.Profile, cmd, &respStruct)
 	if err != nil {
 		return nil, err
 	}
@@ -463,7 +521,7 @@ func (c *DPEABI[_, Digest]) RotateContextABI(cmd *RotateContextHandleCmd) (*Rota
 func (c *DPEABI[_, Digest]) SignABI(cmd *SignReq[Digest]) (*SignResp[Digest], error) {
 	var respStruct SignResp[Digest]
 
-	_, err := execCommand(c.transport, CommandSign, c.Profile, cmd, &respStruct)
+	_, err := execCommand(c.transport, c.constants.Codes.Sign, c.Profile, cmd, &respStruct)
 	if err != nil {
 		return nil, err
 	}
