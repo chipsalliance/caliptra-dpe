@@ -30,7 +30,7 @@ pub const MAX_HANDLES: usize = 24;
 include!(concat!(env!("OUT_DIR"), "/arbitrary_max_handles.rs"));
 
 const CURRENT_PROFILE_MAJOR_VERSION: u16 = 0;
-const CURRENT_PROFILE_MINOR_VERSION: u16 = 8;
+const CURRENT_PROFILE_MINOR_VERSION: u16 = 9;
 
 const INTERNAL_INPUT_INFO_SIZE: usize = size_of::<GetProfileResp>() + size_of::<u32>();
 
