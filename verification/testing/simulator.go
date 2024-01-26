@@ -338,6 +338,36 @@ func GetSimulatorTargets() []TestTarget {
 			getTestTarget([]string{"AutoInit", "RotateContext"}),
 			[]TestCase{UnsupportedCommandFlag},
 		},
+		{
+			"DeriveContext",
+			getTestTarget([]string{"AutoInit", "X509", "IsCA", "RetainParentContext"}),
+			[]TestCase{DeriveContextTestCase},
+		},
+		{
+			"DeriveContext_Simulation",
+			getTestTarget([]string{"AutoInit", "Simulation", "X509", "IsCA", "RetainParentContext"}),
+			[]TestCase{DeriveContextSimulationTestCase},
+		},
+		{
+			"DeriveContext_PrivilegeEscalation",
+			getTestTarget([]string{"AutoInit", "X509", "IsCA"}),
+			[]TestCase{DeriveContextPrivilegeEscalationTestCase},
+		},
+		{
+			"DeriveContext_InputFlags",
+			getTestTarget([]string{"AutoInit", "Simulation", "InternalDice", "InternalInfo"}),
+			[]TestCase{DeriveContextInputFlagsTestCase},
+		},
+		{
+			"DeriveContext_MaxTCIs",
+			getTestTarget([]string{"AutoInit", "Simulation"}),
+			[]TestCase{DeriveContextMaxTCIsTestCase},
+		},
+		{
+			"DeriveContext_ChangeLocality",
+			getTestTarget([]string{"AutoInit", "Simulation"}),
+			[]TestCase{DeriveContextLocalityTestCase},
+		},
 	}
 }
 

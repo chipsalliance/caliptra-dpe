@@ -112,6 +112,36 @@ var TpmPolicySigningTestCase = TestCase{
 	"TPMPolicySigning", TestTpmPolicySigning, []string{"AutoInit", "X509"},
 }
 
+// DeriveContextTestCase tests DeriveContext
+var DeriveContextTestCase = TestCase{
+	"DeriveContext", TestDeriveContext, []string{"AutoInit", "RetainParentContext"},
+}
+
+// DeriveContextSimulationTestCase tests DeriveContext with Simulation contexts
+var DeriveContextSimulationTestCase = TestCase{
+	"DeriveContextSimulation", TestDeriveContextSimulation, []string{"AutoInit", "Simulation", "X509", "InternalDice", "InternalInfo", "RetainParentContext"},
+}
+
+// DeriveContextMaxTCIsTestCase checks whether the number of derived contexts is limited by MAX_TCI_NODES attribute of the profile
+var DeriveContextMaxTCIsTestCase = TestCase{
+	"DeriveContext_MaxTCIs", TestMaxTCIs, []string{"AutoInit"},
+}
+
+// DeriveContextLocalityTestCase tests DerivedContext with the ChangeLocality flag.
+var DeriveContextLocalityTestCase = TestCase{
+	"DeriveContext_ChangeLocality", TestChangeLocality, []string{"AutoInit"},
+}
+
+// DeriveContextPrivilegeEscalationTestCase tests that commands trying to use features that are unsupported by child context fail.
+var DeriveContextPrivilegeEscalationTestCase = TestCase{
+	"DeriveContext_PrivilegeEscalation", TestPrivilegesEscalation, []string{"AutoInit", "X509", "IsCA"},
+}
+
+// DeriveContextInputFlagsTestCase tests DeriveContext with the input flags InternalDiceInfo and InternalInputInfo.
+var DeriveContextInputFlagsTestCase = TestCase{
+	"DeriveContext_InputFlagsSupport", TestInternalInputFlags, []string{"AutoInit", "InternalDice", "InternalInfo"},
+}
+
 // AllTestCases contains all DPE test cases
 var AllTestCases = []TestCase{
 	CertifyKeyTestCase,
@@ -129,6 +159,13 @@ var AllTestCases = []TestCase{
 	InitializeContextSimulationTestCase,
 	InvalidHandleTestCase,
 	WrongLocalityTestCase,
+}
+
+var IrreversibleTestCases = []TestCase{
+	DeriveContextTestCase,
+	DeriveContextLocalityTestCase,
+	DeriveContextPrivilegeEscalationTestCase,
+	DeriveContextMaxTCIsTestCase,
 }
 
 // RunTargetTestCases runs all test cases for target
