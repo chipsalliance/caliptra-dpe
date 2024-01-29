@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"go.mozilla.org/pkcs7"
+	cms "github.com/github/smimesign/ietf-cms"
 
 	"github.com/chipsalliance/caliptra-dpe/verification/client"
 	zx509 "github.com/zmap/zcrypto/x509"
@@ -150,7 +150,7 @@ func TestCertifyKeyCsr(d client.TestDPEInstance, c client.DPEClient, t *testing.
 		t.Fatalf("[FATAL]: Could not certify key: %v", err)
 	}
 
-	wrappedCSR, err := pkcs7.Parse(certifyKeyResp.Certificate)
+	wrappedCSR, err := cms.ParseSignedData(certifyKeyResp.Certificate)
 	if err != nil {
 		t.Fatalf("[FATAL]: Could not unmarshal CSR CMS message: %v", err)
 	}
@@ -171,13 +171,24 @@ func TestCertifyKeyCsr(d client.TestDPEInstance, c client.DPEClient, t *testing.
 	//		those verifying the signatures have an alternate means of
 	//		obtaining necessary certificates (e.g., from a previous set
 	//      of certificates).
-	wrappedCSR.Certificates = append(wrappedCSR.Certificates, certChain...)
-	err = wrappedCSR.Verify()
+	err = wrappedCSR.SetCertificates(certChain)
+	if err != nil {
+		t.Errorf("[ERROR]: Failed to add certificates to SignedData: %v", err)
+	}
+	certPool := x509.NewCertPool()
+	for _, cert := range certChain {
+		certPool.AddCert(cert)
+	}
+	_, err = wrappedCSR.Verify(x509.VerifyOptions{Roots: certPool})
 	if err != nil {
 		t.Errorf("[ERROR]: Failed to verify CMS wrapper signature: %v", err)
 	}
 
-	csr, err := x509.ParseCertificateRequest(wrappedCSR.Content)
+	content, err := wrappedCSR.GetData()
+	if err != nil {
+		t.Fatalf("[FATAL]: Could not get CMS content: %v", err)
+	}
+	csr, err := x509.ParseCertificateRequest(content)
 	if err != nil {
 		t.Fatalf("[FATAL]: Could not parse CSR: %v", err)
 	}
