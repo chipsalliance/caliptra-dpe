@@ -1,6 +1,8 @@
 // Licensed under the Apache-2.0 license
 
-use crate::{CertValidity, Platform, PlatformError, SignerIdentifier, MAX_CHUNK_SIZE};
+use crate::{
+    CertValidity, Platform, PlatformError, SignerIdentifier, MAX_CHUNK_SIZE, MAX_ISSUER_NAME_SIZE,
+};
 use arrayvec::ArrayVec;
 use cfg_if::cfg_if;
 use core::cmp::min;
@@ -103,7 +105,10 @@ impl Platform for DefaultPlatform {
         Ok(bytes_written)
     }
 
-    fn get_issuer_name(&mut self, out: &mut [u8; MAX_CHUNK_SIZE]) -> Result<usize, PlatformError> {
+    fn get_issuer_name(
+        &mut self,
+        out: &mut [u8; MAX_ISSUER_NAME_SIZE],
+    ) -> Result<usize, PlatformError> {
         let issuer_name = parse::DefaultPlatform::parse_issuer_name();
         if issuer_name.len() > out.len() {
             return Err(PlatformError::IssuerNameError(0));
@@ -113,7 +118,7 @@ impl Platform for DefaultPlatform {
     }
 
     fn get_signer_identifier(&mut self) -> Result<SignerIdentifier, PlatformError> {
-        let mut issuer_name = [0u8; MAX_CHUNK_SIZE];
+        let mut issuer_name = [0u8; MAX_ISSUER_NAME_SIZE];
         let issuer_len = self.get_issuer_name(&mut issuer_name)?;
         let sn = parse::DefaultPlatform::parse_issuer_sn();
         let mut issuer_name_vec = ArrayVec::new();

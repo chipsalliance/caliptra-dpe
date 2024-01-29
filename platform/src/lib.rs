@@ -16,14 +16,17 @@ pub mod default;
 pub mod printer;
 
 pub const MAX_CHUNK_SIZE: usize = 2048;
+pub const MAX_ISSUER_NAME_SIZE: usize = 128;
 pub const MAX_SN_SIZE: usize = 20;
+pub const MAX_SKI_SIZE: usize = 20;
 
+#[allow(variant_size_differences)]
 pub enum SignerIdentifier {
     IssuerAndSerialNumber {
-        issuer_name: ArrayVec<u8, { MAX_CHUNK_SIZE }>,
+        issuer_name: ArrayVec<u8, { MAX_ISSUER_NAME_SIZE }>,
         serial_number: ArrayVec<u8, { MAX_SN_SIZE }>,
     },
-    SubjectKeyIdentifier(ArrayVec<u8, { MAX_CHUNK_SIZE }>),
+    SubjectKeyIdentifier(ArrayVec<u8, { MAX_SKI_SIZE }>),
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -83,7 +86,10 @@ pub trait Platform {
     /// # Arguments
     ///
     /// * `out` - Output buffer for issuer name to be written to.
-    fn get_issuer_name(&mut self, out: &mut [u8; MAX_CHUNK_SIZE]) -> Result<usize, PlatformError>;
+    fn get_issuer_name(
+        &mut self,
+        out: &mut [u8; MAX_ISSUER_NAME_SIZE],
+    ) -> Result<usize, PlatformError>;
 
     /// Retrieves a CMS Content Info's signer identifier
     ///

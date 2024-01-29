@@ -10,7 +10,7 @@ use crate::{
 };
 use bitflags::bitflags;
 use crypto::Crypto;
-use platform::{Platform, MAX_CHUNK_SIZE};
+use platform::{Platform, MAX_ISSUER_NAME_SIZE};
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, zerocopy::FromBytes, zerocopy::AsBytes)]
@@ -103,7 +103,7 @@ impl CommandExecution for CertifyKeyCmd {
             supports_recursive: dpe.support.recursive(),
         };
 
-        let mut issuer_name = [0u8; MAX_CHUNK_SIZE];
+        let mut issuer_name = [0u8; MAX_ISSUER_NAME_SIZE];
         let issuer_len = env.platform.get_issuer_name(&mut issuer_name)?;
 
         let mut cert = [0u8; MAX_CERT_SIZE];
@@ -111,7 +111,7 @@ impl CommandExecution for CertifyKeyCmd {
             Self::FORMAT_X509 => {
                 let mut tbs_buffer = [0u8; MAX_CERT_SIZE];
                 let mut tbs_writer = CertWriter::new(&mut tbs_buffer, true);
-                if issuer_len > MAX_CHUNK_SIZE {
+                if issuer_len > MAX_ISSUER_NAME_SIZE {
                     return Err(DpeErrorCode::InternalError);
                 }
                 let cert_validity = env.platform.get_cert_validity()?;
@@ -147,7 +147,7 @@ impl CommandExecution for CertifyKeyCmd {
 
                 let mut cert_req_info_buffer = [0u8; MAX_CERT_SIZE];
                 let mut cert_req_info_writer = CertWriter::new(&mut cert_req_info_buffer, true);
-                if issuer_len > MAX_CHUNK_SIZE {
+                if issuer_len > MAX_ISSUER_NAME_SIZE {
                     return Err(DpeErrorCode::InternalError);
                 }
                 let mut bytes_written = cert_req_info_writer.encode_certification_request_info(
