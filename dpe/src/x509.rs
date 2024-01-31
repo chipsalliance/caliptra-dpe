@@ -1552,9 +1552,8 @@ impl CertWriter<'_> {
         &mut self,
         subject_key_identifier: &[u8],
     ) -> Result<usize, DpeErrorCode> {
-        // SubjectKeyIdentifier is EXPLICIT field number 0
-        let mut bytes_written =
-            self.encode_byte(Self::CONTEXT_SPECIFIC | Self::CONSTRUCTED | 0x0)?;
+        // SubjectKeyIdentifier is IMPLICIT field number 0
+        let mut bytes_written = self.encode_byte(Self::CONTEXT_SPECIFIC | 0x0)?;
         bytes_written += self.encode_size_field(Self::get_subject_key_identifier_size(
             subject_key_identifier,
             /*tagged=*/ true,
