@@ -6,7 +6,7 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = ["dpe_profile_p256_sha256"]
+default = ["dpe_profile_p256_sha256", "no-cfi"]
 dpe_profile_p256_sha256 = ["platform/dpe_profile_p256_sha256"]
 dpe_profile_p384_sha384 = ["platform/dpe_profile_p384_sha384"]
 # Run ARBITRARY_MAX_HANDLES=n cargo build --features arbitrary_max_handles to use this feature
@@ -22,18 +22,23 @@ disable_internal_info = []
 disable_internal_dice = []
 disable_is_ca = []
 disable_retain_parent_context = []
+no-cfi = ["crypto/no-cfi"]
 
 [dependencies]
 bitflags = "2.4.0"
+caliptra-cfi-lib-git = { workspace = true, default-features = false, features = ["cfi", "cfi-counter" ] }
+caliptra-cfi-derive-git.workspace = true
 constant_time_eq = "0.3.0"
 crypto = {path = "../crypto", default-features = false}
 platform = {path = "../platform", default-features = false}
 ufmt = { git = "https://github.com/korran/ufmt.git", rev = "1d0743c1ffffc68bc05ca8eeb81c166192863f33", features = ["inline"] }
 zerocopy = "0.6.1"
 zeroize = { version = "1.6.0", default-features = false, features = ["zeroize_derive"] }
+cfg-if = "1.0.0"
 
 [dev-dependencies]
 asn1 = "0.13.0"
+caliptra-cfi-lib-git = { workspace = true, features = ["cfi-test"] }
 openssl = "0.10.57"
 x509-parser = "0.15.1"
 crypto = {path = "../crypto", features = ["deterministic_rand", "openssl"]}

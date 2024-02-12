@@ -114,6 +114,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "14c189c53d098945499cdfa7ecc63567cf3886b3332b312a5b4585d8d3a6a610"
 
 [[package]]
+name = "caliptra-cfi-derive-git"
+version = "0.1.0"
+source = "git+https://github.com/chipsalliance/caliptra-cfi.git?rev=9f315fcf11fe006e95e62149f54f98620e5244e7#9f315fcf11fe006e95e62149f54f98620e5244e7"
+dependencies = [
+ "paste",
+ "proc-macro2",
+ "quote",
+ "syn 1.0.109",
+]
+
+[[package]]
+name = "caliptra-cfi-lib-git"
+version = "0.1.0"
+source = "git+https://github.com/chipsalliance/caliptra-cfi.git?rev=9f315fcf11fe006e95e62149f54f98620e5244e7#9f315fcf11fe006e95e62149f54f98620e5244e7"
+
+[[package]]
 name = "cc"
 version = "1.0.83"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -188,6 +204,8 @@ name = "crypto"
 version = "0.1.0"
 dependencies = [
  "arrayvec",
+ "caliptra-cfi-derive-git",
+ "caliptra-cfi-lib-git",
  "hkdf",
  "openssl",
  "sha2",
@@ -250,6 +268,9 @@ name = "dpe"
 version = "0.1.0"
 dependencies = [
  "bitflags 2.4.0",
+ "caliptra-cfi-derive-git",
+ "caliptra-cfi-lib-git",
+ "cfg-if",
  "constant_time_eq",
  "crypto",
  "platform",
@@ -458,6 +479,12 @@ dependencies = [
  "pkg-config",
  "vcpkg",
 ]
+
+[[package]]
+name = "paste"
+version = "1.0.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "de3145af08024dea9fa9914f381a17b8fc6034dfb00f3a84013f7ff43f29ed4c"
 
 [[package]]
 name = "pem-rfc7468"

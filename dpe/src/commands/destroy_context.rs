@@ -6,6 +6,11 @@ use crate::{
     response::{DpeErrorCode, Response, ResponseHdr},
     MAX_HANDLES,
 };
+#[cfg(not(feature = "no-cfi"))]
+use caliptra_cfi_derive_git::cfi_impl_fn;
+use caliptra_cfi_lib_git::cfi_launder;
+#[cfg(not(feature = "no-cfi"))]
+use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq};
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, zerocopy::FromBytes, zerocopy::AsBytes)]
@@ -14,6 +19,7 @@ pub struct DestroyCtxCmd {
 }
 
 impl CommandExecution for DestroyCtxCmd {
+    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     fn execute(
         &self,
         dpe: &mut DpeInstance,
@@ -25,6 +31,9 @@ impl CommandExecution for DestroyCtxCmd {
         // Make sure the command is coming from the right locality.
         if context.locality != locality {
             return Err(DpeErrorCode::InvalidLocality);
+        } else {
+            #[cfg(not(feature = "no-cfi"))]
+            cfi_assert_eq(context.locality, locality);
         }
 
         // mark consecutive retired parent contexts without active children to be destroyed
@@ -38,11 +47,16 @@ impl CommandExecution for DestroyCtxCmd {
             }
             let parent_context = &dpe.contexts[parent_idx];
             // make sure the retired context does not have other active child contexts
+            let child_context_count = flags_iter(parent_context.children, MAX_HANDLES).count();
             if parent_context.state == ContextState::Retired
-                && flags_iter(parent_context.children, MAX_HANDLES).count() == 1
+                && cfi_launder(child_context_count) == 1
             {
                 retired_contexts |= 1 << parent_idx;
             } else {
+                #[cfg(not(feature = "no-cfi"))]
+                cfi_assert!(
+                    parent_context.state != ContextState::Retired || child_context_count != 1
+                );
                 break;
             }
 
@@ -55,9 +69,12 @@ impl CommandExecution for DestroyCtxCmd {
 
         for (idx, c) in dpe.contexts.iter_mut().enumerate() {
             // Clears all the to_destroy bits in the children of every context
-            c.children &= !to_destroy;
+            c.children &= !cfi_launder(to_destroy);
             if to_destroy & (1 << idx) != 0 {
                 c.destroy();
+            } else {
+                #[cfg(not(feature = "no-cfi"))]
+                cfi_assert_eq(to_destroy & (1 << idx), 0);
             }
         }
 
@@ -77,6 +94,7 @@ mod tests {
         support::{test::SUPPORT, Support},
         DPE_PROFILE,
     };
+    use caliptra_cfi_lib_git::CfiCounter;
     use crypto::OpensslCrypto;
     use platform::default::DefaultPlatform;
     use zerocopy::AsBytes;
@@ -87,6 +105,7 @@ mod tests {
 
     #[test]
     fn test_deserialize_destroy_context() {
+        CfiCounter::reset_for_test();
         let mut command = CommandHdr::new_for_test(Command::DESTROY_CONTEXT)
             .as_bytes()
             .to_vec();
@@ -99,6 +118,7 @@ mod tests {
 
     #[test]
     fn test_destroy_context() {
+        CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
@@ -255,6 +275,7 @@ mod tests {
 
     #[test]
     fn test_retired_parent_contexts_destroyed() {
+        CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
@@ -323,6 +344,7 @@ mod tests {
 
     #[test]
     fn test_retired_parent_context_not_destroyed_if_it_has_other_active_children() {
+        CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,

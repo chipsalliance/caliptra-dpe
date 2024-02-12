@@ -6,6 +6,11 @@ use crate::{
     response::{DpeErrorCode, NewHandleResp, Response, ResponseHdr},
 };
 use bitflags::bitflags;
+#[cfg(not(feature = "no-cfi"))]
+use caliptra_cfi_derive_git::cfi_impl_fn;
+use caliptra_cfi_lib_git::cfi_launder;
+#[cfg(not(feature = "no-cfi"))]
+use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq};
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, zerocopy::FromBytes, zerocopy::AsBytes)]
@@ -47,6 +52,7 @@ impl RotateCtxCmd {
 }
 
 impl CommandExecution for RotateCtxCmd {
+    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     fn execute(
         &self,
         dpe: &mut DpeInstance,
@@ -55,6 +61,9 @@ impl CommandExecution for RotateCtxCmd {
     ) -> Result<Response, DpeErrorCode> {
         if !dpe.support.rotate_context() {
             return Err(DpeErrorCode::InvalidCommand);
+        } else {
+            #[cfg(not(feature = "no-cfi"))]
+            cfi_assert!(dpe.support.rotate_context());
         }
         let idx = dpe.get_active_context_pos(&self.handle, locality)?;
 
@@ -62,11 +71,17 @@ impl CommandExecution for RotateCtxCmd {
         if self.uses_target_is_default() {
             let default_context_idx =
                 dpe.get_active_context_pos(&ContextHandle::default(), locality);
-            if default_context_idx.is_ok()
-                || self.non_default_valid_handles_exist(dpe, locality, idx)
-            {
+            let non_default_valid_handles_exist =
+                self.non_default_valid_handles_exist(dpe, locality, idx);
+            if default_context_idx.is_ok() || cfi_launder(non_default_valid_handles_exist) {
                 return Err(DpeErrorCode::InvalidArgument);
+            } else {
+                #[cfg(not(feature = "no-cfi"))]
+                cfi_assert!(default_context_idx.is_err() && !non_default_valid_handles_exist);
             }
+        } else {
+            #[cfg(not(feature = "no-cfi"))]
+            cfi_assert!(!self.uses_target_is_default());
         }
 
         let new_handle = if self.uses_target_is_default() {
@@ -93,6 +108,7 @@ mod tests {
         },
         support::Support,
     };
+    use caliptra_cfi_lib_git::CfiCounter;
     use crypto::OpensslCrypto;
     use platform::default::DefaultPlatform;
     use zerocopy::AsBytes;
@@ -104,6 +120,7 @@ mod tests {
 
     #[test]
     fn test_deserialize_rotate_context() {
+        CfiCounter::reset_for_test();
         let mut command = CommandHdr::new_for_test(Command::ROTATE_CONTEXT_HANDLE)
             .as_bytes()
             .to_vec();
@@ -116,6 +133,7 @@ mod tests {
 
     #[test]
     fn test_rotate_context() {
+        CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,

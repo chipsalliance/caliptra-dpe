@@ -108,6 +108,18 @@ pub trait CommandExecution {
         env: &mut DpeEnv<impl DpeTypes>,
         locality: u32,
     ) -> Result<Response, DpeErrorCode>;
+
+    /// CFI wrapper around execute
+    ///
+    /// To implement this function, you need to add the
+    /// cfi_impl_fn proc_macro to execute.
+    #[cfg(not(feature = "no-cfi"))]
+    fn __cfi_execute(
+        &self,
+        dpe: &mut DpeInstance,
+        env: &mut DpeEnv<impl DpeTypes>,
+        locality: u32,
+    ) -> Result<Response, DpeErrorCode>;
 }
 
 // ABI Command structures
@@ -153,6 +165,7 @@ impl TryFrom<&[u8]> for CommandHdr {
 pub mod tests {
     use super::*;
     use crate::{DpeProfile, DPE_PROFILE};
+    use caliptra_cfi_lib_git::CfiCounter;
     use zerocopy::AsBytes;
 
     #[cfg(feature = "dpe_profile_p256_sha256")]
@@ -185,6 +198,7 @@ pub mod tests {
 
     #[test]
     fn test_deserialize_get_profile() {
+        CfiCounter::reset_for_test();
         // Commands that can be deserialized.
         assert_eq!(
             Ok(Command::GetProfile),
@@ -194,6 +208,7 @@ pub mod tests {
 
     #[test]
     fn test_slice_to_command_hdr() {
+        CfiCounter::reset_for_test();
         let invalid_command: Result<CommandHdr, DpeErrorCode> = Err(DpeErrorCode::InvalidCommand);
 
         // Test if too small.
