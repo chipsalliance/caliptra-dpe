@@ -9,6 +9,12 @@ use crate::{
     DPE_PROFILE, MAX_CERT_SIZE, MAX_HANDLES,
 };
 use bitflags::bitflags;
+#[cfg(not(feature = "no-cfi"))]
+use caliptra_cfi_derive_git::cfi_impl_fn;
+use caliptra_cfi_lib_git::cfi_launder;
+#[cfg(not(feature = "no-cfi"))]
+use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq};
+use cfg_if::cfg_if;
 use crypto::Crypto;
 use platform::{Platform, MAX_ISSUER_NAME_SIZE};
 
@@ -41,6 +47,7 @@ impl CertifyKeyCmd {
 }
 
 impl CommandExecution for CertifyKeyCmd {
+    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     fn execute(
         &self,
         dpe: &mut DpeInstance,
@@ -64,6 +71,8 @@ impl CommandExecution for CertifyKeyCmd {
             if !context.allow_x509() {
                 return Err(DpeErrorCode::InvalidArgument);
             }
+        } else if self.format == Self::FORMAT_CSR && !dpe.support.csr() {
+            return Err(DpeErrorCode::ArgumentNotSupported);
         }
 
         // Make sure the command is coming from the right locality.
@@ -71,14 +80,31 @@ impl CommandExecution for CertifyKeyCmd {
             return Err(DpeErrorCode::InvalidLocality);
         }
 
+        cfg_if! {
+            if #[cfg(not(feature = "no-cfi"))] {
+                cfi_assert!(!self.uses_is_ca() || dpe.support.is_ca());
+                cfi_assert!(!self.uses_is_ca() || context.allow_ca());
+                cfi_assert!(self.format != Self::FORMAT_X509 || dpe.support.x509());
+                cfi_assert!(self.format != Self::FORMAT_X509 || context.allow_x509());
+                cfi_assert!(self.format != Self::FORMAT_CSR || dpe.support.csr());
+                cfi_assert_eq(context.locality, locality);
+            }
+        }
+
         let algs = DPE_PROFILE.alg_len();
         let digest = dpe.compute_measurement_hash(env, idx)?;
         let cdi = env
             .crypto
             .derive_cdi(DPE_PROFILE.alg_len(), &digest, b"DPE")?;
-        let (priv_key, pub_key) = env
-            .crypto
-            .derive_key_pair(algs, &cdi, &self.label, b"ECC")?;
+        let key_pair = env.crypto.derive_key_pair(algs, &cdi, &self.label, b"ECC");
+        if cfi_launder(key_pair.is_ok()) {
+            #[cfg(not(feature = "no-cfi"))]
+            cfi_assert!(key_pair.is_ok());
+        } else {
+            #[cfg(not(feature = "no-cfi"))]
+            cfi_assert!(key_pair.is_err());
+        }
+        let (priv_key, pub_key) = key_pair?;
 
         let mut subj_serial = [0u8; DPE_PROFILE.get_hash_size() * 2];
         env.crypto
@@ -109,6 +135,8 @@ impl CommandExecution for CertifyKeyCmd {
         let mut cert = [0u8; MAX_CERT_SIZE];
         let cert_size = match self.format {
             Self::FORMAT_X509 => {
+                #[cfg(not(feature = "no-cfi"))]
+                cfi_assert_eq(self.format, Self::FORMAT_X509);
                 let mut tbs_buffer = [0u8; MAX_CERT_SIZE];
                 let mut tbs_writer = CertWriter::new(&mut tbs_buffer, true);
                 if issuer_len > MAX_ISSUER_NAME_SIZE {
@@ -141,15 +169,10 @@ impl CommandExecution for CertifyKeyCmd {
                 u32::try_from(bytes_written).map_err(|_| DpeErrorCode::InternalError)?
             }
             Self::FORMAT_CSR => {
-                if !dpe.support.csr() {
-                    return Err(DpeErrorCode::ArgumentNotSupported);
-                }
-
+                #[cfg(not(feature = "no-cfi"))]
+                cfi_assert_eq(self.format, Self::FORMAT_CSR);
                 let mut cert_req_info_buffer = [0u8; MAX_CERT_SIZE];
                 let mut cert_req_info_writer = CertWriter::new(&mut cert_req_info_buffer, true);
-                if issuer_len > MAX_ISSUER_NAME_SIZE {
-                    return Err(DpeErrorCode::InternalError);
-                }
                 let mut bytes_written = cert_req_info_writer.encode_certification_request_info(
                     &pub_key,
                     &subject_name,
@@ -230,6 +253,7 @@ mod tests {
         dpe_instance::tests::{TestTypes, SIMULATION_HANDLE, TEST_LOCALITIES},
         support::Support,
     };
+    use caliptra_cfi_lib_git::CfiCounter;
     use cms::{
         content_info::{CmsVersion, ContentInfo},
         signed_data::{SignedData, SignerIdentifier},
@@ -262,6 +286,7 @@ mod tests {
 
     #[test]
     fn test_deserialize_certify_key() {
+        CfiCounter::reset_for_test();
         let mut command = CommandHdr::new_for_test(Command::CERTIFY_KEY)
             .as_bytes()
             .to_vec();
@@ -274,6 +299,7 @@ mod tests {
 
     #[test]
     fn test_certify_key_x509() {
+        CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
@@ -314,6 +340,7 @@ mod tests {
 
     #[test]
     fn test_is_ca() {
+        CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
@@ -385,6 +412,7 @@ mod tests {
 
     #[test]
     fn test_certify_key_csr() {
+        CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,

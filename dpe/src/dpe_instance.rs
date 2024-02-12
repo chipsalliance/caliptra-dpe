@@ -12,6 +12,12 @@ use crate::{
     tci::{TciMeasurement, TciNodeData},
     U8Bool, DPE_PROFILE, INTERNAL_INPUT_INFO_SIZE, MAX_HANDLES,
 };
+#[cfg(not(feature = "no-cfi"))]
+use caliptra_cfi_derive_git::cfi_impl_fn;
+use caliptra_cfi_lib_git::cfi_launder;
+#[cfg(not(feature = "no-cfi"))]
+use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq};
+use cfg_if::cfg_if;
 use constant_time_eq::constant_time_eq;
 use crypto::{Crypto, Digest, Hasher};
 use platform::{Platform, MAX_CHUNK_SIZE};
@@ -55,6 +61,7 @@ impl DpeInstance {
     ///
     /// * `support` - optional functionality the instance supports
     /// * `issuer_cn` - issuer Common Name to use in DPE leaf certs
+    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     pub fn new(
         env: &mut DpeEnv<impl DpeTypes>,
         support: Support,
@@ -71,10 +78,14 @@ impl DpeInstance {
         if dpe.support.auto_init() {
             let locality = env.platform.get_auto_init_locality()?;
             InitCtxCmd::new_use_default().execute(&mut dpe, env, locality)?;
+        } else {
+            #[cfg(not(feature = "no-cfi"))]
+            cfi_assert!(!dpe.support.auto_init());
         }
         Ok(dpe)
     }
 
+    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     pub fn new_auto_init(
         env: &mut DpeEnv<impl DpeTypes>,
         support: Support,
@@ -85,6 +96,9 @@ impl DpeInstance {
         // auto-init must be supported to add an auto init measurement
         if !updated_support.auto_init() {
             return Err(DpeErrorCode::ArgumentNotSupported);
+        } else {
+            #[cfg(not(feature = "no-cfi"))]
+            cfi_assert!(updated_support.auto_init());
         }
         let mut dpe = Self::new(env, updated_support)?;
 
@@ -127,6 +141,7 @@ impl DpeInstance {
     /// * `locality` - which hardware locality is making the request
     /// * `cmd` - serialized command
     /// * `crypto` - Crypto interface
+    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     pub fn execute_serialized_command(
         &mut self,
         env: &mut DpeEnv<impl DpeTypes>,
@@ -134,7 +149,7 @@ impl DpeInstance {
         cmd: &[u8],
     ) -> Result<Response, DpeErrorCode> {
         let command = Command::deserialize(cmd)?;
-        let resp = match command {
+        let resp = match cfi_launder(command) {
             Command::GetProfile => Ok(Response::GetProfile(self.get_profile(&mut env.platform)?)),
             Command::InitCtx(cmd) => cmd.execute(self, env, locality),
             Command::DeriveContext(cmd) => cmd.execute(self, env, locality),
@@ -220,7 +235,7 @@ impl DpeInstance {
             if idx >= self.contexts.len() {
                 return Err(DpeErrorCode::InternalError);
             }
-            descendants |= self.get_descendants(&self.contexts[idx])?;
+            descendants |= cfi_launder(self.get_descendants(&self.contexts[idx])?);
         }
         Ok(descendants)
     }
@@ -258,8 +273,11 @@ impl DpeInstance {
             return Err(DpeErrorCode::MaxTcis);
         }
         if !self.contexts[idx].handle.is_default() {
-            self.contexts[idx].handle = self.generate_new_handle(env)?
-        };
+            self.contexts[idx].handle = self.generate_new_handle(env)?;
+        } else {
+            #[cfg(not(feature = "no-cfi"))]
+            cfi_assert!(self.contexts[idx].handle.is_default());
+        }
         Ok(())
     }
 
@@ -268,6 +286,7 @@ impl DpeInstance {
     /// derivation for the context at `start_idx`.
     ///
     /// Returns the number of TCIs written to `nodes`
+    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     pub(crate) fn get_tcb_nodes(
         &self,
         start_idx: usize,
@@ -291,6 +310,7 @@ impl DpeInstance {
         Ok(out_idx)
     }
 
+    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     pub(crate) fn add_tci_measurement(
         &self,
         env: &mut DpeEnv<impl DpeTypes>,
@@ -303,6 +323,12 @@ impl DpeInstance {
         }
         if context.locality != locality {
             return Err(DpeErrorCode::InvalidLocality);
+        }
+        cfg_if! {
+            if #[cfg(not(feature = "no-cfi"))] {
+                cfi_assert_eq(context.state, ContextState::Active);
+                cfi_assert_eq(context.locality, locality);
+            }
         }
 
         // Derive the new TCI as HASH(TCI_CUMULATIVE || INPUT_DATA).
@@ -349,6 +375,7 @@ impl DpeInstance {
     /// # Arguments
     ///
     /// * `start_idx` - index of the leaf context
+    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     pub(crate) fn compute_measurement_hash(
         &mut self,
         env: &mut DpeEnv<impl DpeTypes>,
@@ -373,14 +400,14 @@ impl DpeInstance {
         }
 
         // Add internal input info to hash
-        if uses_internal_input_info {
+        if cfi_launder(uses_internal_input_info) {
             let mut internal_input_info = [0u8; INTERNAL_INPUT_INFO_SIZE];
             self.serialize_internal_input_info(&mut env.platform, &mut internal_input_info)?;
             hasher.update(&internal_input_info[..INTERNAL_INPUT_INFO_SIZE])?;
         }
 
         // Add internal input dice to hash
-        if uses_internal_input_dice {
+        if cfi_launder(uses_internal_input_dice) {
             let mut offset = 0;
             let mut cert_chunk = [0u8; MAX_CHUNK_SIZE];
             while let Ok(len) =
@@ -443,6 +470,7 @@ pub mod tests {
     use crate::response::NewHandleResp;
     use crate::support::test::SUPPORT;
     use crate::{commands::CommandHdr, CURRENT_PROFILE_MAJOR_VERSION};
+    use caliptra_cfi_lib_git::CfiCounter;
     use crypto::OpensslCrypto;
     use platform::default::{DefaultPlatform, AUTO_INIT_LOCALITY, TEST_CERT_CHAIN};
     use zerocopy::AsBytes;
@@ -465,6 +493,7 @@ pub mod tests {
 
     #[test]
     fn test_execute_serialized_command() {
+        CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
@@ -503,6 +532,7 @@ pub mod tests {
 
     #[test]
     fn test_get_profile() {
+        CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
@@ -515,6 +545,7 @@ pub mod tests {
 
     #[test]
     fn test_get_active_context_index() {
+        CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
@@ -552,6 +583,7 @@ pub mod tests {
 
     #[test]
     fn test_add_tci_measurement() {
+        CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
@@ -603,6 +635,7 @@ pub mod tests {
 
     #[test]
     fn test_get_descendants() {
+        CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
@@ -658,6 +691,7 @@ pub mod tests {
 
     #[test]
     fn test_derive_cdi() {
+        CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
@@ -713,6 +747,7 @@ pub mod tests {
 
     #[test]
     fn test_hash_internal_input_info() {
+        CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
@@ -769,6 +804,7 @@ pub mod tests {
 
     #[test]
     fn test_hash_internal_input_dice() {
+        CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
@@ -821,6 +857,7 @@ pub mod tests {
 
     #[test]
     fn test_new_auto_init() {
+        CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,

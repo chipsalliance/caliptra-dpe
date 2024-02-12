@@ -20,6 +20,6 @@ openssl = {version="0.10.57", optional = true}
 clap = { version = "4.1.8", features = ["derive"] }
 log = "0.4.17"
 env_logger = "0.10.0"
-dpe = { path = "../dpe", default-features = false }
+dpe = { path = "../dpe", default-features = false, features = ["no-cfi"] }
 crypto = { path = "../crypto", default-features = false }
 platform = { path = "../platform", default-features = false}

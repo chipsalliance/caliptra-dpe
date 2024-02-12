@@ -7,6 +7,8 @@ set -ex
 function build_rust_targets() {
   profile=$1
 
+  cargo build --release --manifest-path dpe/Cargo.toml --features=$profile,no-cfi --no-default-features
+
   cargo build --release --manifest-path crypto/Cargo.toml --no-default-features
   cargo build --release --manifest-path platform/Cargo.toml --features=$profile --no-default-features
   cargo build --release --manifest-path dpe/Cargo.toml --features=$profile --no-default-features
@@ -47,7 +49,7 @@ function test_rust_targets() {
 
   cargo test --manifest-path platform/Cargo.toml --features=$profile --no-default-features
   cargo test --manifest-path crypto/Cargo.toml --no-default-features
-  cargo test --manifest-path dpe/Cargo.toml --features=$profile --no-default-features
+  cargo test --manifest-path dpe/Cargo.toml --features=$profile --no-default-features -- --test-threads=1
   cargo test --manifest-path simulator/Cargo.toml --features=$profile,openssl --no-default-features
 }
 
@@ -80,13 +82,13 @@ run_verification_tests dpe_profile_p384_sha384 rustcrypto
 
 # Build fuzz target
 ( cd dpe/fuzz
-  rustup toolchain install nightly-2023-04-15
-  cargo +nightly-2023-04-15 install cargo-fuzz cargo-afl
+  rustup toolchain install nightly-2023-11-16
+  cargo +nightly-2023-11-16 install cargo-fuzz cargo-afl
   cargo fmt --check
   cargo clippy --features libfuzzer-sys
   cargo clippy --features afl
-  cargo +nightly-2023-04-15 fuzz build --features libfuzzer-sys
-  cargo +nightly-2023-04-15 afl build --features afl
+  cargo +nightly-2023-11-16 fuzz build --features libfuzzer-sys
+  cargo +nightly-2023-11-16 afl build --features afl
 )
 
 # Fix license headers

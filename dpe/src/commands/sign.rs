@@ -7,6 +7,12 @@ use crate::{
     DPE_PROFILE,
 };
 use bitflags::bitflags;
+#[cfg(not(feature = "no-cfi"))]
+use caliptra_cfi_derive_git::cfi_impl_fn;
+use caliptra_cfi_lib_git::cfi_launder;
+#[cfg(not(feature = "no-cfi"))]
+use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq, cfi_assert_ne};
+use cfg_if::cfg_if;
 use crypto::{Crypto, CryptoBuf, Digest, EcdsaSig, HmacSig};
 
 #[repr(C)]
@@ -33,6 +39,7 @@ impl SignCmd {
         self.flags.contains(SignFlags::IS_SYMMETRIC)
     }
 
+    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     fn ecdsa_sign(
         &self,
         dpe: &mut DpeInstance,
@@ -45,9 +52,15 @@ impl SignCmd {
         let cdi = env
             .crypto
             .derive_cdi(DPE_PROFILE.alg_len(), &cdi_digest, b"DPE")?;
-        let (priv_key, pub_key) = env
-            .crypto
-            .derive_key_pair(algs, &cdi, &self.label, b"ECC")?;
+        let key_pair = env.crypto.derive_key_pair(algs, &cdi, &self.label, b"ECC");
+        if cfi_launder(key_pair.is_ok()) {
+            #[cfg(not(feature = "no-cfi"))]
+            cfi_assert!(key_pair.is_ok());
+        } else {
+            #[cfg(not(feature = "no-cfi"))]
+            cfi_assert!(key_pair.is_err());
+        }
+        let (priv_key, pub_key) = key_pair?;
 
         let sig = env
             .crypto
@@ -56,6 +69,7 @@ impl SignCmd {
         Ok(sig)
     }
 
+    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     fn hmac_sign(
         &self,
         dpe: &mut DpeInstance,
@@ -67,14 +81,22 @@ impl SignCmd {
         let cdi_digest = dpe.compute_measurement_hash(env, idx)?;
         let cdi = env
             .crypto
-            .derive_cdi(DPE_PROFILE.alg_len(), &cdi_digest, b"DPE")?;
+            .derive_cdi(DPE_PROFILE.alg_len(), &cdi_digest, b"DPE");
+        if cfi_launder(cdi.is_ok()) {
+            #[cfg(not(feature = "no-cfi"))]
+            cfi_assert!(cdi.is_ok());
+        } else {
+            #[cfg(not(feature = "no-cfi"))]
+            cfi_assert!(cdi.is_err());
+        }
         Ok(env
             .crypto
-            .hmac_sign_with_derived(algs, &cdi, &self.label, b"HMAC", digest)?)
+            .hmac_sign_with_derived(algs, &cdi?, &self.label, b"HMAC", digest)?)
     }
 }
 
 impl CommandExecution for SignCmd {
+    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     fn execute(
         &self,
         dpe: &mut DpeInstance,
@@ -91,6 +113,13 @@ impl CommandExecution for SignCmd {
 
         if context.context_type == ContextType::Simulation {
             return Err(DpeErrorCode::InvalidArgument);
+        }
+
+        cfg_if! {
+            if #[cfg(not(feature = "no-cfi"))] {
+                cfi_assert!(dpe.support.is_symmetric() || !self.uses_symmetric());
+                cfi_assert_ne(context.context_type, ContextType::Simulation);
+            }
         }
 
         let algs = DPE_PROFILE.alg_len();
@@ -140,6 +169,7 @@ mod tests {
         dpe_instance::tests::{TestTypes, RANDOM_HANDLE, SIMULATION_HANDLE, TEST_LOCALITIES},
         support::{test::SUPPORT, Support},
     };
+    use caliptra_cfi_lib_git::CfiCounter;
     use crypto::OpensslCrypto;
     use openssl::x509::X509;
     use openssl::{bn::BigNum, ecdsa::EcdsaSig};
@@ -155,6 +185,7 @@ mod tests {
 
     #[test]
     fn test_deserialize_sign() {
+        CfiCounter::reset_for_test();
         let mut command = CommandHdr::new_for_test(Command::SIGN).as_bytes().to_vec();
         command.extend(TEST_SIGN_CMD.as_bytes());
         assert_eq!(
@@ -165,6 +196,7 @@ mod tests {
 
     #[test]
     fn test_uses_symmetric() {
+        CfiCounter::reset_for_test();
         // No flags set.
         assert!(!SignCmd {
             flags: SignFlags::empty(),
@@ -182,6 +214,7 @@ mod tests {
 
     #[test]
     fn test_bad_command_inputs() {
+        CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
@@ -248,6 +281,7 @@ mod tests {
 
     #[test]
     fn test_asymmetric() {
+        CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
@@ -307,6 +341,7 @@ mod tests {
 
     #[test]
     fn test_symmetric() {
+        CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,

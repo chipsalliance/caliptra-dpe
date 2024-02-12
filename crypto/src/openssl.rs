@@ -1,6 +1,8 @@
 // Licensed under the Apache-2.0 license
 
 use crate::{hkdf::*, AlgLen, Crypto, CryptoBuf, CryptoError, Digest, EcdsaPub, Hasher, HmacSig};
+#[cfg(not(feature = "no-cfi"))]
+use caliptra_cfi_derive_git::cfi_impl_fn;
 use openssl::{
     bn::{BigNum, BigNumContext},
     ec::{EcGroup, EcKey, EcPoint},
@@ -122,6 +124,7 @@ impl Crypto for OpensslCrypto {
         Ok(OpensslHasher(openssl::hash::Hasher::new(md)?))
     }
 
+    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     fn derive_cdi(
         &mut self,
         algs: AlgLen,
@@ -131,6 +134,7 @@ impl Crypto for OpensslCrypto {
         hkdf_derive_cdi(algs, measurement, info)
     }
 
+    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     fn derive_key_pair(
         &mut self,
         algs: AlgLen,

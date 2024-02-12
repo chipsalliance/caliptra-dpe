@@ -8,6 +8,11 @@ use crate::{
     DPE_PROFILE,
 };
 use bitflags::bitflags;
+#[cfg(not(feature = "no-cfi"))]
+use caliptra_cfi_derive_git::cfi_impl_fn;
+#[cfg(not(feature = "no-cfi"))]
+use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq};
+use cfg_if::cfg_if;
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, zerocopy::FromBytes, zerocopy::AsBytes)]
@@ -163,6 +168,7 @@ impl DeriveContextCmd {
 }
 
 impl CommandExecution for DeriveContextCmd {
+    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     fn execute(
         &self,
         dpe: &mut DpeInstance,
@@ -173,11 +179,8 @@ impl CommandExecution for DeriveContextCmd {
         if (!dpe.support.internal_info() && self.uses_internal_info_input())
             || (!dpe.support.internal_dice() && self.uses_internal_dice_input())
             || (!dpe.support.retain_parent_context() && self.retains_parent())
-        {
-            return Err(DpeErrorCode::ArgumentNotSupported);
-        }
-
-        if (!dpe.support.is_ca() && self.allows_ca()) || (!dpe.support.x509() && self.allows_x509())
+            || (!dpe.support.is_ca() && self.allows_ca())
+            || (!dpe.support.x509() && self.allows_x509())
         {
             return Err(DpeErrorCode::ArgumentNotSupported);
         }
@@ -191,15 +194,35 @@ impl CommandExecution for DeriveContextCmd {
         }
 
         let target_locality = if !self.changes_locality() {
+            #[cfg(not(feature = "no-cfi"))]
+            cfi_assert!(!self.changes_locality());
             locality
         } else {
+            #[cfg(not(feature = "no-cfi"))]
+            cfi_assert!(self.changes_locality());
             self.target_locality
         };
+
+        cfg_if! {
+            if #[cfg(not(feature = "no-cfi"))] {
+                cfi_assert!(dpe.support.internal_info() || !self.uses_internal_info_input());
+                cfi_assert!(dpe.support.internal_dice() || !self.uses_internal_dice_input());
+                cfi_assert!(dpe.support.retain_parent_context() || !self.retains_parent());
+                cfi_assert!(dpe.support.is_ca() || !self.allows_ca());
+                cfi_assert!(dpe.support.x509() || !self.allows_x509());
+                cfi_assert!(dpe.contexts[parent_idx].allow_ca() || !self.allows_ca());
+                cfi_assert!(dpe.contexts[parent_idx].allow_x509() || !self.allows_x509());
+                cfi_assert!(!self.is_recursive() || !self.retains_parent());
+            }
+        }
 
         if self.is_recursive() {
             let mut tmp_context = dpe.contexts[parent_idx];
             if tmp_context.tci.tci_type != self.tci_type {
                 return Err(DpeErrorCode::InvalidArgument);
+            } else {
+                #[cfg(not(feature = "no-cfi"))]
+                cfi_assert_eq(tmp_context.tci.tci_type, self.tci_type);
             }
             dpe.add_tci_measurement(
                 env,
@@ -227,13 +250,21 @@ impl CommandExecution for DeriveContextCmd {
                 .get_next_inactive_context_pos()
                 .ok_or(DpeErrorCode::MaxTcis)?;
 
-            if !self.safe_to_make_child(dpe, parent_idx, target_locality)? {
+            let safe_to_make_child = self.safe_to_make_child(dpe, parent_idx, target_locality)?;
+            if !safe_to_make_child {
                 return Err(DpeErrorCode::InvalidArgument);
+            } else {
+                #[cfg(not(feature = "no-cfi"))]
+                cfi_assert!(safe_to_make_child);
             }
 
             let child_handle = if self.makes_default() {
+                #[cfg(not(feature = "no-cfi"))]
+                cfi_assert!(self.makes_default());
                 ContextHandle::default()
             } else {
+                #[cfg(not(feature = "no-cfi"))]
+                cfi_assert!(!self.makes_default());
                 dpe.generate_new_handle(env)?
             };
 
@@ -266,10 +297,19 @@ impl CommandExecution for DeriveContextCmd {
             // Copy the parent context to mutate so that we avoid mutating internal state upon an error.
             let mut tmp_parent_context = dpe.contexts[parent_idx];
             if !self.retains_parent() {
+                #[cfg(not(feature = "no-cfi"))]
+                cfi_assert!(!self.retains_parent());
                 tmp_parent_context.state = ContextState::Retired;
                 tmp_parent_context.handle = ContextHandle([0xff; ContextHandle::SIZE]);
             } else if !tmp_parent_context.handle.is_default() {
                 tmp_parent_context.handle = dpe.generate_new_handle(env)?;
+            } else {
+                cfg_if! {
+                    if #[cfg(not(feature = "no-cfi"))] {
+                        cfi_assert!(self.retains_parent());
+                        cfi_assert!(tmp_parent_context.handle.is_default());
+                    }
+                }
             }
 
             // Add child to the parent's list of children.
@@ -303,6 +343,7 @@ mod tests {
         support::Support,
         MAX_HANDLES,
     };
+    use caliptra_cfi_lib_git::CfiCounter;
     use crypto::{Crypto, Hasher, OpensslCrypto};
     use openssl::x509::X509;
     use openssl::{bn::BigNum, ecdsa::EcdsaSig};
@@ -319,6 +360,7 @@ mod tests {
 
     #[test]
     fn test_deserialize_derive_context() {
+        CfiCounter::reset_for_test();
         let mut command = CommandHdr::new_for_test(Command::DERIVE_CONTEXT)
             .as_bytes()
             .to_vec();
@@ -331,6 +373,7 @@ mod tests {
 
     #[test]
     fn test_support() {
+        CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
@@ -392,6 +435,7 @@ mod tests {
 
     #[test]
     fn test_initial_conditions() {
+        CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
@@ -418,6 +462,7 @@ mod tests {
 
     #[test]
     fn test_max_tcis() {
+        CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
@@ -453,6 +498,7 @@ mod tests {
 
     #[test]
     fn test_set_child_parent_relationship() {
+        CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
@@ -487,6 +533,7 @@ mod tests {
 
     #[test]
     fn test_set_other_values() {
+        CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
@@ -514,6 +561,7 @@ mod tests {
 
     #[test]
     fn test_correct_child_handle() {
+        CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
@@ -557,6 +605,7 @@ mod tests {
 
     #[test]
     fn test_full_attestation_flow() {
+        CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
@@ -653,6 +702,7 @@ mod tests {
 
     #[test]
     fn test_correct_parent_handle() {
+        CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
@@ -732,6 +782,7 @@ mod tests {
 
     #[test]
     fn test_safe_to_make_default() {
+        CfiCounter::reset_for_test();
         let mut make_default_in_0 = DeriveContextCmd {
             handle: ContextHandle::default(),
             data: TciMeasurement::default().0,
@@ -771,6 +822,7 @@ mod tests {
 
     #[test]
     fn test_safe_to_make_non_default() {
+        CfiCounter::reset_for_test();
         let non_default = DeriveContextCmd {
             handle: ContextHandle::default(),
             data: TciMeasurement::default().0,
@@ -789,6 +841,7 @@ mod tests {
 
     #[test]
     fn test_default_context_cannot_be_retained() {
+        CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
@@ -814,6 +867,7 @@ mod tests {
 
     #[test]
     fn test_make_default_in_other_locality_that_has_non_default() {
+        CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
@@ -852,6 +906,7 @@ mod tests {
 
     #[test]
     fn test_recursive() {
+        CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,

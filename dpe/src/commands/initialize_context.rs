@@ -6,6 +6,11 @@ use crate::{
     response::{DpeErrorCode, NewHandleResp, Response, ResponseHdr},
 };
 use bitflags::bitflags;
+#[cfg(not(feature = "no-cfi"))]
+use caliptra_cfi_derive_git::cfi_impl_fn;
+#[cfg(not(feature = "no-cfi"))]
+use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq};
+use cfg_if::cfg_if;
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, zerocopy::FromBytes, zerocopy::AsBytes)]
@@ -37,6 +42,7 @@ impl InitCtxCmd {
 }
 
 impl CommandExecution for InitCtxCmd {
+    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     fn execute(
         &self,
         dpe: &mut DpeInstance,
@@ -55,6 +61,14 @@ impl CommandExecution for InitCtxCmd {
         // CDI.
         if !(self.flag_is_default() ^ self.flag_is_simulation()) {
             return Err(DpeErrorCode::InvalidArgument);
+        }
+
+        cfg_if! {
+            if #[cfg(not(feature = "no-cfi"))] {
+                cfi_assert!(!self.flag_is_default() || !dpe.has_initialized());
+                cfi_assert!(!self.flag_is_simulation() || dpe.support.simulation());
+                cfi_assert!(self.flag_is_default() ^ self.flag_is_simulation());
+            }
         }
 
         let idx = dpe
@@ -95,6 +109,7 @@ mod tests {
         dpe_instance::tests::{TestTypes, TEST_LOCALITIES},
         support::Support,
     };
+    use caliptra_cfi_lib_git::CfiCounter;
     use crypto::OpensslCrypto;
     use platform::default::DefaultPlatform;
     use zerocopy::AsBytes;
@@ -103,6 +118,7 @@ mod tests {
 
     #[test]
     fn test_deserialize_init_ctx() {
+        CfiCounter::reset_for_test();
         let mut command = CommandHdr::new_for_test(Command::INITIALIZE_CONTEXT)
             .as_bytes()
             .to_vec();
@@ -115,6 +131,7 @@ mod tests {
 
     #[test]
     fn test_initialize_context() {
+        CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,

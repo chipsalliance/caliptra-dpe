@@ -9,9 +9,12 @@ edition = "2021"
 openssl = ["dep:openssl", "dep:hkdf", "dep:sha2"]
 rustcrypto = ["dep:hkdf", "dep:hmac", "dep:p256", "dep:p384", "dep:rand", "dep:sha2", "dep:base64ct", "dep:ecdsa", "dep:sec1"]
 deterministic_rand = ["dep:rand"]
+no-cfi = []
 
 [dependencies]
 arrayvec = { version = "0.7.4", default-features = false, features = ["zeroize"] }
+caliptra-cfi-lib-git = { workspace = true, default-features = false, features = ["cfi", "cfi-counter" ] }
+caliptra-cfi-derive-git.workspace = true
 ecdsa = { version = "0.16.9", optional = true, features = ["pem"]}
 hkdf = { version = "0.12.3", optional = true }
 hmac = {version="0.12.1", optional = true}

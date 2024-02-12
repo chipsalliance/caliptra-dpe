@@ -4,6 +4,8 @@ use crate::{
     dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
     response::{DpeErrorCode, GetCertificateChainResp, Response, ResponseHdr},
 };
+#[cfg(not(feature = "no-cfi"))]
+use caliptra_cfi_derive_git::cfi_impl_fn;
 use platform::{Platform, MAX_CHUNK_SIZE};
 
 #[repr(C)]
@@ -14,6 +16,7 @@ pub struct GetCertificateChainCmd {
 }
 
 impl CommandExecution for GetCertificateChainCmd {
+    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     fn execute(
         &self,
         _dpe: &mut DpeInstance,
@@ -45,6 +48,7 @@ mod tests {
         dpe_instance::tests::{TestTypes, TEST_LOCALITIES},
         support::test::SUPPORT,
     };
+    use caliptra_cfi_lib_git::CfiCounter;
     use crypto::OpensslCrypto;
     use platform::default::DefaultPlatform;
     use zerocopy::AsBytes;
@@ -56,6 +60,7 @@ mod tests {
 
     #[test]
     fn test_deserialize_get_certificate_chain() {
+        CfiCounter::reset_for_test();
         let mut command = CommandHdr::new_for_test(Command::GET_CERTIFICATE_CHAIN)
             .as_bytes()
             .to_vec();
@@ -68,6 +73,7 @@ mod tests {
 
     #[test]
     fn test_fails_if_size_greater_than_max_chunk_size() {
+        CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
