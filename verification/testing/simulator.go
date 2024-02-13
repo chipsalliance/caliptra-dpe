@@ -255,7 +255,7 @@ func GetSimulatorTargets() []TestTarget {
 		},
 		{
 			"DefaultSupport",
-			getTestTarget([]string{"AutoInit", "Simulation", "X509", "Csr", "IsCA", "RotateContext", "Recursive", "IsSymmetric"}),
+			getTestTarget([]string{"AutoInit", "Simulation", "X509", "Csr", "IsCA", "RotateContext", "Recursive", "IsSymmetric", "RetainParentContext"}),
 			AllTestCases,
 		},
 		{
@@ -367,6 +367,16 @@ func GetSimulatorTargets() []TestTarget {
 			"DeriveContext_ChangeLocality",
 			getTestTarget([]string{"AutoInit", "Simulation"}),
 			[]TestCase{DeriveContextLocalityTestCase},
+		},
+		{
+			"DeriveContext_Recursive",
+			getTestTarget([]string{"AutoInit", "Recursive", "X509"}),
+			[]TestCase{DeriveContextRecursiveTestCase},
+		},
+		{
+			"DeriveContext_RecursiveOnDerivedContexts",
+			getTestTarget([]string{"AutoInit", "Recursive", "RetainParentContext", "X509", "RotateContext"}),
+			[]TestCase{DeriveContextRecursiveOnDerivedContextsTestCase},
 		},
 	}
 }
