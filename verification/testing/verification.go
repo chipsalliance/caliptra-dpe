@@ -142,6 +142,16 @@ var DeriveContextInputFlagsTestCase = TestCase{
 	"DeriveContext_InputFlagsSupport", TestInternalInputFlags, []string{"AutoInit", "InternalDice", "InternalInfo"},
 }
 
+// DeriveContextRecursiveTestCase tests DeriveContext with the Recursive input flag
+var DeriveContextRecursiveTestCase = TestCase{
+	"DeriveContext_Recursive", TestDeriveContextRecursive, []string{"AutoInit", "Recursive", "X509"},
+}
+
+// DeriveContextRecursiveOnDerivedContextsTestCase tests DeriveContext with the Recursive input flag on derived contexts
+var DeriveContextRecursiveOnDerivedContextsTestCase = TestCase{
+	"DeriveContext_RecursiveOnDerivedContexts", TestDeriveContextRecursiveOnDerivedContexts, []string{"AutoInit", "Recursive", "RetainParentContext", "X509", "RotateContext"},
+}
+
 // AllTestCases contains all DPE test cases
 var AllTestCases = []TestCase{
 	CertifyKeyTestCase,
@@ -166,6 +176,8 @@ var IrreversibleTestCases = []TestCase{
 	DeriveContextLocalityTestCase,
 	DeriveContextPrivilegeEscalationTestCase,
 	DeriveContextMaxTCIsTestCase,
+	DeriveContextRecursiveTestCase,
+	DeriveContextRecursiveOnDerivedContextsTestCase,
 }
 
 // RunTargetTestCases runs all test cases for target
