@@ -57,6 +57,8 @@ impl Support {
     pub fn retain_parent_context(&self) -> bool {
         self.contains(Support::RETAIN_PARENT_CONTEXT)
     }
+
+    /// Disables supported features based on compilation features
     pub fn preprocess_support(&self) -> Support {
         #[allow(unused_mut)]
         let mut support = Support::empty();

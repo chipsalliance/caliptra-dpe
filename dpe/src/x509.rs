@@ -905,8 +905,6 @@ impl CertWriter<'_> {
 
     /// Encode SubjectPublicKeyInfo for an ECDSA public key
     ///
-    /// Returns number of bytes written to `remaining_cert`
-    ///
     /// SubjectPublicKeyInfo  ::=  SEQUENCE  {
     ///        algorithm            AlgorithmIdentifier,
     ///        subjectPublicKey     BIT STRING  }
@@ -918,6 +916,8 @@ impl CertWriter<'_> {
     ///
     /// The ECPoint OCTET STRING is mapped to the subjectPublicKey BIT STRING
     /// directly, which means the OCTET STRING tag and size fields are omitted.
+    ///
+    /// Returns number of bytes written to `certificate`
     fn encode_ecdsa_subject_pubkey_info(
         &mut self,
         pubkey: &EcdsaPub,
@@ -1692,12 +1692,12 @@ impl CertWriter<'_> {
 
     /// Encode an ECDSA X.509 certificate
     ///
-    /// Returns number of bytes written to `scratch`
-    ///
     /// Certificate  ::=  SEQUENCE  {
     ///    tbsCertificate       TBSCertificate,
     ///    signatureAlgorithm   AlgorithmIdentifier,
     ///    signatureValue       BIT STRING  }
+    ///
+    /// Returns number of bytes written to `certificate`
     pub fn encode_ecdsa_certificate(
         &mut self,
         tbs: &[u8],
@@ -1725,8 +1725,6 @@ impl CertWriter<'_> {
 
     /// Encode a certification request info
     ///
-    /// Returns number of bytes written to `scratch`
-    ///
     /// CertificationRequestInfo  ::=  SEQUENCE  {
     ///    version       INTEGER { v1(0) } (v1,...),
     ///    subject       Name,
@@ -1739,6 +1737,8 @@ impl CertWriter<'_> {
     /// * `pubkey` - ECDSA Public key.
     /// * `subject_name` - The subject name RDN struct to encode.
     /// * `measurements` - DPE measurement data.
+    ///
+    /// Returns number of bytes written to `certificate`
     pub fn encode_certification_request_info(
         &mut self,
         pub_key: &EcdsaPub,
@@ -1773,13 +1773,13 @@ impl CertWriter<'_> {
 
     /// Encode an PKCS #10 CSR
     ///
-    /// Returns number of bytes written to `scratch`
-    ///
     /// CertificateRequest  ::=  SEQUENCE  {
     ///    certificationRequestInfo       CertificationRequestInfo,
     ///    signatureAlgorithm             AlgorithmIdentifier,
     ///    signatureValue                 BIT STRING  
     /// }
+    ///
+    /// Returns number of bytes written to `certificate`
     pub fn encode_csr(
         &mut self,
         cert_req_info: &[u8],

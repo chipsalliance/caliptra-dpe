@@ -59,8 +59,8 @@ impl DpeInstance {
     ///
     /// # Arguments
     ///
+    /// * `env` - DPE environment containing Crypto and Platform implementations
     /// * `support` - optional functionality the instance supports
-    /// * `issuer_cn` - issuer Common Name to use in DPE leaf certs
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     pub fn new(
         env: &mut DpeEnv<impl DpeTypes>,
@@ -85,6 +85,14 @@ impl DpeInstance {
         Ok(dpe)
     }
 
+    /// Create a new DPE instance auto-initialized with a measurement
+    ///
+    /// # Arguments
+    ///
+    /// * `env` - DPE environment containing Crypto and Platform implementations
+    /// * `support` - optional functionality the instance supports
+    /// * `tci_type`- tci_type of initialized context
+    /// * `auto_init_measurement` - TCI data of initialized context
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     pub fn new_auto_init(
         env: &mut DpeEnv<impl DpeTypes>,
@@ -138,9 +146,9 @@ impl DpeInstance {
     ///
     /// # Arguments
     ///
+    /// * `env` - DPE environment containing Crypto and Platform implementations
     /// * `locality` - which hardware locality is making the request
     /// * `cmd` - serialized command
-    /// * `crypto` - Crypto interface
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     pub fn execute_serialized_command(
         &mut self,
@@ -166,8 +174,14 @@ impl DpeInstance {
         }
     }
 
-    // Inlined so the callsite optimizer knows that idx < self.contexts.len()
-    // and won't insert possible call to panic.
+    /// Finds the index of the context having `handle` in `locality`
+    /// Inlined so the callsite optimizer knows that idx < self.contexts.len()
+    /// and won't insert possible call to panic.
+    ///
+    /// # Arguments
+    ///
+    /// * `handle` - handle to search
+    /// * `locality` - locality to search
     #[inline(always)]
     pub fn get_active_context_pos(
         &self,
@@ -223,8 +237,13 @@ impl DpeInstance {
             .position(|context| context.state == ContextState::Inactive)
     }
 
-    /// Recursive function that will return all of a context's descendants. Returns a u32 that is
-    /// a bitmap of the node indices.
+    /// Recursive function that will return all of `context`'s descendants
+    ///
+    /// # Arguments
+    ///
+    /// * `context` - context to get descendants for
+    ///
+    /// Returns a u32 representing a bitmap of the node indices.
     pub(crate) fn get_descendants(&self, context: &Context) -> Result<u32, DpeErrorCode> {
         if context.state == ContextState::Inactive {
             return Err(DpeErrorCode::InvalidHandle);
@@ -240,6 +259,11 @@ impl DpeInstance {
         Ok(descendants)
     }
 
+    /// Generates a random context handle that is unique from all other context handles
+    ///
+    /// # Arguments
+    ///
+    /// * `env` - DPE environment containing Crypto and Platform implementations
     pub(crate) fn generate_new_handle(
         &self,
         env: &mut DpeEnv<impl DpeTypes>,
@@ -263,6 +287,7 @@ impl DpeInstance {
     ///
     /// # Arguments
     ///
+    /// * `env` - DPE environment containing Crypto and Platform implementations
     /// * `idx` - the index of the context
     pub fn roll_onetime_use_handle(
         &mut self,
@@ -285,6 +310,11 @@ impl DpeInstance {
     /// links. These are the nodes that should contribute to CDI and key
     /// derivation for the context at `start_idx`.
     ///
+    /// # Arguments
+    ///
+    /// * `start_idx` - Index into context array
+    /// * `nodes` - Array to write TCI nodes to
+    ///
     /// Returns the number of TCIs written to `nodes`
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     pub(crate) fn get_tcb_nodes(
@@ -300,9 +330,6 @@ impl DpeInstance {
                 return Err(DpeErrorCode::InternalError);
             }
 
-            // TODO: The root node isn't a real node with measurements and
-            // shouldn't be in the cert. But we don't support DeriveContext yet,
-            // so this is the only node we can create to test cert creation.
             nodes[out_idx] = curr.tci;
             out_idx += 1;
         }
@@ -310,6 +337,15 @@ impl DpeInstance {
         Ok(out_idx)
     }
 
+    /// Adds `measurement` to `context`. The current TCI is the measurement and
+    /// the cumulative TCI is the hash of the old cumulative TCI and the measurement.
+    ///
+    /// # Arguments
+    ///
+    /// * `env` - DPE environment containing Crypto and Platform implementations
+    /// * `context` - context to add `measurement`` to
+    /// * `measurement` - measurement to add to `context``
+    /// * `locality` - locality that `context`'s locality must match
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     pub(crate) fn add_tci_measurement(
         &self,
@@ -347,6 +383,13 @@ impl DpeInstance {
         Ok(())
     }
 
+    /// Serializes the DPE profile and crypto algorithm type into the
+    /// `internal_input_info` slice.
+    ///
+    /// # Arguments
+    ///
+    /// * `platform` - Platform trait implementation
+    /// * `internal_input_info` - array to write serialized internal input info to
     fn serialize_internal_input_info(
         &self,
         platform: &mut impl Platform,
@@ -374,6 +417,7 @@ impl DpeInstance {
     ///
     /// # Arguments
     ///
+    /// * `env` - DPE environment containing Crypto and Platform implementations
     /// * `start_idx` - index of the leaf context
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     pub(crate) fn compute_measurement_hash(
