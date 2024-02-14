@@ -33,8 +33,8 @@ bitflags! {
 pub struct CertifyKeyCmd {
     pub handle: ContextHandle,
     pub flags: CertifyKeyFlags,
-    pub label: [u8; DPE_PROFILE.get_hash_size()],
     pub format: u32,
+    pub label: [u8; DPE_PROFILE.get_hash_size()],
 }
 
 impl CertifyKeyCmd {
