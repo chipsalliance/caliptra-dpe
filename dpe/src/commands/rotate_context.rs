@@ -36,6 +36,15 @@ impl RotateCtxCmd {
         self.flags.contains(RotateCtxFlags::TARGET_IS_DEFAULT)
     }
 
+    /// Check if there are non-default context handles in
+    /// `locality` other than dpe.contexts[`target_idx`].handle
+    ///
+    ///
+    /// # Arguments
+    ///
+    /// * `dpe` - DPE instance
+    /// * `locality` - The locality to search
+    /// * `target_idx` - The index of the context that is not considered
     fn non_default_valid_handles_exist(
         &self,
         dpe: &mut DpeInstance,

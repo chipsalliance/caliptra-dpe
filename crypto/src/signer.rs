@@ -63,6 +63,7 @@ impl CryptoBuf {
         self.0.len() == 0
     }
 
+    /// Writes the hex representation of the CryptoBuf to `dest`
     pub fn write_hex_str(&self, dest: &mut [u8]) -> Result<(), CryptoError> {
         let src = self.bytes();
         if dest.len() != src.len() * 2 {

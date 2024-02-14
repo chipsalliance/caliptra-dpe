@@ -39,6 +39,14 @@ impl SignCmd {
         self.flags.contains(SignFlags::IS_SYMMETRIC)
     }
 
+    /// Signs `digest` using ECDSA
+    ///
+    /// # Arguments
+    ///
+    /// * `dpe` - DPE instance
+    /// * `env` - DPE environment containing Crypto and Platform implementations
+    /// * `idx` - The index of the context where the measurement hash is computed from
+    /// * `digest` - The data to be signed
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     fn ecdsa_sign(
         &self,
@@ -69,6 +77,14 @@ impl SignCmd {
         Ok(sig)
     }
 
+    /// Signs `digest` using an HMAC
+    ///
+    /// # Arguments
+    ///
+    /// * `dpe` - DPE instance
+    /// * `env` - DPE environment containing Crypto and Platform implementations
+    /// * `idx` - The index of the context where the measurement hash is computed from
+    /// * `digest` - The data to be signed
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     fn hmac_sign(
         &self,

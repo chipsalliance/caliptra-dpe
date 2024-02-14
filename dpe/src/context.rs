@@ -67,14 +67,7 @@ impl Context {
         self.allow_x509.get()
     }
 
-    /// Resets all values to a freshly initialized state.
-    ///
-    /// # Arguments
-    ///
-    /// * `context_type` - Context type this will become.
-    /// * `locality` - Which hardware locality owns the context.
-    /// * `handle` - Value that will be used to refer to the context. Random value for simulation
-    ///   contexts and 0x0 for the default context.
+    /// Sets all values to an initialized state according to ActiveContextArgs
     pub fn activate(&mut self, args: &ActiveContextArgs) {
         self.handle = *args.handle;
         self.tci = TciNodeData::new();
