@@ -167,8 +167,8 @@ const (
 type CertifyKeyReq[Digest DigestAlgorithm] struct {
 	ContextHandle ContextHandle
 	Flags         CertifyKeyFlags
-	Label         Digest
 	Format        CertifyKeyFormat
+	Label         Digest
 }
 
 // CertifyKeyResp is the output response from CertifyKey
