@@ -4,8 +4,11 @@ go 1.20
 
 replace github.com/chipsalliance/caliptra-dpe/verification/client => ../client
 
+replace github.com/chipsalliance/caliptra-dpe/verification/sim => ../sim
+
 require (
-	github.com/chipsalliance/caliptra-dpe/verification/client v0.0.0-00010101000000-000000000000
+	github.com/chipsalliance/caliptra-dpe/verification/client v0.0.0-20240216212309-5c9f6edaeb55
+	github.com/chipsalliance/caliptra-dpe/verification/sim v0.0.0-00010101000000-000000000000
 	github.com/github/smimesign v0.2.0
 	github.com/google/go-tpm v0.9.0
 	github.com/google/go-tpm-tools v0.4.1
