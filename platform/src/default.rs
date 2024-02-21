@@ -152,10 +152,18 @@ impl Platform for DefaultPlatform {
         Ok(())
     }
 
-    fn get_cert_validity<'a>(&mut self) -> Result<CertValidity<'a>, PlatformError> {
+    fn get_cert_validity(&mut self) -> Result<CertValidity, PlatformError> {
+        let mut not_before_vec = ArrayVec::new();
+        not_before_vec
+            .try_extend_from_slice(NOT_BEFORE.as_bytes())
+            .map_err(|_| PlatformError::CertValidityError(0))?;
+        let mut not_after_vec = ArrayVec::new();
+        not_after_vec
+            .try_extend_from_slice(NOT_AFTER.as_bytes())
+            .map_err(|_| PlatformError::CertValidityError(0))?;
         Ok(CertValidity {
-            not_before: NOT_BEFORE,
-            not_after: NOT_AFTER,
+            not_before: not_before_vec,
+            not_after: not_after_vec,
         })
     }
 }

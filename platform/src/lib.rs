@@ -19,8 +19,9 @@ pub const MAX_CHUNK_SIZE: usize = 2048;
 pub const MAX_ISSUER_NAME_SIZE: usize = 128;
 pub const MAX_SN_SIZE: usize = 20;
 pub const MAX_SKI_SIZE: usize = 20;
+pub const MAX_VALIDITY_SIZE: usize = 24;
 
-#[allow(variant_size_differences)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum SignerIdentifier {
     IssuerAndSerialNumber {
         issuer_name: ArrayVec<u8, { MAX_ISSUER_NAME_SIZE }>,
@@ -29,10 +30,10 @@ pub enum SignerIdentifier {
     SubjectKeyIdentifier(ArrayVec<u8, { MAX_SKI_SIZE }>),
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub struct CertValidity<'a> {
-    pub not_before: &'a str,
-    pub not_after: &'a str,
+#[derive(Debug, PartialEq, Eq)]
+pub struct CertValidity {
+    pub not_before: ArrayVec<u8, { MAX_VALIDITY_SIZE }>,
+    pub not_after: ArrayVec<u8, { MAX_VALIDITY_SIZE }>,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -44,6 +45,7 @@ pub enum PlatformError {
     PrintError(u32) = 0x4,
     SerialNumberError(u32) = 0x5,
     SubjectKeyIdentifierError(u32) = 0x6,
+    CertValidityError(u32) = 0x7,
 }
 
 impl PlatformError {
@@ -62,6 +64,7 @@ impl PlatformError {
             PlatformError::PrintError(code) => Some(*code),
             PlatformError::SerialNumberError(code) => Some(*code),
             PlatformError::SubjectKeyIdentifierError(code) => Some(*code),
+            PlatformError::CertValidityError(code) => Some(*code),
         }
     }
 }
@@ -111,5 +114,5 @@ pub trait Platform {
     /// in the yyyyMMddHHmmss format followed by a timezone.
     ///
     /// Example: 99991231235959Z is December 31st, 9999 23:59:59 UTC
-    fn get_cert_validity<'a>(&mut self) -> Result<CertValidity<'a>, PlatformError>;
+    fn get_cert_validity(&mut self) -> Result<CertValidity, PlatformError>;
 }

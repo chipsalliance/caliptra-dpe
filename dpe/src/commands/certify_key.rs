@@ -150,7 +150,7 @@ impl CommandExecution for CertifyKeyCmd {
                     &subject_name,
                     &pub_key,
                     &measurements,
-                    cert_validity,
+                    &cert_validity,
                 )?;
                 if bytes_written > MAX_CERT_SIZE {
                     return Err(DpeErrorCode::InternalError);
