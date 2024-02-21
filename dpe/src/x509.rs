@@ -258,9 +258,9 @@ impl CertWriter<'_> {
     }
 
     /// If `tagged`, include the tag and size fields
-    fn get_validity_size(validity: CertValidity<'_>, tagged: bool) -> Result<usize, DpeErrorCode> {
-        let len = Self::get_bytes_size(validity.not_before.as_bytes(), true)?
-            + Self::get_bytes_size(validity.not_after.as_bytes(), true)?;
+    fn get_validity_size(validity: &CertValidity, tagged: bool) -> Result<usize, DpeErrorCode> {
+        let len = Self::get_bytes_size(validity.not_before.as_slice(), true)?
+            + Self::get_bytes_size(validity.not_after.as_slice(), true)?;
         Self::get_structure_size(len, tagged)
     }
 
@@ -470,7 +470,7 @@ impl CertWriter<'_> {
         subject_name: &Name,
         pubkey: &EcdsaPub,
         measurements: &MeasurementData,
-        validity: CertValidity<'_>,
+        validity: &CertValidity,
         tagged: bool,
     ) -> Result<usize, DpeErrorCode> {
         let tbs_size = Self::get_version_size(/*tagged=*/ true)?
@@ -886,7 +886,7 @@ impl CertWriter<'_> {
     }
 
     // Encode ASN.1 Validity according to Platform
-    fn encode_validity(&mut self, validity: CertValidity<'_>) -> Result<usize, DpeErrorCode> {
+    fn encode_validity(&mut self, validity: &CertValidity) -> Result<usize, DpeErrorCode> {
         let seq_size = Self::get_validity_size(validity, /*tagged=*/ false)?;
 
         let mut bytes_written = self.encode_tag_field(Self::SEQUENCE_TAG)?;
@@ -894,11 +894,11 @@ impl CertWriter<'_> {
 
         bytes_written += self.encode_tag_field(Self::GENERALIZE_TIME_TAG)?;
         bytes_written += self.encode_size_field(validity.not_before.len())?;
-        bytes_written += self.encode_bytes(validity.not_before.as_bytes())?;
+        bytes_written += self.encode_bytes(validity.not_before.as_slice())?;
 
         bytes_written += self.encode_tag_field(Self::GENERALIZE_TIME_TAG)?;
         bytes_written += self.encode_size_field(validity.not_after.len())?;
-        bytes_written += self.encode_bytes(validity.not_after.as_bytes())?;
+        bytes_written += self.encode_bytes(validity.not_after.as_slice())?;
 
         Ok(bytes_written)
     }
@@ -1647,7 +1647,7 @@ impl CertWriter<'_> {
         subject_name: &Name,
         pubkey: &EcdsaPub,
         measurements: &MeasurementData,
-        validity: CertValidity<'_>,
+        validity: &CertValidity,
     ) -> Result<usize, DpeErrorCode> {
         let tbs_size = Self::get_tbs_size(
             serial_number,
@@ -1840,7 +1840,7 @@ mod tests {
     use crate::x509::{CertWriter, DirectoryString, MeasurementData, Name};
     use crate::DPE_PROFILE;
     use crypto::{CryptoBuf, EcdsaPub, EcdsaSig};
-    use platform::CertValidity;
+    use platform::{ArrayVec, CertValidity};
     use std::str;
     use x509_parser::certificate::X509CertificateParser;
     use x509_parser::nom::Parser;
@@ -2086,9 +2086,17 @@ mod tests {
             supports_recursive: true,
         };
 
+        let mut not_before = ArrayVec::new();
+        not_before
+            .try_extend_from_slice("20230227000000Z".as_bytes())
+            .unwrap();
+        let mut not_after = ArrayVec::new();
+        not_after
+            .try_extend_from_slice("99991231235959Z".as_bytes())
+            .unwrap();
         let validity = CertValidity {
-            not_before: "20230227000000Z",
-            not_after: "99991231235959Z",
+            not_before,
+            not_after,
         };
 
         let bytes_written = w
@@ -2098,7 +2106,7 @@ mod tests {
                 &test_subject_name,
                 &test_pub,
                 &measurements,
-                validity,
+                &validity,
             )
             .unwrap();
 
@@ -2152,9 +2160,17 @@ mod tests {
             supports_recursive: true,
         };
 
+        let mut not_before = ArrayVec::new();
+        not_before
+            .try_extend_from_slice("20230227000000Z".as_bytes())
+            .unwrap();
+        let mut not_after = ArrayVec::new();
+        not_after
+            .try_extend_from_slice("99991231235959Z".as_bytes())
+            .unwrap();
         let validity = CertValidity {
-            not_before: "20230227000000Z",
-            not_after: "99991231235959Z",
+            not_before,
+            not_after,
         };
 
         let mut tbs_writer = CertWriter::new(cert_buf, true);
@@ -2165,7 +2181,7 @@ mod tests {
                 &TEST_SUBJECT_NAME,
                 &test_pub,
                 &measurements,
-                validity,
+                &validity,
             )
             .unwrap();
 
