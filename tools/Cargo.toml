@@ -21,7 +21,7 @@ dpe = {path = "../dpe", default-features = false, features = ["no-cfi"]}
 crypto = {path = "../crypto", default-features = false, features = ["deterministic_rand", "openssl"]}
 pem = "2"
 platform = {path = "../platform", default-features = false, features = ["openssl"]}
-zerocopy = "0.6.1"
+zerocopy.workspace = true
 
 [[bin]]
 name = "sample_dpe_cert"
