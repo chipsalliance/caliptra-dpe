@@ -13,3 +13,4 @@ members = [
 [workspace.dependencies]
 caliptra-cfi-lib-git = { git = "https://github.com/chipsalliance/caliptra-cfi.git", package = "caliptra-cfi-lib-git", rev = "9f315fcf11fe006e95e62149f54f98620e5244e7", default-features = false, features = ["cfi", "cfi-counter" ] }
 caliptra-cfi-derive-git = { git = "https://github.com/chipsalliance/caliptra-cfi.git", package = "caliptra-cfi-derive-git", rev = "9f315fcf11fe006e95e62149f54f98620e5244e7"}
+zerocopy = "0.6.6"
