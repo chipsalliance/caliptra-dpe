@@ -16,7 +16,7 @@ rustcrypto = ["crypto/rustcrypto", "platform/rustcrypto"]
 
 [dependencies]
 ctrlc = { version = "3.0", features = ["termination"] }
-openssl = {version="0.10.57", optional = true}
+openssl = { workspace = true, optional = true}
 clap = { version = "4.1.8", features = ["derive"] }
 log = "0.4.17"
 env_logger = "0.10.0"
