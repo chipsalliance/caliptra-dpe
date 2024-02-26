@@ -1729,7 +1729,7 @@ impl CertWriter<'_> {
     ///    version       INTEGER { v1(0) } (v1,...),
     ///    subject       Name,
     ///    subjectPKInfo SubjectPublicKeyInfo{{ PKInfoAlgorithms }},
-    ///    attributes    [0] Attributes{{ CRIAttributes }}}  
+    ///    attributes    [0] Attributes{{ CRIAttributes }}}
     /// }
     ///
     /// # Arguments
@@ -1776,7 +1776,7 @@ impl CertWriter<'_> {
     /// CertificateRequest  ::=  SEQUENCE  {
     ///    certificationRequestInfo       CertificationRequestInfo,
     ///    signatureAlgorithm             AlgorithmIdentifier,
-    ///    signatureValue                 BIT STRING  
+    ///    signatureValue                 BIT STRING
     /// }
     ///
     /// Returns number of bytes written to `certificate`
@@ -1835,7 +1835,7 @@ impl CertWriter<'_> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use crate::tci::{TciMeasurement, TciNodeData};
     use crate::x509::{CertWriter, DirectoryString, MeasurementData, Name};
     use crate::DPE_PROFILE;
@@ -1854,7 +1854,7 @@ mod tests {
     }
 
     #[derive(asn1::Asn1Read)]
-    struct TcbInfo<'a> {
+    pub struct TcbInfo<'a> {
         #[implicit(0)]
         _vendor: Option<asn1::Utf8String<'a>>,
         #[implicit(1)]
@@ -1868,13 +1868,13 @@ mod tests {
         #[implicit(5)]
         _index: Option<u64>,
         #[implicit(6)]
-        fwids: Option<asn1::SequenceOf<'a, Fwid<'a>>>,
+        pub fwids: Option<asn1::SequenceOf<'a, Fwid<'a>>>,
         #[implicit(7)]
         _flags: Option<asn1::BitString<'a>>,
         #[implicit(8)]
-        vendor_info: Option<&'a [u8]>,
+        pub vendor_info: Option<&'a [u8]>,
         #[implicit(9)]
-        tci_type: Option<&'a [u8]>,
+        pub tci_type: Option<&'a [u8]>,
     }
 
     #[derive(asn1::Asn1Read)]

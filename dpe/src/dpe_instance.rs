@@ -334,6 +334,8 @@ impl DpeInstance {
             out_idx += 1;
         }
 
+        nodes[..out_idx].reverse();
+
         Ok(out_idx)
     }
 
