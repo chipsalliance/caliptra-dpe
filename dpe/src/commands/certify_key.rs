@@ -249,9 +249,10 @@ impl CommandExecution for CertifyKeyCmd {
 mod tests {
     use super::*;
     use crate::{
-        commands::{Command, CommandHdr, InitCtxCmd},
+        commands::{Command, CommandHdr, DeriveContextCmd, DeriveContextFlags, InitCtxCmd},
         dpe_instance::tests::{TestTypes, SIMULATION_HANDLE, TEST_LOCALITIES},
         support::Support,
+        x509::tests::TcbInfo,
     };
     use caliptra_cfi_lib_git::CfiCounter;
     use cms::{
@@ -624,5 +625,62 @@ mod tests {
             };
             assert!(extension.critical);
         }
+    }
+
+    #[test]
+    fn test_certify_key_order() {
+        CfiCounter::reset_for_test();
+        let mut env = DpeEnv::<TestTypes> {
+            crypto: OpensslCrypto::new(),
+            platform: DefaultPlatform,
+        };
+        let mut dpe = DpeInstance::new(&mut env, Support::X509 | Support::AUTO_INIT).unwrap();
+
+        // Derive context twice with different types
+        let derive_cmd = DeriveContextCmd {
+            handle: ContextHandle::default(),
+            data: [1; DPE_PROFILE.get_tci_size()],
+            flags: DeriveContextFlags::MAKE_DEFAULT | DeriveContextFlags::INPUT_ALLOW_X509,
+            tci_type: 1,
+            target_locality: 0,
+        };
+
+        derive_cmd
+            .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
+            .unwrap();
+
+        let certify_cmd = CertifyKeyCmd {
+            handle: ContextHandle::default(),
+            flags: CertifyKeyFlags(0),
+            label: [0; DPE_PROFILE.get_hash_size()],
+            format: CertifyKeyCmd::FORMAT_X509,
+        };
+
+        let certify_resp = match certify_cmd
+            .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
+            .unwrap()
+        {
+            Response::CertifyKey(resp) => resp,
+            _ => panic!("Wrong response type."),
+        };
+
+        let mut parser = X509CertificateParser::new().with_deep_parse_extensions(true);
+        let (_, cert) = parser
+            .parse(&certify_resp.cert[..certify_resp.cert_size.try_into().unwrap()])
+            .unwrap();
+
+        let multi_tcb_info = cert
+            .get_extension_unique(&oid!(2.23.133 .5 .4 .5))
+            .unwrap()
+            .unwrap();
+        let mut parsed_tcb_infos =
+            asn1::parse_single::<asn1::SequenceOf<TcbInfo>>(multi_tcb_info.value).unwrap();
+
+        let first = parsed_tcb_infos.next().unwrap();
+        let second = parsed_tcb_infos.next().unwrap();
+
+        assert_eq!(first.tci_type.unwrap(), &[0, 0, 0, 0]);
+        assert_eq!(second.tci_type.unwrap(), &[0, 0, 0, 1]);
+        assert!(parsed_tcb_infos.next().is_none());
     }
 }

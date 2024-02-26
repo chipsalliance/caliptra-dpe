@@ -16,7 +16,7 @@ const (
 	RespMagic uint32 = 0x44504552
 
 	CurrentProfileMajorVersion uint16 = 0
-	CurrentProfileMinorVersion uint16 = 9
+	CurrentProfileMinorVersion uint16 = 10
 )
 
 // CommandCode is a DPE command code
@@ -324,7 +324,8 @@ func newDPEABI[C Curve, D DigestAlgorithm](t Transport) (*DPEABI[C, D], error) {
 	var constants profileInfo
 	if rsp.MajorVersion == 0 && rsp.MinorVersion == 8 {
 		constants = getProfileInfoV08()
-	} else if rsp.MajorVersion == 0 && rsp.MinorVersion == 9 {
+	} else if rsp.MajorVersion == 0 && rsp.MinorVersion >= 9 {
+		// All current versions >= 9 use the same constants
 		constants = getProfileInfoV09()
 	} else {
 		return nil, fmt.Errorf("unknown DPE profile version %d.%d", rsp.MajorVersion, rsp.MinorVersion)
