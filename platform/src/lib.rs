@@ -18,7 +18,7 @@ pub mod printer;
 pub const MAX_CHUNK_SIZE: usize = 2048;
 pub const MAX_ISSUER_NAME_SIZE: usize = 128;
 pub const MAX_SN_SIZE: usize = 20;
-pub const MAX_SKI_SIZE: usize = 20;
+pub const MAX_KEY_IDENTIFIER_SIZE: usize = 20;
 pub const MAX_VALIDITY_SIZE: usize = 24;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -27,7 +27,7 @@ pub enum SignerIdentifier {
         issuer_name: ArrayVec<u8, { MAX_ISSUER_NAME_SIZE }>,
         serial_number: ArrayVec<u8, { MAX_SN_SIZE }>,
     },
-    SubjectKeyIdentifier(ArrayVec<u8, { MAX_SKI_SIZE }>),
+    SubjectKeyIdentifier(ArrayVec<u8, { MAX_KEY_IDENTIFIER_SIZE }>),
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -46,6 +46,7 @@ pub enum PlatformError {
     SerialNumberError(u32) = 0x5,
     SubjectKeyIdentifierError(u32) = 0x6,
     CertValidityError(u32) = 0x7,
+    IssuerKeyIdentifierError(u32) = 0x8,
 }
 
 impl PlatformError {
@@ -65,6 +66,7 @@ impl PlatformError {
             PlatformError::SerialNumberError(code) => Some(*code),
             PlatformError::SubjectKeyIdentifierError(code) => Some(*code),
             PlatformError::CertValidityError(code) => Some(*code),
+            PlatformError::IssuerKeyIdentifierError(code) => Some(*code),
         }
     }
 }
@@ -99,6 +101,14 @@ pub trait Platform {
     /// This function can simply return an error if the DPE does not support CSRs.
     /// Otherwise, the platform can choose either SubjectKeyIdentifier or IssuerAndSerialNumber.
     fn get_signer_identifier(&mut self) -> Result<SignerIdentifier, PlatformError>;
+
+    /// Retrieves the issuer certificate's key identifier
+    ///
+    /// This function can simply return an error if the DPE does not support CAs or X509s.
+    fn get_issuer_key_identifier(
+        &mut self,
+        out: &mut [u8; MAX_KEY_IDENTIFIER_SIZE],
+    ) -> Result<(), PlatformError>;
 
     fn get_vendor_id(&mut self) -> Result<u32, PlatformError>;
 

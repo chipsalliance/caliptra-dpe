@@ -2,6 +2,7 @@
 
 use crate::{
     CertValidity, Platform, PlatformError, SignerIdentifier, MAX_CHUNK_SIZE, MAX_ISSUER_NAME_SIZE,
+    MAX_KEY_IDENTIFIER_SIZE,
 };
 use arrayvec::ArrayVec;
 use cfg_if::cfg_if;
@@ -50,6 +51,14 @@ cfg_if! {
                         .unwrap()
                         .to_vec()
                 }
+                pub fn parse_key_identifier() -> Vec<u8> {
+                    X509::from_pem(TEST_CERT_PEM)
+                        .unwrap()
+                        .subject_key_id()
+                        .unwrap()
+                        .as_slice()
+                        .to_vec()
+                }
             }
         }
     } else if #[cfg(feature = "rustcrypto")] {
@@ -58,6 +67,7 @@ cfg_if! {
             use x509_cert::{
                 certificate::Certificate,
                 der::{DecodePem, Encode},
+                ext::pkix::SubjectKeyIdentifier,
             };
             pub struct DefaultPlatform;
             impl DefaultPlatform {
@@ -76,6 +86,15 @@ cfg_if! {
                         .serial_number
                         .as_bytes()
                         .to_vec()
+                }
+                pub fn parse_key_identifier() -> Vec<u8> {
+                    let (_, ski): (bool, SubjectKeyIdentifier) = Certificate::from_pem(TEST_CERT_PEM)
+                        .unwrap()
+                        .tbs_certificate
+                        .get()
+                        .unwrap()
+                        .unwrap();
+                    ski.0.as_bytes().to_vec()
                 }
             }
         }
@@ -133,6 +152,18 @@ impl Platform for DefaultPlatform {
             issuer_name: issuer_name_vec,
             serial_number: serial_number_vec,
         })
+    }
+
+    fn get_issuer_key_identifier(
+        &mut self,
+        out: &mut [u8; MAX_KEY_IDENTIFIER_SIZE],
+    ) -> Result<(), PlatformError> {
+        let key_identifier = parse::DefaultPlatform::parse_key_identifier();
+        if key_identifier.len() < MAX_KEY_IDENTIFIER_SIZE {
+            return Err(PlatformError::IssuerKeyIdentifierError(0));
+        }
+        out.copy_from_slice(&key_identifier[..MAX_KEY_IDENTIFIER_SIZE]);
+        Ok(())
     }
 
     fn get_vendor_id(&mut self) -> Result<u32, PlatformError> {
