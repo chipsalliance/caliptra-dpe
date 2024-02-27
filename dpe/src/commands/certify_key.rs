@@ -15,8 +15,8 @@ use caliptra_cfi_lib_git::cfi_launder;
 #[cfg(not(feature = "no-cfi"))]
 use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq};
 use cfg_if::cfg_if;
-use crypto::Crypto;
-use platform::{Platform, MAX_ISSUER_NAME_SIZE};
+use crypto::{Crypto, Hasher};
+use platform::{Platform, MAX_ISSUER_NAME_SIZE, MAX_KEY_IDENTIFIER_SIZE};
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, zerocopy::FromBytes, zerocopy::AsBytes)]
@@ -109,10 +109,12 @@ impl CommandExecution for CertifyKeyCmd {
         let mut subj_serial = [0u8; DPE_PROFILE.get_hash_size() * 2];
         env.crypto
             .get_pubkey_serial(DPE_PROFILE.alg_len(), &pub_key, &mut subj_serial)?;
+        // The serial number of the subject can be at most 64 bytes
+        let truncated_subj_serial = &subj_serial[..64];
 
         let subject_name = Name {
             cn: DirectoryString::PrintableString(b"DPE Leaf"),
-            serial: DirectoryString::PrintableString(&subj_serial),
+            serial: DirectoryString::PrintableString(truncated_subj_serial),
         };
 
         // Get TCI Nodes
@@ -122,11 +124,31 @@ impl CommandExecution for CertifyKeyCmd {
         if tcb_count > MAX_HANDLES {
             return Err(DpeErrorCode::InternalError);
         }
+
+        let mut subject_key_identifier = [0u8; MAX_KEY_IDENTIFIER_SIZE];
+        // compute key identifier as SHA hash of the DER encoded subject public key
+        let mut hasher = env.crypto.hash_initialize(DPE_PROFILE.alg_len())?;
+        hasher.update(&[0x04])?;
+        hasher.update(pub_key.x.bytes())?;
+        hasher.update(pub_key.y.bytes())?;
+        let hashed_pub_key = hasher.finish()?;
+        if hashed_pub_key.len() < MAX_KEY_IDENTIFIER_SIZE {
+            return Err(DpeErrorCode::InternalError);
+        }
+        // truncate key identifier to 20 bytes
+        subject_key_identifier.copy_from_slice(&hashed_pub_key.bytes()[..MAX_KEY_IDENTIFIER_SIZE]);
+
+        let mut authority_key_identifier = [0u8; MAX_KEY_IDENTIFIER_SIZE];
+        env.platform
+            .get_issuer_key_identifier(&mut authority_key_identifier)?;
+
         let measurements = MeasurementData {
             label: &self.label,
             tci_nodes: &nodes[..tcb_count],
             is_ca: self.uses_is_ca(),
             supports_recursive: dpe.support.recursive(),
+            subject_key_identifier,
+            authority_key_identifier,
         };
 
         let mut issuer_name = [0u8; MAX_ISSUER_NAME_SIZE];
@@ -253,6 +275,7 @@ mod tests {
         dpe_instance::tests::{TestTypes, SIMULATION_HANDLE, TEST_LOCALITIES},
         support::Support,
         x509::tests::TcbInfo,
+        DpeProfile,
     };
     use caliptra_cfi_lib_git::CfiCounter;
     use cms::{
@@ -265,6 +288,7 @@ mod tests {
         bn::BigNum,
         ec::{EcGroup, EcKey},
         ecdsa::EcdsaSig,
+        hash::{Hasher, MessageDigest},
         nid::*,
     };
     use platform::default::DefaultPlatform;
@@ -372,13 +396,56 @@ mod tests {
 
         let mut parser = X509CertificateParser::new().with_deep_parse_extensions(true);
         match parser.parse(&certify_resp_ca.cert[..certify_resp_ca.cert_size.try_into().unwrap()]) {
-            Ok((_, cert)) => match cert.basic_constraints() {
-                Ok(Some(basic_constraints)) => {
-                    assert!(basic_constraints.value.ca);
+            Ok((_, cert)) => {
+                match cert.basic_constraints() {
+                    Ok(Some(basic_constraints)) => {
+                        assert!(basic_constraints.value.ca);
+                    }
+                    Ok(None) => panic!("basic constraints extension not found"),
+                    Err(_) => panic!("multiple basic constraints extensions found"),
                 }
-                Ok(None) => panic!("basic constraints extension not found"),
-                Err(_) => panic!("multiple basic constraints extensions found"),
-            },
+
+                let pub_key = &cert.tbs_certificate.subject_pki.subject_public_key.data;
+                let mut hasher = match DPE_PROFILE {
+                    DpeProfile::P256Sha256 => Hasher::new(MessageDigest::sha256()).unwrap(),
+                    DpeProfile::P384Sha384 => Hasher::new(MessageDigest::sha384()).unwrap(),
+                };
+                hasher.update(pub_key).unwrap();
+                let expected_ski: &[u8] = &hasher.finish().unwrap();
+                match cert.get_extension_unique(&oid!(2.5.29 .14)) {
+                    Ok(Some(subject_key_identifier_ext)) => {
+                        if let ParsedExtension::SubjectKeyIdentifier(key_identifier) =
+                            subject_key_identifier_ext.parsed_extension()
+                        {
+                            assert_eq!(key_identifier.0, &expected_ski[..MAX_KEY_IDENTIFIER_SIZE]);
+                        } else {
+                            panic!("Extension has wrong type");
+                        }
+                    }
+                    Ok(None) => panic!("subject key identifier extension not found"),
+                    Err(_) => panic!("multiple subject key identifier extensions found"),
+                }
+
+                let mut expected_aki = [0u8; MAX_KEY_IDENTIFIER_SIZE];
+                env.platform
+                    .get_issuer_key_identifier(&mut expected_aki)
+                    .unwrap();
+                match cert.get_extension_unique(&oid!(2.5.29 .35)) {
+                    Ok(Some(extension)) => {
+                        if let ParsedExtension::AuthorityKeyIdentifier(aki) =
+                            extension.parsed_extension()
+                        {
+                            let key_identifier = aki.key_identifier.clone().unwrap();
+                            // skip first two bytes - first byte is 0x04 der encoding byte and second byte is size byte
+                            assert_eq!(&key_identifier.0[2..], &expected_aki,);
+                        } else {
+                            panic!("Extension has wrong type");
+                        }
+                    }
+                    Ok(None) => panic!("authority key identifier extension not found"),
+                    Err(_) => panic!("multiple authority key identifier extensions found"),
+                }
+            }
             Err(e) => panic!("x509 parsing failed: {:?}", e),
         };
 
@@ -577,9 +644,10 @@ mod tests {
         env.crypto
             .get_pubkey_serial(DPE_PROFILE.alg_len(), &pub_key, &mut subj_serial)
             .unwrap();
+        let truncated_subj_serial = &subj_serial[..64];
         let subject_name = Name {
             cn: DirectoryString::PrintableString(b"DPE Leaf"),
-            serial: DirectoryString::PrintableString(&subj_serial),
+            serial: DirectoryString::PrintableString(truncated_subj_serial),
         };
         let expected_subject_name = format!(
             "CN={}, serialNumber={}",

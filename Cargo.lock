@@ -176,7 +176,7 @@ checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
 [[package]]
 name = "caliptra-cfi-derive-git"
 version = "0.1.0"
-source = "git+https://github.com/chipsalliance/caliptra-cfi.git?rev=9f315fcf11fe006e95e62149f54f98620e5244e7#9f315fcf11fe006e95e62149f54f98620e5244e7"
+source = "git+https://github.com/chipsalliance/caliptra-cfi.git?rev=a98e499d279e81ae85881991b1e9eee354151189#a98e499d279e81ae85881991b1e9eee354151189"
 dependencies = [
  "paste",
  "proc-macro2",
@@ -187,7 +187,7 @@ dependencies = [
 [[package]]
 name = "caliptra-cfi-lib-git"
 version = "0.1.0"
-source = "git+https://github.com/chipsalliance/caliptra-cfi.git?rev=9f315fcf11fe006e95e62149f54f98620e5244e7#9f315fcf11fe006e95e62149f54f98620e5244e7"
+source = "git+https://github.com/chipsalliance/caliptra-cfi.git?rev=a98e499d279e81ae85881991b1e9eee354151189#a98e499d279e81ae85881991b1e9eee354151189"
 
 [[package]]
 name = "cc"

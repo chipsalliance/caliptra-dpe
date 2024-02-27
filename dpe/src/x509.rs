@@ -12,7 +12,7 @@ use crate::{
 };
 use bitflags::bitflags;
 use crypto::{EcdsaPub, EcdsaSig};
-use platform::{CertValidity, SignerIdentifier};
+use platform::{CertValidity, SignerIdentifier, MAX_KEY_IDENTIFIER_SIZE};
 
 pub enum DirectoryString<'a> {
     PrintableString(&'a [u8]),
@@ -49,6 +49,8 @@ pub struct MeasurementData<'a> {
     pub tci_nodes: &'a [TciNodeData],
     pub is_ca: bool,
     pub supports_recursive: bool,
+    pub subject_key_identifier: [u8; MAX_KEY_IDENTIFIER_SIZE],
+    pub authority_key_identifier: [u8; MAX_KEY_IDENTIFIER_SIZE],
 }
 
 pub struct CertWriter<'a> {
@@ -90,23 +92,23 @@ impl CertWriter<'_> {
     const CMS_V3: u64 = 3;
     const CSR_V0: u64 = 0;
 
-    const ECDSA_OID: &[u8] = match DPE_PROFILE {
+    const ECDSA_OID: &'static [u8] = match DPE_PROFILE {
         // ECDSA with SHA256
         DpeProfile::P256Sha256 => &[0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x04, 0x03, 0x02],
         // ECDSA with SHA384
         DpeProfile::P384Sha384 => &[0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x04, 0x03, 0x03],
     };
 
-    const EC_PUB_OID: &[u8] = &[0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x02, 0x01];
+    const EC_PUB_OID: &'static [u8] = &[0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x02, 0x01];
 
-    const CURVE_OID: &[u8] = match DPE_PROFILE {
+    const CURVE_OID: &'static [u8] = match DPE_PROFILE {
         // P256
         DpeProfile::P256Sha256 => &[0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x03, 0x01, 0x07],
         // P384
         DpeProfile::P384Sha384 => &[0x2B, 0x81, 0x04, 0x00, 0x22],
     };
 
-    const HASH_OID: &[u8] = match DPE_PROFILE {
+    const HASH_OID: &'static [u8] = match DPE_PROFILE {
         // SHA256
         DpeProfile::P256Sha256 => &[0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01],
         // SHA384
@@ -117,34 +119,42 @@ impl CertWriter<'_> {
     const RDN_SERIALNUMBER_OID: [u8; 3] = [0x55, 0x04, 0x05];
 
     // tcg-dice-MultiTcbInfo 2.23.133.5.4.5
-    const MULTI_TCBINFO_OID: &[u8] = &[0x67, 0x81, 0x05, 0x05, 0x04, 0x05];
+    const MULTI_TCBINFO_OID: &'static [u8] = &[0x67, 0x81, 0x05, 0x05, 0x04, 0x05];
 
     // tcg-dice-Ueid 2.23.133.5.4.4
-    const UEID_OID: &[u8] = &[0x67, 0x81, 0x05, 0x05, 0x04, 0x04];
+    const UEID_OID: &'static [u8] = &[0x67, 0x81, 0x05, 0x05, 0x04, 0x04];
 
     // tcg-dice-kp-eca 2.23.133.5.4.100.12
-    const ECA_OID: &[u8] = &[0x67, 0x81, 0x05, 0x05, 0x04, 0x64, 0x0C];
+    const ECA_OID: &'static [u8] = &[0x67, 0x81, 0x05, 0x05, 0x04, 0x64, 0x0C];
 
     // tcg-dice-kp-attestLoc 2.23.133.5.4.100.9
-    const ATTEST_LOC_OID: &[u8] = &[0x67, 0x81, 0x05, 0x05, 0x04, 0x64, 0x09];
+    const ATTEST_LOC_OID: &'static [u8] = &[0x67, 0x81, 0x05, 0x05, 0x04, 0x64, 0x09];
 
     // RFC 5280 2.5.29.19
-    const BASIC_CONSTRAINTS_OID: &[u8] = &[0x55, 0x1D, 0x13];
+    const BASIC_CONSTRAINTS_OID: &'static [u8] = &[0x55, 0x1D, 0x13];
 
     // RFC 5280 2.5.29.15
-    const KEY_USAGE_OID: &[u8] = &[0x55, 0x1D, 0x0F];
+    const KEY_USAGE_OID: &'static [u8] = &[0x55, 0x1D, 0x0F];
 
     // RFC 5280 2.5.29.37
-    const EXTENDED_KEY_USAGE_OID: &[u8] = &[0x55, 0x1D, 0x25];
+    const EXTENDED_KEY_USAGE_OID: &'static [u8] = &[0x55, 0x1D, 0x25];
+
+    // RFC 5280 2.5.29.14
+    const SUBJECT_KEY_IDENTIFIER_OID: &'static [u8] = &[0x55, 0x1D, 0x0E];
+
+    // RFC 5280 2.5.29.35
+    const AUTHORITY_KEY_IDENTIFIER_OID: &'static [u8] = &[0x55, 0x1D, 0x23];
 
     // RFC 5652 1.2.840.113549.1.7.2
-    const ID_SIGNED_DATA_OID: &[u8] = &[0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x07, 0x02];
+    const ID_SIGNED_DATA_OID: &'static [u8] =
+        &[0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x07, 0x02];
 
     // RFC 5652 1.2.840.113549.1.7.1
-    const ID_DATA_OID: &[u8] = &[0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x07, 0x01];
+    const ID_DATA_OID: &'static [u8] = &[0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x07, 0x01];
 
     // RFC 2985 1.2.840.113549.1.9.14
-    const EXTENSION_REQUEST_OID: &[u8] = &[0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x09, 0x0E];
+    const EXTENSION_REQUEST_OID: &'static [u8] =
+        &[0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x09, 0x0E];
 
     /// Build new CertWriter that writes output to `cert`
     ///
@@ -444,17 +454,76 @@ impl CertWriter<'_> {
         Self::get_structure_size(size, tagged)
     }
 
+    /// Get the size of an subjectKeyIdentifier extension, including the extension
+    /// OID and critical bits.
+    fn get_subject_key_identifier_extension_size(
+        measurements: &MeasurementData,
+        tagged: bool,
+        is_x509: bool,
+    ) -> Result<usize, DpeErrorCode> {
+        if !measurements.is_ca || !is_x509 {
+            return Ok(0);
+        }
+        let ski_size = measurements.subject_key_identifier.len();
+
+        // Extension data is sequence -> octet string. To compute size, wrap
+        // in tagging twice.
+        let ext_size = Self::get_structure_size(ski_size, /*tagged=*/ true)?;
+        let size = Self::get_structure_size(Self::SUBJECT_KEY_IDENTIFIER_OID.len(), /*tagged=*/true)? // Extension OID
+            + Self::get_structure_size(Self::BOOL_SIZE, /*tagged=*/true)? // Critical bool
+            + Self::get_structure_size(ext_size, /*tagged=*/true)?; // OCTET STRING
+
+        Self::get_structure_size(size, tagged)
+    }
+
+    /// Get the size of an authorityKeyIdentifier extension, including the extension
+    /// OID and critical bits.
+    fn get_authority_key_identifier_extension_size(
+        measurements: &MeasurementData,
+        tagged: bool,
+        is_x509: bool,
+    ) -> Result<usize, DpeErrorCode> {
+        if !measurements.is_ca || !is_x509 {
+            return Ok(0);
+        }
+        let aki_size = Self::get_key_identifier_size(
+            &measurements.authority_key_identifier,
+            true,
+            /*explicit=*/ true,
+        )?;
+
+        // Extension data is sequence -> octet string. To compute size, wrap
+        // in tagging twice.
+        let ext_size = Self::get_structure_size(aki_size, /*tagged=*/ true)?;
+        let size = Self::get_structure_size(Self::AUTHORITY_KEY_IDENTIFIER_OID.len(), /*tagged=*/true)? // Extension OID
+            + Self::get_structure_size(Self::BOOL_SIZE, /*tagged=*/true)? // Critical bool
+            + Self::get_structure_size(ext_size, /*tagged=*/true)?; // OCTET STRING
+
+        Self::get_structure_size(size, tagged)
+    }
+
     /// Get the size of the TBS Extensions field.
     fn get_extensions_size(
         measurements: &MeasurementData,
         tagged: bool,
         explicit: bool,
+        is_x509: bool,
     ) -> Result<usize, DpeErrorCode> {
         let mut size = Self::get_multi_tcb_info_size(measurements, /*tagged=*/ true)?
             + Self::get_ueid_size(measurements, /*tagged=*/ true)?
             + Self::get_basic_constraints_size(/*tagged=*/ true)?
             + Self::get_key_usage_size(/*tagged=*/ true)?
-            + Self::get_extended_key_usage_size(measurements, /*tagged=*/ true)?;
+            + Self::get_extended_key_usage_size(measurements, /*tagged=*/ true)?
+            + Self::get_subject_key_identifier_extension_size(
+                measurements,
+                /*tagged=*/ true,
+                is_x509,
+            )?
+            + Self::get_authority_key_identifier_extension_size(
+                measurements,
+                /*tagged=*/ true,
+                is_x509,
+            )?;
 
         // Determine whether to include the explicit tag wrapping in the size calculation
         size = Self::get_structure_size(size, /*tagged=*/ explicit)?;
@@ -484,6 +553,7 @@ impl CertWriter<'_> {
                 measurements,
                 /*tagged=*/ true,
                 /*explicit=*/ true,
+                /*is_x509=*/ true,
             )?;
 
         Self::get_structure_size(tbs_size, tagged)
@@ -611,6 +681,21 @@ impl CertWriter<'_> {
         Self::get_structure_size(explicit_bytes_size, tagged)
     }
 
+    /// Get the size of the ASN.1 KeyIdentifier structure
+    /// If `tagged`, include the tag and size fields
+    fn get_key_identifier_size(
+        key_identifier: &[u8],
+        tagged: bool,
+        explicit: bool,
+    ) -> Result<usize, DpeErrorCode> {
+        let key_identifier_size = key_identifier.len();
+
+        // Determine whether to include the explicit tag wrapping in the size calculation
+        let explicit_bytes_size = Self::get_structure_size(key_identifier_size, explicit)?;
+
+        Self::get_structure_size(explicit_bytes_size, tagged)
+    }
+
     fn get_econtent_size(
         bytes: &[u8],
         tagged: bool,
@@ -647,6 +732,7 @@ impl CertWriter<'_> {
                         measurements,
                         /*tagged=*/ true,
                         /*explicit=*/ false,
+                        /*is_x509=*/ false,
                     )?,
                     /*tagged=*/ true,
                 )?;
@@ -1246,19 +1332,20 @@ impl CertWriter<'_> {
         // Bit string is 2 bytes:
         // * Unused bits
         // * KeyUsage bits
-        //
-        // To simplify encoding, no bits are marked as unused, they are just
-        // set to zero.
         bytes_written += self.encode_size_field(2)?;
 
-        // Unused bits
-        bytes_written += self.encode_byte(0)?;
-
-        let key_usage = if is_ca {
-            KeyUsageFlags::DIGITAL_SIGNATURE | KeyUsageFlags::KEY_CERT_SIGN
+        // Count trailing bits in KeyUsage byte as unused
+        let (key_usage, unused_bits) = if is_ca {
+            (
+                KeyUsageFlags::DIGITAL_SIGNATURE | KeyUsageFlags::KEY_CERT_SIGN,
+                2,
+            )
         } else {
-            KeyUsageFlags::DIGITAL_SIGNATURE
+            (KeyUsageFlags::DIGITAL_SIGNATURE, 7)
         };
+
+        // Unused bits
+        bytes_written += self.encode_byte(unused_bits)?;
 
         bytes_written += self.encode_byte(key_usage.0)?;
 
@@ -1315,19 +1402,111 @@ impl CertWriter<'_> {
         Ok(bytes_written)
     }
 
+    /// AuthorityKeyIdentifier ::= SEQUENCE {
+    ///     keyIdentifier             [0] KeyIdentifier           OPTIONAL,
+    ///     authorityCertIssuer       [1] GeneralNames            OPTIONAL,
+    ///     authorityCertSerialNumber [2] CertificateSerialNumber OPTIONAL  
+    /// }
+    fn encode_authority_key_identifier_extension(
+        &mut self,
+        measurements: &MeasurementData,
+        is_x509: bool,
+    ) -> Result<usize, DpeErrorCode> {
+        if !measurements.is_ca || !is_x509 {
+            return Ok(0);
+        }
+
+        let aki_extension_size = Self::get_authority_key_identifier_extension_size(
+            measurements,
+            /*tagged=*/ false,
+            is_x509,
+        )?;
+
+        // Encode Extension
+        let mut bytes_written = self.encode_byte(Self::SEQUENCE_TAG)?;
+        bytes_written += self.encode_size_field(aki_extension_size)?;
+        bytes_written += self.encode_oid(Self::AUTHORITY_KEY_IDENTIFIER_OID)?;
+
+        bytes_written += self.encode_byte(Self::BOOL_TAG)?;
+        bytes_written += self.encode_size_field(Self::BOOL_SIZE)?;
+        // authority key identifier extension must NOT be marked critical
+        bytes_written += self.encode_byte(0x00)?;
+
+        // Extension data is sequence -> octet string. To compute size, wrap
+        // in tagging once.
+        let key_identifier_size = Self::get_key_identifier_size(
+            &measurements.authority_key_identifier,
+            /*tagged=*/ true,
+            /*explicit=*/ true,
+        )?;
+        bytes_written += self.encode_byte(Self::OCTET_STRING_TAG)?;
+        bytes_written += self.encode_size_field(Self::get_structure_size(
+            key_identifier_size,
+            /*tagged=*/ true,
+        )?)?;
+
+        // Encode extension data sequence
+        bytes_written += self.encode_byte(Self::SEQUENCE_TAG)?;
+        bytes_written += self.encode_size_field(key_identifier_size)?;
+        bytes_written += self.encode_key_identifier(&measurements.authority_key_identifier)?;
+
+        Ok(bytes_written)
+    }
+
+    fn encode_subject_key_identifier_extension(
+        &mut self,
+        measurements: &MeasurementData,
+        is_x509: bool,
+    ) -> Result<usize, DpeErrorCode> {
+        if !measurements.is_ca || !is_x509 {
+            return Ok(0);
+        }
+        let ski_extension_size = Self::get_subject_key_identifier_extension_size(
+            measurements,
+            /*tagged=*/ false,
+            is_x509,
+        )?;
+
+        // Encode Extension
+        let mut bytes_written = self.encode_byte(Self::SEQUENCE_TAG)?;
+        bytes_written += self.encode_size_field(ski_extension_size)?;
+        bytes_written += self.encode_oid(Self::SUBJECT_KEY_IDENTIFIER_OID)?;
+
+        bytes_written += self.encode_byte(Self::BOOL_TAG)?;
+        bytes_written += self.encode_size_field(Self::BOOL_SIZE)?;
+        // subject key identifier extension must NOT be marked critical
+        bytes_written += self.encode_byte(0x00)?;
+
+        // Extension data is sequence -> octet string. To compute size, wrap
+        // in tagging once.
+        bytes_written += self.encode_byte(Self::OCTET_STRING_TAG)?;
+        bytes_written += self.encode_size_field(Self::get_structure_size(
+            measurements.subject_key_identifier.len(),
+            /*tagged=*/ true,
+        )?)?;
+
+        // SubjectKeyIdentifier := OCTET STRING
+        bytes_written += self.encode_byte(Self::OCTET_STRING_TAG)?;
+        bytes_written += self.encode_size_field(measurements.subject_key_identifier.len())?;
+        bytes_written += self.encode_bytes(&measurements.subject_key_identifier)?;
+
+        Ok(bytes_written)
+    }
+
     fn encode_extensions(
         &mut self,
         measurements: &MeasurementData,
-        explicit: bool,
+        is_x509: bool,
     ) -> Result<usize, DpeErrorCode> {
         let mut bytes_written = 0;
-        if explicit {
+        if is_x509 {
             // Extensions is EXPLICIT field number 3
             bytes_written += self.encode_byte(Self::CONTEXT_SPECIFIC | Self::CONSTRUCTED | 0x03)?;
             bytes_written += self.encode_size_field(Self::get_extensions_size(
                 measurements,
                 /*tagged=*/ true,
                 /*explicit=*/ false,
+                is_x509,
             )?)?;
         }
 
@@ -1337,6 +1516,7 @@ impl CertWriter<'_> {
             measurements,
             /*tagged=*/ false,
             /*explicit=*/ false,
+            is_x509,
         )?)?;
 
         bytes_written += self.encode_multi_tcb_info(measurements)?;
@@ -1344,6 +1524,8 @@ impl CertWriter<'_> {
         bytes_written += self.encode_basic_constraints(measurements)?;
         bytes_written += self.encode_key_usage(measurements.is_ca)?;
         bytes_written += self.encode_extended_key_usage(measurements)?;
+        bytes_written += self.encode_subject_key_identifier_extension(measurements, is_x509)?;
+        bytes_written += self.encode_authority_key_identifier_extension(measurements, is_x509)?;
 
         Ok(bytes_written)
     }
@@ -1448,10 +1630,11 @@ impl CertWriter<'_> {
             measurements,
             /*tagged=*/ true,
             /*explicit=*/ false,
+            /*is_x509=*/ false,
         )?)?;
 
         // extensions
-        bytes_written += self.encode_extensions(measurements, /*explicit=*/ false)?;
+        bytes_written += self.encode_extensions(measurements, /*is_x509=*/ false)?;
 
         Ok(bytes_written)
     }
@@ -1572,6 +1755,31 @@ impl CertWriter<'_> {
         Ok(bytes_written)
     }
 
+    /// Encode a KeyIdentifier
+    ///
+    /// KeyIdentifier ::= OCTET STRING
+    #[allow(clippy::identity_op)]
+    fn encode_key_identifier(&mut self, key_identifier: &[u8]) -> Result<usize, DpeErrorCode> {
+        // KeyIdentifier is IMPLICIT field number 0
+        let mut bytes_written = self.encode_byte(Self::CONTEXT_SPECIFIC | 0x0)?;
+        bytes_written += self.encode_size_field(Self::get_key_identifier_size(
+            key_identifier,
+            /*tagged=*/ true,
+            /*explicit=*/ false,
+        )?)?;
+
+        // KeyIdentifier := OCTET STRING
+        bytes_written += self.encode_tag_field(Self::OCTET_STRING_TAG)?;
+        bytes_written += self.encode_size_field(Self::get_key_identifier_size(
+            key_identifier,
+            /*tagged=*/ false,
+            /*explicit=*/ false,
+        )?)?;
+        bytes_written += self.encode_bytes(key_identifier)?;
+
+        Ok(bytes_written)
+    }
+
     /// Encode an eContent
     ///
     /// eContent [0] EXPLICIT OCTET STRING OPTIONAL
@@ -1685,7 +1893,7 @@ impl CertWriter<'_> {
         bytes_written += self.encode_ecdsa_subject_pubkey_info(pubkey)?;
 
         // extensions
-        bytes_written += self.encode_extensions(measurements, /*explicit=*/ true)?;
+        bytes_written += self.encode_extensions(measurements, /*is_x509=*/ true)?;
 
         Ok(bytes_written)
     }
@@ -1838,9 +2046,10 @@ impl CertWriter<'_> {
 pub(crate) mod tests {
     use crate::tci::{TciMeasurement, TciNodeData};
     use crate::x509::{CertWriter, DirectoryString, MeasurementData, Name};
-    use crate::DPE_PROFILE;
+    use crate::{DpeProfile, DPE_PROFILE};
     use crypto::{CryptoBuf, EcdsaPub, EcdsaSig};
-    use platform::{ArrayVec, CertValidity};
+    use openssl::hash::{Hasher, MessageDigest};
+    use platform::{ArrayVec, CertValidity, MAX_KEY_IDENTIFIER_SIZE};
     use std::str;
     use x509_parser::certificate::X509CertificateParser;
     use x509_parser::nom::Parser;
@@ -2084,6 +2293,8 @@ pub(crate) mod tests {
             tci_nodes: &[node],
             is_ca: false,
             supports_recursive: true,
+            subject_key_identifier: [0u8; MAX_KEY_IDENTIFIER_SIZE],
+            authority_key_identifier: [0u8; MAX_KEY_IDENTIFIER_SIZE],
         };
 
         let mut not_before = ArrayVec::new();
@@ -2153,11 +2364,23 @@ pub(crate) mod tests {
 
         let node = TciNodeData::new();
 
+        let mut hasher = match DPE_PROFILE {
+            DpeProfile::P256Sha256 => Hasher::new(MessageDigest::sha256()).unwrap(),
+            DpeProfile::P384Sha384 => Hasher::new(MessageDigest::sha384()).unwrap(),
+        };
+        hasher.update(&[0x04]).unwrap();
+        hasher.update(test_pub.x.bytes()).unwrap();
+        hasher.update(test_pub.y.bytes()).unwrap();
+        let mut subject_key_identifier = [0u8; MAX_KEY_IDENTIFIER_SIZE];
+        let digest = &hasher.finish().unwrap();
+        subject_key_identifier.copy_from_slice(&digest[..MAX_KEY_IDENTIFIER_SIZE]);
         let measurements = MeasurementData {
             label: &[0; DPE_PROFILE.get_hash_size()],
             tci_nodes: &[node],
             is_ca,
             supports_recursive: true,
+            subject_key_identifier,
+            authority_key_identifier: subject_key_identifier,
         };
 
         let mut not_before = ArrayVec::new();
@@ -2251,6 +2474,20 @@ pub(crate) mod tests {
             Ok(None) => panic!("extended key usage extension not found"),
             Err(_) => panic!("multiple extended key usage extensions found"),
         };
+
+        match cert.get_extension_unique(&oid!(2.5.29 .14)) {
+            Ok(Some(_)) => panic!("subject key identifier extensions found for non CA certificate"),
+            Err(_) => panic!("multiple subject key identifier extensions found"),
+            _ => (),
+        }
+
+        match cert.get_extension_unique(&oid!(2.5.29 .35)) {
+            Ok(Some(_)) => {
+                panic!("authority key identifier extensions found for non CA certificate")
+            }
+            Err(_) => panic!("multiple authority key identifier extensions found"),
+            _ => (),
+        }
     }
 
     #[test]
@@ -2287,5 +2524,52 @@ pub(crate) mod tests {
             Ok(None) => panic!("extended key usage extension not found"),
             Err(_) => panic!("multiple extended key usage extensions found"),
         };
+
+        let pub_key = &cert.tbs_certificate.subject_pki.subject_public_key.data;
+        let mut hasher = match DPE_PROFILE {
+            DpeProfile::P256Sha256 => Hasher::new(MessageDigest::sha256()).unwrap(),
+            DpeProfile::P384Sha384 => Hasher::new(MessageDigest::sha384()).unwrap(),
+        };
+        hasher.update(pub_key).unwrap();
+        let expected_key_identifier: &[u8] = &hasher.finish().unwrap();
+
+        match cert.get_extension_unique(&oid!(2.5.29 .14)) {
+            Ok(Some(subject_key_identifier_ext)) => {
+                assert!(!subject_key_identifier_ext.critical);
+                if let ParsedExtension::SubjectKeyIdentifier(key_identifier) =
+                    subject_key_identifier_ext.parsed_extension()
+                {
+                    assert_eq!(
+                        key_identifier.0,
+                        &expected_key_identifier[..MAX_KEY_IDENTIFIER_SIZE]
+                    );
+                } else {
+                    panic!("Extension has wrong type");
+                }
+            }
+            Ok(None) => panic!("subject key identifier extension not found"),
+            Err(_) => panic!("multiple subject key identifier extensions found"),
+        }
+
+        match cert.get_extension_unique(&oid!(2.5.29 .35)) {
+            Ok(Some(extension)) => {
+                assert!(!extension.critical);
+                if let ParsedExtension::AuthorityKeyIdentifier(aki) = extension.parsed_extension() {
+                    let key_identifier = aki.key_identifier.clone().unwrap();
+                    // skip first two bytes - first byte is 0x04 der encoding byte and second byte is size byte
+                    // cert is self signed so authority_key_id == subject_key_id
+                    assert_eq!(
+                        &key_identifier.0[2..],
+                        &expected_key_identifier[..MAX_KEY_IDENTIFIER_SIZE]
+                    );
+                    assert!(aki.authority_cert_issuer.is_none());
+                    assert!(aki.authority_cert_serial.is_none());
+                } else {
+                    panic!("Extension has wrong type");
+                }
+            }
+            Ok(None) => panic!("authority key identifier extension not found"),
+            Err(_) => panic!("multiple authority key identifier extensions found"),
+        }
     }
 }

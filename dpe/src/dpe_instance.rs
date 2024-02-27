@@ -334,6 +334,9 @@ impl DpeInstance {
             out_idx += 1;
         }
 
+        if out_idx > nodes.len() {
+            return Err(DpeErrorCode::InternalError);
+        }
         nodes[..out_idx].reverse();
 
         Ok(out_idx)
