@@ -109,10 +109,12 @@ impl CommandExecution for CertifyKeyCmd {
         let mut subj_serial = [0u8; DPE_PROFILE.get_hash_size() * 2];
         env.crypto
             .get_pubkey_serial(DPE_PROFILE.alg_len(), &pub_key, &mut subj_serial)?;
+        // The serial number of the subject can be at most 64 bytes
+        let truncated_subj_serial = &subj_serial[..64];
 
         let subject_name = Name {
             cn: DirectoryString::PrintableString(b"DPE Leaf"),
-            serial: DirectoryString::PrintableString(&subj_serial),
+            serial: DirectoryString::PrintableString(truncated_subj_serial),
         };
 
         // Get TCI Nodes
@@ -577,9 +579,10 @@ mod tests {
         env.crypto
             .get_pubkey_serial(DPE_PROFILE.alg_len(), &pub_key, &mut subj_serial)
             .unwrap();
+        let truncated_subj_serial = &subj_serial[..64];
         let subject_name = Name {
             cn: DirectoryString::PrintableString(b"DPE Leaf"),
-            serial: DirectoryString::PrintableString(&subj_serial),
+            serial: DirectoryString::PrintableString(truncated_subj_serial),
         };
         let expected_subject_name = format!(
             "CN={}, serialNumber={}",

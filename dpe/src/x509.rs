@@ -90,23 +90,23 @@ impl CertWriter<'_> {
     const CMS_V3: u64 = 3;
     const CSR_V0: u64 = 0;
 
-    const ECDSA_OID: &[u8] = match DPE_PROFILE {
+    const ECDSA_OID: &'static [u8] = match DPE_PROFILE {
         // ECDSA with SHA256
         DpeProfile::P256Sha256 => &[0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x04, 0x03, 0x02],
         // ECDSA with SHA384
         DpeProfile::P384Sha384 => &[0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x04, 0x03, 0x03],
     };
 
-    const EC_PUB_OID: &[u8] = &[0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x02, 0x01];
+    const EC_PUB_OID: &'static [u8] = &[0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x02, 0x01];
 
-    const CURVE_OID: &[u8] = match DPE_PROFILE {
+    const CURVE_OID: &'static [u8] = match DPE_PROFILE {
         // P256
         DpeProfile::P256Sha256 => &[0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x03, 0x01, 0x07],
         // P384
         DpeProfile::P384Sha384 => &[0x2B, 0x81, 0x04, 0x00, 0x22],
     };
 
-    const HASH_OID: &[u8] = match DPE_PROFILE {
+    const HASH_OID: &'static [u8] = match DPE_PROFILE {
         // SHA256
         DpeProfile::P256Sha256 => &[0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01],
         // SHA384
@@ -117,34 +117,36 @@ impl CertWriter<'_> {
     const RDN_SERIALNUMBER_OID: [u8; 3] = [0x55, 0x04, 0x05];
 
     // tcg-dice-MultiTcbInfo 2.23.133.5.4.5
-    const MULTI_TCBINFO_OID: &[u8] = &[0x67, 0x81, 0x05, 0x05, 0x04, 0x05];
+    const MULTI_TCBINFO_OID: &'static [u8] = &[0x67, 0x81, 0x05, 0x05, 0x04, 0x05];
 
     // tcg-dice-Ueid 2.23.133.5.4.4
-    const UEID_OID: &[u8] = &[0x67, 0x81, 0x05, 0x05, 0x04, 0x04];
+    const UEID_OID: &'static [u8] = &[0x67, 0x81, 0x05, 0x05, 0x04, 0x04];
 
     // tcg-dice-kp-eca 2.23.133.5.4.100.12
-    const ECA_OID: &[u8] = &[0x67, 0x81, 0x05, 0x05, 0x04, 0x64, 0x0C];
+    const ECA_OID: &'static [u8] = &[0x67, 0x81, 0x05, 0x05, 0x04, 0x64, 0x0C];
 
     // tcg-dice-kp-attestLoc 2.23.133.5.4.100.9
-    const ATTEST_LOC_OID: &[u8] = &[0x67, 0x81, 0x05, 0x05, 0x04, 0x64, 0x09];
+    const ATTEST_LOC_OID: &'static [u8] = &[0x67, 0x81, 0x05, 0x05, 0x04, 0x64, 0x09];
 
     // RFC 5280 2.5.29.19
-    const BASIC_CONSTRAINTS_OID: &[u8] = &[0x55, 0x1D, 0x13];
+    const BASIC_CONSTRAINTS_OID: &'static [u8] = &[0x55, 0x1D, 0x13];
 
     // RFC 5280 2.5.29.15
-    const KEY_USAGE_OID: &[u8] = &[0x55, 0x1D, 0x0F];
+    const KEY_USAGE_OID: &'static [u8] = &[0x55, 0x1D, 0x0F];
 
     // RFC 5280 2.5.29.37
-    const EXTENDED_KEY_USAGE_OID: &[u8] = &[0x55, 0x1D, 0x25];
+    const EXTENDED_KEY_USAGE_OID: &'static [u8] = &[0x55, 0x1D, 0x25];
 
     // RFC 5652 1.2.840.113549.1.7.2
-    const ID_SIGNED_DATA_OID: &[u8] = &[0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x07, 0x02];
+    const ID_SIGNED_DATA_OID: &'static [u8] =
+        &[0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x07, 0x02];
 
     // RFC 5652 1.2.840.113549.1.7.1
-    const ID_DATA_OID: &[u8] = &[0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x07, 0x01];
+    const ID_DATA_OID: &'static [u8] = &[0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x07, 0x01];
 
     // RFC 2985 1.2.840.113549.1.9.14
-    const EXTENSION_REQUEST_OID: &[u8] = &[0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x09, 0x0E];
+    const EXTENSION_REQUEST_OID: &'static [u8] =
+        &[0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x09, 0x0E];
 
     /// Build new CertWriter that writes output to `cert`
     ///
@@ -1246,19 +1248,20 @@ impl CertWriter<'_> {
         // Bit string is 2 bytes:
         // * Unused bits
         // * KeyUsage bits
-        //
-        // To simplify encoding, no bits are marked as unused, they are just
-        // set to zero.
         bytes_written += self.encode_size_field(2)?;
 
-        // Unused bits
-        bytes_written += self.encode_byte(0)?;
-
-        let key_usage = if is_ca {
-            KeyUsageFlags::DIGITAL_SIGNATURE | KeyUsageFlags::KEY_CERT_SIGN
+        // Count trailing bits in KeyUsage byte as unused
+        let (key_usage, unused_bits) = if is_ca {
+            (
+                KeyUsageFlags::DIGITAL_SIGNATURE | KeyUsageFlags::KEY_CERT_SIGN,
+                2,
+            )
         } else {
-            KeyUsageFlags::DIGITAL_SIGNATURE
+            (KeyUsageFlags::DIGITAL_SIGNATURE, 7)
         };
+
+        // Unused bits
+        bytes_written += self.encode_byte(unused_bits)?;
 
         bytes_written += self.encode_byte(key_usage.0)?;
 
