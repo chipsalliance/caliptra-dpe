@@ -6,12 +6,14 @@ import (
 	"bytes"
 	"crypto/ecdsa"
 	"crypto/elliptic"
+	"crypto/sha256"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/asn1"
 	"encoding/binary"
 	"encoding/pem"
 	"fmt"
+	"hash"
 	"math/big"
 	"reflect"
 	"testing"
@@ -194,7 +196,7 @@ func TestCertifyKeyCsr(d client.TestDPEInstance, c client.DPEClient, t *testing.
 	}
 
 	// Check fields and extensions in the CSR
-	checkCertifyKeyExtensions(t, csr.Extensions, flags, label)
+	checkCertifyKeyExtensions(t, csr.Extensions, flags, label, *certifyKeyResp)
 	checkPubKey(t, profile, csr.PublicKey, *certifyKeyResp)
 
 	// Check that CSR is self-signed
@@ -330,7 +332,7 @@ func checkCertifyKeyExtendedKeyUsages(t *testing.T, extensions []pkix.Extension,
 // Checks for KeyUsage Extension as per spec
 // If IsCA = true, KeyUsage extension MUST contain DigitalSignature and KeyCertSign
 // If IsCA = false, KeyUsage extension MUST contain  only DigitalSignature
-func checkCertifyKeyExtensions(t *testing.T, extensions []pkix.Extension, flags client.CertifyKeyFlags, label []byte) {
+func checkCertifyKeyExtensions(t *testing.T, extensions []pkix.Extension, flags client.CertifyKeyFlags, label []byte, response client.CertifiedKey) {
 	t.Helper()
 
 	bc, err := getBasicConstraints(extensions)
@@ -341,6 +343,7 @@ func checkCertifyKeyExtensions(t *testing.T, extensions []pkix.Extension, flags 
 	checkCertifyKeyBasicConstraints(t, extensions, flags)
 	checkCertifyKeyExtendedKeyUsages(t, extensions, bc.IsCA)
 	checkCertifyKeyTcgUeidExtension(t, extensions, label)
+	checkCertifyKeySubjectKeyIdentifierExtension(t, extensions, bc.IsCA, response)
 
 	// Check MultiTcbInfo Extension structure
 	_, err = getMultiTcbInfo(extensions)
@@ -366,6 +369,35 @@ func checkCertifyKeyExtensions(t *testing.T, extensions []pkix.Extension, flags 
 	allowedKeyUsageList := getKeyUsageNames(allowedKeyUsages)
 	if usage != allowedKeyUsages {
 		t.Errorf("[ERROR]: Certificate KeyUsage got %v but want %v ", certKeyUsageList, allowedKeyUsageList)
+	}
+
+}
+
+// Validates SubjectKeyIdentifier in certificate returned by CertifyKey command
+// against the isCa flag set in the BasicConstraints extension
+// The SubjectKeyIdentifier extension MUST be included if isCA is true
+// and MUST be excluded if isCA is false.
+func checkCertifyKeySubjectKeyIdentifierExtension(t *testing.T, extensions []pkix.Extension, ca bool, response client.CertifiedKey) {
+	t.Helper()
+
+	ski, err := getSubjectKeyIdentifier(extensions)
+	if err != nil {
+		t.Errorf("[ERROR]: Failed to retrieve SubjectKeyIdentifier extension: %v", err)
+	}
+	if ca {
+		if ski == nil {
+			t.Errorf("[ERROR]: The certificate is a CA but the SubjectKeyIdentifier extension is not present.")
+		}
+		var hasher hash.Hash = sha256.New()
+		hasher.Write([]byte{0x04})
+		hasher.Write(response.Pub.X)
+		hasher.Write(response.Pub.Y)
+		expectedKeyIdentifier := hasher.Sum(nil)[:20]
+		if !reflect.DeepEqual(ski, expectedKeyIdentifier) {
+			t.Errorf("[ERROR]: The value of the key identifier %v is not equal to the hash of the public key %v", ski, expectedKeyIdentifier)
+		}
+	} else if !ca && ski != nil {
+		t.Errorf("[ERROR]: The certificate is not a CA but the SubjectKeyIdentifier extension is present.")
 	}
 
 }
@@ -517,7 +549,7 @@ func testCertifyKey(d client.TestDPEInstance, c client.DPEClient, t *testing.T, 
 		checkPubKey(t, profile, leafCert.PublicKey, *certifyKeyResp)
 
 		// Check all extensions
-		checkCertifyKeyExtensions(t, leafCert.Extensions, params.Flags, params.Label)
+		checkCertifyKeyExtensions(t, leafCert.Extensions, params.Flags, params.Label, *certifyKeyResp)
 
 		// Ensure full certificate chain has valid signatures
 		// This also checks certificate lifetime, signatures as part of cert chain validation

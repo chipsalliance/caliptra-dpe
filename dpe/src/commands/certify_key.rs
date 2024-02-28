@@ -15,8 +15,8 @@ use caliptra_cfi_lib_git::cfi_launder;
 #[cfg(not(feature = "no-cfi"))]
 use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq};
 use cfg_if::cfg_if;
-use crypto::Crypto;
-use platform::{Platform, MAX_ISSUER_NAME_SIZE};
+use crypto::{Crypto, Hasher};
+use platform::{Platform, MAX_ISSUER_NAME_SIZE, MAX_SKI_SIZE};
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, zerocopy::FromBytes, zerocopy::AsBytes)]
@@ -124,11 +124,26 @@ impl CommandExecution for CertifyKeyCmd {
         if tcb_count > MAX_HANDLES {
             return Err(DpeErrorCode::InternalError);
         }
+
+        let mut subject_key_identifier = [0u8; MAX_SKI_SIZE];
+        // compute key identifier as SHA-256 hash of the DER encoded subject public key
+        let mut hasher = env.crypto.hash_initialize(DPE_PROFILE.alg_len())?;
+        hasher.update(&[0x04])?;
+        hasher.update(pub_key.x.bytes())?;
+        hasher.update(pub_key.y.bytes())?;
+        let hashed_pub_key = hasher.finish()?;
+        if hashed_pub_key.len() < MAX_SKI_SIZE {
+            return Err(DpeErrorCode::InternalError);
+        }
+        // truncate ski to 20 bytes
+        subject_key_identifier.copy_from_slice(&hashed_pub_key.bytes()[..MAX_SKI_SIZE]);
+
         let measurements = MeasurementData {
             label: &self.label,
             tci_nodes: &nodes[..tcb_count],
             is_ca: self.uses_is_ca(),
             supports_recursive: dpe.support.recursive(),
+            subject_key_identifier,
         };
 
         let mut issuer_name = [0u8; MAX_ISSUER_NAME_SIZE];

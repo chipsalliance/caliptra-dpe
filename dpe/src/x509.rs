@@ -12,7 +12,7 @@ use crate::{
 };
 use bitflags::bitflags;
 use crypto::{EcdsaPub, EcdsaSig};
-use platform::{CertValidity, SignerIdentifier};
+use platform::{CertValidity, SignerIdentifier, MAX_SKI_SIZE};
 
 pub enum DirectoryString<'a> {
     PrintableString(&'a [u8]),
@@ -49,6 +49,7 @@ pub struct MeasurementData<'a> {
     pub tci_nodes: &'a [TciNodeData],
     pub is_ca: bool,
     pub supports_recursive: bool,
+    pub subject_key_identifier: [u8; MAX_SKI_SIZE],
 }
 
 pub struct CertWriter<'a> {
@@ -136,6 +137,9 @@ impl CertWriter<'_> {
 
     // RFC 5280 2.5.29.37
     const EXTENDED_KEY_USAGE_OID: &'static [u8] = &[0x55, 0x1D, 0x25];
+
+    // RFC 5280 2.5.29.14
+    const SUBJECT_KEY_IDENTIFIER_OID: &'static [u8] = &[0x55, 0x1D, 0x0E];
 
     // RFC 5652 1.2.840.113549.1.7.2
     const ID_SIGNED_DATA_OID: &'static [u8] =
@@ -446,6 +450,27 @@ impl CertWriter<'_> {
         Self::get_structure_size(size, tagged)
     }
 
+    /// Get the size of an subjectKeyIdentifier extension, including the extension
+    /// OID and critical bits.
+    fn get_subject_key_identifier_extension_size(
+        measurements: &MeasurementData,
+        tagged: bool,
+    ) -> Result<usize, DpeErrorCode> {
+        if !measurements.is_ca {
+            return Ok(0);
+        }
+        let ski_size = measurements.subject_key_identifier.len();
+
+        // Extension data is sequence -> octet string. To compute size, wrap
+        // in tagging twice.
+        let ext_size = Self::get_structure_size(ski_size, /*tagged=*/ true)?;
+        let size = Self::get_structure_size(Self::SUBJECT_KEY_IDENTIFIER_OID.len(), /*tagged=*/true)? // Extension OID
+            + Self::get_structure_size(Self::BOOL_SIZE, /*tagged=*/true)? // Critical bool
+            + Self::get_structure_size(ext_size, /*tagged=*/true)?; // OCTET STRING
+
+        Self::get_structure_size(size, tagged)
+    }
+
     /// Get the size of the TBS Extensions field.
     fn get_extensions_size(
         measurements: &MeasurementData,
@@ -456,7 +481,8 @@ impl CertWriter<'_> {
             + Self::get_ueid_size(measurements, /*tagged=*/ true)?
             + Self::get_basic_constraints_size(/*tagged=*/ true)?
             + Self::get_key_usage_size(/*tagged=*/ true)?
-            + Self::get_extended_key_usage_size(measurements, /*tagged=*/ true)?;
+            + Self::get_extended_key_usage_size(measurements, /*tagged=*/ true)?
+            + Self::get_subject_key_identifier_extension_size(measurements, /*tagged=*/ true)?;
 
         // Determine whether to include the explicit tag wrapping in the size calculation
         size = Self::get_structure_size(size, /*tagged=*/ explicit)?;
@@ -1318,6 +1344,42 @@ impl CertWriter<'_> {
         Ok(bytes_written)
     }
 
+    fn encode_subject_key_identifier_extension(
+        &mut self,
+        measurements: &MeasurementData,
+    ) -> Result<usize, DpeErrorCode> {
+        if !measurements.is_ca {
+            return Ok(0);
+        }
+        let ski_extension_size =
+            Self::get_subject_key_identifier_extension_size(measurements, /*tagged=*/ false)?;
+
+        // Encode Extension
+        let mut bytes_written = self.encode_byte(Self::SEQUENCE_TAG)?;
+        bytes_written += self.encode_size_field(ski_extension_size)?;
+        bytes_written += self.encode_oid(Self::SUBJECT_KEY_IDENTIFIER_OID)?;
+
+        bytes_written += self.encode_byte(Self::BOOL_TAG)?;
+        bytes_written += self.encode_size_field(Self::BOOL_SIZE)?;
+        // subject key identifier extension must NOT be marked critical
+        bytes_written += self.encode_byte(0x00)?;
+
+        // Extension data is sequence -> octet string. To compute size, wrap
+        // in tagging once.
+        bytes_written += self.encode_byte(Self::OCTET_STRING_TAG)?;
+        bytes_written += self.encode_size_field(Self::get_structure_size(
+            measurements.subject_key_identifier.len(),
+            /*tagged=*/ true,
+        )?)?;
+
+        // SubjectKeyIdentifier := OCTET STRING
+        bytes_written += self.encode_byte(Self::OCTET_STRING_TAG)?;
+        bytes_written += self.encode_size_field(measurements.subject_key_identifier.len())?;
+        bytes_written += self.encode_bytes(&measurements.subject_key_identifier)?;
+
+        Ok(bytes_written)
+    }
+
     fn encode_extensions(
         &mut self,
         measurements: &MeasurementData,
@@ -1347,6 +1409,7 @@ impl CertWriter<'_> {
         bytes_written += self.encode_basic_constraints(measurements)?;
         bytes_written += self.encode_key_usage(measurements.is_ca)?;
         bytes_written += self.encode_extended_key_usage(measurements)?;
+        bytes_written += self.encode_subject_key_identifier_extension(measurements)?;
 
         Ok(bytes_written)
     }
@@ -1843,7 +1906,8 @@ mod tests {
     use crate::x509::{CertWriter, DirectoryString, MeasurementData, Name};
     use crate::DPE_PROFILE;
     use crypto::{CryptoBuf, EcdsaPub, EcdsaSig};
-    use platform::{ArrayVec, CertValidity};
+    use openssl::hash::{Hasher, MessageDigest};
+    use platform::{ArrayVec, CertValidity, MAX_SKI_SIZE};
     use std::str;
     use x509_parser::certificate::X509CertificateParser;
     use x509_parser::nom::Parser;
@@ -2087,6 +2151,7 @@ mod tests {
             tci_nodes: &[node],
             is_ca: false,
             supports_recursive: true,
+            subject_key_identifier: [0u8; MAX_SKI_SIZE],
         };
 
         let mut not_before = ArrayVec::new();
@@ -2156,11 +2221,19 @@ mod tests {
 
         let node = TciNodeData::new();
 
+        let mut hasher = Hasher::new(MessageDigest::sha256()).unwrap();
+        hasher.update(&[0x04]).unwrap();
+        hasher.update(test_pub.x.bytes()).unwrap();
+        hasher.update(test_pub.y.bytes()).unwrap();
+        let mut subject_key_identifier = [0u8; MAX_SKI_SIZE];
+        let digest = &hasher.finish().unwrap();
+        subject_key_identifier.copy_from_slice(&digest[..MAX_SKI_SIZE]);
         let measurements = MeasurementData {
             label: &[0; DPE_PROFILE.get_hash_size()],
             tci_nodes: &[node],
             is_ca,
             supports_recursive: true,
+            subject_key_identifier,
         };
 
         let mut not_before = ArrayVec::new();
@@ -2254,6 +2327,12 @@ mod tests {
             Ok(None) => panic!("extended key usage extension not found"),
             Err(_) => panic!("multiple extended key usage extensions found"),
         };
+
+        match cert.get_extension_unique(&oid!(2.5.29 .14)) {
+            Ok(Some(_)) => panic!("subject key identifier extensions found for non CA certificate"),
+            Err(_) => panic!("multiple subject key identifier extensions found"),
+            _ => (),
+        }
     }
 
     #[test]
@@ -2290,5 +2369,25 @@ mod tests {
             Ok(None) => panic!("extended key usage extension not found"),
             Err(_) => panic!("multiple extended key usage extensions found"),
         };
+
+        let pub_key = &cert.tbs_certificate.subject_pki.subject_public_key.data;
+        let mut hasher = Hasher::new(MessageDigest::sha256()).unwrap();
+        hasher.update(pub_key).unwrap();
+        let expected_key_identifier: &[u8] = &hasher.finish().unwrap();
+
+        match cert.get_extension_unique(&oid!(2.5.29 .14)) {
+            Ok(Some(subject_key_identifier_ext)) => {
+                assert!(!subject_key_identifier_ext.critical);
+                if let ParsedExtension::SubjectKeyIdentifier(key_identifier) =
+                    subject_key_identifier_ext.parsed_extension()
+                {
+                    assert_eq!(key_identifier.0, &expected_key_identifier[..MAX_SKI_SIZE]);
+                } else {
+                    panic!("Extension has wrong type");
+                }
+            }
+            Ok(None) => panic!("subject key identifier extension not found"),
+            Err(_) => panic!("multiple subject key identifier extensions found"),
+        }
     }
 }

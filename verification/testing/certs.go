@@ -13,6 +13,7 @@ import (
 
 // This file is used to test the certify key command.
 var (
+	OidExtensionSubjectKeyIdentifier   = asn1.ObjectIdentifier{2, 5, 29, 14}
 	OidExtensionKeyUsage               = asn1.ObjectIdentifier{2, 5, 29, 15}
 	OidExtensionAuthorityKeyIdentifier = asn1.ObjectIdentifier{2, 5, 29, 35}
 	OidExtensionBasicConstraints       = asn1.ObjectIdentifier{2, 5, 29, 19}
@@ -35,6 +36,8 @@ type BasicConstraints struct {
 	IsCA              bool `asn1`
 	PathLenConstraint int  `asn1:"optional"`
 }
+
+type SubjectKeyIdentifier = []byte
 
 // A tcg-dice-MultiTcbInfo extension.
 // This extension SHOULD be marked as critical.
@@ -70,6 +73,23 @@ func getBasicConstraints(extensions []pkix.Extension) (BasicConstraints, error) 
 		}
 	}
 	return bc, nil
+}
+
+func getSubjectKeyIdentifier(extensions []pkix.Extension) (SubjectKeyIdentifier, error) {
+	var ski SubjectKeyIdentifier
+	for _, ext := range extensions {
+		if ext.Id.Equal(OidExtensionSubjectKeyIdentifier) {
+			if ext.Critical {
+				return ski, fmt.Errorf("[ERROR]: SubjectKeyIdentifier extension is marked as CRITICAL")
+			}
+			_, err := asn1.Unmarshal(ext.Value, &ski)
+			if err != nil {
+				return ski, fmt.Errorf("[ERROR]: Failed to unmarshal SubjectKeyIdentifier extension: %v", err)
+			}
+			break
+		}
+	}
+	return ski, nil
 }
 
 func getUeid(extensions []pkix.Extension) (TcgUeidExtension, error) {
