@@ -1,1 +1,7 @@
 target
+
+# By default, ignore Cargo.lock files in non-workspace directories.
+*/**/Cargo.lock
+
+# Don't ignore fuzz Cargo.lock which is in a different workspace
+!dpe/fuzz/Cargo.lock
