@@ -5,7 +5,7 @@ use crate::{
     response::{DpeErrorCode, GetCertificateChainResp, Response, ResponseHdr},
 };
 #[cfg(not(feature = "no-cfi"))]
-use caliptra_cfi_derive_git::cfi_impl_fn;
+use caliptra_cfi_derive::cfi_impl_fn;
 use platform::{Platform, MAX_CHUNK_SIZE};
 
 #[repr(C)]
@@ -48,7 +48,7 @@ mod tests {
         dpe_instance::tests::{TestTypes, TEST_LOCALITIES},
         support::test::SUPPORT,
     };
-    use caliptra_cfi_lib_git::CfiCounter;
+    use caliptra_cfi_lib::CfiCounter;
     use crypto::OpensslCrypto;
     use platform::default::DefaultPlatform;
     use zerocopy::AsBytes;

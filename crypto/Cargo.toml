@@ -13,8 +13,8 @@ no-cfi = []
 
 [dependencies]
 arrayvec = { version = "0.7.4", default-features = false, features = ["zeroize"] }
-caliptra-cfi-lib-git = { workspace = true, default-features = false, features = ["cfi", "cfi-counter" ] }
-caliptra-cfi-derive-git.workspace = true
+caliptra-cfi-lib = { workspace = true, default-features = false, features = ["cfi", "cfi-counter" ] }
+caliptra-cfi-derive.workspace = true
 ecdsa = { version = "0.16.9", optional = true, features = ["pem"]}
 hkdf = { version = "0.12.3", optional = true }
 hmac = {version="0.12.1", optional = true}

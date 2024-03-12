@@ -13,10 +13,10 @@ use crate::{
     U8Bool, DPE_PROFILE, INTERNAL_INPUT_INFO_SIZE, MAX_HANDLES,
 };
 #[cfg(not(feature = "no-cfi"))]
-use caliptra_cfi_derive_git::cfi_impl_fn;
-use caliptra_cfi_lib_git::cfi_launder;
+use caliptra_cfi_derive::cfi_impl_fn;
+use caliptra_cfi_lib::cfi_launder;
 #[cfg(not(feature = "no-cfi"))]
-use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq};
+use caliptra_cfi_lib::{cfi_assert, cfi_assert_eq};
 use cfg_if::cfg_if;
 use constant_time_eq::constant_time_eq;
 use crypto::{Crypto, Digest, Hasher};
@@ -519,7 +519,7 @@ pub mod tests {
     use crate::response::NewHandleResp;
     use crate::support::test::SUPPORT;
     use crate::{commands::CommandHdr, CURRENT_PROFILE_MAJOR_VERSION};
-    use caliptra_cfi_lib_git::CfiCounter;
+    use caliptra_cfi_lib::CfiCounter;
     use crypto::OpensslCrypto;
     use platform::default::{DefaultPlatform, AUTO_INIT_LOCALITY, TEST_CERT_CHAIN};
     use zerocopy::AsBytes;
