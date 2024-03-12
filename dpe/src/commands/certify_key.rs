@@ -571,7 +571,11 @@ mod tests {
                 let cert_serial_number = &issuer_and_serial_number.serial_number;
                 let cert_issuer_name = &issuer_and_serial_number.issuer.to_der().unwrap();
 
-                let platform::SignerIdentifier::IssuerAndSerialNumber {issuer_name, serial_number}  = env.platform.get_signer_identifier().unwrap() else {
+                let platform::SignerIdentifier::IssuerAndSerialNumber {
+                    issuer_name,
+                    serial_number,
+                } = env.platform.get_signer_identifier().unwrap()
+                else {
                     panic!("Error: Signer Identifier is not IssuerAndSerialNumber in default platform!")
                 };
 
