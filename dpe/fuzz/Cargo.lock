@@ -114,9 +114,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "14c189c53d098945499cdfa7ecc63567cf3886b3332b312a5b4585d8d3a6a610"
 
 [[package]]
-name = "caliptra-cfi-derive-git"
+name = "caliptra-cfi-derive"
 version = "0.1.0"
-source = "git+https://github.com/chipsalliance/caliptra-cfi.git?rev=a98e499d279e81ae85881991b1e9eee354151189#a98e499d279e81ae85881991b1e9eee354151189"
+source = "git+https://github.com/chipsalliance/caliptra-cfi.git?rev=25473cebb25f638646091c54b5e337b9a2697f07#25473cebb25f638646091c54b5e337b9a2697f07"
 dependencies = [
  "paste",
  "proc-macro2",
@@ -125,9 +125,9 @@ dependencies = [
 ]
 
 [[package]]
-name = "caliptra-cfi-lib-git"
+name = "caliptra-cfi-lib"
 version = "0.1.0"
-source = "git+https://github.com/chipsalliance/caliptra-cfi.git?rev=a98e499d279e81ae85881991b1e9eee354151189#a98e499d279e81ae85881991b1e9eee354151189"
+source = "git+https://github.com/chipsalliance/caliptra-cfi.git?rev=25473cebb25f638646091c54b5e337b9a2697f07#25473cebb25f638646091c54b5e337b9a2697f07"
 
 [[package]]
 name = "cc"
@@ -204,8 +204,8 @@ name = "crypto"
 version = "0.1.0"
 dependencies = [
  "arrayvec",
- "caliptra-cfi-derive-git",
- "caliptra-cfi-lib-git",
+ "caliptra-cfi-derive",
+ "caliptra-cfi-lib",
  "hkdf",
  "openssl",
  "sha2",
@@ -268,8 +268,8 @@ name = "dpe"
 version = "0.1.0"
 dependencies = [
  "bitflags 2.4.0",
- "caliptra-cfi-derive-git",
- "caliptra-cfi-lib-git",
+ "caliptra-cfi-derive",
+ "caliptra-cfi-lib",
  "cfg-if",
  "constant_time_eq",
  "crypto",

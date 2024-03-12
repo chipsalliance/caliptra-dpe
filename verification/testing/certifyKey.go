@@ -495,10 +495,6 @@ func checkCertificateStructure(t *testing.T, certBytes []byte) *x509.Certificate
 			// strictly worse and mixing the two formats does not lend itself well
 			// to fixed-sized X.509 templating.
 			"e_wrong_time_format_pre2050",
-			// Certs in the Caliptra cert chain fail this lint currently.
-			// We will need to truncate the serial numbers for those certs and
-			// then enable this lint.
-			"e_subject_dn_serial_number_max_length",
 		},
 	})
 	if err != nil {

@@ -9,12 +9,10 @@ use crate::{
 };
 
 #[cfg(not(feature = "no-cfi"))]
-use caliptra_cfi_derive_git::cfi_impl_fn;
-use caliptra_cfi_lib_git::cfi_launder;
+use caliptra_cfi_derive::cfi_impl_fn;
+use caliptra_cfi_lib::cfi_launder;
 #[cfg(not(feature = "no-cfi"))]
-use caliptra_cfi_lib_git::{
-    cfi_assert, cfi_assert_eq, cfi_assert_le, cfi_assert_lt, cfi_assert_ne,
-};
+use caliptra_cfi_lib::{cfi_assert, cfi_assert_eq, cfi_assert_le, cfi_assert_lt, cfi_assert_ne};
 use cfg_if::cfg_if;
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -449,7 +447,7 @@ impl<'a> DpeValidator<'a> {
 
 #[cfg(test)]
 pub mod tests {
-    use caliptra_cfi_lib_git::CfiCounter;
+    use caliptra_cfi_lib::CfiCounter;
     use crypto::OpensslCrypto;
     use platform::default::DefaultPlatform;
 

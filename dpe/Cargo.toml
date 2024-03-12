@@ -26,8 +26,8 @@ no-cfi = ["crypto/no-cfi"]
 
 [dependencies]
 bitflags = "2.4.0"
-caliptra-cfi-lib-git = { workspace = true, default-features = false, features = ["cfi", "cfi-counter" ] }
-caliptra-cfi-derive-git.workspace = true
+caliptra-cfi-lib = { workspace = true, default-features = false, features = ["cfi", "cfi-counter" ] }
+caliptra-cfi-derive.workspace = true
 constant_time_eq = "0.3.0"
 crypto = {path = "../crypto", default-features = false}
 platform = {path = "../platform", default-features = false}
@@ -38,7 +38,7 @@ cfg-if = "1.0.0"
 
 [dev-dependencies]
 asn1 = "0.13.0"
-caliptra-cfi-lib-git = { workspace = true, features = ["cfi-test"] }
+caliptra-cfi-lib = { workspace = true, features = ["cfi-test"] }
 openssl.workspace = true
 x509-parser = "0.15.1"
 crypto = {path = "../crypto", features = ["deterministic_rand", "openssl"]}
