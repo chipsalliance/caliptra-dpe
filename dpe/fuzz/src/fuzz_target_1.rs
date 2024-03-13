@@ -66,7 +66,7 @@ fn harness(data: &[u8]) {
         platform: DefaultPlatform,
     };
     let mut dpe = DpeInstance::new(&mut env, SUPPORT).unwrap();
-    let prev_contexts = dpe.contexts;
+    let prev_contexts = dpe.contexts.clone();
 
     // Hard-code working locality
     let response = dpe

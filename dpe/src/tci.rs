@@ -1,10 +1,10 @@
 // Licensed under the Apache-2.0 license.
 use crate::DPE_PROFILE;
 use zerocopy::{AsBytes, FromBytes};
-use zeroize::Zeroize;
+use zeroize::ZeroizeOnDrop;
 
 #[repr(C, align(4))]
-#[derive(Default, Copy, Clone, AsBytes, FromBytes, PartialEq, Eq, Zeroize)]
+#[derive(Default, Clone, AsBytes, FromBytes, PartialEq, Eq, ZeroizeOnDrop)]
 pub struct TciNodeData {
     pub tci_type: u32,
     pub tci_cumulative: TciMeasurement,
@@ -24,7 +24,7 @@ impl TciNodeData {
 }
 
 #[repr(transparent)]
-#[derive(Copy, Clone, Debug, AsBytes, FromBytes, PartialEq, Eq, Zeroize)]
+#[derive(Clone, Debug, AsBytes, FromBytes, PartialEq, Eq, ZeroizeOnDrop)]
 pub struct TciMeasurement(pub [u8; DPE_PROFILE.get_tci_size()]);
 
 impl Default for TciMeasurement {

@@ -217,7 +217,7 @@ impl CommandExecution for DeriveContextCmd {
         }
 
         if self.is_recursive() {
-            let mut tmp_context = dpe.contexts[parent_idx];
+            let mut tmp_context = dpe.contexts[parent_idx].clone();
             if tmp_context.tci.tci_type != self.tci_type {
                 return Err(DpeErrorCode::InvalidArgument);
             } else {
@@ -227,22 +227,19 @@ impl CommandExecution for DeriveContextCmd {
             dpe.add_tci_measurement(
                 env,
                 &mut tmp_context,
-                &TciMeasurement(self.data),
+                TciMeasurement(self.data),
                 target_locality,
             )?;
 
             // Rotate the handle if it isn't the default context.
             dpe.roll_onetime_use_handle(env, parent_idx)?;
 
-            dpe.contexts[parent_idx] = Context {
-                handle: dpe.contexts[parent_idx].handle,
-                ..tmp_context
-            };
+            dpe.contexts[parent_idx] = tmp_context;
 
             // No child context created so handle is unmeaningful
             Ok(Response::DeriveContext(DeriveContextResp {
                 handle: ContextHandle::default(),
-                parent_handle: dpe.contexts[parent_idx].handle,
+                parent_handle: dpe.contexts[parent_idx].handle.clone(),
                 resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
             }))
         } else {
@@ -276,7 +273,7 @@ impl CommandExecution for DeriveContextCmd {
             // Create a temporary context to mutate so that we avoid mutating internal state upon an error.
             let mut tmp_child_context = Context::new();
             tmp_child_context.activate(&ActiveContextArgs {
-                context_type: dpe.contexts[parent_idx].context_type,
+                context_type: dpe.contexts[parent_idx].context_type.clone(),
                 locality: target_locality,
                 handle: &child_handle,
                 tci_type: self.tci_type,
@@ -290,12 +287,12 @@ impl CommandExecution for DeriveContextCmd {
             dpe.add_tci_measurement(
                 env,
                 &mut tmp_child_context,
-                &TciMeasurement(self.data),
+                TciMeasurement(self.data),
                 target_locality,
             )?;
 
             // Copy the parent context to mutate so that we avoid mutating internal state upon an error.
-            let mut tmp_parent_context = dpe.contexts[parent_idx];
+            let mut tmp_parent_context = dpe.contexts[parent_idx].clone();
             if !self.retains_parent() {
                 #[cfg(not(feature = "no-cfi"))]
                 cfi_assert!(!self.retains_parent());
@@ -322,7 +319,7 @@ impl CommandExecution for DeriveContextCmd {
 
             Ok(Response::DeriveContext(DeriveContextResp {
                 handle: child_handle,
-                parent_handle: dpe.contexts[parent_idx].handle,
+                parent_handle: dpe.contexts[parent_idx].handle.clone(),
                 resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
             }))
         }
@@ -763,7 +760,7 @@ mod tests {
             parent_handle,
             resp_hdr,
         }) = DeriveContextCmd {
-            handle: dpe.contexts[old_default_idx].handle,
+            handle: dpe.contexts[old_default_idx].handle.clone(),
             data: [0; DPE_PROFILE.get_tci_size()],
             flags: DeriveContextFlags::RETAIN_PARENT_CONTEXT,
             tci_type: 0,

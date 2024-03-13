@@ -7,7 +7,7 @@ Abstract:
 #![cfg_attr(not(test), no_std)]
 
 pub use dpe_instance::DpeInstance;
-use zeroize::Zeroize;
+use zeroize::ZeroizeOnDrop;
 
 pub mod commands;
 pub mod context;
@@ -37,7 +37,7 @@ const INTERNAL_INPUT_INFO_SIZE: usize = size_of::<GetProfileResp>() + size_of::<
 /// A type with u8 backing memory but bool semantics
 /// This is needed to safely serialize booleans in the persisted DPE state
 /// using zerocopy.
-#[derive(Default, AsBytes, FromBytes, Copy, Clone, PartialEq, Eq, Zeroize)]
+#[derive(Default, AsBytes, FromBytes, Clone, PartialEq, Eq, ZeroizeOnDrop)]
 #[repr(C, align(1))]
 pub struct U8Bool {
     val: u8,

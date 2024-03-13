@@ -22,7 +22,7 @@ use constant_time_eq::constant_time_eq;
 use crypto::{Crypto, Digest, Hasher};
 use platform::{Platform, MAX_CHUNK_SIZE};
 use zerocopy::{AsBytes, FromBytes};
-use zeroize::Zeroize;
+use zeroize::ZeroizeOnDrop;
 
 pub trait DpeTypes {
     type Crypto<'a>: Crypto
@@ -39,7 +39,7 @@ pub struct DpeEnv<'a, T: DpeTypes + 'a> {
 }
 
 #[repr(C, align(4))]
-#[derive(AsBytes, FromBytes, Zeroize)]
+#[derive(AsBytes, FromBytes, ZeroizeOnDrop)]
 pub struct DpeInstance {
     pub contexts: [Context; MAX_HANDLES],
     pub(crate) support: Support,
@@ -112,12 +112,12 @@ impl DpeInstance {
 
         let locality = env.platform.get_auto_init_locality()?;
         let idx = dpe.get_active_context_pos(&ContextHandle::default(), locality)?;
-        let mut tmp_context = dpe.contexts[idx];
+        let mut tmp_context = dpe.contexts[idx].clone();
         // add measurement to auto-initialized context
         dpe.add_tci_measurement(
             env,
             &mut tmp_context,
-            &TciMeasurement(auto_init_measurement),
+            TciMeasurement(auto_init_measurement),
             locality,
         )?;
         dpe.contexts[idx] = tmp_context;
@@ -330,7 +330,7 @@ impl DpeInstance {
                 return Err(DpeErrorCode::InternalError);
             }
 
-            nodes[out_idx] = curr.tci;
+            nodes[out_idx] = curr.tci.clone();
             out_idx += 1;
         }
 
@@ -356,7 +356,7 @@ impl DpeInstance {
         &self,
         env: &mut DpeEnv<impl DpeTypes>,
         context: &mut Context,
-        measurement: &TciMeasurement,
+        measurement: TciMeasurement,
         locality: u32,
     ) -> Result<(), DpeErrorCode> {
         if context.state != ContextState::Active {
@@ -367,7 +367,7 @@ impl DpeInstance {
         }
         cfg_if! {
             if #[cfg(not(feature = "no-cfi"))] {
-                cfi_assert_eq(context.state, ContextState::Active);
+                cfi_assert_eq(&context.state, &ContextState::Active);
                 cfi_assert_eq(context.locality, locality);
             }
         }
@@ -384,7 +384,7 @@ impl DpeInstance {
             return Err(DpeErrorCode::InternalError);
         }
         context.tci.tci_cumulative.0.copy_from_slice(digest_bytes);
-        context.tci.tci_current = *measurement;
+        context.tci.tci_current = measurement;
         Ok(())
     }
 
@@ -641,15 +641,15 @@ pub mod tests {
         let mut dpe = DpeInstance::new(&mut env, Support::AUTO_INIT).unwrap();
 
         let data = [1; DPE_PROFILE.get_hash_size()];
-        let mut context = dpe.contexts[0];
+        let mut context = dpe.contexts[0].clone();
         dpe.add_tci_measurement(
             &mut env,
             &mut context,
-            &TciMeasurement(data),
+            TciMeasurement(data),
             TEST_LOCALITIES[0],
         )
         .unwrap();
-        dpe.contexts[0] = context;
+        dpe.contexts[0] = context.clone();
         assert_eq!(data, context.tci.tci_current.0);
 
         // Compute cumulative.
@@ -665,12 +665,12 @@ pub mod tests {
         dpe.add_tci_measurement(
             &mut env,
             &mut context,
-            &TciMeasurement(data),
+            TciMeasurement(data),
             TEST_LOCALITIES[0],
         )
         .unwrap();
         // Make sure the current TCI was updated correctly.
-        dpe.contexts[0] = context;
+        dpe.contexts[0] = context.clone();
         assert_eq!(data, context.tci.tci_current.0);
 
         let mut hasher = env.crypto.hash_initialize(DPE_PROFILE.alg_len()).unwrap();

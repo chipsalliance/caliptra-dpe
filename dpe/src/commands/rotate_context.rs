@@ -101,7 +101,7 @@ impl CommandExecution for RotateCtxCmd {
         dpe.contexts[idx].handle = new_handle;
 
         Ok(Response::RotateCtx(NewHandleResp {
-            handle: new_handle,
+            handle: dpe.contexts[idx].handle.clone(),
             resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
         }))
     }

@@ -257,7 +257,7 @@ impl CommandExecution for CertifyKeyCmd {
         dpe.roll_onetime_use_handle(env, idx)?;
 
         Ok(Response::CertifyKey(CertifyKeyResp {
-            new_context_handle: dpe.contexts[idx].handle,
+            new_context_handle: dpe.contexts[idx].handle.clone(),
             derived_pubkey_x,
             derived_pubkey_y,
             cert_size,
@@ -380,7 +380,7 @@ mod tests {
             _ => panic!("Incorrect return type."),
         };
         let certify_cmd_ca = CertifyKeyCmd {
-            handle: init_resp.handle,
+            handle: init_resp.handle.clone(),
             flags: CertifyKeyFlags::IS_CA,
             label: [0; DPE_PROFILE.get_hash_size()],
             format: CertifyKeyCmd::FORMAT_X509,

@@ -2,10 +2,10 @@
 use crate::{response::DpeErrorCode, tci::TciNodeData, U8Bool, MAX_HANDLES};
 use constant_time_eq::constant_time_eq;
 use zerocopy::{AsBytes, FromBytes};
-use zeroize::Zeroize;
+use zeroize::ZeroizeOnDrop;
 
 #[repr(C, align(4))]
-#[derive(AsBytes, FromBytes, Copy, Clone, PartialEq, Eq, Zeroize)]
+#[derive(AsBytes, FromBytes, Clone, PartialEq, Eq, ZeroizeOnDrop)]
 pub struct Context {
     pub handle: ContextHandle,
     pub tci: TciNodeData,
@@ -69,13 +69,13 @@ impl Context {
 
     /// Sets all values to an initialized state according to ActiveContextArgs
     pub fn activate(&mut self, args: &ActiveContextArgs) {
-        self.handle = *args.handle;
+        self.handle = args.handle.clone();
         self.tci = TciNodeData::new();
         self.tci.tci_type = args.tci_type;
         self.tci.locality = args.locality;
         self.children = 0;
         self.parent_idx = args.parent_idx;
-        self.context_type = args.context_type;
+        self.context_type = args.context_type.clone();
         self.state = ContextState::Active;
         self.locality = args.locality;
         self.allow_ca = args.allow_ca.into();
@@ -108,7 +108,7 @@ impl Context {
 }
 
 #[repr(C)]
-#[derive(Debug, PartialEq, Eq, Clone, Copy, zerocopy::AsBytes, zerocopy::FromBytes, Zeroize)]
+#[derive(Debug, PartialEq, Eq, Clone, zerocopy::AsBytes, zerocopy::FromBytes, ZeroizeOnDrop)]
 pub struct ContextHandle(pub [u8; ContextHandle::SIZE]);
 
 impl ContextHandle {
@@ -126,7 +126,7 @@ impl ContextHandle {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, AsBytes, FromBytes, Copy, Clone, Zeroize)]
+#[derive(Debug, PartialEq, Eq, AsBytes, FromBytes, Clone, ZeroizeOnDrop)]
 #[repr(u8, align(1))]
 #[rustfmt::skip]
 pub enum ContextState {
@@ -158,7 +158,7 @@ pub enum ContextState {
     _F0, _F1, _F2, _F3, _F4, _F5, _F6, _F7, _F8, _F9, _Fa, _Fb, _Fc, _Fd, _Fe, _Ff,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy, AsBytes, FromBytes, Zeroize)]
+#[derive(Debug, PartialEq, Eq, Clone, AsBytes, FromBytes, ZeroizeOnDrop)]
 #[repr(u8, align(1))]
 #[rustfmt::skip]
 pub enum ContextType {

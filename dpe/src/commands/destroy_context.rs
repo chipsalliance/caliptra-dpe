@@ -418,7 +418,7 @@ mod tests {
         children: &[u8],
     ) -> () {
         dpe.contexts[idx].state = ContextState::Active;
-        dpe.contexts[idx].handle = *handle;
+        dpe.contexts[idx].handle = handle.clone();
         dpe.contexts[idx].parent_idx = parent_idx;
         for i in children {
             let children = dpe.contexts[idx].add_child(*i as usize).unwrap();

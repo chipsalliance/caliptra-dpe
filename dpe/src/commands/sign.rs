@@ -134,7 +134,7 @@ impl CommandExecution for SignCmd {
         cfg_if! {
             if #[cfg(not(feature = "no-cfi"))] {
                 cfi_assert!(dpe.support.is_symmetric() || !self.uses_symmetric());
-                cfi_assert_ne(context.context_type, ContextType::Simulation);
+                cfi_assert_ne(&context.context_type, &ContextType::Simulation);
             }
         }
 
@@ -163,7 +163,7 @@ impl CommandExecution for SignCmd {
         dpe.roll_onetime_use_handle(env, idx)?;
 
         Ok(Response::Sign(SignResp {
-            new_context_handle: dpe.contexts[idx].handle,
+            new_context_handle: dpe.contexts[idx].handle.clone(),
             sig_r_or_hmac,
             sig_s,
             resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),

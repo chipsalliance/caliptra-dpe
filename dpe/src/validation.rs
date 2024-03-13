@@ -107,7 +107,7 @@ impl<'a> DpeValidator<'a> {
             match context.state {
                 ContextState::Inactive => {
                     #[cfg(not(feature = "no-cfi"))]
-                    cfi_assert_eq(context.state, ContextState::Inactive);
+                    cfi_assert_eq(&context.state, &ContextState::Inactive);
                     let inactive_context_validation = self.validate_inactive_context(context);
                     if cfi_launder(inactive_context_validation.is_ok()) {
                         #[cfg(not(feature = "no-cfi"))]
@@ -120,7 +120,7 @@ impl<'a> DpeValidator<'a> {
                 }
                 ContextState::Active => {
                     #[cfg(not(feature = "no-cfi"))]
-                    cfi_assert_eq(context.state, ContextState::Active);
+                    cfi_assert_eq(&context.state, &ContextState::Active);
                     // has_initialized must be true if there is a normal, active context
                     if context.context_type == ContextType::Normal && !self.dpe.has_initialized() {
                         return Err(ValidationError::DpeNotMarkedInitialized);
@@ -137,7 +137,7 @@ impl<'a> DpeValidator<'a> {
                 }
                 ContextState::Retired => {
                     #[cfg(not(feature = "no-cfi"))]
-                    cfi_assert_eq(context.state, ContextState::Retired);
+                    cfi_assert_eq(&context.state, &ContextState::Retired);
                     let children_and_parent_check = self.check_children_and_parent(i);
                     if cfi_launder(children_and_parent_check.is_ok()) {
                         #[cfg(not(feature = "no-cfi"))]
@@ -253,7 +253,7 @@ impl<'a> DpeValidator<'a> {
                 if #[cfg(not(feature = "no-cfi"))] {
                     cfi_assert_eq(context.parent_idx, Context::ROOT_INDEX);
                     cfi_assert_eq(context.children, 0);
-                    cfi_assert_eq(context.tci, TciNodeData::default());
+                    cfi_assert_eq(&context.tci, &TciNodeData::default());
                     cfi_assert!(!context.uses_internal_input_dice());
                     cfi_assert!(!context.allow_ca());
                     cfi_assert!(!context.allow_x509());
@@ -296,7 +296,7 @@ impl<'a> DpeValidator<'a> {
             cfg_if! {
                 if #[cfg(not(feature = "no-cfi"))] {
                     cfi_assert_lt(child, MAX_HANDLES);
-                    cfi_assert_ne(self.dpe.contexts[child].state, ContextState::Inactive);
+                    cfi_assert_ne(&self.dpe.contexts[child].state, &ContextState::Inactive);
                     cfi_assert_eq(self.dpe.contexts[child].parent_idx as usize, idx);
                 }
             }
@@ -368,8 +368,8 @@ impl<'a> DpeValidator<'a> {
         for (i, (context, node_in_degree)) in self.dpe.contexts.iter().zip(in_degree).enumerate() {
             // dfs from all root nodes
             if node_in_degree == 0 && context.state != ContextState::Inactive {
-                let context_type = context.context_type;
-                if context_type == ContextType::Normal {
+                let context_type = &context.context_type;
+                if context_type == &ContextType::Normal {
                     normal_tree_count += 1;
                 }
                 let invalid_subtree_check = self.detect_invalid_subtree(i, &mut seen, context_type);
@@ -409,7 +409,7 @@ impl<'a> DpeValidator<'a> {
         &self,
         curr_idx: usize,
         seen: &mut [bool; MAX_HANDLES],
-        context_type: ContextType,
+        context_type: &ContextType,
     ) -> Result<(), ValidationError> {
         // if the current node was already visited we have a cycle
         if curr_idx >= MAX_HANDLES
@@ -419,15 +419,15 @@ impl<'a> DpeValidator<'a> {
             return Err(ValidationError::CyclesInTree);
         }
         // all nodes in the tree must have the same ContextType
-        if self.dpe.contexts[curr_idx].context_type != context_type {
+        if &self.dpe.contexts[curr_idx].context_type != context_type {
             return Err(ValidationError::MixedContextTypeConnectedComponents);
         }
         cfg_if! {
             if #[cfg(not(feature = "no-cfi"))] {
                 cfi_assert_le(curr_idx, MAX_HANDLES);
-                cfi_assert_ne(self.dpe.contexts[curr_idx].state, ContextState::Inactive);
+                cfi_assert_ne(&self.dpe.contexts[curr_idx].state, &ContextState::Inactive);
                 cfi_assert!(!seen[curr_idx]);
-                cfi_assert_eq(self.dpe.contexts[curr_idx].context_type, context_type);
+                cfi_assert_eq(&self.dpe.contexts[curr_idx].context_type, context_type);
             }
         }
         seen[curr_idx] = true;
@@ -469,7 +469,7 @@ pub mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe_validator = DpeValidator {
+        let dpe_validator = DpeValidator {
             dpe: &mut DpeInstance::new(&mut env, SUPPORT).unwrap(),
         };
 
@@ -532,7 +532,7 @@ pub mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe_validator = DpeValidator {
+        let dpe_validator = DpeValidator {
             dpe: &mut DpeInstance::new(&mut env, Support::empty()).unwrap(),
         };
 
@@ -584,7 +584,7 @@ pub mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe_validator = DpeValidator {
+        let dpe_validator = DpeValidator {
             dpe: &mut DpeInstance::new(&mut env, Support::all().difference(Support::AUTO_INIT))
                 .unwrap(),
         };
@@ -709,7 +709,7 @@ pub mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe_validator = DpeValidator {
+        let dpe_validator = DpeValidator {
             dpe: &mut DpeInstance::new(&mut env, Support::empty()).unwrap(),
         };
         dpe_validator.dpe.has_initialized = U8Bool::new(true);
