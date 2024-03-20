@@ -16,7 +16,7 @@ use caliptra_cfi_lib_git::cfi_launder;
 use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq};
 use cfg_if::cfg_if;
 use crypto::{Crypto, Hasher};
-use platform::{Platform, MAX_ISSUER_NAME_SIZE, MAX_KEY_IDENTIFIER_SIZE};
+use platform::{Platform, PlatformError, MAX_ISSUER_NAME_SIZE, MAX_KEY_IDENTIFIER_SIZE};
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, zerocopy::FromBytes, zerocopy::AsBytes)]
@@ -142,6 +142,12 @@ impl CommandExecution for CertifyKeyCmd {
         env.platform
             .get_issuer_key_identifier(&mut authority_key_identifier)?;
 
+        let subject_alt_name = match env.platform.get_subject_alternative_name() {
+            Ok(subject_alt_name) => Some(subject_alt_name),
+            Err(PlatformError::NotImplemented) => None,
+            Err(e) => Err(DpeErrorCode::Platform(e))?,
+        };
+
         let measurements = MeasurementData {
             label: &self.label,
             tci_nodes: &nodes[..tcb_count],
@@ -149,6 +155,7 @@ impl CommandExecution for CertifyKeyCmd {
             supports_recursive: dpe.support.recursive(),
             subject_key_identifier,
             authority_key_identifier,
+            subject_alt_name,
         };
 
         let mut issuer_name = [0u8; MAX_ISSUER_NAME_SIZE];

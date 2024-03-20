@@ -12,7 +12,9 @@ use crate::{
 };
 use bitflags::bitflags;
 use crypto::{EcdsaPub, EcdsaSig};
-use platform::{CertValidity, SignerIdentifier, MAX_KEY_IDENTIFIER_SIZE};
+use platform::{
+    CertValidity, OtherName, SignerIdentifier, SubjectAltName, MAX_KEY_IDENTIFIER_SIZE,
+};
 
 pub enum DirectoryString<'a> {
     PrintableString(&'a [u8]),
@@ -51,6 +53,7 @@ pub struct MeasurementData<'a> {
     pub supports_recursive: bool,
     pub subject_key_identifier: [u8; MAX_KEY_IDENTIFIER_SIZE],
     pub authority_key_identifier: [u8; MAX_KEY_IDENTIFIER_SIZE],
+    pub subject_alt_name: Option<SubjectAltName>,
 }
 
 pub struct CertWriter<'a> {
@@ -144,6 +147,9 @@ impl CertWriter<'_> {
 
     // RFC 5280 2.5.29.35
     const AUTHORITY_KEY_IDENTIFIER_OID: &'static [u8] = &[0x55, 0x1D, 0x23];
+
+    // RFC 5280 2.5.29.17
+    const SUBJECT_ALTERNATIVE_NAME_OID: &'static [u8] = &[0x55, 0x1D, 0x11];
 
     // RFC 5652 1.2.840.113549.1.7.2
     const ID_SIGNED_DATA_OID: &'static [u8] =
@@ -502,6 +508,49 @@ impl CertWriter<'_> {
         Self::get_structure_size(size, tagged)
     }
 
+    fn get_subject_alt_name_extension_size(
+        measurements: &MeasurementData,
+        tagged: bool,
+    ) -> Result<usize, DpeErrorCode> {
+        match &measurements.subject_alt_name {
+            None => Ok(0),
+            Some(SubjectAltName::OtherName(other_name)) => {
+                let san_size = Self::get_other_name_size(other_name, /*tagged=*/ true)?;
+
+                // Extension data is sequence -> octet string. To compute size, wrap
+                // in tagging twice.
+                let ext_size = Self::get_structure_size(san_size, /*tagged=*/ true)?;
+                let size = Self::get_structure_size(Self::SUBJECT_ALTERNATIVE_NAME_OID.len(), /*tagged=*/true)? // Extension OID
+                    + Self::get_structure_size(Self::BOOL_SIZE, /*tagged=*/true)? // Critical bool
+                    + Self::get_structure_size(ext_size, /*tagged=*/true)?; // OCTET STRING
+
+                Self::get_structure_size(size, tagged)
+            }
+        }
+    }
+
+    fn get_other_name_size(other_name: &OtherName, tagged: bool) -> Result<usize, DpeErrorCode> {
+        let size = Self::get_structure_size(other_name.oid.len(), /*tagged=*/ true)?
+            + Self::get_other_name_value_size(
+                other_name.other_name.as_slice(),
+                /*tagged=*/ true,
+                /*explicit=*/ true,
+            )?;
+
+        Self::get_structure_size(size, tagged)
+    }
+
+    fn get_other_name_value_size(
+        other_name_value: &[u8],
+        tagged: bool,
+        explicit: bool,
+    ) -> Result<usize, DpeErrorCode> {
+        // Determine whether to include the explicit tag wrapping in the size calculation
+        let size = Self::get_structure_size(other_name_value.len(), explicit)?;
+
+        Self::get_structure_size(size, tagged)
+    }
+
     /// Get the size of the TBS Extensions field.
     fn get_extensions_size(
         measurements: &MeasurementData,
@@ -523,7 +572,8 @@ impl CertWriter<'_> {
                 measurements,
                 /*tagged=*/ true,
                 is_x509,
-            )?;
+            )?
+            + Self::get_subject_alt_name_extension_size(measurements, /*tagged=*/ true)?;
 
         // Determine whether to include the explicit tag wrapping in the size calculation
         size = Self::get_structure_size(size, /*tagged=*/ explicit)?;
@@ -1402,6 +1452,104 @@ impl CertWriter<'_> {
         Ok(bytes_written)
     }
 
+    #[allow(clippy::identity_op)]
+    fn encode_other_name_value(&mut self, other_name_value: &[u8]) -> Result<usize, DpeErrorCode> {
+        // value is EXPLICIT field number 0
+        let mut bytes_written =
+            self.encode_byte(Self::CONTEXT_SPECIFIC | Self::CONSTRUCTED | 0x0)?;
+        bytes_written += self.encode_size_field(Self::get_other_name_value_size(
+            other_name_value,
+            /*tagged=*/ true,
+            /*explicit=*/ false,
+        )?)?;
+
+        // value := UTF8STRING
+        bytes_written += self.encode_tag_field(Self::UTF8_STRING_TAG)?;
+        bytes_written += self.encode_size_field(Self::get_other_name_value_size(
+            other_name_value,
+            /*tagged=*/ false,
+            /*explicit=*/ false,
+        )?)?;
+        bytes_written += self.encode_bytes(other_name_value)?;
+
+        Ok(bytes_written)
+    }
+
+    /// OtherName ::= SEQUENCE {
+    ///    type-id    OBJECT IDENTIFIER,
+    ///    value      [0] EXPLICIT ANY DEFINED BY type-id
+    /// }
+    #[allow(clippy::identity_op)]
+    fn encode_other_name(&mut self, other_name: &OtherName) -> Result<usize, DpeErrorCode> {
+        // otherName is EXPLICIT field number 0
+        let mut bytes_written =
+            self.encode_byte(Self::CONTEXT_SPECIFIC | Self::CONSTRUCTED | 0x0)?;
+
+        bytes_written += self.encode_size_field(Self::get_other_name_size(
+            other_name, /*tagged=*/ false,
+        )?)?;
+        bytes_written += self.encode_oid(other_name.oid)?;
+        bytes_written += self.encode_other_name_value(other_name.other_name.as_slice())?;
+
+        Ok(bytes_written)
+    }
+
+    /// SubjectAltName ::= GeneralNames
+    ///
+    /// GeneralNames ::= SEQUENCE SIZE (1..MAX) OF GeneralName
+    ///
+    /// GeneralName ::= CHOICE {
+    ///    otherName                       [0]     OtherName,
+    ///    rfc822Name                      [1]     IA5String,
+    ///    dNSName                         [2]     IA5String,
+    ///    x400Address                     [3]     ORAddress,
+    ///    directoryName                   [4]     Name,
+    ///    ediPartyName                    [5]     EDIPartyName,
+    ///    uniformResourceIdentifier       [6]     IA5String,
+    ///    iPAddress                       [7]     OCTET STRING,
+    ///    registeredID                    [8]     OBJECT IDENTIFIER
+    /// }
+    ///
+    /// Currently, only otherName is supported.
+    fn encode_subject_alt_name_extension(
+        &mut self,
+        measurements: &MeasurementData,
+    ) -> Result<usize, DpeErrorCode> {
+        match &measurements.subject_alt_name {
+            None => Ok(0),
+            Some(SubjectAltName::OtherName(other_name)) => {
+                // Encode Extension
+                let san_extension_size = Self::get_subject_alt_name_extension_size(
+                    measurements,
+                    /*tagged=*/ false,
+                )?;
+                let mut bytes_written = self.encode_byte(Self::SEQUENCE_TAG)?;
+                bytes_written += self.encode_size_field(san_extension_size)?;
+                bytes_written += self.encode_oid(Self::SUBJECT_ALTERNATIVE_NAME_OID)?;
+
+                bytes_written += self.encode_byte(Self::BOOL_TAG)?;
+                bytes_written += self.encode_size_field(Self::BOOL_SIZE)?;
+                // authority key identifier extension must NOT be marked critical
+                bytes_written += self.encode_byte(0x00)?;
+
+                // Extension data is sequence -> octet string. To compute size, wrap
+                // in tagging once.
+                let other_name_size = Self::get_other_name_size(other_name, /*tagged=*/ true)?;
+                bytes_written += self.encode_byte(Self::OCTET_STRING_TAG)?;
+                bytes_written += self.encode_size_field(Self::get_structure_size(
+                    other_name_size,
+                    /*tagged=*/ true,
+                )?)?;
+
+                bytes_written += self.encode_byte(Self::SEQUENCE_TAG)?;
+                bytes_written += self.encode_size_field(other_name_size)?;
+                bytes_written += self.encode_other_name(other_name)?;
+
+                Ok(bytes_written)
+            }
+        }
+    }
+
     /// AuthorityKeyIdentifier ::= SEQUENCE {
     ///     keyIdentifier             [0] KeyIdentifier           OPTIONAL,
     ///     authorityCertIssuer       [1] GeneralNames            OPTIONAL,
@@ -1526,6 +1674,7 @@ impl CertWriter<'_> {
         bytes_written += self.encode_extended_key_usage(measurements)?;
         bytes_written += self.encode_subject_key_identifier_extension(measurements, is_x509)?;
         bytes_written += self.encode_authority_key_identifier_extension(measurements, is_x509)?;
+        bytes_written += self.encode_subject_alt_name_extension(measurements)?;
 
         Ok(bytes_written)
     }
@@ -2049,7 +2198,7 @@ pub(crate) mod tests {
     use crate::{DpeProfile, DPE_PROFILE};
     use crypto::{CryptoBuf, EcdsaPub, EcdsaSig};
     use openssl::hash::{Hasher, MessageDigest};
-    use platform::{ArrayVec, CertValidity, MAX_KEY_IDENTIFIER_SIZE};
+    use platform::{ArrayVec, CertValidity, OtherName, SubjectAltName, MAX_KEY_IDENTIFIER_SIZE};
     use std::str;
     use x509_parser::certificate::X509CertificateParser;
     use x509_parser::nom::Parser;
@@ -2295,6 +2444,7 @@ pub(crate) mod tests {
             supports_recursive: true,
             subject_key_identifier: [0u8; MAX_KEY_IDENTIFIER_SIZE],
             authority_key_identifier: [0u8; MAX_KEY_IDENTIFIER_SIZE],
+            subject_alt_name: None,
         };
 
         let mut not_before = ArrayVec::new();
@@ -2352,6 +2502,9 @@ pub(crate) mod tests {
 
     const ECC_INT_SIZE: usize = DPE_PROFILE.get_ecc_int_size();
 
+    const DEFAULT_OTHER_NAME_OID: &'static [u8] = &[0, 0, 0];
+    const DEFAULT_OTHER_NAME_VALUE: &str = "default-other-name";
+
     fn build_test_tbs<'a>(is_ca: bool, cert_buf: &'a mut [u8]) -> (usize, TbsCertificate<'a>) {
         let mut issuer_der = [0u8; 1024];
         let mut issuer_writer = CertWriter::new(&mut issuer_der, true);
@@ -2374,6 +2527,14 @@ pub(crate) mod tests {
         let mut subject_key_identifier = [0u8; MAX_KEY_IDENTIFIER_SIZE];
         let digest = &hasher.finish().unwrap();
         subject_key_identifier.copy_from_slice(&digest[..MAX_KEY_IDENTIFIER_SIZE]);
+        let mut other_name = ArrayVec::new();
+        other_name
+            .try_extend_from_slice(DEFAULT_OTHER_NAME_VALUE.as_bytes())
+            .unwrap();
+        let subject_alt_name = SubjectAltName::OtherName(OtherName {
+            oid: DEFAULT_OTHER_NAME_OID,
+            other_name,
+        });
         let measurements = MeasurementData {
             label: &[0; DPE_PROFILE.get_hash_size()],
             tci_nodes: &[node],
@@ -2381,6 +2542,7 @@ pub(crate) mod tests {
             supports_recursive: true,
             subject_key_identifier,
             authority_key_identifier: subject_key_identifier,
+            subject_alt_name: Some(subject_alt_name),
         };
 
         let mut not_before = ArrayVec::new();
@@ -2487,6 +2649,25 @@ pub(crate) mod tests {
             }
             Err(_) => panic!("multiple authority key identifier extensions found"),
             _ => (),
+        }
+
+        match cert.subject_alternative_name() {
+            Ok(Some(ext)) => {
+                assert!(!ext.critical);
+                let san = ext.value;
+                assert_eq!(san.general_names.len(), 1);
+                let general_name = san.general_names.get(0).unwrap();
+                match general_name {
+                    GeneralName::OtherName(oid, other_name_value) => {
+                        assert_eq!(oid.as_bytes(), DEFAULT_OTHER_NAME_OID);
+                        // skip first 4 der encoding bytes
+                        assert_eq!(&other_name_value[4..], DEFAULT_OTHER_NAME_VALUE.as_bytes());
+                    }
+                    _ => panic!("Wrong SubjectAlternativeName"),
+                };
+            }
+            Ok(None) => panic!("No SubjectAltName extension found!"),
+            Err(e) => panic!("Error {} parsing SubjectAltName extension", e.to_string()),
         }
     }
 

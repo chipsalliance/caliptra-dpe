@@ -1,8 +1,8 @@
 // Licensed under the Apache-2.0 license
 
 use crate::{
-    CertValidity, Platform, PlatformError, SignerIdentifier, MAX_CHUNK_SIZE, MAX_ISSUER_NAME_SIZE,
-    MAX_KEY_IDENTIFIER_SIZE,
+    CertValidity, Platform, PlatformError, SignerIdentifier, SubjectAltName, MAX_CHUNK_SIZE,
+    MAX_ISSUER_NAME_SIZE, MAX_KEY_IDENTIFIER_SIZE,
 };
 use arrayvec::ArrayVec;
 use cfg_if::cfg_if;
@@ -196,5 +196,9 @@ impl Platform for DefaultPlatform {
             not_before: not_before_vec,
             not_after: not_after_vec,
         })
+    }
+
+    fn get_subject_alternative_name(&mut self) -> Result<SubjectAltName, PlatformError> {
+        Err(PlatformError::NotImplemented)
     }
 }

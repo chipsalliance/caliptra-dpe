@@ -20,6 +20,7 @@ pub const MAX_ISSUER_NAME_SIZE: usize = 128;
 pub const MAX_SN_SIZE: usize = 20;
 pub const MAX_KEY_IDENTIFIER_SIZE: usize = 20;
 pub const MAX_VALIDITY_SIZE: usize = 24;
+pub const MAX_OTHER_NAME_SIZE: usize = 128;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum SignerIdentifier {
@@ -28,6 +29,17 @@ pub enum SignerIdentifier {
         serial_number: ArrayVec<u8, { MAX_SN_SIZE }>,
     },
     SubjectKeyIdentifier(ArrayVec<u8, { MAX_KEY_IDENTIFIER_SIZE }>),
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum SubjectAltName {
+    OtherName(OtherName),
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct OtherName {
+    pub oid: &'static [u8],
+    pub other_name: ArrayVec<u8, { MAX_OTHER_NAME_SIZE }>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -47,6 +59,7 @@ pub enum PlatformError {
     SubjectKeyIdentifierError(u32) = 0x6,
     CertValidityError(u32) = 0x7,
     IssuerKeyIdentifierError(u32) = 0x8,
+    SubjectAlternativeNameError(u32) = 0x9,
 }
 
 impl PlatformError {
@@ -67,6 +80,7 @@ impl PlatformError {
             PlatformError::SubjectKeyIdentifierError(code) => Some(*code),
             PlatformError::CertValidityError(code) => Some(*code),
             PlatformError::IssuerKeyIdentifierError(code) => Some(*code),
+            PlatformError::SubjectAlternativeNameError(code) => Some(*code),
         }
     }
 }
@@ -125,4 +139,11 @@ pub trait Platform {
     ///
     /// Example: 99991231235959Z is December 31st, 9999 23:59:59 UTC
     fn get_cert_validity(&mut self) -> Result<CertValidity, PlatformError>;
+
+    /// Retrieves the SubjectAlternativeName extension
+    ///
+    /// Currently, only the otherName choice is supported. This function
+    /// can be left unimplemented if the SubjectAlternativeName extension is
+    /// not needed in the DPE leaf cert or CSR.
+    fn get_subject_alternative_name(&mut self) -> Result<SubjectAltName, PlatformError>;
 }
