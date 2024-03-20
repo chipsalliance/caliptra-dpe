@@ -8,10 +8,10 @@ use crate::{
 };
 use bitflags::bitflags;
 #[cfg(not(feature = "no-cfi"))]
-use caliptra_cfi_derive::cfi_impl_fn;
-use caliptra_cfi_lib::cfi_launder;
+use caliptra_cfi_derive_git::cfi_impl_fn;
+use caliptra_cfi_lib_git::cfi_launder;
 #[cfg(not(feature = "no-cfi"))]
-use caliptra_cfi_lib::{cfi_assert, cfi_assert_eq, cfi_assert_ne};
+use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq, cfi_assert_ne};
 use cfg_if::cfg_if;
 use crypto::{Crypto, CryptoBuf, Digest, EcdsaSig, HmacSig};
 
@@ -185,7 +185,7 @@ mod tests {
         dpe_instance::tests::{TestTypes, RANDOM_HANDLE, SIMULATION_HANDLE, TEST_LOCALITIES},
         support::{test::SUPPORT, Support},
     };
-    use caliptra_cfi_lib::CfiCounter;
+    use caliptra_cfi_lib_git::CfiCounter;
     use crypto::OpensslCrypto;
     use openssl::x509::X509;
     use openssl::{bn::BigNum, ecdsa::EcdsaSig};

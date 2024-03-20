@@ -165,7 +165,7 @@ impl TryFrom<&[u8]> for CommandHdr {
 pub mod tests {
     use super::*;
     use crate::{DpeProfile, DPE_PROFILE};
-    use caliptra_cfi_lib::CfiCounter;
+    use caliptra_cfi_lib_git::CfiCounter;
     use zerocopy::AsBytes;
 
     #[cfg(feature = "dpe_profile_p256_sha256")]
