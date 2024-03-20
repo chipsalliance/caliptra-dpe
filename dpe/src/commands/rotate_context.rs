@@ -7,10 +7,10 @@ use crate::{
 };
 use bitflags::bitflags;
 #[cfg(not(feature = "no-cfi"))]
-use caliptra_cfi_derive::cfi_impl_fn;
-use caliptra_cfi_lib::cfi_launder;
+use caliptra_cfi_derive_git::cfi_impl_fn;
+use caliptra_cfi_lib_git::cfi_launder;
 #[cfg(not(feature = "no-cfi"))]
-use caliptra_cfi_lib::{cfi_assert, cfi_assert_eq};
+use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq};
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, zerocopy::FromBytes, zerocopy::AsBytes)]
@@ -117,7 +117,7 @@ mod tests {
         },
         support::Support,
     };
-    use caliptra_cfi_lib::CfiCounter;
+    use caliptra_cfi_lib_git::CfiCounter;
     use crypto::OpensslCrypto;
     use platform::default::DefaultPlatform;
     use zerocopy::AsBytes;

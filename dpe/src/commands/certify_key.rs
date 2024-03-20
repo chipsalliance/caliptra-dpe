@@ -10,10 +10,10 @@ use crate::{
 };
 use bitflags::bitflags;
 #[cfg(not(feature = "no-cfi"))]
-use caliptra_cfi_derive::cfi_impl_fn;
-use caliptra_cfi_lib::cfi_launder;
+use caliptra_cfi_derive_git::cfi_impl_fn;
+use caliptra_cfi_lib_git::cfi_launder;
 #[cfg(not(feature = "no-cfi"))]
-use caliptra_cfi_lib::{cfi_assert, cfi_assert_eq};
+use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq};
 use cfg_if::cfg_if;
 use crypto::{Crypto, Hasher};
 use platform::{Platform, MAX_ISSUER_NAME_SIZE, MAX_KEY_IDENTIFIER_SIZE};
@@ -277,7 +277,7 @@ mod tests {
         x509::tests::TcbInfo,
         DpeProfile,
     };
-    use caliptra_cfi_lib::CfiCounter;
+    use caliptra_cfi_lib_git::CfiCounter;
     use cms::{
         content_info::{CmsVersion, ContentInfo},
         signed_data::{SignedData, SignerIdentifier},
