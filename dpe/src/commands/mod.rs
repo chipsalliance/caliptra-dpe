@@ -10,7 +10,7 @@ pub use self::get_certificate_chain::GetCertificateChainCmd;
 pub use self::initialize_context::InitCtxCmd;
 
 pub use self::certify_key::{CertifyKeyCmd, CertifyKeyFlags};
-
+#[cfg(not(feature = "disable_rotate_context"))]
 pub use self::rotate_context::{RotateCtxCmd, RotateCtxFlags};
 pub use self::sign::{SignCmd, SignFlags};
 
@@ -27,6 +27,7 @@ mod derive_context;
 mod destroy_context;
 mod get_certificate_chain;
 mod initialize_context;
+#[cfg(not(feature = "disable_rotate_context"))]
 mod rotate_context;
 mod sign;
 
@@ -37,6 +38,7 @@ pub enum Command {
     DeriveContext(DeriveContextCmd),
     CertifyKey(CertifyKeyCmd),
     Sign(SignCmd),
+    #[cfg(not(feature = "disable_rotate_context"))]
     RotateCtx(RotateCtxCmd),
     DestroyCtx(DestroyCtxCmd),
     GetCertificateChain(GetCertificateChainCmd),
@@ -48,6 +50,7 @@ impl Command {
     pub const DERIVE_CONTEXT: u32 = 0x08;
     pub const CERTIFY_KEY: u32 = 0x09;
     pub const SIGN: u32 = 0x0A;
+    #[cfg(not(feature = "disable_rotate_context"))]
     pub const ROTATE_CONTEXT_HANDLE: u32 = 0x0e;
     pub const DESTROY_CONTEXT: u32 = 0x0f;
     pub const GET_CERTIFICATE_CHAIN: u32 = 0x10;
@@ -67,6 +70,7 @@ impl Command {
             Command::DERIVE_CONTEXT => Self::parse_command(Command::DeriveContext, bytes),
             Command::CERTIFY_KEY => Self::parse_command(Command::CertifyKey, bytes),
             Command::SIGN => Self::parse_command(Command::Sign, bytes),
+            #[cfg(not(feature = "disable_rotate_context"))]
             Command::ROTATE_CONTEXT_HANDLE => Self::parse_command(Command::RotateCtx, bytes),
             Command::DESTROY_CONTEXT => Self::parse_command(Command::DestroyCtx, bytes),
             Command::GET_CERTIFICATE_CHAIN => {
@@ -94,6 +98,7 @@ impl From<Command> for u32 {
             Command::DeriveContext(_) => Command::DERIVE_CONTEXT,
             Command::CertifyKey(_) => Command::CERTIFY_KEY,
             Command::Sign(_) => Command::SIGN,
+            #[cfg(not(feature = "disable_rotate_context"))]
             Command::RotateCtx(_) => Command::ROTATE_CONTEXT_HANDLE,
             Command::DestroyCtx(_) => Command::DESTROY_CONTEXT,
             Command::GetCertificateChain(_) => Command::GET_CERTIFICATE_CHAIN,

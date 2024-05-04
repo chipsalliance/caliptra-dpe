@@ -15,3 +15,10 @@ caliptra-cfi-lib-git = { git = "https://github.com/chipsalliance/caliptra-cfi.gi
 caliptra-cfi-derive-git = { git = "https://github.com/chipsalliance/caliptra-cfi.git", package = "caliptra-cfi-derive-git", rev = "a98e499d279e81ae85881991b1e9eee354151189"}
 zerocopy = "0.6.6"
 openssl = "0.10.64"
+
+[profile.firmware]
+inherits = "release"
+panic = "abort"
+lto = true
+opt-level = "s"
+codegen-units = 1

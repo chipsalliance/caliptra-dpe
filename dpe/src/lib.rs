@@ -16,7 +16,9 @@ pub mod response;
 pub mod support;
 pub mod validation;
 
+#[cfg(not(feature = "disable_internal_info"))]
 use core::mem::size_of;
+#[cfg(not(feature = "disable_internal_info"))]
 use response::GetProfileResp;
 pub mod tci;
 pub mod x509;
@@ -32,6 +34,7 @@ include!(concat!(env!("OUT_DIR"), "/arbitrary_max_handles.rs"));
 const CURRENT_PROFILE_MAJOR_VERSION: u16 = 0;
 const CURRENT_PROFILE_MINOR_VERSION: u16 = 10;
 
+#[cfg(not(feature = "disable_internal_info"))]
 const INTERNAL_INPUT_INFO_SIZE: usize = size_of::<GetProfileResp>() + size_of::<u32>();
 
 /// A type with u8 backing memory but bool semantics
