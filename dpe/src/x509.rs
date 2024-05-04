@@ -12,9 +12,11 @@ use crate::{
 };
 use bitflags::bitflags;
 use crypto::{EcdsaPub, EcdsaSig};
-use platform::{
-    CertValidity, OtherName, SignerIdentifier, SubjectAltName, MAX_KEY_IDENTIFIER_SIZE,
-};
+#[cfg(not(feature = "disable_x509"))]
+use platform::CertValidity;
+#[cfg(not(feature = "disable_csr"))]
+use platform::SignerIdentifier;
+use platform::{OtherName, SubjectAltName, MAX_KEY_IDENTIFIER_SIZE};
 
 pub enum DirectoryString<'a> {
     PrintableString(&'a [u8]),
@@ -79,6 +81,7 @@ impl CertWriter<'_> {
     const OID_TAG: u8 = 0x6;
     const UTF8_STRING_TAG: u8 = 0xC;
     const PRINTABLE_STRING_TAG: u8 = 0x13;
+    #[cfg(not(feature = "disable_x509"))]
     const GENERALIZE_TIME_TAG: u8 = 0x18;
     const SEQUENCE_TAG: u8 = 0x30;
     const SEQUENCE_OF_TAG: u8 = 0x30;
@@ -91,8 +94,11 @@ impl CertWriter<'_> {
     const CONSTRUCTED: u8 = 0x20; // SET{OF} and SEQUENCE{OF} have this bit set
 
     const X509_V3: u64 = 2;
+    #[cfg(not(feature = "disable_csr"))]
     const CMS_V1: u64 = 1;
+    #[cfg(not(feature = "disable_csr"))]
     const CMS_V3: u64 = 3;
+    #[cfg(not(feature = "disable_csr"))]
     const CSR_V0: u64 = 0;
 
     const ECDSA_OID: &'static [u8] = match DPE_PROFILE {
@@ -152,13 +158,16 @@ impl CertWriter<'_> {
     const SUBJECT_ALTERNATIVE_NAME_OID: &'static [u8] = &[0x55, 0x1D, 0x11];
 
     // RFC 5652 1.2.840.113549.1.7.2
+    #[cfg(not(feature = "disable_csr"))]
     const ID_SIGNED_DATA_OID: &'static [u8] =
         &[0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x07, 0x02];
 
     // RFC 5652 1.2.840.113549.1.7.1
+    #[cfg(not(feature = "disable_csr"))]
     const ID_DATA_OID: &'static [u8] = &[0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x07, 0x01];
 
     // RFC 2985 1.2.840.113549.1.9.14
+    #[cfg(not(feature = "disable_csr"))]
     const EXTENSION_REQUEST_OID: &'static [u8] =
         &[0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x09, 0x0E];
 
@@ -268,12 +277,14 @@ impl CertWriter<'_> {
 
     /// Calculate the number of bytes for a Hash AlgorithmIdentifier
     /// If `tagged`, include the tag and size fields
+    #[cfg(not(feature = "disable_csr"))]
     fn get_hash_alg_id_size(tagged: bool) -> Result<usize, DpeErrorCode> {
         let len = Self::get_bytes_size(Self::HASH_OID, true)?;
         Self::get_structure_size(len, tagged)
     }
 
     /// If `tagged`, include the tag and size fields
+    #[cfg(not(feature = "disable_x509"))]
     fn get_validity_size(validity: &CertValidity, tagged: bool) -> Result<usize, DpeErrorCode> {
         let len = Self::get_bytes_size(validity.not_before.as_slice(), true)?
             + Self::get_bytes_size(validity.not_after.as_slice(), true)?;
@@ -310,6 +321,7 @@ impl CertWriter<'_> {
     }
 
     /// If `tagged`, include the tag and size fields
+    #[cfg(not(feature = "disable_csr"))]
     fn get_ecdsa_signature_octet_string_size(
         sig: &EcdsaSig,
         tagged: bool,
@@ -326,6 +338,7 @@ impl CertWriter<'_> {
 
     /// version is marked as EXPLICIT [0]
     /// If `tagged`, include the explicit tag and size fields
+    #[cfg(not(feature = "disable_x509"))]
     fn get_version_size(tagged: bool) -> Result<usize, DpeErrorCode> {
         let integer_size = Self::get_integer_size(Self::X509_V3, /*tagged=*/ true)?;
 
@@ -583,6 +596,7 @@ impl CertWriter<'_> {
 
     /// Get the size of the ASN.1 TBSCertificate structure
     /// If `tagged`, include the tag and size fields
+    #[cfg(not(feature = "disable_x509"))]
     fn get_tbs_size(
         serial_number: &[u8],
         issuer_der: &[u8],
@@ -611,6 +625,7 @@ impl CertWriter<'_> {
 
     /// Get the size of the ASN.1 CertificationRequestInfo structure
     /// If `tagged`, include the tag and size fields
+    #[cfg(not(feature = "disable_csr"))]
     fn get_certification_request_info_size(
         subject_name: &Name,
         pubkey: &EcdsaPub,
@@ -626,6 +641,7 @@ impl CertWriter<'_> {
     }
 
     /// Get the size of the CMS version which differs based on the SignerIdentifier
+    #[cfg(not(feature = "disable_csr"))]
     fn get_cms_version_size(sid: &SignerIdentifier) -> Result<usize, DpeErrorCode> {
         match sid {
             SignerIdentifier::IssuerAndSerialNumber {
@@ -638,6 +654,7 @@ impl CertWriter<'_> {
 
     /// Get the size of the ASN.1 SignerInfo structure
     /// If `tagged`, include the tag and size fields
+    #[cfg(not(feature = "disable_csr"))]
     fn get_signer_info_size(
         sig: &EcdsaSig,
         sid: &SignerIdentifier,
@@ -654,6 +671,7 @@ impl CertWriter<'_> {
 
     /// Get the size of the ASN.1 SignedData structure
     /// If `tagged`, include the tag and size fields
+    #[cfg(not(feature = "disable_csr"))]
     fn get_signed_data_size(
         csr: &[u8],
         sig: &EcdsaSig,
@@ -680,6 +698,7 @@ impl CertWriter<'_> {
 
     /// Get the size of the ASN.1 SignerIdentifier structure
     /// If `tagged`, include the tag and size fields
+    #[cfg(not(feature = "disable_csr"))]
     fn get_signer_identifier_size(
         sid: &SignerIdentifier,
         tagged: bool,
@@ -705,6 +724,7 @@ impl CertWriter<'_> {
 
     /// Get the size of the ASN.1 IssuerAndSerialNumber structure
     /// If `tagged`, include the tag and size fields
+    #[cfg(not(feature = "disable_csr"))]
     fn get_issuer_and_serial_number_size(
         serial_number: &[u8],
         issuer_der: &[u8],
@@ -718,6 +738,7 @@ impl CertWriter<'_> {
 
     /// Get the size of the ASN.1 SubjectKeyIdentifier structure
     /// If `tagged`, include the tag and size fields
+    #[cfg(not(feature = "disable_csr"))]
     fn get_subject_key_identifier_size(
         subject_key_identifier: &[u8],
         tagged: bool,
@@ -746,6 +767,7 @@ impl CertWriter<'_> {
         Self::get_structure_size(explicit_bytes_size, tagged)
     }
 
+    #[cfg(not(feature = "disable_csr"))]
     fn get_econtent_size(
         bytes: &[u8],
         tagged: bool,
@@ -761,6 +783,7 @@ impl CertWriter<'_> {
 
     /// Get the size of the ASN.1 EncapsulatedContentInfo structure
     /// If `tagged`, include the tag and size fields
+    #[cfg(not(feature = "disable_csr"))]
     fn get_encap_content_info_size(csr: &[u8], tagged: bool) -> Result<usize, DpeErrorCode> {
         let encap_content_info_size =
             Self::get_structure_size(Self::ID_DATA_OID.len(), /*tagged=*/ true)?
@@ -771,6 +794,7 @@ impl CertWriter<'_> {
 
     /// Get the size of the ASN.1 Attribute structure
     /// If `tagged`, include the tag and size fields
+    #[cfg(not(feature = "disable_csr"))]
     fn get_attribute_size(
         measurements: &MeasurementData,
         tagged: bool,
@@ -792,6 +816,7 @@ impl CertWriter<'_> {
 
     /// Get the size of the ASN.1 Attributes structure
     /// If `tagged`, include the tag and size fields
+    #[cfg(not(feature = "disable_csr"))]
     fn get_attributes_size(
         measurements: &MeasurementData,
         tagged: bool,
@@ -1011,6 +1036,7 @@ impl CertWriter<'_> {
     ///     algorithm   OBJECT IDENTIFIER,
     ///     parameters  ECParameters
     ///     }
+    #[cfg(not(feature = "disable_csr"))]
     fn encode_hash_alg_id(&mut self) -> Result<usize, DpeErrorCode> {
         let seq_size = Self::get_hash_alg_id_size(/*tagged=*/ false)?;
 
@@ -1022,6 +1048,7 @@ impl CertWriter<'_> {
     }
 
     // Encode ASN.1 Validity according to Platform
+    #[cfg(not(feature = "disable_x509"))]
     fn encode_validity(&mut self, validity: &CertValidity) -> Result<usize, DpeErrorCode> {
         let seq_size = Self::get_validity_size(validity, /*tagged=*/ false)?;
 
@@ -1114,6 +1141,7 @@ impl CertWriter<'_> {
     ///     r  INTEGER,
     ///     s  INTEGER
     ///   }
+    #[cfg(not(feature = "disable_csr"))]
     fn encode_ecdsa_signature_octet_string(
         &mut self,
         sig: &EcdsaSig,
@@ -1682,6 +1710,7 @@ impl CertWriter<'_> {
     /// Encodes an integer representing the CMS version which is dependent on the SignerIdentifier
     ///
     /// If the SignerIdentifier is IssuerAndSerialNumber the version is 1, otherwise it is 3.
+    #[cfg(not(feature = "disable_csr"))]
     fn encode_cms_version(&mut self, sid: &SignerIdentifier) -> Result<usize, DpeErrorCode> {
         match sid {
             SignerIdentifier::IssuerAndSerialNumber {
@@ -1705,6 +1734,7 @@ impl CertWriter<'_> {
     ///    signerInfos SignerInfos
     /// }
     #[allow(clippy::identity_op)]
+    #[cfg(not(feature = "disable_csr"))]
     fn encode_signed_data(
         &mut self,
         csr: &[u8],
@@ -1756,6 +1786,7 @@ impl CertWriter<'_> {
     ///
     /// AttributeValue ::= ANY -- Defined by attribute type
     #[allow(clippy::identity_op)]
+    #[cfg(not(feature = "disable_csr"))]
     fn encode_attributes(&mut self, measurements: &MeasurementData) -> Result<usize, DpeErrorCode> {
         // Attributes is EXPLICIT field number 0
         let mut bytes_written =
@@ -1799,6 +1830,7 @@ impl CertWriter<'_> {
     ///    signature SignatureValue,
     ///    unsignedAttrs [1] IMPLICIT UnsignedAttributes OPTIONAL
     /// }
+    #[cfg(not(feature = "disable_csr"))]
     pub fn encode_signer_info(
         &mut self,
         sig: &EcdsaSig,
@@ -1834,6 +1866,7 @@ impl CertWriter<'_> {
     ///     issuerAndSerialNumber IssuerAndSerialNumber,
     ///     subjectKeyIdentifier [0] SubjectKeyIdentifier
     /// }
+    #[cfg(not(feature = "disable_csr"))]
     fn encode_signer_identifier(&mut self, sid: &SignerIdentifier) -> Result<usize, DpeErrorCode> {
         match sid {
             SignerIdentifier::IssuerAndSerialNumber {
@@ -1852,6 +1885,7 @@ impl CertWriter<'_> {
     ///    issuer Name,
     ///    serialNumber CertificateSerialNumber
     /// }
+    #[cfg(not(feature = "disable_csr"))]
     fn encode_issuer_and_serial_number(
         &mut self,
         serial_number: &[u8],
@@ -1880,6 +1914,7 @@ impl CertWriter<'_> {
     ///
     /// SubjectKeyIdentifier ::= OCTET STRING
     #[allow(clippy::identity_op)]
+    #[cfg(not(feature = "disable_csr"))]
     fn encode_subject_key_identifier(
         &mut self,
         subject_key_identifier: &[u8],
@@ -1933,6 +1968,7 @@ impl CertWriter<'_> {
     ///
     /// eContent [0] EXPLICIT OCTET STRING OPTIONAL
     #[allow(clippy::identity_op)]
+    #[cfg(not(feature = "disable_csr"))]
     fn encode_econtent(&mut self, bytes: &[u8]) -> Result<usize, DpeErrorCode> {
         // eContent is EXPLICIT field number 0
         let mut bytes_written =
@@ -1957,6 +1993,7 @@ impl CertWriter<'_> {
     ///    eContentType ContentType,
     ///    eContent [0] EXPLICIT OCTET STRING OPTIONAL
     /// }
+    #[cfg(not(feature = "disable_csr"))]
     fn encode_encapsulated_content_info(&mut self, csr: &[u8]) -> Result<usize, DpeErrorCode> {
         let encap_content_info_size =
             Self::get_encap_content_info_size(csr, /*tagged=*/ false)?;
@@ -1997,6 +2034,7 @@ impl CertWriter<'_> {
     /// * `pubkey` - ECDSA Public key.
     /// * `measurements` - DPE measurement data.
     /// * `validity` - Time period in which certificate is valid.
+    #[cfg(not(feature = "disable_x509"))]
     pub fn encode_ecdsa_tbs(
         &mut self,
         serial_number: &[u8],
@@ -2055,6 +2093,7 @@ impl CertWriter<'_> {
     ///    signatureValue       BIT STRING  }
     ///
     /// Returns number of bytes written to `certificate`
+    #[cfg(not(feature = "disable_x509"))]
     pub fn encode_ecdsa_certificate(
         &mut self,
         tbs: &[u8],
@@ -2096,6 +2135,7 @@ impl CertWriter<'_> {
     /// * `measurements` - DPE measurement data.
     ///
     /// Returns number of bytes written to `certificate`
+    #[cfg(not(feature = "disable_csr"))]
     pub fn encode_certification_request_info(
         &mut self,
         pub_key: &EcdsaPub,
@@ -2137,6 +2177,7 @@ impl CertWriter<'_> {
     /// }
     ///
     /// Returns number of bytes written to `certificate`
+    #[cfg(not(feature = "disable_csr"))]
     pub fn encode_csr(
         &mut self,
         cert_req_info: &[u8],
@@ -2168,6 +2209,7 @@ impl CertWriter<'_> {
     ///    contentType ContentType,
     ///    content [0] EXPLICIT ANY DEFINED BY contentType
     /// }
+    #[cfg(not(feature = "disable_csr"))]
     pub fn encode_cms(
         &mut self,
         csr: &[u8],

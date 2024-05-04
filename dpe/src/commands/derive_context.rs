@@ -181,6 +181,7 @@ impl CommandExecution for DeriveContextCmd {
             || (!dpe.support.retain_parent_context() && self.retains_parent())
             || (!dpe.support.is_ca() && self.allows_ca())
             || (!dpe.support.x509() && self.allows_x509())
+            || (!dpe.support.recursive() && self.is_recursive())
         {
             return Err(DpeErrorCode::ArgumentNotSupported);
         }
@@ -217,34 +218,40 @@ impl CommandExecution for DeriveContextCmd {
         }
 
         if self.is_recursive() {
-            let mut tmp_context = dpe.contexts[parent_idx];
-            if tmp_context.tci.tci_type != self.tci_type {
-                return Err(DpeErrorCode::InvalidArgument);
-            } else {
-                #[cfg(not(feature = "no-cfi"))]
-                cfi_assert_eq(tmp_context.tci.tci_type, self.tci_type);
+            cfg_if! {
+                if #[cfg(not(feature = "disable_recursive"))] {
+                    let mut tmp_context = dpe.contexts[parent_idx];
+                    if tmp_context.tci.tci_type != self.tci_type {
+                        return Err(DpeErrorCode::InvalidArgument);
+                    } else {
+                        #[cfg(not(feature = "no-cfi"))]
+                        cfi_assert_eq(tmp_context.tci.tci_type, self.tci_type);
+                    }
+                    dpe.add_tci_measurement(
+                        env,
+                        &mut tmp_context,
+                        &TciMeasurement(self.data),
+                        target_locality,
+                    )?;
+
+                    // Rotate the handle if it isn't the default context.
+                    dpe.roll_onetime_use_handle(env, parent_idx)?;
+
+                    dpe.contexts[parent_idx] = Context {
+                        handle: dpe.contexts[parent_idx].handle,
+                        ..tmp_context
+                    };
+
+                    // No child context created so handle is unmeaningful
+                    Ok(Response::DeriveContext(DeriveContextResp {
+                        handle: ContextHandle::default(),
+                        parent_handle: dpe.contexts[parent_idx].handle,
+                        resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
+                    }))
+                } else {
+                    Err(DpeErrorCode::ArgumentNotSupported)?
+                }
             }
-            dpe.add_tci_measurement(
-                env,
-                &mut tmp_context,
-                &TciMeasurement(self.data),
-                target_locality,
-            )?;
-
-            // Rotate the handle if it isn't the default context.
-            dpe.roll_onetime_use_handle(env, parent_idx)?;
-
-            dpe.contexts[parent_idx] = Context {
-                handle: dpe.contexts[parent_idx].handle,
-                ..tmp_context
-            };
-
-            // No child context created so handle is unmeaningful
-            Ok(Response::DeriveContext(DeriveContextResp {
-                handle: ContextHandle::default(),
-                parent_handle: dpe.contexts[parent_idx].handle,
-                resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
-            }))
         } else {
             let child_idx = dpe
                 .get_next_inactive_context_pos()

@@ -16,7 +16,9 @@ use caliptra_cfi_lib_git::cfi_launder;
 use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq};
 use cfg_if::cfg_if;
 use crypto::{Crypto, Hasher};
-use platform::{Platform, PlatformError, MAX_ISSUER_NAME_SIZE, MAX_KEY_IDENTIFIER_SIZE};
+#[cfg(not(feature = "disable_x509"))]
+use platform::MAX_ISSUER_NAME_SIZE;
+use platform::{Platform, PlatformError, MAX_KEY_IDENTIFIER_SIZE};
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, zerocopy::FromBytes, zerocopy::AsBytes)]
@@ -104,6 +106,7 @@ impl CommandExecution for CertifyKeyCmd {
             #[cfg(not(feature = "no-cfi"))]
             cfi_assert!(key_pair.is_err());
         }
+        #[allow(unused_variables)]
         let (priv_key, pub_key) = key_pair?;
 
         let mut subj_serial = [0u8; DPE_PROFILE.get_hash_size() * 2];
@@ -158,91 +161,103 @@ impl CommandExecution for CertifyKeyCmd {
             subject_alt_name,
         };
 
-        let mut issuer_name = [0u8; MAX_ISSUER_NAME_SIZE];
-        let issuer_len = env.platform.get_issuer_name(&mut issuer_name)?;
-
         let mut cert = [0u8; MAX_CERT_SIZE];
         let cert_size = match self.format {
             Self::FORMAT_X509 => {
-                #[cfg(not(feature = "no-cfi"))]
-                cfi_assert_eq(self.format, Self::FORMAT_X509);
-                let mut tbs_buffer = [0u8; MAX_CERT_SIZE];
-                let mut tbs_writer = CertWriter::new(&mut tbs_buffer, true);
-                if issuer_len > MAX_ISSUER_NAME_SIZE {
-                    return Err(DpeErrorCode::InternalError);
-                }
-                let cert_validity = env.platform.get_cert_validity()?;
-                let mut bytes_written = tbs_writer.encode_ecdsa_tbs(
-                    /*serial=*/
-                    &subject_name.serial.bytes()[..20], // Serial number must be truncated to 20 bytes
-                    &issuer_name[..issuer_len],
-                    &subject_name,
-                    &pub_key,
-                    &measurements,
-                    &cert_validity,
-                )?;
-                if bytes_written > MAX_CERT_SIZE {
-                    return Err(DpeErrorCode::InternalError);
-                }
+                cfg_if! {
+                    if #[cfg(not(feature = "disable_x509"))] {
+                        let mut issuer_name = [0u8; MAX_ISSUER_NAME_SIZE];
+                        let issuer_len = env.platform.get_issuer_name(&mut issuer_name)?;
+                        #[cfg(not(feature = "no-cfi"))]
+                        cfi_assert_eq(self.format, Self::FORMAT_X509);
+                        let mut tbs_buffer = [0u8; MAX_CERT_SIZE];
+                        let mut tbs_writer = CertWriter::new(&mut tbs_buffer, true);
+                        if issuer_len > MAX_ISSUER_NAME_SIZE {
+                            return Err(DpeErrorCode::InternalError);
+                        }
+                        let cert_validity = env.platform.get_cert_validity()?;
+                        let mut bytes_written = tbs_writer.encode_ecdsa_tbs(
+                            /*serial=*/
+                            &subject_name.serial.bytes()[..20], // Serial number must be truncated to 20 bytes
+                            &issuer_name[..issuer_len],
+                            &subject_name,
+                            &pub_key,
+                            &measurements,
+                            &cert_validity,
+                        )?;
+                        if bytes_written > MAX_CERT_SIZE {
+                            return Err(DpeErrorCode::InternalError);
+                        }
 
-                let tbs_digest = env
-                    .crypto
-                    .hash(DPE_PROFILE.alg_len(), &tbs_buffer[..bytes_written])?;
-                let sig = env
-                    .crypto
-                    .ecdsa_sign_with_alias(DPE_PROFILE.alg_len(), &tbs_digest)?;
+                        let tbs_digest = env
+                            .crypto
+                            .hash(DPE_PROFILE.alg_len(), &tbs_buffer[..bytes_written])?;
+                        let sig = env
+                            .crypto
+                            .ecdsa_sign_with_alias(DPE_PROFILE.alg_len(), &tbs_digest)?;
 
-                let mut cert_writer = CertWriter::new(&mut cert, true);
-                bytes_written =
-                    cert_writer.encode_ecdsa_certificate(&tbs_buffer[..bytes_written], &sig)?;
-                u32::try_from(bytes_written).map_err(|_| DpeErrorCode::InternalError)?
+                        let mut cert_writer = CertWriter::new(&mut cert, true);
+                        bytes_written =
+                            cert_writer.encode_ecdsa_certificate(&tbs_buffer[..bytes_written], &sig)?;
+                        u32::try_from(bytes_written).map_err(|_| DpeErrorCode::InternalError)?
+                    } else {
+                        Err(DpeErrorCode::ArgumentNotSupported)?
+                    }
+                }
             }
             Self::FORMAT_CSR => {
-                #[cfg(not(feature = "no-cfi"))]
-                cfi_assert_eq(self.format, Self::FORMAT_CSR);
-                let mut cert_req_info_buffer = [0u8; MAX_CERT_SIZE];
-                let mut cert_req_info_writer = CertWriter::new(&mut cert_req_info_buffer, true);
-                let mut bytes_written = cert_req_info_writer.encode_certification_request_info(
-                    &pub_key,
-                    &subject_name,
-                    &measurements,
-                )?;
-                if bytes_written > MAX_CERT_SIZE {
-                    return Err(DpeErrorCode::InternalError);
+                cfg_if! {
+                    if #[cfg(not(feature = "disable_csr"))] {
+                        #[cfg(not(feature = "no-cfi"))]
+                        cfi_assert_eq(self.format, Self::FORMAT_CSR);
+                        let mut cert_req_info_buffer = [0u8; MAX_CERT_SIZE];
+                        let mut cert_req_info_writer = CertWriter::new(&mut cert_req_info_buffer, true);
+                        let mut bytes_written = cert_req_info_writer
+                            .encode_certification_request_info(
+                                &pub_key,
+                                &subject_name,
+                                &measurements,
+                            )?;
+                        if bytes_written > MAX_CERT_SIZE {
+                            return Err(DpeErrorCode::InternalError);
+                        }
+
+                        let cert_req_info_digest = env.crypto.hash(
+                            DPE_PROFILE.alg_len(),
+                            &cert_req_info_buffer[..bytes_written],
+                        )?;
+                        // The PKCS#10 CSR is self-signed so the private key signs it instead of the alias key.
+                        let cert_req_info_sig = env.crypto.ecdsa_sign_with_derived(
+                            DPE_PROFILE.alg_len(),
+                            &cert_req_info_digest,
+                            &priv_key,
+                            &pub_key,
+                        )?;
+
+                        let mut csr_buffer = [0u8; MAX_CERT_SIZE];
+                        let mut csr_writer = CertWriter::new(&mut csr_buffer, true);
+                        bytes_written = csr_writer
+                            .encode_csr(&cert_req_info_buffer[..bytes_written], &cert_req_info_sig)?;
+                        if bytes_written > MAX_CERT_SIZE {
+                            return Err(DpeErrorCode::InternalError);
+                        }
+
+                        let csr_digest = env
+                            .crypto
+                            .hash(DPE_PROFILE.alg_len(), &csr_buffer[..bytes_written])?;
+                        let csr_sig = env
+                            .crypto
+                            .ecdsa_sign_with_alias(DPE_PROFILE.alg_len(), &csr_digest)?;
+                        let sid = env.platform.get_signer_identifier()?;
+
+                        let mut cms_writer = CertWriter::new(&mut cert, true);
+                        bytes_written =
+                            cms_writer.encode_cms(&csr_buffer[..bytes_written], &csr_sig, &sid)?;
+                        u32::try_from(bytes_written).map_err(|_| DpeErrorCode::InternalError)?
+                    } else {
+                        Err(DpeErrorCode::ArgumentNotSupported)?
+                    }
                 }
-
-                let cert_req_info_digest = env.crypto.hash(
-                    DPE_PROFILE.alg_len(),
-                    &cert_req_info_buffer[..bytes_written],
-                )?;
-                // The PKCS#10 CSR is self-signed so the private key signs it instead of the alias key.
-                let cert_req_info_sig = env.crypto.ecdsa_sign_with_derived(
-                    DPE_PROFILE.alg_len(),
-                    &cert_req_info_digest,
-                    &priv_key,
-                    &pub_key,
-                )?;
-
-                let mut csr_buffer = [0u8; MAX_CERT_SIZE];
-                let mut csr_writer = CertWriter::new(&mut csr_buffer, true);
-                bytes_written = csr_writer
-                    .encode_csr(&cert_req_info_buffer[..bytes_written], &cert_req_info_sig)?;
-                if bytes_written > MAX_CERT_SIZE {
-                    return Err(DpeErrorCode::InternalError);
-                }
-
-                let csr_digest = env
-                    .crypto
-                    .hash(DPE_PROFILE.alg_len(), &csr_buffer[..bytes_written])?;
-                let csr_sig = env
-                    .crypto
-                    .ecdsa_sign_with_alias(DPE_PROFILE.alg_len(), &csr_digest)?;
-                let sid = env.platform.get_signer_identifier()?;
-
-                let mut cms_writer = CertWriter::new(&mut cert, true);
-                bytes_written =
-                    cms_writer.encode_cms(&csr_buffer[..bytes_written], &csr_sig, &sid)?;
-                u32::try_from(bytes_written).map_err(|_| DpeErrorCode::InternalError)?
             }
             _ => return Err(DpeErrorCode::InvalidArgument),
         };

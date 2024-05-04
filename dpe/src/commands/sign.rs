@@ -13,7 +13,9 @@ use caliptra_cfi_lib_git::cfi_launder;
 #[cfg(not(feature = "no-cfi"))]
 use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq, cfi_assert_ne};
 use cfg_if::cfg_if;
-use crypto::{Crypto, CryptoBuf, Digest, EcdsaSig, HmacSig};
+use crypto::{Crypto, Digest, EcdsaSig};
+#[cfg(not(feature = "disable_is_symmetric"))]
+use crypto::{CryptoBuf, HmacSig};
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, zerocopy::AsBytes, zerocopy::FromBytes)]
@@ -86,6 +88,7 @@ impl SignCmd {
     /// * `idx` - The index of the context where the measurement hash is computed from
     /// * `digest` - The data to be signed
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    #[cfg(not(feature = "disable_is_symmetric"))]
     fn hmac_sign(
         &self,
         dpe: &mut DpeInstance,
@@ -138,15 +141,21 @@ impl CommandExecution for SignCmd {
             }
         }
 
-        let algs = DPE_PROFILE.alg_len();
         let digest = Digest::new(&self.digest)?;
-
         let EcdsaSig { r, s } = if !self.uses_symmetric() {
             self.ecdsa_sign(dpe, env, idx, &digest)?
         } else {
-            let r = self.hmac_sign(dpe, env, idx, &digest)?;
-            let s = CryptoBuf::default(algs);
-            EcdsaSig { r, s }
+            cfg_if! {
+                if #[cfg(not(feature = "disable_is_symmetric"))] {
+                    let algs = DPE_PROFILE.alg_len();
+                    let r = self.hmac_sign(dpe, env, idx, &digest)?;
+                    let s = CryptoBuf::default(algs);
+                    EcdsaSig { r, s }
+                }
+                else {
+                    Err(DpeErrorCode::ArgumentNotSupported)?
+                }
+            }
         };
 
         let sig_r_or_hmac: [u8; DPE_PROFILE.get_ecc_int_size()] = r

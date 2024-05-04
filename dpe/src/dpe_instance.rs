@@ -4,13 +4,15 @@ Licensed under the Apache-2.0 license.
 Abstract:
     Defines an instance of DPE and all of its contexts.
 --*/
+#[cfg(not(feature = "disable_internal_info"))]
+use crate::INTERNAL_INPUT_INFO_SIZE;
 use crate::{
     commands::{Command, CommandExecution, InitCtxCmd},
     context::{ChildToRootIter, Context, ContextHandle, ContextState},
     response::{DpeErrorCode, GetProfileResp, Response, ResponseHdr},
     support::Support,
     tci::{TciMeasurement, TciNodeData},
-    U8Bool, DPE_PROFILE, INTERNAL_INPUT_INFO_SIZE, MAX_HANDLES,
+    U8Bool, DPE_PROFILE, MAX_HANDLES,
 };
 #[cfg(not(feature = "no-cfi"))]
 use caliptra_cfi_derive_git::cfi_impl_fn;
@@ -20,7 +22,9 @@ use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq};
 use cfg_if::cfg_if;
 use constant_time_eq::constant_time_eq;
 use crypto::{Crypto, Digest, Hasher};
-use platform::{Platform, MAX_CHUNK_SIZE};
+use platform::Platform;
+#[cfg(not(feature = "disable_internal_dice"))]
+use platform::MAX_CHUNK_SIZE;
 use zerocopy::{AsBytes, FromBytes};
 use zeroize::Zeroize;
 
@@ -94,6 +98,7 @@ impl DpeInstance {
     /// * `tci_type`- tci_type of initialized context
     /// * `auto_init_measurement` - TCI data of initialized context
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    #[cfg(not(feature = "disable_auto_init"))]
     pub fn new_auto_init(
         env: &mut DpeEnv<impl DpeTypes>,
         support: Support,
@@ -163,6 +168,7 @@ impl DpeInstance {
             Command::DeriveContext(cmd) => cmd.execute(self, env, locality),
             Command::CertifyKey(cmd) => cmd.execute(self, env, locality),
             Command::Sign(cmd) => cmd.execute(self, env, locality),
+            #[cfg(not(feature = "disable_rotate_context"))]
             Command::RotateCtx(cmd) => cmd.execute(self, env, locality),
             Command::DestroyCtx(cmd) => cmd.execute(self, env, locality),
             Command::GetCertificateChain(cmd) => cmd.execute(self, env, locality),
@@ -395,6 +401,7 @@ impl DpeInstance {
     ///
     /// * `platform` - Platform trait implementation
     /// * `internal_input_info` - array to write serialized internal input info to
+    #[cfg(not(feature = "disable_internal_info"))]
     fn serialize_internal_input_info(
         &self,
         platform: &mut impl Platform,
@@ -449,6 +456,7 @@ impl DpeInstance {
         }
 
         // Add internal input info to hash
+        #[cfg(not(feature = "disable_internal_info"))]
         if cfi_launder(uses_internal_input_info) {
             let mut internal_input_info = [0u8; INTERNAL_INPUT_INFO_SIZE];
             self.serialize_internal_input_info(&mut env.platform, &mut internal_input_info)?;
@@ -456,6 +464,7 @@ impl DpeInstance {
         }
 
         // Add internal input dice to hash
+        #[cfg(not(feature = "disable_internal_dice"))]
         if cfi_launder(uses_internal_input_dice) {
             let mut offset = 0;
             let mut cert_chunk = [0u8; MAX_CHUNK_SIZE];
