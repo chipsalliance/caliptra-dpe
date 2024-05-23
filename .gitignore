@@ -5,3 +5,6 @@ target
 
 # Don't ignore fuzz Cargo.lock which is in a different workspace
 !dpe/fuzz/Cargo.lock
+
+# Don't ignore Cargo.lock files in third_party
+!third_party/**/Cargo.lock
