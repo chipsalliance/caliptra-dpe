@@ -435,7 +435,7 @@ func TestDeriveContextRecursiveOnDerivedContexts(d client.TestDPEInstance, c cli
 	if err != nil {
 		t.Fatalf("[FATAL]: Could not set TCI value: %v", err)
 	}
-	childHandle = &resp.ParentContextHandle
+	childHandle = &resp.NewContextHandle
 
 	childHandle, childTcbInfo, err = getTcbInfoForHandle(c, childHandle)
 	if err != nil {

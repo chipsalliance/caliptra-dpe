@@ -242,10 +242,11 @@ impl CommandExecution for DeriveContextCmd {
                         ..tmp_context
                     };
 
-                    // No child context created so handle is unmeaningful
+                    // Return new handle in new_context_handle
                     Ok(Response::DeriveContext(DeriveContextResp {
-                        handle: ContextHandle::default(),
-                        parent_handle: dpe.contexts[parent_idx].handle,
+                        handle: dpe.contexts[parent_idx].handle,
+                        // Should be ignored since retain_parent cannot be true
+                        parent_handle: ContextHandle::default(),
                         resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
                     }))
                 } else {
