@@ -508,7 +508,7 @@ impl CertWriter<'_> {
         let aki_size = Self::get_key_identifier_size(
             &measurements.authority_key_identifier,
             true,
-            /*explicit=*/ true,
+            /*explicit=*/ false,
         )?;
 
         // Extension data is sequence -> octet string. To compute size, wrap
@@ -1613,7 +1613,7 @@ impl CertWriter<'_> {
         let key_identifier_size = Self::get_key_identifier_size(
             &measurements.authority_key_identifier,
             /*tagged=*/ true,
-            /*explicit=*/ true,
+            /*explicit=*/ false,
         )?;
         bytes_written += self.encode_byte(Self::OCTET_STRING_TAG)?;
         bytes_written += self.encode_size_field(Self::get_structure_size(
@@ -1948,17 +1948,10 @@ impl CertWriter<'_> {
         let mut bytes_written = self.encode_byte(Self::CONTEXT_SPECIFIC | 0x0)?;
         bytes_written += self.encode_size_field(Self::get_key_identifier_size(
             key_identifier,
-            /*tagged=*/ true,
-            /*explicit=*/ false,
-        )?)?;
-
-        // KeyIdentifier := OCTET STRING
-        bytes_written += self.encode_tag_field(Self::OCTET_STRING_TAG)?;
-        bytes_written += self.encode_size_field(Self::get_key_identifier_size(
-            key_identifier,
             /*tagged=*/ false,
             /*explicit=*/ false,
         )?)?;
+
         bytes_written += self.encode_bytes(key_identifier)?;
 
         Ok(bytes_written)
@@ -2779,10 +2772,9 @@ pub(crate) mod tests {
                 assert!(!extension.critical);
                 if let ParsedExtension::AuthorityKeyIdentifier(aki) = extension.parsed_extension() {
                     let key_identifier = aki.key_identifier.clone().unwrap();
-                    // skip first two bytes - first byte is 0x04 der encoding byte and second byte is size byte
                     // cert is self signed so authority_key_id == subject_key_id
                     assert_eq!(
-                        &key_identifier.0[2..],
+                        key_identifier.0,
                         &expected_key_identifier[..MAX_KEY_IDENTIFIER_SIZE]
                     );
                     assert!(aki.authority_cert_issuer.is_none());

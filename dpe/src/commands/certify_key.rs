@@ -458,8 +458,7 @@ mod tests {
                             extension.parsed_extension()
                         {
                             let key_identifier = aki.key_identifier.clone().unwrap();
-                            // skip first two bytes - first byte is 0x04 der encoding byte and second byte is size byte
-                            assert_eq!(&key_identifier.0[2..], &expected_aki,);
+                            assert_eq!(&key_identifier.0, &expected_aki,);
                         } else {
                             panic!("Extension has wrong type");
                         }
