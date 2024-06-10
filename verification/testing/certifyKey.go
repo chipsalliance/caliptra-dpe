@@ -425,8 +425,7 @@ func checkCertifyKeyAuthorityKeyIdentifierExtension(t *testing.T, extensions []p
 		if aki.KeyIdentifier == nil {
 			t.Fatal("[ERROR]: The certificate is a CA but the AuthorityKeyIdentifier extension is not present.")
 		}
-		// skip first two bytes - first byte is 0x04 der encoding byte and second byte is size byte
-		if !reflect.DeepEqual(aki.KeyIdentifier[2:], IssuerSki) {
+		if !reflect.DeepEqual(aki.KeyIdentifier, IssuerSki) {
 			t.Errorf("[ERROR]: The value of the authority key identifier %v is not equal to the issuer's subject key identifier %v", aki, IssuerSki)
 		}
 	} else if !ca && aki.KeyIdentifier != nil {
