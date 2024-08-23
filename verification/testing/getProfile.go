@@ -21,25 +21,25 @@ func TestGetProfile(d client.TestDPEInstance, client client.DPEClient, t *testin
 			t.Fatalf("Unable to get profile: %v", err)
 		}
 		if rsp.MajorVersion != d.GetProfileMajorVersion() {
-			t.Fatalf("Incorrect version. 0x%08x != 0x%08x", d.GetProfileMajorVersion(), rsp.MajorVersion)
+			t.Errorf("Incorrect major version. 0x%08x (want) != 0x%08x (got)", d.GetProfileMajorVersion(), rsp.MajorVersion)
 		}
 		if rsp.MinorVersion != d.GetProfileMinorVersion() {
-			t.Fatalf("Incorrect version. 0x%08x != 0x%08x", d.GetProfileMinorVersion(), rsp.MinorVersion)
+			t.Errorf("Incorrect minor version. 0x%08x (want) != 0x%08x (got)", d.GetProfileMinorVersion(), rsp.MinorVersion)
 		}
 		if rsp.VendorID != d.GetProfileVendorID() {
-			t.Fatalf("Incorrect version. 0x%08x != 0x%08x", d.GetProfileVendorID(), rsp.VendorID)
+			t.Errorf("Incorrect vendor ID. 0x%08x (want) != 0x%08x (got)", d.GetProfileVendorID(), rsp.VendorID)
 		}
 		if rsp.VendorSku != d.GetProfileVendorSku() {
-			t.Fatalf("Unexpected SKU. 0x%08x != 0x%08x", d.GetProfileVendorSku(), rsp.VendorSku)
+			t.Errorf("Incorrect SKU. 0x%08x (want) != 0x%08x (got)", d.GetProfileVendorSku(), rsp.VendorSku)
 		}
 		if rsp.MaxTciNodes != d.GetMaxTciNodes() {
-			t.Fatalf("Incorrect max TCI nodes. 0x%08x != 0x%08x", d.GetMaxTciNodes(), rsp.MaxTciNodes)
+			t.Errorf("Incorrect max TCI nodes. 0x%08x (want) != 0x%08x (got)", d.GetMaxTciNodes(), rsp.MaxTciNodes)
 		}
 		if rsp.MaxTciNodes < minTCINodes {
-			t.Fatalf("DPE instances must be able to support at least %d TCI nodes.", minTCINodes)
+			t.Errorf("DPE instances must be able to support at least %d TCI nodes.", minTCINodes)
 		}
 		if rsp.Flags != d.GetSupport().ToFlags() {
-			t.Fatalf("Incorrect support flags. 0x%08x != 0x%08x", d.GetSupport().ToFlags(), rsp.Flags)
+			t.Errorf("Incorrect support flags. 0x%08x (want) != 0x%08x (got)", d.GetSupport().ToFlags(), rsp.Flags)
 		}
 	}
 }
