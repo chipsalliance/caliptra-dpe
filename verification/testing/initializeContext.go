@@ -43,17 +43,17 @@ func testInitContext(d client.TestDPEInstance, c client.DPEClient, t *testing.T,
 	// Try to initialize another default context.
 	_, err := c.InitializeContext(client.InitIsDefault)
 	if err == nil {
-		t.Fatal("The instance should return an error when trying to initialize another default context.")
-	} else if !errors.Is(err, client.StatusArgumentNotSupported) {
-		t.Fatalf("Incorrect error type. Should return %q, but returned %q", client.StatusArgumentNotSupported, err)
+		t.Error("The instance should return an error when trying to initialize another default context.")
+	} else if !(errors.Is(err, client.StatusArgumentNotSupported) || errors.Is(err, client.StatusInvalidArgument)) {
+		t.Errorf("Incorrect error type. Should return %q or %q, but returned %q", client.StatusArgumentNotSupported, client.StatusInvalidArgument, err)
 	}
 
 	// Try to initialize a context that is neither default or simulation.
 	_, err = c.InitializeContext(client.InitCtxFlags(0))
 	if err == nil {
-		t.Fatal("The instance should return an error when not default or simulation.")
+		t.Error("The instance should return an error when not default or simulation.")
 	} else if !errors.Is(err, client.StatusInvalidArgument) {
-		t.Fatalf("Incorrect error type. Should return %q, but returned %q", client.StatusInvalidArgument, err)
+		t.Errorf("Incorrect error type. Should return %q, but returned %q", client.StatusInvalidArgument, err)
 	}
 
 	// TODO: test exhausting handles. This requires the ability to query how

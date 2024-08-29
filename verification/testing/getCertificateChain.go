@@ -62,6 +62,11 @@ func checkCertificateChain(t *testing.T, certData []byte) []*x509.Certificate {
 			// We will need to truncate the serial numbers for those certs and
 			// then enable this lint.
 			"e_subject_dn_serial_number_max_length",
+			// Firmware certificates don't get revocated, so there is no need
+			// for a CRSL to be specified in the CA certificate.
+			"w_distribution_point_missing_ldap_or_uri",
+			// Authority Information Access for CA can also be an HTTPS URI.
+			"w_ext_aia_access_location_missing",
 		},
 	})
 	if err != nil {
