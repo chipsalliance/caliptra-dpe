@@ -10,6 +10,22 @@ pub struct EcdsaSig {
     pub s: CryptoBuf,
 }
 
+pub const MAX_ENCODED_ECDSA_PUB: usize = 1 + (2 * CryptoBuf::MAX_SIZE);
+
+#[derive(ZeroizeOnDrop)]
+pub struct EncodedEcdsaPub(pub ArrayVec<u8, MAX_ENCODED_ECDSA_PUB>);
+
+impl From<&EcdsaPub> for EncodedEcdsaPub {
+    fn from(value: &EcdsaPub) -> Self {
+        // PANIC FREE: Size of data is same is 1 + x_max + y_max
+        let mut encoded = EncodedEcdsaPub(ArrayVec::<u8, MAX_ENCODED_ECDSA_PUB>::new());
+        encoded.0.push(0x4);
+        encoded.0.try_extend_from_slice(value.x.bytes()).unwrap();
+        encoded.0.try_extend_from_slice(value.y.bytes()).unwrap();
+        encoded
+    }
+}
+
 /// An ECDSA public key
 #[derive(ZeroizeOnDrop)]
 pub struct EcdsaPub {
