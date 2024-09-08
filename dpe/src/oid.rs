@@ -1,0 +1,71 @@
+use crate::{DpeProfile, DPE_PROFILE};
+
+pub const ECDSA_OID: &'static [u8] = match DPE_PROFILE {
+    // ECDSA with SHA256
+    DpeProfile::P256Sha256 => &[0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x04, 0x03, 0x02],
+    // ECDSA with SHA384
+    DpeProfile::P384Sha384 => &[0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x04, 0x03, 0x03],
+};
+
+pub const EC_PUB_OID: &'static [u8] = &[0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x02, 0x01];
+
+pub const CURVE_OID: &'static [u8] = match DPE_PROFILE {
+    // P256
+    DpeProfile::P256Sha256 => &[0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x03, 0x01, 0x07],
+    // P384
+    DpeProfile::P384Sha384 => &[0x2B, 0x81, 0x04, 0x00, 0x22],
+};
+
+pub const HASH_OID: &'static [u8] = match DPE_PROFILE {
+    // SHA256
+    DpeProfile::P256Sha256 => &[0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01],
+    // SHA384
+    DpeProfile::P384Sha384 => &[0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x02],
+};
+
+pub const RDN_COMMON_NAME_OID: &'static [u8] = &[0x55, 0x04, 0x03];
+pub const RDN_SERIALNUMBER_OID: &'static [u8] = &[0x55, 0x04, 0x05];
+
+// tcg-dice-MultiTcbInfo 2.23.133.5.4.5
+pub const MULTI_TCBINFO_OID: &'static [u8] = &[0x67, 0x81, 0x05, 0x05, 0x04, 0x05];
+
+// tcg-dice-Ueid 2.23.133.5.4.4
+pub const UEID_OID: &'static [u8] = &[0x67, 0x81, 0x05, 0x05, 0x04, 0x04];
+
+// tcg-dice-kp-eca 2.23.133.5.4.100.12
+pub const ECA_OID: &'static [u8] = &[0x67, 0x81, 0x05, 0x05, 0x04, 0x64, 0x0C];
+
+// tcg-dice-kp-attestLoc 2.23.133.5.4.100.9
+pub const ATTEST_LOC_OID: &'static [u8] = &[0x67, 0x81, 0x05, 0x05, 0x04, 0x64, 0x09];
+
+// RFC 5280 2.5.29.19
+pub const BASIC_CONSTRAINTS_OID: &'static [u8] = &[0x55, 0x1D, 0x13];
+
+// RFC 5280 2.5.29.15
+pub const KEY_USAGE_OID: &'static [u8] = &[0x55, 0x1D, 0x0F];
+
+// RFC 5280 2.5.29.37
+pub const EXTENDED_KEY_USAGE_OID: &'static [u8] = &[0x55, 0x1D, 0x25];
+
+// RFC 5280 2.5.29.14
+pub const SUBJECT_KEY_IDENTIFIER_OID: &'static [u8] = &[0x55, 0x1D, 0x0E];
+
+// RFC 5280 2.5.29.35
+pub const AUTHORITY_KEY_IDENTIFIER_OID: &'static [u8] = &[0x55, 0x1D, 0x23];
+
+// RFC 5280 2.5.29.17
+pub const SUBJECT_ALTERNATIVE_NAME_OID: &'static [u8] = &[0x55, 0x1D, 0x11];
+
+// RFC 5652 1.2.840.113549.1.7.2
+#[cfg(not(feature = "disable_csr"))]
+pub const ID_SIGNED_DATA_OID: &'static [u8] =
+    &[0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x07, 0x02];
+
+// RFC 5652 1.2.840.113549.1.7.1
+#[cfg(not(feature = "disable_csr"))]
+pub const ID_DATA_OID: &'static [u8] = &[0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x07, 0x01];
+
+// RFC 2985 1.2.840.113549.1.9.14
+#[cfg(not(feature = "disable_csr"))]
+pub const EXTENSION_REQUEST_OID: &'static [u8] =
+    &[0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x09, 0x0E];

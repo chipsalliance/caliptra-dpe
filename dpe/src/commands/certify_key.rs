@@ -5,7 +5,7 @@ use crate::{
     dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
     response::{CertifyKeyResp, DpeErrorCode, Response, ResponseHdr},
     tci::TciNodeData,
-    x509::{CertWriter, DirectoryString, MeasurementData, Name},
+    x509::{CertWriter, MeasurementData, Name},
     DPE_PROFILE, MAX_CERT_SIZE, MAX_HANDLES,
 };
 use bitflags::bitflags;
@@ -116,8 +116,8 @@ impl CommandExecution for CertifyKeyCmd {
         let truncated_subj_serial = &subj_serial[..64];
 
         let subject_name = Name {
-            cn: DirectoryString::PrintableString(b"DPE Leaf"),
-            serial: DirectoryString::PrintableString(truncated_subj_serial),
+            cn: b"DPE Leaf",
+            serial: truncated_subj_serial,
         };
 
         // Get TCI Nodes
@@ -178,7 +178,7 @@ impl CommandExecution for CertifyKeyCmd {
                         let cert_validity = env.platform.get_cert_validity()?;
                         let mut bytes_written = tbs_writer.encode_ecdsa_tbs(
                             /*serial=*/
-                            &subject_name.serial.bytes()[..20], // Serial number must be truncated to 20 bytes
+                            &subject_name.serial[..20], // Serial number must be truncated to 20 bytes
                             &issuer_name[..issuer_len],
                             &subject_name,
                             &pub_key,
@@ -671,13 +671,13 @@ mod tests {
             .unwrap();
         let truncated_subj_serial = &subj_serial[..64];
         let subject_name = Name {
-            cn: DirectoryString::PrintableString(b"DPE Leaf"),
-            serial: DirectoryString::PrintableString(truncated_subj_serial),
+            cn: b"DPE Leaf",
+            serial: truncated_subj_serial,
         };
         let expected_subject_name = format!(
             "CN={}, serialNumber={}",
-            str::from_utf8(subject_name.cn.bytes()).unwrap(),
-            str::from_utf8(&subject_name.serial.bytes()).unwrap()
+            str::from_utf8(subject_name.cn).unwrap(),
+            str::from_utf8(&subject_name.serial).unwrap()
         );
         let actual_subject_name = cri.subject.to_string_with_registry(oid_registry()).unwrap();
         assert_eq!(expected_subject_name, actual_subject_name);
