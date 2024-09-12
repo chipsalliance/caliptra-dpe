@@ -17,6 +17,7 @@ use platform::CertValidity;
 #[cfg(not(feature = "disable_csr"))]
 use platform::SignerIdentifier;
 use platform::{OtherName, SubjectAltName, MAX_KEY_IDENTIFIER_SIZE};
+use zerocopy::AsBytes;
 
 pub enum DirectoryString<'a> {
     PrintableString(&'a [u8]),
@@ -1246,7 +1247,7 @@ impl CertWriter<'_> {
         // IMPLICIT[9] Primitive
         bytes_written += self.encode_byte(Self::CONTEXT_SPECIFIC | 0x09)?;
         bytes_written += self.encode_size_field(core::mem::size_of::<u32>())?;
-        bytes_written += self.encode_bytes(&node.tci_type.to_be_bytes())?;
+        bytes_written += self.encode_bytes(node.tci_type.as_bytes())?;
 
         Ok(bytes_written)
     }
@@ -2239,6 +2240,7 @@ pub(crate) mod tests {
     use x509_parser::nom::Parser;
     use x509_parser::oid_registry::asn1_rs::oid;
     use x509_parser::prelude::*;
+    use zerocopy::AsBytes;
 
     #[derive(asn1::Asn1Read)]
     pub struct Fwid<'a> {
@@ -2396,10 +2398,7 @@ pub(crate) mod tests {
         assert_eq!(expected_current, node.tci_current.0);
         assert_eq!(expected_cumulative, node.tci_cumulative.0);
 
-        assert_eq!(
-            parsed_tcb_info.tci_type.unwrap(),
-            node.tci_type.to_be_bytes()
-        );
+        assert_eq!(parsed_tcb_info.tci_type.unwrap(), node.tci_type.as_bytes());
         assert_eq!(
             parsed_tcb_info.vendor_info.unwrap(),
             node.locality.to_be_bytes()
