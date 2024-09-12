@@ -5,8 +5,9 @@ Abstract:
     DPE reponses and serialization.
 --*/
 use crate::{
-    context::ContextHandle, validation::ValidationError, CURRENT_PROFILE_MAJOR_VERSION,
-    CURRENT_PROFILE_MINOR_VERSION, DPE_PROFILE, MAX_CERT_SIZE, MAX_HANDLES,
+    context::ContextHandle, validation::ValidationError, x509::X509Error,
+    CURRENT_PROFILE_MAJOR_VERSION, CURRENT_PROFILE_MINOR_VERSION, DPE_PROFILE, MAX_CERT_SIZE,
+    MAX_HANDLES,
 };
 use crypto::CryptoError;
 use platform::PlatformError;
@@ -151,6 +152,7 @@ pub enum DpeErrorCode {
     Platform(PlatformError) = 0x01000000,
     Crypto(CryptoError) = 0x02000000,
     Validation(ValidationError) = 0x03000000,
+    X509(X509Error) = 0x04000000,
 }
 
 impl From<PlatformError> for DpeErrorCode {
@@ -162,6 +164,12 @@ impl From<PlatformError> for DpeErrorCode {
 impl From<CryptoError> for DpeErrorCode {
     fn from(e: CryptoError) -> Self {
         DpeErrorCode::Crypto(e)
+    }
+}
+
+impl From<X509Error> for DpeErrorCode {
+    fn from(e: X509Error) -> Self {
+        DpeErrorCode::X509(e)
     }
 }
 
@@ -181,6 +189,7 @@ impl DpeErrorCode {
             DpeErrorCode::Platform(e) => self.discriminant() | e.discriminant() as u32,
             DpeErrorCode::Crypto(e) => self.discriminant() | e.discriminant() as u32,
             DpeErrorCode::Validation(e) => self.discriminant() | e.discriminant() as u32,
+            DpeErrorCode::X509(e) => self.discriminant() | e.discriminant() as u32,
             _ => self.discriminant(),
         }
     }
@@ -194,6 +203,7 @@ impl DpeErrorCode {
         match self {
             DpeErrorCode::Platform(e) => e.get_error_detail(),
             DpeErrorCode::Crypto(e) => e.get_error_detail(),
+            DpeErrorCode::X509(e) => e.get_error_detail(),
             _ => None,
         }
     }
