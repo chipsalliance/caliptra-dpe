@@ -773,7 +773,7 @@ mod tests {
         let second = parsed_tcb_infos.next().unwrap();
 
         assert_eq!(first.tci_type.unwrap(), &[0, 0, 0, 0]);
-        assert_eq!(second.tci_type.unwrap(), &[0, 0, 0, 1]);
+        assert_eq!(second.tci_type.unwrap(), &[1, 0, 0, 0]);
         assert!(parsed_tcb_infos.next().is_none());
     }
 }
