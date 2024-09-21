@@ -20,7 +20,6 @@ use caliptra_cfi_lib_git::cfi_launder;
 #[cfg(not(feature = "no-cfi"))]
 use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq};
 use cfg_if::cfg_if;
-use constant_time_eq::constant_time_eq;
 use crypto::{Crypto, Digest, Hasher};
 use platform::Platform;
 #[cfg(not(feature = "disable_internal_dice"))]
@@ -222,7 +221,7 @@ impl DpeInstance {
         // filter down the contexts with valid localities based on their context handle matching the input context handle
         // the locality and handle filters are separated so that we can return InvalidHandle or InvalidLocality upon getting no valid contexts accordingly
         let mut valid_handles_and_localities = valid_localities
-            .filter(|(_, context)| constant_time_eq(&context.handle.0, &handle.0))
+            .filter(|(_, context)| context.handle.equals(handle))
             .peekable();
         if valid_handles_and_localities.peek().is_none() {
             return Err(DpeErrorCode::InvalidHandle);
@@ -230,7 +229,7 @@ impl DpeInstance {
         let (i, _) = valid_handles_and_localities
             .find(|(_, context)| {
                 context.state == ContextState::Active
-                    && constant_time_eq(&context.handle.0, &handle.0)
+                    && context.handle.equals(handle)
                     && context.locality == locality
             })
             .ok_or(DpeErrorCode::InternalError)?;
@@ -277,12 +276,7 @@ impl DpeInstance {
         for _ in 0..Self::MAX_NEW_HANDLE_ATTEMPTS {
             let mut handle = ContextHandle::default();
             env.crypto.rand_bytes(&mut handle.0)?;
-            if !handle.is_default()
-                && !self
-                    .contexts
-                    .iter()
-                    .any(|c| constant_time_eq(&c.handle.0, &handle.0))
-            {
+            if !handle.is_default() && !self.contexts.iter().any(|c| c.handle.equals(&handle)) {
                 return Ok(handle);
             }
         }

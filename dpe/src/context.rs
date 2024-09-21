@@ -1,6 +1,6 @@
 // Licensed under the Apache-2.0 license.
 use crate::{response::DpeErrorCode, tci::TciNodeData, U8Bool, MAX_HANDLES};
-use constant_time_eq::constant_time_eq;
+use constant_time_eq::constant_time_eq_16;
 use zerocopy::{AsBytes, FromBytes};
 use zeroize::Zeroize;
 
@@ -113,16 +113,21 @@ pub struct ContextHandle(pub [u8; ContextHandle::SIZE]);
 
 impl ContextHandle {
     pub const SIZE: usize = 16;
-    const DEFAULT: [u8; Self::SIZE] = [0; Self::SIZE];
+    const DEFAULT: ContextHandle = ContextHandle([0; Self::SIZE]);
 
     /// Returns the default context handle.
     pub const fn default() -> ContextHandle {
-        ContextHandle(Self::DEFAULT)
+        Self::DEFAULT
     }
 
     /// Whether the handle is the default context handle.
     pub fn is_default(&self) -> bool {
-        constant_time_eq(&self.0, &Self::DEFAULT)
+        self.equals(&Self::DEFAULT)
+    }
+
+    #[inline(never)]
+    pub fn equals(&self, other: &ContextHandle) -> bool {
+        constant_time_eq_16(&self.0, &other.0)
     }
 }
 
