@@ -20,7 +20,6 @@ pub mod validation;
 use core::mem::size_of;
 #[cfg(not(feature = "disable_internal_info"))]
 use response::GetProfileResp;
-mod asn1;
 mod oid;
 pub mod tci;
 pub mod x509;

@@ -5,22 +5,30 @@
 //! DPE requires encoding variable-length certificates. This module provides
 //! this functionality for a no_std environment.
 
-use crate::asn1::*;
+mod asn1;
+mod pkcs10;
+
+use crate::x509::asn1::*;
+use crate::x509::pkcs10::*;
+use crate::x509::x509::*;
 use crate::{
     oid,
+    DPE_PROFILE,
     response::DpeErrorCode,
     tci::{TciMeasurement, TciNodeData},
     MAX_HANDLES,
 };
 use bitflags::bitflags;
 use crypto::{EcdsaPub, EcdsaSig, EncodedEcdsaPub};
-use der::{asn1, Choice, Encode, Sequence};
+use der::{
+    asn1::{
+        BitStringRef, OctetStringRef, SequenceOf, UintRef, Utf8StringRef},
+    Choice, Encode, Sequence};
 #[cfg(not(feature = "disable_x509"))]
 use platform::CertValidity;
 #[cfg(not(feature = "disable_csr"))]
 use platform::SignerIdentifier;
 use platform::{SubjectAltName, MAX_KEY_IDENTIFIER_SIZE};
-use zerocopy::AsBytes;
 
 // For errors which come from lower layers, include the error code returned
 // from platform libraries.
@@ -71,332 +79,6 @@ pub struct CertWriter<'a> {
     certificate: &'a mut [u8],
     offset: usize,
     crit_dice: bool,
-}
-
-/// TBSCertificate  ::=  SEQUENCE  {
-///        version         [0]  EXPLICIT Version DEFAULT v1,
-///        serialNumber         CertificateSerialNumber,
-///        signature            AlgorithmIdentifier,
-///        issuer               Name,
-///        validity             Validity,
-///        subject              Name,
-///        subjectPublicKeyInfo SubjectPublicKeyInfo,
-///        issuerUniqueID  [1]  IMPLICIT UniqueIdentifier OPTIONAL,
-///                             -- If present, version MUST be v2 or v3
-///        subjectUniqueID [2]  IMPLICIT UniqueIdentifier OPTIONAL,
-///                             -- If present, version MUST be v2 or v3
-///        extensions      [3]  EXPLICIT Extensions OPTIONAL
-///                             -- If present, version MUST be v3
-///        }
-#[derive(Sequence)]
-pub struct EcdsaTbsCertificate<'a> {
-    #[asn1(context_specific = "0", tag_mode = "EXPLICIT", optional = "false")]
-    pub version: u64,
-    pub serial_number: asn1::UintRef<'a>,
-    pub signature_alg: AlgorithmIdentifier<'a>,
-    pub issuer_name: RawDerSequenceRef<'a>,
-    pub validity: Validity<'a>,
-    pub subject_name: RelativeDistinguishedName<'a>,
-    pub subject_pubkey_info: SubjectPublicKeyInfo<'a>,
-    // This DPE implementation currently supports 8 extensions
-    #[asn1(context_specific = "3", tag_mode = "EXPLICIT", optional = "true")]
-    pub extensions: Option<DpeExtensions<'a>>,
-}
-
-pub type DpeExtensions<'a> = asn1::SequenceOf<Extension<'a>, 8>;
-
-#[derive(Sequence)]
-pub struct Validity<'a> {
-    not_before: RawGeneralizedTimeRef<'a>,
-    not_after: RawGeneralizedTimeRef<'a>,
-}
-
-#[derive(Choice)]
-pub enum GeneralName<'a> {
-    #[asn1(context_specific = "0", tag_mode = "IMPLICIT")]
-    OtherName(DerOtherName<'a>),
-}
-
-pub type DerSubjectAltName<'a> = asn1::SequenceOf<GeneralName<'a>, 1>;
-
-#[derive(Choice)]
-#[allow(clippy::large_enum_variant)]
-pub enum ExtensionVal<'a> {
-    AuthorityKeyIdentifier(OctetStringContainer<AuthorityKeyIdentifier<'a>>),
-    OctetString(OctetStringContainer<asn1::OctetStringRef<'a>>),
-    MultiTcbInfo(OctetStringContainer<MultiTcbInfo<'a>>),
-    Ueid(OctetStringContainer<Ueid<'a>>),
-    ExtendedKeyUsage(OctetStringContainer<ExtendedKeyUsage<'a>>),
-    BasicConstraints(OctetStringContainer<BasicConstraints>),
-    BitString(OctetStringContainer<asn1::BitStringRef<'a>>),
-    OtherName(OctetStringContainer<DerSubjectAltName<'a>>),
-}
-
-#[derive(Sequence)]
-pub struct Extension<'a> {
-    pub oid: OidRef<'a>,
-    pub critical: bool,
-    pub value: ExtensionVal<'a>,
-}
-
-#[derive(Sequence)]
-pub struct Pkcs10CsrInfo<'a> {
-    pub version: u64,
-    pub subject: RelativeDistinguishedName<'a>,
-    pub subject_pubkey_info: SubjectPublicKeyInfo<'a>,
-    #[asn1(context_specific = "0", tag_mode = "IMPLICIT", optional = "false")]
-    pub attributes: CsrAttributes<'a>,
-}
-
-/// CertificateRequest  ::=  SEQUENCE  {
-///    certificationRequestInfo       CertificationRequestInfo,
-///    signatureAlgorithm             AlgorithmIdentifier,
-///    signatureValue                 BIT STRING
-/// }
-#[derive(Sequence)]
-pub struct Pkcs10Csr<'a> {
-    pub info: RawDerSequenceRef<'a>,
-    pub sig_alg: AlgorithmIdentifier<'a>,
-    pub sig: BitStringContainer<DerEcdsaSignature<'a>>,
-}
-
-/// SignedData  ::=  SEQUENCE  {
-///    version CMSVersion,
-///    digestAlgorithms DigestAlgorithmIdentifiers,
-///    encapContentInfo EncapsulatedContentInfo,
-///    certificates [0] IMPLICIT CertificateSet OPTIONAL,
-///    crls [1] IMPLICIT RevocationInfoChoices OPTIONAL,
-///    signerInfos SignerInfos
-/// }
-///
-/// certificates and crls are not supported
-#[derive(Sequence)]
-pub struct CmsSignedData<'a> {
-    version: u64,
-    digest_algs: FixedSetOf<AlgorithmIdentifier<'a>, 1>,
-    encap_content_info: EncapContentInfo<'a>,
-    signer_infos: FixedSetOf<SignerInfo<'a>, 1>,
-}
-
-/// ContentInfo  ::=  SEQUENCE  {
-///    contentType ContentType,
-///    content [0] EXPLICIT ANY DEFINED BY contentType
-/// }
-#[derive(Sequence)]
-pub struct CmsContentInfo<'a> {
-    content_type: OidRef<'a>,
-    #[asn1(context_specific = "0", tag_mode = "EXPLICIT", optional = "false")]
-    content: CmsSignedData<'a>,
-}
-
-/// SEQUENCE {
-///     version CMSVersion,
-///     sid SignerIdentifier,
-///     digestAlgorithm DigestAlgorithmIdentifier,
-///     signedAttrs [0] IMPLICIT SignedAttributes OPTIONAL,
-///     signatureAlgorithm SignatureAlgorithmIdentifier,
-///     signature SignatureValue,
-///     unsignedAttrs [1] IMPLICIT UnsignedAttributes OPTIONAL }
-///
-/// The following are not supported
-/// * signedAttrs
-/// * unsigedAttrs
-#[derive(Sequence)]
-pub struct SignerInfo<'a> {
-    pub version: u64,
-    pub sid: DerSignerIdentifier<'a>,
-    pub digest_alg: AlgorithmIdentifier<'a>,
-    pub sig_alg: AlgorithmIdentifier<'a>,
-    pub signature: OctetStringContainer<DerEcdsaSignature<'a>>,
-}
-
-#[derive(Choice)]
-pub enum DerSignerIdentifier<'a> {
-    IssuerAndSerialNumber(IssuerAndSerialNumber<'a>),
-    #[asn1(context_specific = "0", tag_mode = "IMPLICIT", optional = "false")]
-    SubjectKeyIdentifier(asn1::OctetStringRef<'a>),
-}
-
-/// IssuerAndSerialNumber ::= SEQUENCE {
-///     issuer Name,
-///     serialNumber CertificateSerialNumber }
-#[derive(Sequence)]
-pub struct IssuerAndSerialNumber<'a> {
-    pub issuer: RawDerSequenceRef<'a>,
-    pub serial: asn1::UintRef<'a>,
-}
-
-#[derive(Sequence)]
-pub struct DerEcdsaSignature<'a> {
-    pub r: asn1::UintRef<'a>,
-    pub s: asn1::UintRef<'a>,
-}
-
-/// EncapsulatedContentInfo ::= SEQUENCE {
-///     eContentType ContentType,
-///     eContent [0] EXPLICIT OCTET STRING OPTIONAL }
-#[derive(Sequence)]
-pub struct EncapContentInfo<'a> {
-    content_type: OidRef<'a>,
-    #[asn1(context_specific = "0", tag_mode = "EXPLICIT", optional = "true")]
-    content: Option<asn1::OctetStringRef<'a>>,
-}
-
-/// Attributes ::= SET OF Attribute
-///
-/// Attribute ::= SEQUENCE {
-///    attrType OBJECT IDENTIFIER,
-///    attrValues SET OF AttributeValue
-/// }
-///
-/// AttributeValue ::= ANY -- Defined by attribute type
-pub type CsrAttributes<'a> = FixedSetOf<CsrAttribute<'a>, 1>;
-
-#[derive(Choice)]
-pub enum CsrAttributeValue<'a> {
-    Extensions(DpeExtensions<'a>),
-}
-
-#[derive(Sequence)]
-pub struct CsrAttribute<'a> {
-    attr_type: OidRef<'a>,
-    // Only supported CSR attribute is X.509 Extensions
-    attr_values: FixedSetOf<CsrAttributeValue<'a>, 1>,
-}
-
-// DPE only supports one EKU OID
-pub type ExtendedKeyUsage<'a> = asn1::SequenceOf<OidRef<'a>, 1>;
-
-pub type RelativeDistinguishedName<'a> =
-    asn1::SequenceOf<FixedSetOf<AttributeTypeAndValue<'a>, 1>, 2>;
-
-#[derive(Choice)]
-pub enum DirectoryString<'a> {
-    Utf8String(asn1::Utf8StringRef<'a>),
-    PrintableString(UncheckedPrintableStringRef<'a>),
-}
-
-#[derive(Sequence)]
-pub struct AttributeTypeAndValue<'a> {
-    pub attr_type: OidRef<'a>,
-    pub value: DirectoryString<'a>,
-}
-
-///// Certificate  ::=  SEQUENCE  {
-/////    tbsCertificate       TBSCertificate,
-/////    signatureAlgorithm   AlgorithmIdentifier,
-/////    signatureValue       BIT STRING  }
-#[derive(Sequence)]
-pub struct EcdsaCertificate<'a> {
-    pub tbs: RawDerSequenceRef<'a>,
-    pub alg_id: AlgorithmIdentifier<'a>,
-    pub signature: BitStringContainer<DerEcdsaSignature<'a>>,
-}
-
-#[derive(Sequence)]
-pub struct SubjectPublicKeyInfo<'a> {
-    pub alg: AlgorithmIdentifier<'a>,
-    pub pub_key: asn1::BitStringRef<'a>,
-}
-
-/// AlgorithmIdentifier  ::=  SEQUENCE  {
-///     algorithm   OBJECT IDENTIFIER,
-///     parameters  ECParameters
-///     }
-///
-/// ECParameters ::= CHOICE {
-///       namedCurve         OBJECT IDENTIFIER
-///       -- implicitCurve   NULL
-///       -- specifiedCurve  SpecifiedECDomain
-///     }
-#[derive(Sequence)]
-pub struct AlgorithmIdentifier<'a> {
-    pub algorithm: OidRef<'a>,
-    #[asn1(optional = "true")]
-    pub parameters: Option<AlgorithmParameters<'a>>,
-}
-
-#[derive(Choice)]
-pub enum AlgorithmParameters<'a> {
-    // Curve
-    Ecdsa(OidRef<'a>),
-}
-
-// DER structures for extensions
-
-#[derive(Sequence)]
-pub struct Ueid<'a> {
-    pub ueid: asn1::OctetStringRef<'a>,
-}
-
-#[derive(Sequence)]
-pub struct BasicConstraints {
-    ca: bool,
-    #[asn1(optional = "true")]
-    pathlen: Option<u64>,
-}
-
-// Only supported option for SubjectAltName
-#[derive(Sequence)]
-pub struct DerOtherName<'a> {
-    pub type_id: OidRef<'a>,
-    #[asn1(context_specific = "0", tag_mode = "EXPLICIT", optional = "true")]
-    pub value: Option<asn1::Utf8StringRef<'a>>,
-}
-
-#[derive(Sequence)]
-pub struct DerFwid<'a> {
-    pub hash_alg: OidRef<'a>,
-    pub digest: asn1::OctetStringRef<'a>,
-}
-
-pub type MultiTcbInfo<'a> = asn1::SequenceOf<DerTcbInfo<'a>, MAX_HANDLES>;
-
-#[derive(Sequence)]
-pub struct DerTcbInfo<'a> {
-    #[asn1(context_specific = "6", tag_mode = "IMPLICIT", optional = "true")]
-    pub fwids: Option<asn1::SequenceOf<DerFwid<'a>, 2>>,
-    #[asn1(context_specific = "8", tag_mode = "IMPLICIT", optional = "true")]
-    pub vendor_info: Option<U32OctetString>,
-    #[asn1(context_specific = "9", tag_mode = "IMPLICIT", optional = "true")]
-    pub tci_type: Option<U32OctetString>,
-}
-
-impl<'a> DerTcbInfo<'a> {
-    pub fn new(
-        fwids: asn1::SequenceOf<DerFwid<'a>, 2>,
-        vendor_info: u32,
-        tci_type: u32,
-    ) -> DerTcbInfo<'a> {
-        Self {
-            fwids: Some(fwids),
-            vendor_info: Some(U32OctetString(vendor_info)),
-            tci_type: Some(U32OctetString(tci_type)),
-        }
-    }
-}
-
-// Unsupported fields:
-// * authorityCertIssuer
-// * authorityCertSerialNumber
-#[derive(Sequence)]
-pub struct AuthorityKeyIdentifier<'a> {
-    #[asn1(context_specific = "0", tag_mode = "IMPLICIT", optional = "true")]
-    key_identifier: Option<asn1::OctetStringRef<'a>>,
-}
-
-#[derive(AsBytes)]
-#[repr(C)]
-pub struct KeyUsageFlags(u8);
-
-bitflags! {
-    impl KeyUsageFlags: u8 {
-        const DIGITAL_SIGNATURE = 0b1000_0000;
-        const KEY_CERT_SIGN = 0b0000_0100;
-
-        // KeyCertSign | DigitalSignature
-        const ECA_FLAGS = 0b1000_0000 | 0b0000_0100;
-    }
 }
 
 impl CertWriter<'_> {
@@ -498,7 +180,7 @@ impl CertWriter<'_> {
 
         Ok(SubjectPublicKeyInfo {
             alg: alg_id,
-            pub_key: asn1::BitStringRef::new(0, pubkey.0.as_slice())
+            pub_key: BitStringRef::new(0, pubkey.0.as_slice())
                 .map_err(|_| X509Error::RangeError)?,
         })
     }
@@ -506,7 +188,7 @@ impl CertWriter<'_> {
     fn get_fwid(tci: &TciMeasurement) -> Result<DerFwid, DpeErrorCode> {
         Ok(DerFwid {
             hash_alg: OidRef::new(oid::HASH_OID),
-            digest: asn1::OctetStringRef::new(&tci.0).map_err(|_| X509Error::RangeError)?,
+            digest: HashOctetStringRef::new(&tci.0)?,
         })
     }
 
@@ -527,7 +209,7 @@ impl CertWriter<'_> {
         supports_recursive: bool,
     ) -> Result<DerTcbInfo<'a>, DpeErrorCode> {
         // PANIC FREE: Number of SequenceOf additions is hard-coded
-        let mut fwids = asn1::SequenceOf::<DerFwid<'a>, 2>::new();
+        let mut fwids = SequenceOf::<DerFwid<'a>, 2>::new();
 
         // fwid[0] current measurement
         fwids.add(Self::get_fwid(&node.tci_current)?).unwrap();
@@ -569,8 +251,7 @@ impl CertWriter<'_> {
         measurements: &'a MeasurementData,
     ) -> Result<Extension<'a>, DpeErrorCode> {
         let ueid = Ueid {
-            ueid: asn1::OctetStringRef::new(measurements.label)
-                .map_err(|_| X509Error::RangeError)?,
+            ueid: HashOctetStringRef::new(measurements.label)?,
         };
         Ok(Extension {
             oid: OidRef::new(oid::UEID_OID),
@@ -603,10 +284,10 @@ impl CertWriter<'_> {
     fn get_key_usage<'a>(is_ca: bool) -> Result<Extension<'a>, DpeErrorCode> {
         // Count trailing bits in KeyUsage byte as unused
         let bitstring = if is_ca {
-            asn1::BitStringRef::new(2, KeyUsageFlags::ECA_FLAGS.as_bytes())
+            BitStringRef::new(2, KeyUsageFlags::ECA_FLAGS.as_bytes())
                 .map_err(|_| X509Error::RangeError)?
         } else {
-            asn1::BitStringRef::new(7, KeyUsageFlags::DIGITAL_SIGNATURE.as_bytes())
+            BitStringRef::new(7, KeyUsageFlags::DIGITAL_SIGNATURE.as_bytes())
                 .map_err(|_| X509Error::RangeError)?
         };
 
@@ -673,7 +354,7 @@ impl CertWriter<'_> {
                 san.add(GeneralName::OtherName(DerOtherName {
                     type_id: OidRef::new(other_name.oid),
                     value: Some(
-                        asn1::Utf8StringRef::new(other_name.other_name.as_slice())
+                        Utf8StringRef::new(other_name.other_name.as_slice())
                             .map_err(|_| X509Error::Utf8Error)?,
                     ),
                 }))
@@ -701,7 +382,7 @@ impl CertWriter<'_> {
             value: ExtensionVal::AuthorityKeyIdentifier(OctetStringContainer(
                 AuthorityKeyIdentifier {
                     key_identifier: Some(
-                        asn1::OctetStringRef::new(&measurements.authority_key_identifier)
+                        OctetStringRef::new(&measurements.authority_key_identifier)
                             .map_err(|_| X509Error::RangeError)?,
                     ),
                 },
@@ -716,7 +397,7 @@ impl CertWriter<'_> {
             oid: OidRef::new(oid::SUBJECT_KEY_IDENTIFIER_OID),
             critical: false,
             value: ExtensionVal::OctetString(OctetStringContainer(
-                asn1::OctetStringRef::new(&measurements.subject_key_identifier)
+                OctetStringRef::new(&measurements.subject_key_identifier)
                     .map_err(|_| X509Error::RangeError)?,
             )),
         })
@@ -806,7 +487,7 @@ impl CertWriter<'_> {
         let signer_infos = FixedSetOf::<SignerInfo, 1>::new([Self::get_signer_info(sig, sid)?]);
         let encap_content_info = EncapContentInfo {
             content_type: OidRef::new(oid::ID_DATA_OID),
-            content: Some(asn1::OctetStringRef::new(csr).unwrap()),
+            content: Some(OctetStringRef::new(csr).unwrap()),
         };
 
         Ok(CmsSignedData {
@@ -867,8 +548,8 @@ impl CertWriter<'_> {
         sid: &'a SignerIdentifier,
     ) -> Result<SignerInfo<'a>, DpeErrorCode> {
         let der_sig = DerEcdsaSignature {
-            r: asn1::UintRef::new(sig.r.bytes()).map_err(|_| X509Error::IntError)?,
-            s: asn1::UintRef::new(sig.s.bytes()).map_err(|_| X509Error::IntError)?,
+            r: UintRef::new(sig.r.bytes()).map_err(|_| X509Error::IntError)?,
+            s: UintRef::new(sig.s.bytes()).map_err(|_| X509Error::IntError)?,
         };
         Ok(SignerInfo {
             version: Self::get_cms_version(sid),
@@ -900,12 +581,12 @@ impl CertWriter<'_> {
             } => Ok(DerSignerIdentifier::IssuerAndSerialNumber(
                 IssuerAndSerialNumber {
                     issuer: RawDerSequenceRef::new(issuer_name)?,
-                    serial: asn1::UintRef::new(serial_number).map_err(|_| X509Error::IntError)?,
+                    serial: UintRef::new(serial_number).map_err(|_| X509Error::IntError)?,
                 },
             )),
             SignerIdentifier::SubjectKeyIdentifier(subject_key_identifier) => {
                 Ok(DerSignerIdentifier::SubjectKeyIdentifier(
-                    asn1::OctetStringRef::new(subject_key_identifier)
+                    OctetStringRef::new(subject_key_identifier)
                         .map_err(|_| X509Error::RangeError)?,
                 ))
             }
@@ -956,7 +637,7 @@ impl CertWriter<'_> {
 
         let tbs = EcdsaTbsCertificate {
             version: Self::X509_V3,
-            serial_number: asn1::UintRef::new(serial_number).map_err(|_| X509Error::IntError)?,
+            serial_number: UintRef::new(serial_number).map_err(|_| X509Error::IntError)?,
             signature_alg: AlgorithmIdentifier {
                 algorithm: OidRef::new(oid::ECDSA_OID),
                 parameters: None,
@@ -985,8 +666,8 @@ impl CertWriter<'_> {
         sig: &EcdsaSig,
     ) -> Result<usize, DpeErrorCode> {
         let der_sig = DerEcdsaSignature {
-            r: asn1::UintRef::new(sig.r.bytes()).map_err(|_| X509Error::IntError)?,
-            s: asn1::UintRef::new(sig.s.bytes()).map_err(|_| X509Error::IntError)?,
+            r: UintRef::new(sig.r.bytes()).map_err(|_| X509Error::IntError)?,
+            s: UintRef::new(sig.s.bytes()).map_err(|_| X509Error::IntError)?,
         };
         let cert = EcdsaCertificate {
             tbs: RawDerSequenceRef::new(tbs)?,
@@ -1049,8 +730,8 @@ impl CertWriter<'_> {
         sig: &EcdsaSig,
     ) -> Result<usize, DpeErrorCode> {
         let der_sig = DerEcdsaSignature {
-            r: asn1::UintRef::new(sig.r.bytes()).map_err(|_| X509Error::IntError)?,
-            s: asn1::UintRef::new(sig.s.bytes()).map_err(|_| X509Error::IntError)?,
+            r: UintRef::new(sig.r.bytes()).map_err(|_| X509Error::IntError)?,
+            s: UintRef::new(sig.s.bytes()).map_err(|_| X509Error::IntError)?,
         };
         let csr = Pkcs10Csr {
             info: RawDerSequenceRef::new(cert_req_info)?,

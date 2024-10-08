@@ -45,6 +45,5 @@ x509-parser = "0.15.1"
 crypto = {path = "../crypto", features = ["deterministic_rand", "openssl"]}
 platform = {path = "../platform", default-features = false, features = ["openssl"]}
 cms = "0.2.2"
-der = "0.7.8"
 spki = "0.7.2"
 rand = "0.8.5"

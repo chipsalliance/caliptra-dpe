@@ -10,10 +10,10 @@ pub struct RawGeneralizedTimeRef<'a> {
 
 impl<'a> RawGeneralizedTimeRef<'a> {
     /// Length of an RFC 5280-flavored ASN.1 DER-encoded [`GeneralizedTime`].
-    const LENGTH: usize = 15;
+    const LENGTH: u16 = 15;
 
     pub fn new(bytes: &'a [u8]) -> Result<Self, DpeErrorCode> {
-        if bytes.len() != Self::LENGTH {
+        if bytes.len() != Self::LENGTH.into() {
             return Err(DpeErrorCode::InternalError);
         }
 
@@ -23,7 +23,7 @@ impl<'a> RawGeneralizedTimeRef<'a> {
 
 impl EncodeValue for RawGeneralizedTimeRef<'_> {
     fn value_len(&self) -> Result<Length, der::Error> {
-        self.time.len().try_into()
+        Ok(Self::LENGTH.into())
     }
 
     fn encode_value(&self, writer: &mut impl Writer) -> Result<(), der::Error> {
@@ -34,7 +34,7 @@ impl EncodeValue for RawGeneralizedTimeRef<'_> {
 
 impl<'a> DecodeValue<'a> for RawGeneralizedTimeRef<'a> {
     fn decode_value<R: Reader<'a>>(reader: &mut R, _header: Header) -> Result<Self, der::Error> {
-        let time = reader.read_slice(Self::LENGTH.try_into()?)?;
+        let time = reader.read_slice(Self::LENGTH.into())?;
         Ok(Self { time })
     }
 }
@@ -193,17 +193,11 @@ impl<'a> RawDerSequenceRef<'a> {
             .map_err(|_| DpeErrorCode::from(X509Error::InvalidRawDer))?;
         let header = Header::decode(&mut reader)
             .map_err(|_| DpeErrorCode::from(X509Error::InvalidRawDer))?;
-        let len: usize = header
-            .length
-            .try_into()
-            .map_err(|_| DpeErrorCode::from(X509Error::InvalidRawDer))?;
-        let offset = reader
-            .position()
-            .try_into()
-            .map_err(|_| DpeErrorCode::from(X509Error::InvalidRawDer))?;
+        let len: u32 = header.length.into();
+        let offset: u32 = reader.position().into();
 
         Ok(Self {
-            val: &data[offset..offset + len],
+            val: &data[offset as usize..(offset + len) as usize],
         })
     }
 }
@@ -267,7 +261,7 @@ impl<'a> FixedTag for UncheckedPrintableStringRef<'a> {
 pub struct U32OctetString(pub u32);
 
 impl U32OctetString {
-    const LENGTH: usize = 4;
+    const LENGTH: u16 = 4;
 }
 
 impl FixedTag for U32OctetString {
@@ -276,7 +270,7 @@ impl FixedTag for U32OctetString {
 
 impl EncodeValue for U32OctetString {
     fn value_len(&self) -> Result<Length, der::Error> {
-        Self::LENGTH.try_into()
+        Ok(Self::LENGTH.into())
     }
 
     fn encode_value(&self, writer: &mut impl Writer) -> Result<(), der::Error> {
@@ -321,4 +315,37 @@ impl<'a> DecodeValue<'a> for OidRef<'a> {
 
 impl FixedTag for OidRef<'_> {
     const TAG: Tag = Tag::ObjectIdentifier;
+}
+
+pub struct FixedOctetStringRef<'a, const SIZE: u16>(&'a [u8]);
+
+impl<'a, const SIZE: u16> FixedOctetStringRef<'a, SIZE> {
+    pub fn new(data: &'a [u8]) -> Result<Self, DpeErrorCode> {
+        if data.len() != SIZE.into() {
+            return Err(DpeErrorCode::from(X509Error::InvalidRawDer))
+        }
+
+        Ok(Self(data))
+    }
+}
+
+impl<const SIZE: u16> FixedTag for FixedOctetStringRef<'_, SIZE> {
+    const TAG: Tag = Tag::OctetString;
+}
+
+impl<'a, const SIZE: u16> EncodeValue for FixedOctetStringRef<'a, SIZE> {
+    fn value_len(&self) -> Result<Length, der::Error> {
+        Ok(SIZE.into())
+    }
+
+    fn encode_value(&self, writer: &mut impl Writer) -> Result<(), der::Error> {
+        writer.write(self.0)?;
+        Ok(())
+    }
+}
+
+impl<'a, const SIZE: u16> DecodeValue<'a> for  FixedOctetStringRef<'a, SIZE>{
+    fn decode_value<R: Reader<'a>>(reader: &mut R, _header: Header) -> Result<Self, der::Error> {
+        Ok(Self(reader.read_slice(SIZE.try_into()?)?))
+    }
 }
