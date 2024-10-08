@@ -4,9 +4,8 @@ use crate::{
     context::ContextHandle,
     dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
     response::{CertifyKeyResp, DpeErrorCode, Response, ResponseHdr},
-    tci::TciNodeData,
     x509::{CertWriter, DirectoryString, MeasurementData, Name},
-    DPE_PROFILE, MAX_CERT_SIZE, MAX_HANDLES,
+    DPE_PROFILE, MAX_CERT_SIZE,
 };
 use bitflags::bitflags;
 #[cfg(not(feature = "no-cfi"))]
@@ -120,14 +119,6 @@ impl CommandExecution for CertifyKeyCmd {
             serial: DirectoryString::PrintableString(truncated_subj_serial),
         };
 
-        // Get TCI Nodes
-        const INITIALIZER: TciNodeData = TciNodeData::new();
-        let mut nodes = [INITIALIZER; MAX_HANDLES];
-        let tcb_count = dpe.get_tcb_nodes(idx, &mut nodes)?;
-        if tcb_count > MAX_HANDLES {
-            return Err(DpeErrorCode::InternalError);
-        }
-
         let mut subject_key_identifier = [0u8; MAX_KEY_IDENTIFIER_SIZE];
         // compute key identifier as SHA hash of the DER encoded subject public key
         let mut hasher = env.crypto.hash_initialize(DPE_PROFILE.alg_len())?;
@@ -153,7 +144,7 @@ impl CommandExecution for CertifyKeyCmd {
 
         let measurements = MeasurementData {
             label: &self.label,
-            tci_nodes: &nodes[..tcb_count],
+            tcb: dpe.get_tcb(idx),
             is_ca: self.uses_is_ca(),
             supports_recursive: dpe.support.recursive(),
             subject_key_identifier,

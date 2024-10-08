@@ -8,10 +8,10 @@ Abstract:
 use crate::INTERNAL_INPUT_INFO_SIZE;
 use crate::{
     commands::{Command, CommandExecution, InitCtxCmd},
-    context::{ChildToRootIter, Context, ContextHandle, ContextState},
+    context::{ChildToRootIter, Context, ContextHandle, ContextState, ContextTcb},
     response::{DpeErrorCode, GetProfileResp, Response, ResponseHdr},
     support::Support,
-    tci::{TciMeasurement, TciNodeData},
+    tci::TciMeasurement,
     U8Bool, DPE_PROFILE, MAX_HANDLES,
 };
 #[cfg(not(feature = "no-cfi"))]
@@ -312,40 +312,10 @@ impl DpeInstance {
         Ok(())
     }
 
-    /// Get the TCI nodes from the context at `start_idx` to the root node following parent
-    /// links. These are the nodes that should contribute to CDI and key
-    /// derivation for the context at `start_idx`.
-    ///
-    /// # Arguments
-    ///
-    /// * `start_idx` - Index into context array
-    /// * `nodes` - Array to write TCI nodes to
-    ///
-    /// Returns the number of TCIs written to `nodes`
-    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
-    pub(crate) fn get_tcb_nodes(
-        &self,
-        start_idx: usize,
-        nodes: &mut [TciNodeData],
-    ) -> Result<usize, DpeErrorCode> {
-        let mut out_idx = 0;
-
-        for status in ChildToRootIter::new(start_idx, &self.contexts) {
-            let curr = status?;
-            if out_idx >= nodes.len() {
-                return Err(DpeErrorCode::InternalError);
-            }
-
-            nodes[out_idx] = curr.tci;
-            out_idx += 1;
-        }
-
-        if out_idx > nodes.len() {
-            return Err(DpeErrorCode::InternalError);
-        }
-        nodes[..out_idx].reverse();
-
-        Ok(out_idx)
+    // Get an iterator that collects all the contexts in the path from
+    // `start_idx` to the root
+    pub(crate) fn get_tcb(&self, start_idx: usize) -> ContextTcb {
+        ContextTcb::new(start_idx, &self.contexts)
     }
 
     /// Adds `measurement` to `context`. The current TCI is the measurement and
