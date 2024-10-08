@@ -214,6 +214,10 @@ impl ChildToRootIter<'_> {
             count: 0,
         }
     }
+
+    fn curr_idx(&self) -> usize {
+        self.idx
+    }
 }
 
 impl<'a> Iterator for ChildToRootIter<'a> {
@@ -248,6 +252,98 @@ impl<'a> Iterator for ChildToRootIter<'a> {
         self.idx = context.parent_idx as usize;
         self.count += 1;
         Some(Ok(context))
+    }
+}
+
+pub(crate) struct RootToChildIter<'a> {
+    contexts: &'a [Context],
+    path: [u8; MAX_HANDLES],
+    done: bool,
+    curr: usize,
+}
+
+impl<'a> RootToChildIter<'a> {
+    /// Create a new iterator that will start at the leaf and go to the root node.
+    pub fn new(leaf_idx: usize, contexts: &'a [Context]) -> Result<Self, DpeErrorCode> {
+        let mut iter = ChildToRootIter::new(leaf_idx, contexts);
+        let mut path = [0u8; MAX_HANDLES];
+        let mut path_size = 0;
+
+        // Use while loop to avoid consuming iter so curr_idx can be read
+        // inside the loop
+        let mut curr = iter.curr_idx();
+        while let Some(_) = iter.next() {
+            if path_size > contexts.len() {
+                return Err(DpeErrorCode::InternalError);
+            }
+
+            // Guaranteed to fit into u8 since Contexts struct is of size
+            // MAX_HANDLES.
+            path[path_size] = curr as u8;
+            path_size += 1;
+            curr = iter.curr_idx();
+        }
+
+        let (done, curr_idx) = if path_size > 0 {
+            (false, path_size - 1)
+        } else {
+            (true, 0)
+        };
+
+        Ok(Self {
+            contexts,
+            path,
+            done,
+            curr: curr_idx,
+        })
+    }
+}
+
+impl<'a> Iterator for RootToChildIter<'a> {
+    type Item = Result<&'a Context, DpeErrorCode>;
+
+    fn next(&mut self) -> Option<Result<&'a Context, DpeErrorCode>> {
+        if self.done {
+            return None;
+        }
+
+        // PANIC FREE: curr is initialized to be less that path.len() and is
+        // only ever decremented.
+        let context = &self.contexts[self.path[self.curr] as usize];
+
+        if self.curr == 0 {
+            self.done = true
+        } else {
+            self.curr -= 1;
+        }
+        Some(Ok(context))
+    }
+}
+
+pub(crate) struct ContextTcb<'a> {
+    idx: usize,
+    contexts: &'a [Context],
+}
+
+impl<'a> ContextTcb<'a> {
+    /// Create a new iterator that will start at the leaf and go to the root node.
+    pub(crate) fn new(leaf_idx: usize, contexts: &'a [Context]) -> Self {
+        ContextTcb {
+            idx: leaf_idx,
+            contexts,
+        }
+    }
+
+    pub fn rev_iter(&self) -> Result<RootToChildIter<'a>, DpeErrorCode> {
+        RootToChildIter::new(self.idx, self.contexts)
+    }
+
+    pub fn iter(&self) -> ChildToRootIter<'a> {
+        ChildToRootIter::new(self.idx, self.contexts)
+    }
+
+    pub fn count(&self) -> usize {
+        self.iter().count()
     }
 }
 
