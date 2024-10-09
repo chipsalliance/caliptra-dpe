@@ -18,7 +18,15 @@ use crypto::{Crypto, Digest, EcdsaSig};
 use crypto::{CryptoBuf, HmacSig};
 
 #[repr(C)]
-#[derive(Debug, PartialEq, Eq, zerocopy::AsBytes, zerocopy::FromBytes)]
+#[derive(
+    Debug,
+    PartialEq,
+    Eq,
+    zerocopy::IntoBytes,
+    zerocopy::FromBytes,
+    zerocopy::Immutable,
+    zerocopy::KnownLayout,
+)]
 pub struct SignFlags(u32);
 
 bitflags! {
@@ -28,7 +36,15 @@ bitflags! {
 }
 
 #[repr(C)]
-#[derive(Debug, PartialEq, Eq, zerocopy::AsBytes, zerocopy::FromBytes)]
+#[derive(
+    Debug,
+    PartialEq,
+    Eq,
+    zerocopy::IntoBytes,
+    zerocopy::FromBytes,
+    zerocopy::Immutable,
+    zerocopy::KnownLayout,
+)]
 pub struct SignCmd {
     pub handle: ContextHandle,
     pub label: [u8; DPE_PROFILE.get_hash_size()],
@@ -199,7 +215,7 @@ mod tests {
     use openssl::x509::X509;
     use openssl::{bn::BigNum, ecdsa::EcdsaSig};
     use platform::default::DefaultPlatform;
-    use zerocopy::AsBytes;
+    use zerocopy::IntoBytes;
 
     const TEST_SIGN_CMD: SignCmd = SignCmd {
         handle: SIMULATION_HANDLE,

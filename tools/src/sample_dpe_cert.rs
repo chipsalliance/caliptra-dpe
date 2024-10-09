@@ -12,7 +12,7 @@ use {
     dpe::{support::Support, DpeInstance, DPE_PROFILE},
     pem::{encode_config, EncodeConfig, LineEnding, Pem},
     platform::default::DefaultPlatform,
-    zerocopy::AsBytes,
+    zerocopy::IntoBytes,
 };
 
 pub struct TestTypes {}

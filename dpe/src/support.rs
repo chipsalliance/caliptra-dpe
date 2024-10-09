@@ -1,9 +1,9 @@
 // Licensed under the Apache-2.0 license.
 use bitflags::bitflags;
-use zerocopy::{AsBytes, FromBytes};
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 use zeroize::Zeroize;
 
-#[derive(Default, AsBytes, FromBytes, Zeroize, Copy, Clone)]
+#[derive(Default, IntoBytes, FromBytes, KnownLayout, Immutable, Zeroize, Copy, Clone)]
 #[repr(C)]
 pub struct Support(u32);
 

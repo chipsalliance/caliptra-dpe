@@ -21,7 +21,15 @@ use platform::MAX_ISSUER_NAME_SIZE;
 use platform::{Platform, PlatformError, MAX_KEY_IDENTIFIER_SIZE};
 
 #[repr(C)]
-#[derive(Debug, PartialEq, Eq, zerocopy::FromBytes, zerocopy::AsBytes)]
+#[derive(
+    Debug,
+    PartialEq,
+    Eq,
+    zerocopy::FromBytes,
+    zerocopy::IntoBytes,
+    zerocopy::Immutable,
+    zerocopy::KnownLayout,
+)]
 pub struct CertifyKeyFlags(u32);
 
 bitflags! {
@@ -31,7 +39,15 @@ bitflags! {
 }
 
 #[repr(C)]
-#[derive(Debug, PartialEq, Eq, zerocopy::FromBytes, zerocopy::AsBytes)]
+#[derive(
+    Debug,
+    PartialEq,
+    Eq,
+    zerocopy::FromBytes,
+    zerocopy::IntoBytes,
+    zerocopy::Immutable,
+    zerocopy::KnownLayout,
+)]
 pub struct CertifyKeyCmd {
     pub handle: ContextHandle,
     pub flags: CertifyKeyFlags,
@@ -322,7 +338,7 @@ mod tests {
     use x509_parser::prelude::X509CertificateParser;
     use x509_parser::prelude::X509CertificationRequest;
     use x509_parser::prelude::*;
-    use zerocopy::AsBytes;
+    use zerocopy::IntoBytes;
 
     const TEST_CERTIFY_KEY_CMD: CertifyKeyCmd = CertifyKeyCmd {
         handle: SIMULATION_HANDLE,
