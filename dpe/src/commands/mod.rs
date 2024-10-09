@@ -84,9 +84,9 @@ impl Command {
         build: impl FnOnce(T) -> Command,
         bytes: &[u8],
     ) -> Result<Command, DpeErrorCode> {
-        Ok(build(
-            T::read_from_prefix(bytes).ok_or(DpeErrorCode::InvalidArgument)?,
-        ))
+        let (prefix, _remaining_bytes) =
+            T::read_from_prefix(bytes).map_err(|_| DpeErrorCode::InvalidArgument)?;
+        Ok(build(prefix))
     }
 }
 
@@ -130,7 +130,15 @@ pub trait CommandExecution {
 // ABI Command structures
 
 #[repr(C)]
-#[derive(Debug, PartialEq, Eq, zerocopy::FromBytes, zerocopy::AsBytes)]
+#[derive(
+    Debug,
+    PartialEq,
+    Eq,
+    zerocopy::FromBytes,
+    zerocopy::IntoBytes,
+    zerocopy::Immutable,
+    zerocopy::KnownLayout,
+)]
 pub struct CommandHdr {
     pub magic: u32,
     pub cmd_id: u32,
@@ -153,7 +161,8 @@ impl TryFrom<&[u8]> for CommandHdr {
     type Error = DpeErrorCode;
 
     fn try_from(raw: &[u8]) -> Result<Self, Self::Error> {
-        let header = CommandHdr::read_from_prefix(raw).ok_or(DpeErrorCode::InvalidCommand)?;
+        let (header, _remaining_bytes) =
+            CommandHdr::read_from_prefix(raw).map_err(|_| DpeErrorCode::InvalidCommand)?;
         if header.magic != Self::DPE_COMMAND_MAGIC {
             return Err(DpeErrorCode::InvalidCommand);
         }
@@ -171,7 +180,7 @@ pub mod tests {
     use super::*;
     use crate::{DpeProfile, DPE_PROFILE};
     use caliptra_cfi_lib_git::CfiCounter;
-    use zerocopy::AsBytes;
+    use zerocopy::IntoBytes;
 
     #[cfg(feature = "dpe_profile_p256_sha256")]
     pub const TEST_DIGEST: [u8; DPE_PROFILE.get_hash_size()] = [

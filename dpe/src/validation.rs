@@ -156,9 +156,6 @@ impl<'a> DpeValidator<'a> {
                         cfi_assert_ne(child_context_count, 0);
                     }
                 }
-                _ => {
-                    return Err(ValidationError::BadContextState);
-                }
             }
 
             if context.context_type != ContextType::Normal
@@ -677,22 +674,8 @@ pub mod tests {
             Err(ValidationError::DanglingRetiredContext)
         );
 
-        // bad context state
-        dpe_validator.dpe.contexts[0].state = ContextState::_03;
-        assert_eq!(
-            dpe_validator.validate_dpe_state(),
-            Err(ValidationError::BadContextState)
-        );
-
-        // bad context type
-        dpe_validator.dpe.contexts[0].state = ContextState::Active;
-        dpe_validator.dpe.contexts[0].context_type = ContextType::_02;
-        assert_eq!(
-            dpe_validator.validate_dpe_state(),
-            Err(ValidationError::BadContextType)
-        );
-
         // locality mismatch
+        dpe_validator.dpe.contexts[0].state = ContextState::Active;
         dpe_validator.dpe.contexts[0].context_type = ContextType::Normal;
         dpe_validator.dpe.contexts[0].locality = 0;
         dpe_validator.dpe.contexts[0].tci.locality = 1;

@@ -13,7 +13,15 @@ use caliptra_cfi_lib_git::cfi_launder;
 use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq};
 
 #[repr(C)]
-#[derive(Debug, PartialEq, Eq, zerocopy::FromBytes, zerocopy::AsBytes)]
+#[derive(
+    Debug,
+    PartialEq,
+    Eq,
+    zerocopy::FromBytes,
+    zerocopy::IntoBytes,
+    zerocopy::Immutable,
+    zerocopy::KnownLayout,
+)]
 pub struct RotateCtxFlags(u32);
 
 bitflags! {
@@ -23,7 +31,15 @@ bitflags! {
 }
 
 #[repr(C)]
-#[derive(Debug, PartialEq, Eq, zerocopy::FromBytes, zerocopy::AsBytes)]
+#[derive(
+    Debug,
+    PartialEq,
+    Eq,
+    zerocopy::FromBytes,
+    zerocopy::IntoBytes,
+    zerocopy::Immutable,
+    zerocopy::KnownLayout,
+)]
 pub struct RotateCtxCmd {
     pub handle: ContextHandle,
     pub flags: RotateCtxFlags,
@@ -120,7 +136,7 @@ mod tests {
     use caliptra_cfi_lib_git::CfiCounter;
     use crypto::OpensslCrypto;
     use platform::default::DefaultPlatform;
-    use zerocopy::AsBytes;
+    use zerocopy::IntoBytes;
 
     const TEST_ROTATE_CTX_CMD: RotateCtxCmd = RotateCtxCmd {
         flags: RotateCtxFlags(0x1234_5678),
