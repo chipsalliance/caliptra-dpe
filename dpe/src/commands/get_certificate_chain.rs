@@ -9,7 +9,15 @@ use caliptra_cfi_derive_git::cfi_impl_fn;
 use platform::{Platform, MAX_CHUNK_SIZE};
 
 #[repr(C)]
-#[derive(Debug, PartialEq, Eq, zerocopy::FromBytes, zerocopy::AsBytes)]
+#[derive(
+    Debug,
+    PartialEq,
+    Eq,
+    zerocopy::FromBytes,
+    zerocopy::IntoBytes,
+    zerocopy::Immutable,
+    zerocopy::KnownLayout,
+)]
 pub struct GetCertificateChainCmd {
     pub offset: u32,
     pub size: u32,
@@ -51,7 +59,7 @@ mod tests {
     use caliptra_cfi_lib_git::CfiCounter;
     use crypto::OpensslCrypto;
     use platform::default::DefaultPlatform;
-    use zerocopy::AsBytes;
+    use zerocopy::IntoBytes;
 
     const TEST_GET_CERTIFICATE_CHAIN_CMD: GetCertificateChainCmd = GetCertificateChainCmd {
         offset: 0,

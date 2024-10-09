@@ -13,7 +13,15 @@ use caliptra_cfi_lib_git::cfi_launder;
 use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq};
 
 #[repr(C)]
-#[derive(Debug, PartialEq, Eq, zerocopy::FromBytes, zerocopy::AsBytes)]
+#[derive(
+    Debug,
+    PartialEq,
+    Eq,
+    zerocopy::FromBytes,
+    zerocopy::IntoBytes,
+    zerocopy::Immutable,
+    zerocopy::KnownLayout,
+)]
 pub struct DestroyCtxCmd {
     pub handle: ContextHandle,
 }
@@ -97,7 +105,7 @@ mod tests {
     use caliptra_cfi_lib_git::CfiCounter;
     use crypto::OpensslCrypto;
     use platform::default::DefaultPlatform;
-    use zerocopy::AsBytes;
+    use zerocopy::IntoBytes;
 
     const TEST_DESTROY_CTX_CMD: DestroyCtxCmd = DestroyCtxCmd {
         handle: SIMULATION_HANDLE,

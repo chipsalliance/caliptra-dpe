@@ -17,7 +17,7 @@ use platform::CertValidity;
 #[cfg(not(feature = "disable_csr"))]
 use platform::SignerIdentifier;
 use platform::{OtherName, SubjectAltName, MAX_KEY_IDENTIFIER_SIZE};
-use zerocopy::AsBytes;
+use zerocopy::IntoBytes;
 
 pub enum DirectoryString<'a> {
     PrintableString(&'a [u8]),
@@ -2240,7 +2240,7 @@ pub(crate) mod tests {
     use x509_parser::nom::Parser;
     use x509_parser::oid_registry::asn1_rs::oid;
     use x509_parser::prelude::*;
-    use zerocopy::AsBytes;
+    use zerocopy::IntoBytes;
 
     #[derive(asn1::Asn1Read)]
     pub struct Fwid<'a> {

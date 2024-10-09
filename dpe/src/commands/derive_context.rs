@@ -15,7 +15,15 @@ use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq};
 use cfg_if::cfg_if;
 
 #[repr(C)]
-#[derive(Debug, PartialEq, Eq, zerocopy::FromBytes, zerocopy::AsBytes)]
+#[derive(
+    Debug,
+    PartialEq,
+    Eq,
+    zerocopy::FromBytes,
+    zerocopy::IntoBytes,
+    zerocopy::Immutable,
+    zerocopy::KnownLayout,
+)]
 pub struct DeriveContextFlags(u32);
 
 bitflags! {
@@ -32,7 +40,15 @@ bitflags! {
 }
 
 #[repr(C)]
-#[derive(Debug, PartialEq, Eq, zerocopy::FromBytes, zerocopy::AsBytes)]
+#[derive(
+    Debug,
+    PartialEq,
+    Eq,
+    zerocopy::FromBytes,
+    zerocopy::IntoBytes,
+    zerocopy::Immutable,
+    zerocopy::KnownLayout,
+)]
 pub struct DeriveContextCmd {
     pub handle: ContextHandle,
     pub data: [u8; DPE_PROFILE.get_hash_size()],
@@ -356,7 +372,7 @@ mod tests {
     use openssl::x509::X509;
     use openssl::{bn::BigNum, ecdsa::EcdsaSig};
     use platform::default::DefaultPlatform;
-    use zerocopy::AsBytes;
+    use zerocopy::IntoBytes;
 
     const TEST_DERIVE_CONTEXT_CMD: DeriveContextCmd = DeriveContextCmd {
         handle: SIMULATION_HANDLE,

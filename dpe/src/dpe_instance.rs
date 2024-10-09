@@ -24,7 +24,7 @@ use crypto::{Crypto, Digest, Hasher};
 use platform::Platform;
 #[cfg(not(feature = "disable_internal_dice"))]
 use platform::MAX_CHUNK_SIZE;
-use zerocopy::{AsBytes, FromBytes};
+use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes};
 use zeroize::Zeroize;
 
 pub trait DpeTypes {
@@ -42,7 +42,7 @@ pub struct DpeEnv<'a, T: DpeTypes + 'a> {
 }
 
 #[repr(C, align(4))]
-#[derive(AsBytes, FromBytes, Zeroize)]
+#[derive(IntoBytes, TryFromBytes, KnownLayout, Immutable, Zeroize)]
 pub struct DpeInstance {
     pub contexts: [Context; MAX_HANDLES],
     pub(crate) support: Support,
@@ -530,7 +530,7 @@ pub mod tests {
     use caliptra_cfi_lib_git::CfiCounter;
     use crypto::OpensslCrypto;
     use platform::default::{DefaultPlatform, AUTO_INIT_LOCALITY, TEST_CERT_CHAIN};
-    use zerocopy::AsBytes;
+    use zerocopy::IntoBytes;
 
     pub struct TestTypes;
     impl DpeTypes for TestTypes {
