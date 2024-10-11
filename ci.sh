@@ -87,6 +87,8 @@ run_verification_tests dpe_profile_p384_sha384 rustcrypto
   cargo fmt --check
   cargo clippy --features libfuzzer-sys
   cargo clippy --features afl
+  # https://github.com/google/zerocopy/issues/1867
+  # Currently this fuzzer fails to compile when using zerocopy v0.8.3.
   # cargo +nightly-2023-11-16 fuzz build --features libfuzzer-sys
   cargo +nightly-2023-11-16 afl build --features afl
 )
