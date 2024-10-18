@@ -74,7 +74,9 @@ mod tests {
             .to_vec();
         command.extend(TEST_GET_CERTIFICATE_CHAIN_CMD.as_bytes());
         assert_eq!(
-            Ok(Command::GetCertificateChain(TEST_GET_CERTIFICATE_CHAIN_CMD)),
+            Ok(Command::GetCertificateChain(
+                &TEST_GET_CERTIFICATE_CHAIN_CMD
+            )),
             Command::deserialize(&command)
         );
     }

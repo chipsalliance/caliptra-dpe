@@ -119,7 +119,7 @@ mod tests {
             .to_vec();
         command.extend(TEST_DESTROY_CTX_CMD.as_bytes());
         assert_eq!(
-            Ok(Command::DestroyCtx(TEST_DESTROY_CTX_CMD)),
+            Ok(Command::DestroyCtx(&TEST_DESTROY_CTX_CMD)),
             Command::deserialize(&command)
         );
     }

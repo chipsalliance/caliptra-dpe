@@ -355,7 +355,7 @@ mod tests {
             .to_vec();
         command.extend(TEST_CERTIFY_KEY_CMD.as_bytes());
         assert_eq!(
-            Ok(Command::CertifyKey(TEST_CERTIFY_KEY_CMD)),
+            Ok(Command::CertifyKey(&TEST_CERTIFY_KEY_CMD)),
             Command::deserialize(&command)
         );
     }

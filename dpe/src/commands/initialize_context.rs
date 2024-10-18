@@ -132,7 +132,7 @@ mod tests {
             .to_vec();
         command.extend(TEST_INIT_CTX_CMD.as_bytes());
         assert_eq!(
-            Ok(Command::InitCtx(TEST_INIT_CTX_CMD)),
+            Ok(Command::InitCtx(&TEST_INIT_CTX_CMD)),
             Command::deserialize(&command)
         );
     }

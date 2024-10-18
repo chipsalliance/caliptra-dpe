@@ -390,7 +390,7 @@ mod tests {
             .to_vec();
         command.extend(TEST_DERIVE_CONTEXT_CMD.as_bytes());
         assert_eq!(
-            Ok(Command::DeriveContext(TEST_DERIVE_CONTEXT_CMD)),
+            Ok(Command::DeriveContext(&TEST_DERIVE_CONTEXT_CMD)),
             Command::deserialize(&command)
         );
     }

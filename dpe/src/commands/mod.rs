@@ -20,7 +20,7 @@ use crate::{
     DPE_PROFILE,
 };
 use core::mem::size_of;
-use zerocopy::FromBytes;
+use zerocopy::{FromBytes, Immutable, KnownLayout};
 
 mod certify_key;
 mod derive_context;
@@ -32,19 +32,19 @@ mod rotate_context;
 mod sign;
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum Command {
+pub enum Command<'a> {
     GetProfile,
-    InitCtx(InitCtxCmd),
-    DeriveContext(DeriveContextCmd),
-    CertifyKey(CertifyKeyCmd),
-    Sign(SignCmd),
+    InitCtx(&'a InitCtxCmd),
+    DeriveContext(&'a DeriveContextCmd),
+    CertifyKey(&'a CertifyKeyCmd),
+    Sign(&'a SignCmd),
     #[cfg(not(feature = "disable_rotate_context"))]
-    RotateCtx(RotateCtxCmd),
-    DestroyCtx(DestroyCtxCmd),
-    GetCertificateChain(GetCertificateChainCmd),
+    RotateCtx(&'a RotateCtxCmd),
+    DestroyCtx(&'a DestroyCtxCmd),
+    GetCertificateChain(&'a GetCertificateChainCmd),
 }
 
-impl Command {
+impl Command<'_> {
     pub const GET_PROFILE: u32 = 0x01;
     pub const INITIALIZE_CONTEXT: u32 = 0x07;
     pub const DERIVE_CONTEXT: u32 = 0x08;
@@ -80,17 +80,17 @@ impl Command {
         }
     }
 
-    fn parse_command<T: FromBytes>(
-        build: impl FnOnce(T) -> Command,
-        bytes: &[u8],
+    fn parse_command<'a, T: FromBytes + KnownLayout + Immutable + 'a>(
+        build: impl FnOnce(&'a T) -> Command,
+        bytes: &'a [u8],
     ) -> Result<Command, DpeErrorCode> {
         let (prefix, _remaining_bytes) =
-            T::read_from_prefix(bytes).map_err(|_| DpeErrorCode::InvalidArgument)?;
+            T::ref_from_prefix(bytes).map_err(|_| DpeErrorCode::InvalidArgument)?;
         Ok(build(prefix))
     }
 }
 
-impl From<Command> for u32 {
+impl From<Command<'_>> for u32 {
     fn from(cmd: Command) -> u32 {
         match cmd {
             Command::GetProfile => Command::GET_PROFILE,

@@ -230,7 +230,7 @@ mod tests {
         let mut command = CommandHdr::new_for_test(Command::SIGN).as_bytes().to_vec();
         command.extend(TEST_SIGN_CMD.as_bytes());
         assert_eq!(
-            Ok(Command::Sign(TEST_SIGN_CMD)),
+            Ok(Command::Sign(&TEST_SIGN_CMD)),
             Command::deserialize(&command)
         );
     }
