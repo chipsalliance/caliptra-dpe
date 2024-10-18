@@ -151,7 +151,7 @@ mod tests {
             .to_vec();
         command.extend(TEST_ROTATE_CTX_CMD.as_bytes());
         assert_eq!(
-            Ok(Command::RotateCtx(TEST_ROTATE_CTX_CMD)),
+            Ok(Command::RotateCtx(&TEST_ROTATE_CTX_CMD)),
             Command::deserialize(&command)
         );
     }
