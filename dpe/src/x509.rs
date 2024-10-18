@@ -6,6 +6,7 @@
 //! this functionality for a no_std environment.
 
 use crate::{
+    context::ContextTcb,
     response::DpeErrorCode,
     tci::{TciMeasurement, TciNodeData},
     DpeProfile, DPE_PROFILE,
@@ -51,7 +52,7 @@ pub struct Name<'a> {
 
 pub struct MeasurementData<'a> {
     pub label: &'a [u8],
-    pub tci_nodes: &'a [TciNodeData],
+    pub(crate) tcb: ContextTcb<'a>,
     pub is_ca: bool,
     pub supports_recursive: bool,
     pub subject_key_identifier: [u8; MAX_KEY_IDENTIFIER_SIZE],
@@ -348,9 +349,9 @@ impl CertWriter<'_> {
     }
 
     /// Get the size of a DICE FWID structure
-    fn get_fwid_size(digest: &[u8], tagged: bool) -> Result<usize, DpeErrorCode> {
+    fn get_fwid_size(tagged: bool) -> Result<usize, DpeErrorCode> {
         let size = Self::get_structure_size(Self::HASH_OID.len(), /*tagged=*/ true)?
-            + Self::get_structure_size(digest.len(), /*tagged=*/ true)?;
+            + Self::get_structure_size(DPE_PROFILE.get_tci_size(), /*tagged=*/ true)?;
 
         Self::get_structure_size(size, tagged)
     }
@@ -358,14 +359,10 @@ impl CertWriter<'_> {
     /// Get the size of a tcg-dice-TcbInfo structure. For DPE, this is only used
     /// as part of a MultiTcbInfo. For this reason, do not include the standard
     /// extension fields. Only include the size of the structure itself.
-    fn get_tcb_info_size(
-        node: &TciNodeData,
-        supports_recursive: bool,
-        tagged: bool,
-    ) -> Result<usize, DpeErrorCode> {
-        let fwid0_size = Self::get_fwid_size(&node.tci_current.0, /*tagged=*/ true)?;
+    fn get_tcb_info_size(supports_recursive: bool, tagged: bool) -> Result<usize, DpeErrorCode> {
+        let fwid0_size = Self::get_fwid_size(/*tagged=*/ true)?;
         let fwid1_size = if supports_recursive {
-            Self::get_fwid_size(&node.tci_cumulative.0, /*tagged=*/ true)?
+            Self::get_fwid_size(/*tagged=*/ true)?
         } else {
             0
         };
@@ -383,17 +380,14 @@ impl CertWriter<'_> {
         measurements: &MeasurementData,
         tagged: bool,
     ) -> Result<usize, DpeErrorCode> {
-        if measurements.tci_nodes.is_empty() {
+        let tci_count = measurements.tcb.count();
+        if tci_count == 0 {
             return Err(DpeErrorCode::InternalError);
         }
 
         // Size of concatenated tcb infos
-        let tcb_infos_size = measurements.tci_nodes.len()
-            * Self::get_tcb_info_size(
-                &measurements.tci_nodes[0],
-                measurements.supports_recursive,
-                /*tagged=*/ true,
-            )?;
+        let tcb_infos_size = tci_count
+            * Self::get_tcb_info_size(measurements.supports_recursive, /*tagged=*/ true)?;
 
         // Size of tcb infos including SEQUENCE OF tag/size
         let multi_tcb_info_size = Self::get_structure_size(tcb_infos_size, /*tagged=*/ true)?;
@@ -1178,8 +1172,7 @@ impl CertWriter<'_> {
 
     fn encode_fwid(&mut self, tci: &TciMeasurement) -> Result<usize, DpeErrorCode> {
         let mut bytes_written = self.encode_byte(Self::SEQUENCE_TAG)?;
-        bytes_written +=
-            self.encode_size_field(Self::get_fwid_size(&tci.0, /*tagged=*/ false)?)?;
+        bytes_written += self.encode_size_field(Self::get_fwid_size(/*tagged=*/ false)?)?;
 
         // hashAlg OID
         bytes_written += self.encode_byte(Self::OID_TAG)?;
@@ -1211,15 +1204,14 @@ impl CertWriter<'_> {
         node: &TciNodeData,
         supports_recursive: bool,
     ) -> Result<usize, DpeErrorCode> {
-        let tcb_info_size =
-            Self::get_tcb_info_size(node, supports_recursive, /*tagged=*/ false)?;
+        let tcb_info_size = Self::get_tcb_info_size(supports_recursive, /*tagged=*/ false)?;
         // TcbInfo sequence
         let mut bytes_written = self.encode_byte(Self::SEQUENCE_TAG)?;
         bytes_written += self.encode_size_field(tcb_info_size)?;
 
         // fwids SEQUENCE OF
         // IMPLICIT [6] Constructed
-        let fwid_size = Self::get_fwid_size(&node.tci_current.0, /*tagged=*/ true)?;
+        let fwid_size = Self::get_fwid_size(/*tagged=*/ true)?;
         bytes_written += self.encode_byte(Self::CONTEXT_SPECIFIC | Self::CONSTRUCTED | 0x06)?;
         if supports_recursive {
             bytes_written += self.encode_size_field(fwid_size * 2)?;
@@ -1259,6 +1251,7 @@ impl CertWriter<'_> {
         &mut self,
         measurements: &MeasurementData,
     ) -> Result<usize, DpeErrorCode> {
+        let tci_count = measurements.tcb.count();
         let multi_tcb_info_size =
             Self::get_multi_tcb_info_size(measurements, /*tagged=*/ false)?;
 
@@ -1272,12 +1265,8 @@ impl CertWriter<'_> {
         bytes_written += self.encode_size_field(Self::BOOL_SIZE)?;
         bytes_written += self.encode_byte(crit)?;
 
-        let tcb_infos_size = if !measurements.tci_nodes.is_empty() {
-            Self::get_tcb_info_size(
-                &measurements.tci_nodes[0],
-                measurements.supports_recursive,
-                /*tagged=*/ true,
-            )? * measurements.tci_nodes.len()
+        let tcb_infos_size = if tci_count != 0 {
+            Self::get_tcb_info_size(measurements.supports_recursive, /*tagged=*/ true)? * tci_count
         } else {
             0
         };
@@ -1292,8 +1281,8 @@ impl CertWriter<'_> {
         bytes_written += self.encode_size_field(tcb_infos_size)?;
 
         // Encode multiple tcg-dice-TcbInfos
-        for node in measurements.tci_nodes {
-            bytes_written += self.encode_tcb_info(node, measurements.supports_recursive)?;
+        for node in measurements.tcb.rev_iter()? {
+            bytes_written += self.encode_tcb_info(&node?.tci, measurements.supports_recursive)?;
         }
 
         Ok(bytes_written)
@@ -1582,7 +1571,7 @@ impl CertWriter<'_> {
     /// AuthorityKeyIdentifier ::= SEQUENCE {
     ///     keyIdentifier             [0] KeyIdentifier           OPTIONAL,
     ///     authorityCertIssuer       [1] GeneralNames            OPTIONAL,
-    ///     authorityCertSerialNumber [2] CertificateSerialNumber OPTIONAL  
+    ///     authorityCertSerialNumber [2] CertificateSerialNumber OPTIONAL
     /// }
     fn encode_authority_key_identifier_extension(
         &mut self,
@@ -2229,6 +2218,7 @@ impl CertWriter<'_> {
 
 #[cfg(test)]
 pub(crate) mod tests {
+    use crate::context::{Context, ContextTcb};
     use crate::tci::{TciMeasurement, TciNodeData};
     use crate::x509::{CertWriter, DirectoryString, MeasurementData, Name};
     use crate::{DpeProfile, DPE_PROFILE};
@@ -2388,7 +2378,7 @@ pub(crate) mod tests {
 
         assert_eq!(
             bytes_written,
-            CertWriter::get_tcb_info_size(&node, supports_recursive, true).unwrap()
+            CertWriter::get_tcb_info_size(supports_recursive, true).unwrap()
         );
 
         // FWIDs
@@ -2413,7 +2403,7 @@ pub(crate) mod tests {
 
         assert_eq!(
             bytes_written,
-            CertWriter::get_tcb_info_size(&node, supports_recursive, true).unwrap()
+            CertWriter::get_tcb_info_size(supports_recursive, true).unwrap()
         );
 
         // Check that only FWID[0] is present
@@ -2469,11 +2459,11 @@ pub(crate) mod tests {
             y: CryptoBuf::new(&[0xBB; ECC_INT_SIZE]).unwrap(),
         };
 
-        let node = TciNodeData::new();
-
+        let node = Context::new();
+        let contexts = [node];
         let measurements = MeasurementData {
             label: &[0xCC; DPE_PROFILE.get_hash_size()],
-            tci_nodes: &[node],
+            tcb: ContextTcb::new(0, &contexts),
             is_ca: false,
             supports_recursive: true,
             subject_key_identifier: [0u8; MAX_KEY_IDENTIFIER_SIZE],
@@ -2549,7 +2539,7 @@ pub(crate) mod tests {
             y: CryptoBuf::new(&[0xBB; ECC_INT_SIZE]).unwrap(),
         };
 
-        let node = TciNodeData::new();
+        let node = Context::new();
 
         let mut hasher = match DPE_PROFILE {
             DpeProfile::P256Sha256 => Hasher::new(MessageDigest::sha256()).unwrap(),
@@ -2569,9 +2559,11 @@ pub(crate) mod tests {
             oid: DEFAULT_OTHER_NAME_OID,
             other_name,
         });
+
+        let contexts = [node];
         let measurements = MeasurementData {
             label: &[0; DPE_PROFILE.get_hash_size()],
-            tci_nodes: &[node],
+            tcb: ContextTcb::new(0, &contexts),
             is_ca,
             supports_recursive: true,
             subject_key_identifier,
