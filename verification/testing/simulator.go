@@ -147,7 +147,7 @@ func GetSimulatorTargets() []TestTarget {
 		},
 		{
 			"DeriveContext_MaxTCIs",
-			getTestTarget([]string{"AutoInit", "Simulation"}),
+			getTestTarget([]string{"AutoInit", "Recursive", "X509"}),
 			[]TestCase{DeriveContextMaxTCIsTestCase},
 		},
 		{

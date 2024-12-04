@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"crypto/sha512"
+	"crypto/x509"
 	"errors"
 	"hash"
 	"testing"
@@ -217,11 +218,28 @@ func TestMaxTCIs(d client.TestDPEInstance, c client.DPEClient, t *testing.T) {
 	maxTciCount := int(d.GetMaxTciNodes())
 	allowedTciCount := maxTciCount - 1 // since, a TCI node is already auto-initialized
 	for i := 0; i < allowedTciCount; i++ {
-		resp, err = c.DeriveContext(handle, make([]byte, digestSize), 0, 0, 0)
+		resp, err = c.DeriveContext(handle, make([]byte, digestSize), client.InputAllowX509, 0, 0)
 		if err != nil {
 			t.Fatalf("[FATAL]: Error encountered in executing derive child: %v", err)
 		}
 		handle = &resp.NewContextHandle
+	}
+
+	// Make sure cert fits in CertifyKeyResponse
+	// Similarly, when commands like CertifyKey try to make use of features/flags that are unsupported
+	// by child context, it will fail.
+	digestLen := profile.GetDigestSize()
+	cert, err := c.CertifyKey(handle, make([]byte, digestLen), client.CertifyKeyX509, 0)
+	if err != nil {
+		t.Fatalf("[FATAL]; CertifyKey failed with error %v", err)
+	}
+
+	handle = &cert.Handle
+
+	t.Logf("Cert size = %d\n", len(cert.Certificate))
+
+	if _, err = x509.ParseCertificate(cert.Certificate); err != nil {
+		t.Fatalf("[FATAL]: Could not parse certificate: %v", err)
 	}
 
 	// Exceed the Max TCI node count limit

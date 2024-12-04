@@ -124,7 +124,7 @@ var DeriveContextSimulationTestCase = TestCase{
 
 // DeriveContextMaxTCIsTestCase checks whether the number of derived contexts is limited by MAX_TCI_NODES attribute of the profile
 var DeriveContextMaxTCIsTestCase = TestCase{
-	"DeriveContext_MaxTCIs", TestMaxTCIs, []string{"AutoInit"},
+	"DeriveContext_MaxTCIs", TestMaxTCIs, []string{"AutoInit", "X509"},
 }
 
 // DeriveContextLocalityTestCase tests DerivedContext with the ChangeLocality flag.

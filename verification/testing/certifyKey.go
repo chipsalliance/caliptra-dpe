@@ -690,12 +690,16 @@ func getKeyUsageNames(keyUsage x509.KeyUsage) []string {
 func checkPubKey(t *testing.T, p client.Profile, pubkey any, response client.CertifiedKey) {
 	var pubKeyInResponse ecdsa.PublicKey
 	switch p {
+	case client.ProfileMinP256SHA256:
+		fallthrough
 	case client.ProfileP256SHA256:
 		pubKeyInResponse = ecdsa.PublicKey{
 			Curve: elliptic.P256(),
 			X:     new(big.Int).SetBytes(response.Pub.X),
 			Y:     new(big.Int).SetBytes(response.Pub.Y),
 		}
+	case client.ProfileMinP384SHA384:
+		fallthrough
 	case client.ProfileP384SHA384:
 		pubKeyInResponse = ecdsa.PublicKey{
 			Curve: elliptic.P384(),
