@@ -61,6 +61,10 @@ type DPEClient interface {
 // NewClient returns a new DPE client
 func NewClient(t Transport, p Profile) (DPEClient, error) {
 	switch p {
+	case ProfileMinP256SHA256:
+		return NewDPEABI256Min(t)
+	case ProfileMinP384SHA384:
+		return NewDPEABI384Min(t)
 	case ProfileP256SHA256:
 		return NewDPEABI256(t)
 	case ProfileP384SHA384:

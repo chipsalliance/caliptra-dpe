@@ -9,7 +9,7 @@ use crate::{
     CURRENT_PROFILE_MINOR_VERSION, DPE_PROFILE, MAX_CERT_SIZE, MAX_HANDLES,
 };
 use crypto::CryptoError;
-use platform::PlatformError;
+use platform::{PlatformError, MAX_CHUNK_SIZE};
 use zerocopy::IntoBytes;
 
 #[cfg_attr(test, derive(PartialEq, Debug, Eq))]
@@ -190,7 +190,7 @@ pub struct SignResp {
 pub struct GetCertificateChainResp {
     pub resp_hdr: ResponseHdr,
     pub certificate_size: u32,
-    pub certificate_chain: [u8; MAX_CERT_SIZE],
+    pub certificate_chain: [u8; MAX_CHUNK_SIZE],
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]

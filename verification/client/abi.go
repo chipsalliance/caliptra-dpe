@@ -16,7 +16,7 @@ const (
 	RespMagic uint32 = 0x44504552
 
 	CurrentProfileMajorVersion uint16 = 0
-	CurrentProfileMinorVersion uint16 = 10
+	CurrentProfileMinorVersion uint16 = 11
 )
 
 // CommandCode is a DPE command code
@@ -264,7 +264,7 @@ type SignResp[Digest DigestAlgorithm] struct {
 }
 
 // DPEABI is a connection to a DPE instance, parameterized by hash algorithm and ECC curve.
-type DPEABI[CurveParameter Curve, Digest DigestAlgorithm] struct {
+type DPEABI[CurveParameter Curve, Digest DigestAlgorithm, Cert DPECertificate] struct {
 	transport    Transport
 	constants    profileInfo
 	Profile      Profile
@@ -277,30 +277,42 @@ type DPEABI[CurveParameter Curve, Digest DigestAlgorithm] struct {
 }
 
 // DPEABI256 is a client that implements DPE_PROFILE_IROT_P256_SHA256
-type DPEABI256 = DPEABI[NISTP256Parameter, SHA256Digest]
+type DPEABI256Min = DPEABI[NISTP256Parameter, SHA256Digest, DPEMinCertificate]
 
 // DPEABI384 is a client that implements DPE_PROFILE_IROT_P384_SHA384
-type DPEABI384 = DPEABI[NISTP384Parameter, SHA384Digest]
+type DPEABI384Min = DPEABI[NISTP384Parameter, SHA384Digest, DPEMinCertificate]
+
+// DPEABI256 is a client that implements DPE_PROFILE_IROT_P256_SHA256
+type DPEABI256 = DPEABI[NISTP256Parameter, SHA256Digest, DPEFullCertificate]
+
+// DPEABI384 is a client that implements DPE_PROFILE_IROT_P384_SHA384
+type DPEABI384 = DPEABI[NISTP384Parameter, SHA384Digest, DPEFullCertificate]
 
 // dpeProfileImplementsTypeConstraints checks that the requested DPEABI type constraints are compatible with the DPE profile.
-func dpeProfileImplementsTypeConstraints[C Curve, D DigestAlgorithm](profile Profile) error {
+func dpeProfileImplementsTypeConstraints[C Curve, D DigestAlgorithm, Cert DPECertificate](profile Profile) error {
 	// Test that the expected value types produced by each DPE profile can be assigned to variables of type C and D
 	var c C
 	var d D
+	var cert Cert
 
 	var targetProfile Profile
 	_, isP256 := any(c).(NISTP256Parameter)
 	_, isSHA256 := any(d).(SHA256Digest)
 	_, isP384 := any(c).(NISTP384Parameter)
 	_, isSHA384 := any(d).(SHA384Digest)
+	_, isMin := any(cert).(DPEMinCertificate)
 
-	if isP256 && isSHA256 {
+	if isP256 && isSHA256 && isMin {
+		targetProfile = ProfileMinP256SHA256
+	} else if isP384 && isSHA384 && isMin {
+		targetProfile = ProfileMinP384SHA384
+	} else if isP256 && isSHA256 && !isMin {
 		targetProfile = ProfileP256SHA256
-	} else if isP384 && isSHA384 {
+	} else if isP384 && isSHA384 && !isMin {
 		targetProfile = ProfileP384SHA384
 	} else {
-		return fmt.Errorf("client requested (Curve = %v, Digest = %v), this is an invalid DPE profile",
-			reflect.TypeOf(c), reflect.TypeOf(d))
+		return fmt.Errorf("client requested (Curve = %v, Digest = %v, Certificate = %v), this is an invalid DPE profile",
+			reflect.TypeOf(c), reflect.TypeOf(d), reflect.TypeOf(cert))
 	}
 
 	if profile != targetProfile {
@@ -311,13 +323,13 @@ func dpeProfileImplementsTypeConstraints[C Curve, D DigestAlgorithm](profile Pro
 }
 
 // newDPEABI initializes a new DPE client.
-func newDPEABI[C Curve, D DigestAlgorithm](t Transport) (*DPEABI[C, D], error) {
+func newDPEABI[C Curve, D DigestAlgorithm, Cert DPECertificate](t Transport) (*DPEABI[C, D, Cert], error) {
 	rsp, err := getProfile(t)
 	if err != nil {
 		return nil, fmt.Errorf("could not query DPE for profile: %w", err)
 	}
 
-	if err := dpeProfileImplementsTypeConstraints[C, D](rsp.Profile); err != nil {
+	if err := dpeProfileImplementsTypeConstraints[C, D, Cert](rsp.Profile); err != nil {
 		return nil, err
 	}
 
@@ -331,7 +343,7 @@ func newDPEABI[C Curve, D DigestAlgorithm](t Transport) (*DPEABI[C, D], error) {
 		return nil, fmt.Errorf("unknown DPE profile version %d.%d", rsp.MajorVersion, rsp.MinorVersion)
 	}
 
-	return &DPEABI[C, D]{
+	return &DPEABI[C, D, Cert]{
 		transport:    t,
 		constants:    constants,
 		Profile:      rsp.Profile,
@@ -343,18 +355,28 @@ func newDPEABI[C Curve, D DigestAlgorithm](t Transport) (*DPEABI[C, D], error) {
 	}, nil
 }
 
-// NewDPEABI256 is a convenience wrapper for NewDPEABI[NISTP256Parameter, SHA256Digest].
-func NewDPEABI256(t Transport) (*DPEABI[NISTP256Parameter, SHA256Digest], error) {
-	return newDPEABI[NISTP256Parameter, SHA256Digest](t)
+// NewDPEABI256 is a convenience wrapper for NewDPEABI[NISTP256Parameter, SHA256Digest, DPEFullCertificate].
+func NewDPEABI256(t Transport) (*DPEABI[NISTP256Parameter, SHA256Digest, DPEFullCertificate], error) {
+	return newDPEABI[NISTP256Parameter, SHA256Digest, DPEFullCertificate](t)
 }
 
-// NewDPEABI384 is a convenience wrapper for NewDPEABI[NISTP384Parameter, SHA384Digest].
-func NewDPEABI384(t Transport) (*DPEABI[NISTP384Parameter, SHA384Digest], error) {
-	return newDPEABI[NISTP384Parameter, SHA384Digest](t)
+// NewDPEABI384 is a convenience wrapper for NewDPEABI[NISTP384Parameter, SHA384Digest, DPEFullCertificate].
+func NewDPEABI384(t Transport) (*DPEABI[NISTP384Parameter, SHA384Digest, DPEFullCertificate], error) {
+	return newDPEABI[NISTP384Parameter, SHA384Digest, DPEFullCertificate](t)
+}
+
+// NewDPEABI256Min is a convenience wrapper for NewDPEABI[NISTP256Parameter, SHA256Digest, DPEMinCertificate].
+func NewDPEABI256Min(t Transport) (*DPEABI[NISTP256Parameter, SHA256Digest, DPEMinCertificate], error) {
+	return newDPEABI[NISTP256Parameter, SHA256Digest, DPEMinCertificate](t)
+}
+
+// NewDPEABI384Min is a convenience wrapper for NewDPEABI[NISTP384Parameter, SHA384Digest, DPEMinCertificate].
+func NewDPEABI384Min(t Transport) (*DPEABI[NISTP384Parameter, SHA384Digest, DPEMinCertificate], error) {
+	return newDPEABI[NISTP384Parameter, SHA384Digest, DPEMinCertificate](t)
 }
 
 // InitializeContextABI calls InitializeContext
-func (c *DPEABI[_, _]) InitializeContextABI(cmd *InitCtxCmd) (*InitCtxResp, error) {
+func (c *DPEABI[_, _, _]) InitializeContextABI(cmd *InitCtxCmd) (*InitCtxResp, error) {
 	var respStruct InitCtxResp
 
 	if _, err := execCommand(c.transport, c.constants.Codes.InitializeContext, c.Profile, cmd, &respStruct); err != nil {
@@ -410,12 +432,12 @@ func getProfile(t Transport) (*GetProfileResp, error) {
 }
 
 // GetProfileABI calls the DPE GetProfile for this ABI
-func (c *DPEABI[_, _]) GetProfileABI() (*GetProfileResp, error) {
+func (c *DPEABI[_, _, _]) GetProfileABI() (*GetProfileResp, error) {
 	return getProfile(c.transport)
 }
 
 // DestroyContextABI calls the DPE DestroyContext for this ABI
-func (c *DPEABI[_, _]) DestroyContextABI(cmd *DestroyCtxCmd) error {
+func (c *DPEABI[_, _, _]) DestroyContextABI(cmd *DestroyCtxCmd) error {
 	// DestroyContext does not return any parameters.
 	respStruct := struct{}{}
 
@@ -427,14 +449,14 @@ func (c *DPEABI[_, _]) DestroyContextABI(cmd *DestroyCtxCmd) error {
 }
 
 // CertifyKeyABI calls the DPE CertifyKey command.
-func (c *DPEABI[CurveParameter, Digest]) CertifyKeyABI(cmd *CertifyKeyReq[Digest]) (*CertifyKeyResp[CurveParameter, Digest], error) {
+func (c *DPEABI[CurveParameter, Digest, DPECertificate]) CertifyKeyABI(cmd *CertifyKeyReq[Digest]) (*CertifyKeyResp[CurveParameter, Digest], error) {
 	// Define an anonymous struct for the response, because we have to accept the variable-sized certificate.
 	respStruct := struct {
 		NewContextHandle  [16]byte
 		DerivedPublicKeyX CurveParameter
 		DerivedPublicKeyY CurveParameter
 		CertificateSize   uint32
-		Certificate       [2048]byte
+		Certificate       DPECertificate
 	}{}
 
 	_, err := execCommand(c.transport, c.constants.Codes.CertifyKey, c.Profile, cmd, &respStruct)
@@ -443,7 +465,7 @@ func (c *DPEABI[CurveParameter, Digest]) CertifyKeyABI(cmd *CertifyKeyReq[Digest
 	}
 
 	// Check that the reported cert size makes sense.
-	if respStruct.CertificateSize > 2048 {
+	if respStruct.CertificateSize > uint32(CertLen[DPECertificate]()) {
 		return nil, fmt.Errorf("DPE reported a %d-byte cert, which was larger than 2048", respStruct.CertificateSize)
 	}
 
@@ -451,12 +473,12 @@ func (c *DPEABI[CurveParameter, Digest]) CertifyKeyABI(cmd *CertifyKeyReq[Digest
 		NewContextHandle:  respStruct.NewContextHandle,
 		DerivedPublicKeyX: respStruct.DerivedPublicKeyX,
 		DerivedPublicKeyY: respStruct.DerivedPublicKeyY,
-		Certificate:       respStruct.Certificate[:respStruct.CertificateSize],
+		Certificate:       respStruct.Certificate.Bytes()[:respStruct.CertificateSize],
 	}, nil
 }
 
 // GetCertificateChainABI calls the DPE GetCertificateChain command.
-func (c *DPEABI[_, _]) GetCertificateChainABI() (*GetCertificateChainResp, error) {
+func (c *DPEABI[_, _, _]) GetCertificateChainABI() (*GetCertificateChainResp, error) {
 	var certs GetCertificateChainResp
 
 	// Initialize request input parameters
@@ -495,7 +517,7 @@ func (c *DPEABI[_, _]) GetCertificateChainABI() (*GetCertificateChainResp, error
 }
 
 // DeriveContextABI calls DPE DeriveContext command.
-func (c *DPEABI[_, Digest]) DeriveContextABI(cmd *DeriveContextReq[Digest]) (*DeriveContextResp, error) {
+func (c *DPEABI[_, Digest, _]) DeriveContextABI(cmd *DeriveContextReq[Digest]) (*DeriveContextResp, error) {
 	var respStruct DeriveContextResp
 
 	_, err := execCommand(c.transport, c.constants.Codes.DeriveContext, c.Profile, cmd, &respStruct)
@@ -507,7 +529,7 @@ func (c *DPEABI[_, Digest]) DeriveContextABI(cmd *DeriveContextReq[Digest]) (*De
 }
 
 // RotateContextHandleABI calls DPE RotateContextHandle command.
-func (c *DPEABI[_, Digest]) RotateContextABI(cmd *RotateContextHandleCmd) (*RotatedContextHandle, error) {
+func (c *DPEABI[_, Digest, _]) RotateContextABI(cmd *RotateContextHandleCmd) (*RotatedContextHandle, error) {
 	var respStruct RotatedContextHandle
 
 	_, err := execCommand(c.transport, c.constants.Codes.RotateContextHandle, c.Profile, cmd, &respStruct)
@@ -519,7 +541,7 @@ func (c *DPEABI[_, Digest]) RotateContextABI(cmd *RotateContextHandleCmd) (*Rota
 }
 
 // SignABI calls the DPE Sign command.
-func (c *DPEABI[_, Digest]) SignABI(cmd *SignReq[Digest]) (*SignResp[Digest], error) {
+func (c *DPEABI[_, Digest, _]) SignABI(cmd *SignReq[Digest]) (*SignResp[Digest], error) {
 	var respStruct SignResp[Digest]
 
 	_, err := execCommand(c.transport, c.constants.Codes.Sign, c.Profile, cmd, &respStruct)
@@ -531,7 +553,7 @@ func (c *DPEABI[_, Digest]) SignABI(cmd *SignReq[Digest]) (*SignResp[Digest], er
 }
 
 // InitializeContext calls the DPE InitializeContext command
-func (c *DPEABI[_, _]) InitializeContext(flags InitCtxFlags) (*ContextHandle, error) {
+func (c *DPEABI[_, _, _]) InitializeContext(flags InitCtxFlags) (*ContextHandle, error) {
 	cmd := InitCtxCmd{flags: flags}
 	resp, err := c.InitializeContextABI(&cmd)
 	if err != nil {
@@ -542,12 +564,12 @@ func (c *DPEABI[_, _]) InitializeContext(flags InitCtxFlags) (*ContextHandle, er
 }
 
 // GetProfile calls the DPE GetProfile command
-func (c *DPEABI[_, _]) GetProfile() (*GetProfileResp, error) {
+func (c *DPEABI[_, _, _]) GetProfile() (*GetProfileResp, error) {
 	return c.GetProfileABI()
 }
 
 // CertifyKey calls the DPE CertifyKey command
-func (c *DPEABI[_, Digest]) CertifyKey(handle *ContextHandle, label []byte, format CertifyKeyFormat, flags CertifyKeyFlags) (*CertifiedKey, error) {
+func (c *DPEABI[_, Digest, _]) CertifyKey(handle *ContextHandle, label []byte, format CertifyKeyFormat, flags CertifyKeyFlags) (*CertifiedKey, error) {
 	if len(label) != DigestLen[Digest]() {
 		return nil, fmt.Errorf("invalid label length")
 	}
@@ -582,7 +604,7 @@ func (c *DPEABI[_, Digest]) CertifyKey(handle *ContextHandle, label []byte, form
 }
 
 // DestroyContext calls DPE DestroyContext command
-func (c *DPEABI[_, _]) DestroyContext(handle *ContextHandle) error {
+func (c *DPEABI[_, _, _]) DestroyContext(handle *ContextHandle) error {
 	cmd := DestroyCtxCmd{
 		handle: *handle,
 	}
@@ -591,7 +613,7 @@ func (c *DPEABI[_, _]) DestroyContext(handle *ContextHandle) error {
 }
 
 // GetCertificateChain calls DPE GetCertificateChain command
-func (c *DPEABI[_, _]) GetCertificateChain() ([]byte, error) {
+func (c *DPEABI[_, _, _]) GetCertificateChain() ([]byte, error) {
 	resp, err := c.GetCertificateChainABI()
 	if err != nil {
 		return nil, err
@@ -601,7 +623,7 @@ func (c *DPEABI[_, _]) GetCertificateChain() ([]byte, error) {
 }
 
 // DeriveContext calls DPE DeriveContext command
-func (c *DPEABI[_, Digest]) DeriveContext(handle *ContextHandle, inputData []byte, flags DeriveContextFlags, tciType uint32, targetLocality uint32) (*DeriveContextResp, error) {
+func (c *DPEABI[_, Digest, _]) DeriveContext(handle *ContextHandle, inputData []byte, flags DeriveContextFlags, tciType uint32, targetLocality uint32) (*DeriveContextResp, error) {
 	if len(inputData) != DigestLen[Digest]() {
 		return nil, fmt.Errorf("invalid digest length")
 	}
@@ -627,7 +649,7 @@ func (c *DPEABI[_, Digest]) DeriveContext(handle *ContextHandle, inputData []byt
 }
 
 // RotateContextHandle calls DPE RotateContextHandle command
-func (c *DPEABI[_, _]) RotateContextHandle(handle *ContextHandle, flags RotateContextHandleFlags) (*ContextHandle, error) {
+func (c *DPEABI[_, _, _]) RotateContextHandle(handle *ContextHandle, flags RotateContextHandleFlags) (*ContextHandle, error) {
 	cmd := RotateContextHandleCmd{
 		Handle: *handle,
 		Flags:  flags,
@@ -640,7 +662,7 @@ func (c *DPEABI[_, _]) RotateContextHandle(handle *ContextHandle, flags RotateCo
 }
 
 // Sign calls DPE Sign command
-func (c *DPEABI[_, Digest]) Sign(handle *ContextHandle, label []byte, flags SignFlags, toBeSigned []byte) (*DPESignedHash, error) {
+func (c *DPEABI[_, Digest, _]) Sign(handle *ContextHandle, label []byte, flags SignFlags, toBeSigned []byte) (*DPESignedHash, error) {
 	dLen := DigestLen[Digest]()
 	if len(label) != dLen {
 		return nil, fmt.Errorf("invalid label length")

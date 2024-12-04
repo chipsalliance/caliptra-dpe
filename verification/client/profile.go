@@ -11,17 +11,25 @@ import (
 type Profile uint32
 
 const (
-	// ProfileP256SHA256 is NIST P-256, SHA-256
-	ProfileP256SHA256 Profile = 1
-	// ProfileP384SHA384 is NIST P-384, SHA-384
-	ProfileP384SHA384 Profile = 2
+	// ProfileIrotMinP256SHA256 is NIST P-256, SHA-256 "minimal profile"
+	ProfileMinP256SHA256 Profile = 1
+	// ProfileIrotMinP384SHA384 is NIST P-384, SHA-384 "minimal" profile
+	ProfileMinP384SHA384 Profile = 2
+	// ProfileIrotMinP256SHA256 is NIST P-256, SHA-256 "minimal profile"
+	ProfileP256SHA256 Profile = 3
+	// ProfileIrotP384SHA384 is NIST P-384, SHA-384 "minimal" profile
+	ProfileP384SHA384 Profile = 4
 )
 
 // GetDigestSize gets the digest size of the profile's supported hash algorithm
 func (p Profile) GetDigestSize() int {
 	switch p {
+	case ProfileMinP256SHA256:
+		fallthrough
 	case ProfileP256SHA256:
 		return 32
+	case ProfileMinP384SHA384:
+		fallthrough
 	case ProfileP384SHA384:
 		return 48
 	}
@@ -31,8 +39,12 @@ func (p Profile) GetDigestSize() int {
 // GetECCIntSize gets the ECC int size of the profile's supported ECC curve
 func (p Profile) GetECCIntSize() int {
 	switch p {
+	case ProfileMinP256SHA256:
+		fallthrough
 	case ProfileP256SHA256:
 		return 32
+	case ProfileMinP384SHA384:
+		fallthrough
 	case ProfileP384SHA384:
 		return 48
 	}
@@ -41,8 +53,12 @@ func (p Profile) GetECCIntSize() int {
 
 func (p Profile) String() string {
 	switch p {
+	case ProfileMinP256SHA256:
+		return "DPE_PROFILE_IROT_MIN_P256_SHA256"
 	case ProfileP256SHA256:
 		return "DPE_PROFILE_IROT_P256_SHA256"
+	case ProfileMinP384SHA384:
+		return "DPE_PROFILE_IROT_MIN_P384_SHA384"
 	case ProfileP384SHA384:
 		return "DPE_PROFILE_IROT_P384_SHA384"
 	}
@@ -81,6 +97,32 @@ type DigestAlgorithm interface {
 	SHA256Digest | SHA384Digest
 
 	Bytes() []byte
+}
+
+// DPEMinCertificate represents a certificate for the DPE minimal iRoT profiles
+type DPEMinCertificate [2046]byte
+
+// DPEFullCertificate represents a certificate for the DPE full iRoT profiles
+type DPEFullCertificate [6144]byte
+
+type DPECertificate interface {
+	DPEMinCertificate | DPEFullCertificate
+
+	Bytes() []byte
+}
+
+func CertLen[C DPECertificate]() int {
+	return reflect.TypeOf((*C)(nil)).Elem().Len()
+}
+
+// Bytes returns a byte slice of the DPE min certificate
+func (c DPEMinCertificate) Bytes() []byte {
+	return c[:]
+}
+
+// Bytes returns a byte slice of the DPE full certificate
+func (c DPEFullCertificate) Bytes() []byte {
+	return c[:]
 }
 
 func NewDigest[D DigestAlgorithm](b []byte) (D, error) {

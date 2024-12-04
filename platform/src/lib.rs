@@ -15,6 +15,7 @@ pub mod default;
 
 pub mod printer;
 
+// Max cert chunk returned by GetCertificateChain
 pub const MAX_CHUNK_SIZE: usize = 2048;
 pub const MAX_ISSUER_NAME_SIZE: usize = 128;
 pub const MAX_SN_SIZE: usize = 20;

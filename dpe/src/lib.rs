@@ -25,14 +25,15 @@ pub mod x509;
 
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
-const MAX_CERT_SIZE: usize = 2048;
+// Max cert size returned by CertifyKey
+const MAX_CERT_SIZE: usize = 6144;
 #[cfg(not(feature = "arbitrary_max_handles"))]
 pub const MAX_HANDLES: usize = 24;
 #[cfg(feature = "arbitrary_max_handles")]
 include!(concat!(env!("OUT_DIR"), "/arbitrary_max_handles.rs"));
 
 const CURRENT_PROFILE_MAJOR_VERSION: u16 = 0;
-const CURRENT_PROFILE_MINOR_VERSION: u16 = 10;
+const CURRENT_PROFILE_MINOR_VERSION: u16 = 11;
 
 #[cfg(not(feature = "disable_internal_info"))]
 const INTERNAL_INPUT_INFO_SIZE: usize = size_of::<GetProfileResp>() + size_of::<u32>();
@@ -65,8 +66,9 @@ impl From<bool> for U8Bool {
 }
 
 pub enum DpeProfile {
-    P256Sha256 = 1,
-    P384Sha384 = 2,
+    // Note: Min profiles (1 & 2) are not supported by this implementation
+    P256Sha256 = 3,
+    P384Sha384 = 4,
 }
 
 impl DpeProfile {
