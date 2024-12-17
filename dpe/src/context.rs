@@ -122,10 +122,16 @@ pub struct ContextHandle(pub [u8; ContextHandle::SIZE]);
 impl ContextHandle {
     pub const SIZE: usize = 16;
     const DEFAULT: ContextHandle = ContextHandle([0; Self::SIZE]);
+    const INVALID: ContextHandle = ContextHandle([0xFF; Self::SIZE]);
 
     /// Returns the default context handle.
     pub const fn default() -> ContextHandle {
         Self::DEFAULT
+    }
+
+    /// Returns an invalid context handle.
+    pub const fn new_invalid() -> ContextHandle {
+        Self::INVALID
     }
 
     /// Whether the handle is the default context handle.

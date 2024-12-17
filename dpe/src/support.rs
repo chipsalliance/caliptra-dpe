@@ -15,11 +15,10 @@ bitflags! {
         const ROTATE_CONTEXT = 1u32 << 27;
         const X509 = 1u32 << 26;
         const CSR = 1u32 << 25;
-        const IS_SYMMETRIC = 1u32 << 24;
         const INTERNAL_INFO = 1u32 << 22;
         const INTERNAL_DICE = 1u32 << 21;
-        const IS_CA = 1u32 << 20;
         const RETAIN_PARENT_CONTEXT = 1u32 << 19;
+        const CDI_EXPORT = 1u32 << 18;
     }
 }
 
@@ -42,20 +41,17 @@ impl Support {
     pub fn csr(&self) -> bool {
         self.contains(Support::CSR)
     }
-    pub fn is_symmetric(&self) -> bool {
-        self.contains(Support::IS_SYMMETRIC)
-    }
     pub fn internal_info(&self) -> bool {
         self.contains(Support::INTERNAL_INFO)
     }
     pub fn internal_dice(&self) -> bool {
         self.contains(Support::INTERNAL_DICE)
     }
-    pub fn is_ca(&self) -> bool {
-        self.contains(Support::IS_CA)
-    }
     pub fn retain_parent_context(&self) -> bool {
         self.contains(Support::RETAIN_PARENT_CONTEXT)
+    }
+    pub fn cdi_export(&self) -> bool {
+        self.contains(Support::CDI_EXPORT)
     }
 
     /// Disables supported features based on compilation features
@@ -86,10 +82,6 @@ impl Support {
         {
             support.insert(Support::CSR);
         }
-        #[cfg(feature = "disable_is_symmetric")]
-        {
-            support.insert(Support::IS_SYMMETRIC);
-        }
         #[cfg(feature = "disable_internal_info")]
         {
             support.insert(Support::INTERNAL_INFO);
@@ -98,13 +90,13 @@ impl Support {
         {
             support.insert(Support::INTERNAL_DICE);
         }
-        #[cfg(feature = "disable_is_ca")]
-        {
-            support.insert(Support::IS_CA);
-        }
         #[cfg(feature = "disable_retain_parent_context")]
         {
             support.insert(Support::RETAIN_PARENT_CONTEXT);
+        }
+        #[cfg(feature = "disable_export_cdi")]
+        {
+            support.insert(Support::CDI_EXPORT);
         }
         self.difference(support)
     }
@@ -143,20 +135,16 @@ pub mod test {
         // Supports certify csr.
         let flags = Support::CSR.bits();
         assert_eq!(flags, 1 << 25);
-        // Supports is symmetric.
-        let flags = Support::IS_SYMMETRIC.bits();
-        assert_eq!(flags, 1 << 24);
         // Supports internal info.
         let flags = Support::INTERNAL_INFO.bits();
         assert_eq!(flags, 1 << 22);
         // Supports internal DICE.
         let flags = Support::INTERNAL_DICE.bits();
         assert_eq!(flags, 1 << 21);
-        // Supports is ca.
-        let flags = Support::IS_CA.bits();
-        assert_eq!(flags, 1 << 20);
         let flags = Support::RETAIN_PARENT_CONTEXT.bits();
         assert_eq!(flags, 1 << 19);
+        let flags = Support::CDI_EXPORT.bits();
+        assert_eq!(flags, 1 << 18);
         // Supports a couple combos.
         let flags = (Support::SIMULATION
             | Support::AUTO_INIT
@@ -168,10 +156,8 @@ pub mod test {
             flags,
             (1 << 31) | (1 << 29) | (1 << 27) | (1 << 25) | (1 << 21)
         );
-        let flags =
-            (Support::RECURSIVE | Support::X509 | Support::IS_SYMMETRIC | Support::INTERNAL_INFO)
-                .bits();
-        assert_eq!(flags, (1 << 30) | (1 << 26) | (1 << 24) | (1 << 22));
+        let flags = (Support::RECURSIVE | Support::X509 | Support::INTERNAL_INFO).bits();
+        assert_eq!(flags, (1 << 30) | (1 << 26) | (1 << 22));
         // Supports everything.
         let flags = Support::all().bits();
         assert_eq!(
@@ -182,11 +168,10 @@ pub mod test {
                 | (1 << 27)
                 | (1 << 26)
                 | (1 << 25)
-                | (1 << 24)
                 | (1 << 22)
                 | (1 << 21)
-                | (1 << 20)
                 | (1 << 19)
+                | (1 << 18)
         );
     }
 }

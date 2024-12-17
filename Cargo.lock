@@ -296,7 +296,6 @@ dependencies = [
  "caliptra-cfi-lib-git",
  "ecdsa",
  "hkdf",
- "hmac",
  "openssl",
  "p256",
  "p384",

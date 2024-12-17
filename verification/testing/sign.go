@@ -3,7 +3,6 @@
 package verification
 
 import (
-	"bytes"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/x509"
@@ -17,8 +16,6 @@ import (
 // TestAsymmetricSigning obtains and validates signature of asymmetric signing.
 // Check whether the digital signature returned by Sign command can be verified
 // using public key in signing key certificate returned by CertifyKey command.
-// Inspite of the DPE profile supporting symmetric key, for symmetric signing it must be enabled
-// explicitly in Sign command flags. Else asymmetric signing is used as default.
 func TestAsymmetricSigning(d client.TestDPEInstance, c client.DPEClient, t *testing.T) {
 	useSimulation := false
 	handle := getInitialContextHandle(d, c, t, useSimulation)
@@ -73,7 +70,7 @@ func TestAsymmetricSigning(d client.TestDPEInstance, c client.DPEClient, t *test
 	publicKey := ecdsa.PublicKey{Curve: ec, X: x, Y: y}
 
 	// Build Signature from bytes
-	r := new(big.Int).SetBytes(signResp.HmacOrSignatureR)
+	r := new(big.Int).SetBytes(signResp.SignatureR)
 	s := new(big.Int).SetBytes(signResp.SignatureS)
 
 	// Verify Signature
@@ -100,73 +97,9 @@ func TestSignSimulation(d client.TestDPEInstance, c client.DPEClient, t *testing
 
 	digestLen := profile.GetDigestSize()
 
-	if _, err := c.Sign(handle, make([]byte, digestLen), client.SignFlags(client.IsSymmetric), make([]byte, digestLen)); err == nil {
-		t.Fatalf("[FATAL]: Should return %q, but returned no error", client.StatusInvalidArgument)
-	} else if !errors.Is(err, client.StatusInvalidArgument) {
-		t.Fatalf("[FATAL]: Incorrect error type. Should return %q, but returned %q", client.StatusInvalidArgument, err)
-	}
-
 	if _, err := c.Sign(handle, make([]byte, digestLen), client.SignFlags(0), make([]byte, digestLen)); err == nil {
 		t.Fatalf("[FATAL]: Should return %q, but returned no error", client.StatusInvalidArgument)
 	} else if !errors.Is(err, client.StatusInvalidArgument) {
 		t.Fatalf("[FATAL]: Incorrect error type. Should return %q, but returned %q", client.StatusInvalidArgument, err)
-	}
-}
-
-// TestSymmetricSigning obtains HMAC (symmetric signature) generated and compares for varying label inputs.
-// Signature created is deterministic and depends on label passed to command.
-// This is because label is used by DPE in symmetric key derivation.
-// Invoking Sign command multiple times with same label and same content (TBS) should return same signature
-// but it should return different signatures for different labels despite having the same content (To Be Signed content).
-func TestSymmetricSigning(d client.TestDPEInstance, c client.DPEClient, t *testing.T) {
-	useSimulation := false
-	handle := getInitialContextHandle(d, c, t, useSimulation)
-
-	// Get digest size
-	profile, err := client.GetTransportProfile(d)
-	if err != nil {
-		t.Fatalf("Could not get profile: %v", err)
-	}
-
-	digestLen := profile.GetDigestSize()
-	label := make([]byte, digestLen)
-	for i := range label {
-		label[i] = byte(i)
-	}
-
-	tbs := make([]byte, digestLen)
-	for i := range tbs {
-		tbs[i] = byte(i)
-	}
-
-	signedData, err := c.Sign(handle, label, client.SignFlags(client.IsSymmetric), tbs)
-	if err != nil {
-		t.Fatalf("[FATAL]: Error while signing %v", err)
-	}
-
-	// Rerun with same label and compare signature emitted.
-	signedDataWithSameLabel, err := c.Sign(handle, label, client.SignFlags(client.IsSymmetric), tbs)
-	if err != nil {
-		t.Fatalf("[FATAL]: Error while signing %v", err)
-	}
-
-	// Symmetric sign only populates HmacOrSignatureR. SignatureS is all zeroes.
-	if !bytes.Equal(signedDataWithSameLabel.HmacOrSignatureR, signedData.HmacOrSignatureR) {
-		t.Errorf("[ERROR]: Signature varies for same label, want %v but got %v", signedData.HmacOrSignatureR, signedDataWithSameLabel.HmacOrSignatureR)
-	}
-
-	// Rerun with different label, signature must change this time
-	newLabel := make([]byte, digestLen)
-	for i := range newLabel {
-		newLabel[i] = byte(0)
-	}
-
-	signedDataWithDiffLabel, err := c.Sign(handle, newLabel, client.SignFlags(client.IsSymmetric), tbs)
-	if err != nil {
-		t.Fatalf("[FATAL]: Error while signing %v", err)
-	}
-
-	if bytes.Equal(signedDataWithDiffLabel.HmacOrSignatureR, signedData.HmacOrSignatureR) {
-		t.Errorf("[ERROR]: Signature must vary for different label despite having same toBeSigned content, want new signature but got old %v", signedData.HmacOrSignatureR)
 	}
 }

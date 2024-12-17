@@ -41,9 +41,9 @@ type DPETCI struct {
 
 // DPESignedHash is the response from DPE Sign
 type DPESignedHash struct {
-	Handle           ContextHandle
-	HmacOrSignatureR []byte
-	SignatureS       []byte
+	Handle     ContextHandle
+	SignatureR []byte
+	SignatureS []byte
 }
 
 // DPEClient is a generic interface to a DPE instance

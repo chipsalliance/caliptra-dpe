@@ -14,8 +14,6 @@ use caliptra_cfi_lib_git::cfi_launder;
 use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq, cfi_assert_ne};
 use cfg_if::cfg_if;
 use crypto::{Crypto, Digest, EcdsaSig};
-#[cfg(not(feature = "disable_is_symmetric"))]
-use crypto::{CryptoBuf, HmacSig};
 
 #[repr(C)]
 #[derive(
@@ -30,9 +28,7 @@ use crypto::{CryptoBuf, HmacSig};
 pub struct SignFlags(u32);
 
 bitflags! {
-    impl SignFlags: u32 {
-        const IS_SYMMETRIC = 1u32 << 30;
-    }
+    impl SignFlags: u32 {}
 }
 
 #[repr(C)]
@@ -53,10 +49,6 @@ pub struct SignCmd {
 }
 
 impl SignCmd {
-    const fn uses_symmetric(&self) -> bool {
-        self.flags.contains(SignFlags::IS_SYMMETRIC)
-    }
-
     /// Signs `digest` using ECDSA
     ///
     /// # Arguments
@@ -94,40 +86,6 @@ impl SignCmd {
 
         Ok(sig)
     }
-
-    /// Signs `digest` using an HMAC
-    ///
-    /// # Arguments
-    ///
-    /// * `dpe` - DPE instance
-    /// * `env` - DPE environment containing Crypto and Platform implementations
-    /// * `idx` - The index of the context where the measurement hash is computed from
-    /// * `digest` - The data to be signed
-    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
-    #[cfg(not(feature = "disable_is_symmetric"))]
-    fn hmac_sign(
-        &self,
-        dpe: &mut DpeInstance,
-        env: &mut DpeEnv<impl DpeTypes>,
-        idx: usize,
-        digest: &Digest,
-    ) -> Result<HmacSig, DpeErrorCode> {
-        let algs = DPE_PROFILE.alg_len();
-        let cdi_digest = dpe.compute_measurement_hash(env, idx)?;
-        let cdi = env
-            .crypto
-            .derive_cdi(DPE_PROFILE.alg_len(), &cdi_digest, b"DPE");
-        if cfi_launder(cdi.is_ok()) {
-            #[cfg(not(feature = "no-cfi"))]
-            cfi_assert!(cdi.is_ok());
-        } else {
-            #[cfg(not(feature = "no-cfi"))]
-            cfi_assert!(cdi.is_err());
-        }
-        Ok(env
-            .crypto
-            .hmac_sign_with_derived(algs, &cdi?, &self.label, b"HMAC", digest)?)
-    }
 }
 
 impl CommandExecution for SignCmd {
@@ -138,11 +96,6 @@ impl CommandExecution for SignCmd {
         env: &mut DpeEnv<impl DpeTypes>,
         locality: u32,
     ) -> Result<Response, DpeErrorCode> {
-        // Make sure the operation is supported.
-        if !dpe.support.is_symmetric() && self.uses_symmetric() {
-            return Err(DpeErrorCode::ArgumentNotSupported);
-        }
-
         let idx = dpe.get_active_context_pos(&self.handle, locality)?;
         let context = &dpe.contexts[idx];
 
@@ -152,29 +105,14 @@ impl CommandExecution for SignCmd {
 
         cfg_if! {
             if #[cfg(not(feature = "no-cfi"))] {
-                cfi_assert!(dpe.support.is_symmetric() || !self.uses_symmetric());
                 cfi_assert_ne(context.context_type, ContextType::Simulation);
             }
         }
 
         let digest = Digest::new(&self.digest)?;
-        let EcdsaSig { r, s } = if !self.uses_symmetric() {
-            self.ecdsa_sign(dpe, env, idx, &digest)?
-        } else {
-            cfg_if! {
-                if #[cfg(not(feature = "disable_is_symmetric"))] {
-                    let algs = DPE_PROFILE.alg_len();
-                    let r = self.hmac_sign(dpe, env, idx, &digest)?;
-                    let s = CryptoBuf::default(algs);
-                    EcdsaSig { r, s }
-                }
-                else {
-                    Err(DpeErrorCode::ArgumentNotSupported)?
-                }
-            }
-        };
+        let EcdsaSig { r, s } = self.ecdsa_sign(dpe, env, idx, &digest)?;
 
-        let sig_r_or_hmac: [u8; DPE_PROFILE.get_ecc_int_size()] = r
+        let sig_r: [u8; DPE_PROFILE.get_ecc_int_size()] = r
             .bytes()
             .try_into()
             .map_err(|_| DpeErrorCode::InternalError)?;
@@ -189,7 +127,7 @@ impl CommandExecution for SignCmd {
 
         Ok(Response::Sign(SignResp {
             new_context_handle: dpe.contexts[idx].handle,
-            sig_r_or_hmac,
+            sig_r,
             sig_s,
             resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
         }))
@@ -208,7 +146,7 @@ mod tests {
             Command, CommandHdr, DeriveContextCmd, InitCtxCmd,
         },
         dpe_instance::tests::{TestTypes, RANDOM_HANDLE, SIMULATION_HANDLE, TEST_LOCALITIES},
-        support::{test::SUPPORT, Support},
+        support::test::SUPPORT,
     };
     use caliptra_cfi_lib_git::CfiCounter;
     use crypto::OpensslCrypto;
@@ -236,24 +174,6 @@ mod tests {
     }
 
     #[test]
-    fn test_uses_symmetric() {
-        CfiCounter::reset_for_test();
-        // No flags set.
-        assert!(!SignCmd {
-            flags: SignFlags::empty(),
-            ..TEST_SIGN_CMD
-        }
-        .uses_symmetric());
-
-        // Just is-symmetric flag set.
-        assert!(SignCmd {
-            flags: SignFlags::IS_SYMMETRIC,
-            ..TEST_SIGN_CMD
-        }
-        .uses_symmetric());
-    }
-
-    #[test]
     fn test_bad_command_inputs() {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
@@ -261,18 +181,6 @@ mod tests {
             platform: DefaultPlatform,
         };
         let mut dpe = DpeInstance::new(&mut env, SUPPORT).unwrap();
-
-        // Bad argument
-        assert_eq!(
-            Err(DpeErrorCode::ArgumentNotSupported),
-            SignCmd {
-                handle: ContextHandle([0xff; ContextHandle::SIZE]),
-                label: TEST_LABEL,
-                flags: SignFlags::IS_SYMMETRIC,
-                digest: TEST_DIGEST
-            }
-            .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
-        );
 
         // Bad handle.
         assert_eq!(
@@ -354,7 +262,7 @@ mod tests {
             };
 
             EcdsaSig::from_private_components(
-                BigNum::from_slice(&resp.sig_r_or_hmac).unwrap(),
+                BigNum::from_slice(&resp.sig_r).unwrap(),
                 BigNum::from_slice(&resp.sig_s).unwrap(),
             )
             .unwrap()
@@ -378,40 +286,5 @@ mod tests {
         };
 
         assert!(sig.verify(&TEST_DIGEST, &ec_pub_key).unwrap());
-    }
-
-    #[test]
-    fn test_symmetric() {
-        CfiCounter::reset_for_test();
-        let mut env = DpeEnv::<TestTypes> {
-            crypto: OpensslCrypto::new(),
-            platform: DefaultPlatform,
-        };
-        let mut dpe =
-            DpeInstance::new(&mut env, Support::AUTO_INIT | Support::IS_SYMMETRIC).unwrap();
-
-        let cmd = SignCmd {
-            handle: ContextHandle::default(),
-            label: TEST_LABEL,
-            flags: SignFlags::IS_SYMMETRIC,
-            digest: TEST_DIGEST,
-        };
-        let resp = match cmd.execute(&mut dpe, &mut env, TEST_LOCALITIES[0]).unwrap() {
-            Response::Sign(resp) => resp,
-            _ => panic!("Incorrect response type"),
-        };
-
-        let idx = dpe
-            .get_active_context_pos(&ContextHandle::default(), TEST_LOCALITIES[0])
-            .unwrap();
-        // Check that r is equal to the HMAC over the digest
-        assert_eq!(
-            resp.sig_r_or_hmac,
-            cmd.hmac_sign(&mut dpe, &mut env, idx, &Digest::new(&TEST_DIGEST).unwrap(),)
-                .unwrap()
-                .bytes()
-        );
-        // Check that s is a buffer of all 0s
-        assert!(&resp.sig_s.iter().all(|&b| b == 0x0));
     }
 }

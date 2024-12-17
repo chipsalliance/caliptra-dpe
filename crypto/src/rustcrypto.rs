@@ -1,11 +1,11 @@
 // Licensed under the Apache-2.0 license
 
 use crate::{
-    hkdf::*, AlgLen, Crypto, CryptoBuf, CryptoError, Digest, EcdsaPub, EcdsaSig, Hasher, HmacSig,
+    hkdf::*, AlgLen, Crypto, CryptoBuf, CryptoError, Digest, EcdsaPub, EcdsaSig, ExportedCdiHandle,
+    Hasher, MAX_EXPORTED_CDI_SIZE,
 };
 use core::ops::Deref;
 use ecdsa::{signature::hazmat::PrehashSigner, Signature};
-use hmac::{Hmac, Mac};
 use p256::NistP256;
 use p384::NistP384;
 use rand::{rngs::StdRng, RngCore, SeedableRng};
@@ -57,18 +57,59 @@ impl Hasher for RustCryptoHasher {
     }
 }
 
-pub struct RustCryptoImpl(StdRng);
+// Currently only supports one CDI handle but in the future we may want to support multiple.
+const MAX_CDI_HANDLES: usize = 1;
+
+pub struct RustCryptoImpl {
+    rng: StdRng,
+    export_cdi_slots: Vec<(<RustCryptoImpl as Crypto>::Cdi, ExportedCdiHandle)>,
+}
+
 impl RustCryptoImpl {
     #[cfg(not(feature = "deterministic_rand"))]
     pub fn new() -> Self {
-        RustCryptoImpl(StdRng::from_entropy())
+        Self {
+            rng: StdRng::from_entropy(),
+            export_cdi_slots: Vec::new(),
+        }
     }
 
     #[cfg(feature = "deterministic_rand")]
     pub fn new() -> Self {
         const SEED: [u8; 32] = [1; 32];
         let seeded_rng = StdRng::from_seed(SEED);
-        RustCryptoImpl(seeded_rng)
+        Self {
+            rng: seeded_rng,
+            export_cdi_slots: Vec::new(),
+        }
+    }
+
+    fn derive_key_pair_inner(
+        &mut self,
+        algs: AlgLen,
+        cdi: &<RustCryptoImpl as Crypto>::Cdi,
+        label: &[u8],
+        info: &[u8],
+    ) -> Result<(<RustCryptoImpl as Crypto>::PrivKey, EcdsaPub), CryptoError> {
+        let secret = hkdf_get_priv_key(algs, cdi, label, info)?;
+        match algs {
+            AlgLen::Bit256 => {
+                let signing = p256::ecdsa::SigningKey::from_slice(&secret.bytes())?;
+                let verifying = p256::ecdsa::VerifyingKey::from(&signing);
+                let point = verifying.to_encoded_point(false);
+                let x = CryptoBuf::new(point.x().ok_or(RUSTCRYPTO_ECDSA_ERROR)?.as_slice())?;
+                let y = CryptoBuf::new(point.y().ok_or(RUSTCRYPTO_ECDSA_ERROR)?.as_slice())?;
+                Ok((secret, EcdsaPub { x, y }))
+            }
+            AlgLen::Bit384 => {
+                let signing = p384::ecdsa::SigningKey::from_slice(&secret.bytes())?;
+                let verifying = p384::ecdsa::VerifyingKey::from(&signing);
+                let point = verifying.to_encoded_point(false);
+                let x = CryptoBuf::new(point.x().ok_or(RUSTCRYPTO_ECDSA_ERROR)?.as_slice())?;
+                let y = CryptoBuf::new(point.y().ok_or(RUSTCRYPTO_ECDSA_ERROR)?.as_slice())?;
+                Ok((secret, EcdsaPub { x, y }))
+            }
+        }
     }
 }
 
@@ -89,10 +130,11 @@ impl Crypto for RustCryptoImpl {
     }
 
     fn rand_bytes(&mut self, dst: &mut [u8]) -> Result<(), CryptoError> {
-        StdRng::fill_bytes(&mut self.0, dst);
+        StdRng::fill_bytes(&mut self.rng, dst);
         Ok(())
     }
 
+    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     fn derive_cdi(
         &mut self,
         algs: AlgLen,
@@ -102,6 +144,32 @@ impl Crypto for RustCryptoImpl {
         hkdf_derive_cdi(algs, measurement, info)
     }
 
+    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    fn derive_exported_cdi(
+        &mut self,
+        algs: AlgLen,
+        measurement: &Digest,
+        info: &[u8],
+    ) -> Result<ExportedCdiHandle, CryptoError> {
+        let cdi = hkdf_derive_cdi(algs, measurement, info)?;
+
+        for (stored_cdi, _) in self.export_cdi_slots.iter() {
+            if *stored_cdi == cdi {
+                return Err(CryptoError::ExportedCdiHandleDuplicateCdi);
+            }
+        }
+
+        if self.export_cdi_slots.len() >= MAX_CDI_HANDLES {
+            return Err(CryptoError::ExportedCdiHandleLimitExceeded);
+        }
+
+        let mut exported_cdi_handle = [0; MAX_EXPORTED_CDI_SIZE];
+        self.rand_bytes(&mut exported_cdi_handle)?;
+        self.export_cdi_slots.push((cdi, exported_cdi_handle));
+        Ok(exported_cdi_handle)
+    }
+
+    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     fn derive_key_pair(
         &mut self,
         algs: AlgLen,
@@ -109,25 +177,27 @@ impl Crypto for RustCryptoImpl {
         label: &[u8],
         info: &[u8],
     ) -> Result<(Self::PrivKey, EcdsaPub), CryptoError> {
-        let secret = hkdf_get_priv_key(algs, cdi, label, info)?;
-        match algs {
-            AlgLen::Bit256 => {
-                let signing = p256::ecdsa::SigningKey::from_slice(&secret.bytes())?;
-                let verifying = p256::ecdsa::VerifyingKey::from(&signing);
-                let point = verifying.to_encoded_point(false);
-                let x = CryptoBuf::new(point.x().ok_or(RUSTCRYPTO_ECDSA_ERROR)?.as_slice())?;
-                let y = CryptoBuf::new(point.y().ok_or(RUSTCRYPTO_ECDSA_ERROR)?.as_slice())?;
-                Ok((secret, EcdsaPub { x, y }))
+        self.derive_key_pair_inner(algs, cdi, label, info)
+    }
+
+    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    fn derive_key_pair_exported(
+        &mut self,
+        algs: AlgLen,
+        exported_handle: &ExportedCdiHandle,
+        label: &[u8],
+        info: &[u8],
+    ) -> Result<(Self::PrivKey, EcdsaPub), CryptoError> {
+        let cdi = {
+            let mut cdi = None;
+            for (stored_cdi, stored_handle) in self.export_cdi_slots.iter() {
+                if stored_handle == exported_handle {
+                    cdi = Some(stored_cdi.clone());
+                }
             }
-            AlgLen::Bit384 => {
-                let signing = p384::ecdsa::SigningKey::from_slice(&secret.bytes())?;
-                let verifying = p384::ecdsa::VerifyingKey::from(&signing);
-                let point = verifying.to_encoded_point(false);
-                let x = CryptoBuf::new(point.x().ok_or(RUSTCRYPTO_ECDSA_ERROR)?.as_slice())?;
-                let y = CryptoBuf::new(point.y().ok_or(RUSTCRYPTO_ECDSA_ERROR)?.as_slice())?;
-                Ok((secret, EcdsaPub { x, y }))
-            }
-        }
+            cdi.ok_or(CryptoError::InvalidExportedCdiHandle)
+        }?;
+        self.derive_key_pair_inner(algs, &cdi, label, info)
     }
 
     fn ecdsa_sign_with_alias(
@@ -174,29 +244,6 @@ impl Crypto for RustCryptoImpl {
                     p384::ecdsa::SigningKey::from_slice(priv_key.bytes())?
                         .sign_prehash(digest.bytes())?;
                 sig.try_into()
-            }
-        }
-    }
-
-    fn hmac_sign_with_derived(
-        &mut self,
-        algs: AlgLen,
-        cdi: &Self::Cdi,
-        label: &[u8],
-        info: &[u8],
-        digest: &Digest,
-    ) -> Result<HmacSig, CryptoError> {
-        let (symmetric_key, _) = self.derive_key_pair(algs, cdi, label, info)?;
-        match algs {
-            AlgLen::Bit256 => {
-                let mut hmac = Hmac::<Sha256>::new_from_slice(symmetric_key.bytes()).unwrap();
-                Mac::update(&mut hmac, digest.bytes());
-                HmacSig::new(hmac.finalize().into_bytes().as_slice())
-            }
-            AlgLen::Bit384 => {
-                let mut hmac = Hmac::<Sha384>::new_from_slice(symmetric_key.bytes()).unwrap();
-                Mac::update(&mut hmac, digest.bytes());
-                HmacSig::new(hmac.finalize().into_bytes().as_slice())
             }
         }
     }

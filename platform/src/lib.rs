@@ -22,6 +22,32 @@ pub const MAX_SN_SIZE: usize = 20;
 pub const MAX_KEY_IDENTIFIER_SIZE: usize = 20;
 pub const MAX_VALIDITY_SIZE: usize = 24;
 pub const MAX_OTHER_NAME_SIZE: usize = 128;
+// Hash size of the SHA-384 DPE profile
+pub const MAX_UEID_SIZE: usize = 48;
+
+pub struct Ueid {
+    pub buf: [u8; MAX_UEID_SIZE],
+    pub buf_size: u32,
+}
+
+impl Ueid {
+    pub fn get(&self) -> Result<&[u8], PlatformError> {
+        let ueid = self
+            .buf
+            .get(..self.buf_size as usize)
+            .ok_or(PlatformError::InvalidUeidError)?;
+        Ok(ueid)
+    }
+}
+
+impl Default for Ueid {
+    fn default() -> Self {
+        Self {
+            buf: [0; MAX_UEID_SIZE],
+            buf_size: 0,
+        }
+    }
+}
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum SignerIdentifier {
@@ -61,6 +87,8 @@ pub enum PlatformError {
     CertValidityError(u32) = 0x7,
     IssuerKeyIdentifierError(u32) = 0x8,
     SubjectAlternativeNameError(u32) = 0x9,
+    MissingUeidError = 0xA,
+    InvalidUeidError = 0xB,
 }
 
 impl PlatformError {
@@ -75,6 +103,8 @@ impl PlatformError {
         match self {
             PlatformError::CertificateChainError => None,
             PlatformError::NotImplemented => None,
+            PlatformError::MissingUeidError => None,
+            PlatformError::InvalidUeidError => None,
             PlatformError::IssuerNameError(code) => Some(*code),
             PlatformError::PrintError(code) => Some(*code),
             PlatformError::SerialNumberError(code) => Some(*code),
@@ -147,4 +177,9 @@ pub trait Platform {
     /// can be left unimplemented if the SubjectAlternativeName extension is
     /// not needed in the DPE leaf cert or CSR.
     fn get_subject_alternative_name(&mut self) -> Result<SubjectAltName, PlatformError>;
+
+    /// Retrieves the device serial number
+    ///
+    /// This is encoded into certificates created by DPE.
+    fn get_ueid(&mut self) -> Result<Ueid, PlatformError>;
 }
