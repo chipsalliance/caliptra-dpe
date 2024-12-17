@@ -33,9 +33,7 @@ use platform::{Platform, PlatformError, MAX_KEY_IDENTIFIER_SIZE};
 pub struct CertifyKeyFlags(u32);
 
 bitflags! {
-    impl CertifyKeyFlags: u32 {
-        const IS_CA = 1u32 << 30;
-    }
+    impl CertifyKeyFlags: u32 {}
 }
 
 #[repr(C)]
@@ -58,10 +56,6 @@ pub struct CertifyKeyCmd {
 impl CertifyKeyCmd {
     pub const FORMAT_X509: u32 = 0;
     pub const FORMAT_CSR: u32 = 1;
-
-    const fn uses_is_ca(&self) -> bool {
-        self.flags.contains(CertifyKeyFlags::IS_CA)
-    }
 }
 
 impl CommandExecution for CertifyKeyCmd {
@@ -74,13 +68,6 @@ impl CommandExecution for CertifyKeyCmd {
     ) -> Result<Response, DpeErrorCode> {
         let idx = dpe.get_active_context_pos(&self.handle, locality)?;
         let context = &dpe.contexts[idx];
-
-        if self.uses_is_ca() && !dpe.support.is_ca() {
-            return Err(DpeErrorCode::ArgumentNotSupported);
-        }
-        if self.uses_is_ca() && !context.allow_ca() {
-            return Err(DpeErrorCode::InvalidArgument);
-        }
 
         if self.format == Self::FORMAT_X509 {
             if !dpe.support.x509() {
@@ -100,8 +87,6 @@ impl CommandExecution for CertifyKeyCmd {
 
         cfg_if! {
             if #[cfg(not(feature = "no-cfi"))] {
-                cfi_assert!(!self.uses_is_ca() || dpe.support.is_ca());
-                cfi_assert!(!self.uses_is_ca() || context.allow_ca());
                 cfi_assert!(self.format != Self::FORMAT_X509 || dpe.support.x509());
                 cfi_assert!(self.format != Self::FORMAT_X509 || context.allow_x509());
                 cfi_assert!(self.format != Self::FORMAT_CSR || dpe.support.csr());
@@ -170,7 +155,7 @@ impl CommandExecution for CertifyKeyCmd {
         let measurements = MeasurementData {
             label: &self.label,
             tci_nodes: &nodes[..tcb_count],
-            is_ca: self.uses_is_ca(),
+            is_ca: false,
             supports_recursive: dpe.support.recursive(),
             subject_key_identifier,
             authority_key_identifier,
@@ -402,120 +387,6 @@ mod tests {
     }
 
     #[test]
-    fn test_is_ca() {
-        CfiCounter::reset_for_test();
-        let mut env = DpeEnv::<TestTypes> {
-            crypto: OpensslCrypto::new(),
-            platform: DefaultPlatform,
-        };
-        let mut dpe = DpeInstance::new(&mut env, Support::X509 | Support::IS_CA).unwrap();
-
-        let init_resp = match InitCtxCmd::new_use_default()
-            .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
-            .unwrap()
-        {
-            Response::InitCtx(resp) => resp,
-            _ => panic!("Incorrect return type."),
-        };
-        let certify_cmd_ca = CertifyKeyCmd {
-            handle: init_resp.handle,
-            flags: CertifyKeyFlags::IS_CA,
-            label: [0; DPE_PROFILE.get_hash_size()],
-            format: CertifyKeyCmd::FORMAT_X509,
-        };
-
-        let certify_resp_ca = match certify_cmd_ca
-            .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
-            .unwrap()
-        {
-            Response::CertifyKey(resp) => resp,
-            _ => panic!("Wrong response type."),
-        };
-
-        let mut parser = X509CertificateParser::new().with_deep_parse_extensions(true);
-        match parser.parse(&certify_resp_ca.cert[..certify_resp_ca.cert_size.try_into().unwrap()]) {
-            Ok((_, cert)) => {
-                match cert.basic_constraints() {
-                    Ok(Some(basic_constraints)) => {
-                        assert!(basic_constraints.value.ca);
-                    }
-                    Ok(None) => panic!("basic constraints extension not found"),
-                    Err(_) => panic!("multiple basic constraints extensions found"),
-                }
-
-                let pub_key = &cert.tbs_certificate.subject_pki.subject_public_key.data;
-                let mut hasher = match DPE_PROFILE {
-                    DpeProfile::P256Sha256 => Hasher::new(MessageDigest::sha256()).unwrap(),
-                    DpeProfile::P384Sha384 => Hasher::new(MessageDigest::sha384()).unwrap(),
-                };
-                hasher.update(pub_key).unwrap();
-                let expected_ski: &[u8] = &hasher.finish().unwrap();
-                match cert.get_extension_unique(&oid!(2.5.29 .14)) {
-                    Ok(Some(subject_key_identifier_ext)) => {
-                        if let ParsedExtension::SubjectKeyIdentifier(key_identifier) =
-                            subject_key_identifier_ext.parsed_extension()
-                        {
-                            assert_eq!(key_identifier.0, &expected_ski[..MAX_KEY_IDENTIFIER_SIZE]);
-                        } else {
-                            panic!("Extension has wrong type");
-                        }
-                    }
-                    Ok(None) => panic!("subject key identifier extension not found"),
-                    Err(_) => panic!("multiple subject key identifier extensions found"),
-                }
-
-                let mut expected_aki = [0u8; MAX_KEY_IDENTIFIER_SIZE];
-                env.platform
-                    .get_issuer_key_identifier(&mut expected_aki)
-                    .unwrap();
-                match cert.get_extension_unique(&oid!(2.5.29 .35)) {
-                    Ok(Some(extension)) => {
-                        if let ParsedExtension::AuthorityKeyIdentifier(aki) =
-                            extension.parsed_extension()
-                        {
-                            let key_identifier = aki.key_identifier.clone().unwrap();
-                            assert_eq!(&key_identifier.0, &expected_aki,);
-                        } else {
-                            panic!("Extension has wrong type");
-                        }
-                    }
-                    Ok(None) => panic!("authority key identifier extension not found"),
-                    Err(_) => panic!("multiple authority key identifier extensions found"),
-                }
-            }
-            Err(e) => panic!("x509 parsing failed: {:?}", e),
-        };
-
-        let certify_cmd_non_ca = CertifyKeyCmd {
-            handle: init_resp.handle,
-            flags: CertifyKeyFlags::empty(),
-            label: [0; DPE_PROFILE.get_hash_size()],
-            format: CertifyKeyCmd::FORMAT_X509,
-        };
-
-        let certify_resp_non_ca = match certify_cmd_non_ca
-            .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
-            .unwrap()
-        {
-            Response::CertifyKey(resp) => resp,
-            _ => panic!("Wrong response type."),
-        };
-
-        match parser
-            .parse(&certify_resp_non_ca.cert[..certify_resp_non_ca.cert_size.try_into().unwrap()])
-        {
-            Ok((_, cert)) => match cert.basic_constraints() {
-                Ok(Some(basic_constraints)) => {
-                    assert!(!basic_constraints.value.ca);
-                }
-                Ok(None) => panic!("basic constraints extension not found"),
-                Err(_) => panic!("multiple basic constraints extensions found"),
-            },
-            Err(e) => panic!("x509 parsing failed: {:?}", e),
-        };
-    }
-
-    #[test]
     fn test_certify_key_csr() {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
@@ -710,7 +581,6 @@ mod tests {
         for extension in &extension_req.extensions {
             match extension.parsed_extension() {
                 ParsedExtension::BasicConstraints(basic_constraints) => {
-                    // IS_CA not set so this will be false
                     assert!(!basic_constraints.ca);
                 }
                 ParsedExtension::KeyUsage(key_usage) => {

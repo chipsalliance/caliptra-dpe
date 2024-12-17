@@ -18,7 +18,6 @@ bitflags! {
         const IS_SYMMETRIC = 1u32 << 24;
         const INTERNAL_INFO = 1u32 << 22;
         const INTERNAL_DICE = 1u32 << 21;
-        const IS_CA = 1u32 << 20;
         const RETAIN_PARENT_CONTEXT = 1u32 << 19;
     }
 }
@@ -50,9 +49,6 @@ impl Support {
     }
     pub fn internal_dice(&self) -> bool {
         self.contains(Support::INTERNAL_DICE)
-    }
-    pub fn is_ca(&self) -> bool {
-        self.contains(Support::IS_CA)
     }
     pub fn retain_parent_context(&self) -> bool {
         self.contains(Support::RETAIN_PARENT_CONTEXT)
@@ -97,10 +93,6 @@ impl Support {
         #[cfg(feature = "disable_internal_dice")]
         {
             support.insert(Support::INTERNAL_DICE);
-        }
-        #[cfg(feature = "disable_is_ca")]
-        {
-            support.insert(Support::IS_CA);
         }
         #[cfg(feature = "disable_retain_parent_context")]
         {
@@ -152,9 +144,6 @@ pub mod test {
         // Supports internal DICE.
         let flags = Support::INTERNAL_DICE.bits();
         assert_eq!(flags, 1 << 21);
-        // Supports is ca.
-        let flags = Support::IS_CA.bits();
-        assert_eq!(flags, 1 << 20);
         let flags = Support::RETAIN_PARENT_CONTEXT.bits();
         assert_eq!(flags, 1 << 19);
         // Supports a couple combos.
@@ -185,7 +174,6 @@ pub mod test {
                 | (1 << 24)
                 | (1 << 22)
                 | (1 << 21)
-                | (1 << 20)
                 | (1 << 19)
         );
     }

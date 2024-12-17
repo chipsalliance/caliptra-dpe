@@ -20,7 +20,6 @@ disable_csr = []
 disable_is_symmetric = []
 disable_internal_info = []
 disable_internal_dice = []
-disable_is_ca = []
 disable_retain_parent_context = []
 no-cfi = ["crypto/no-cfi"]
 

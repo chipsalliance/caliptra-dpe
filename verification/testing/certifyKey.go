@@ -436,8 +436,6 @@ func checkCertifyKeyAuthorityKeyIdentifierExtension(t *testing.T, extensions []p
 // Validates basic constraints in certificate returned by CertifyKey command
 // against the flag set for input parameter.
 // The BasicConstraints extension MUST be included
-// If CertifyKey AddIsCA is set, IsCA MUST be set to true.
-// If CertifyKey AddIsCA is NOT set, IsCA MUST be set to false
 func checkCertifyKeyBasicConstraints(t *testing.T, extensions []pkix.Extension, flags client.CertifyKeyFlags) {
 	t.Helper()
 
@@ -448,10 +446,8 @@ func checkCertifyKeyBasicConstraints(t *testing.T, extensions []pkix.Extension, 
 	if err != nil {
 		t.Error(err)
 	}
-
-	flagIsCA := client.CertifyAddIsCA&flags != 0
-	if flagIsCA != bc.IsCA {
-		t.Errorf("[ERROR]: ADD_IS_CA is set to %v but the basic constraint IsCA is set to %v", flagIsCA, bc.IsCA)
+	if bc.IsCA {
+		t.Errorf("[ERROR]: basic constraint IsCA is set to %v but it must always be false for CertifyKey.", bc.IsCA)
 	}
 }
 
