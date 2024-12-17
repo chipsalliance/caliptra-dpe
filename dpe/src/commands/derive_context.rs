@@ -195,7 +195,6 @@ impl CommandExecution for DeriveContextCmd {
         if (!dpe.support.internal_info() && self.uses_internal_info_input())
             || (!dpe.support.internal_dice() && self.uses_internal_dice_input())
             || (!dpe.support.retain_parent_context() && self.retains_parent())
-            || (!dpe.support.is_ca() && self.allows_ca())
             || (!dpe.support.x509() && self.allows_x509())
             || (!dpe.support.recursive() && self.is_recursive())
         {
@@ -225,7 +224,6 @@ impl CommandExecution for DeriveContextCmd {
                 cfi_assert!(dpe.support.internal_info() || !self.uses_internal_info_input());
                 cfi_assert!(dpe.support.internal_dice() || !self.uses_internal_dice_input());
                 cfi_assert!(dpe.support.retain_parent_context() || !self.retains_parent());
-                cfi_assert!(dpe.support.is_ca() || !self.allows_ca());
                 cfi_assert!(dpe.support.x509() || !self.allows_x509());
                 cfi_assert!(dpe.contexts[parent_idx].allow_ca() || !self.allows_ca());
                 cfi_assert!(dpe.contexts[parent_idx].allow_x509() || !self.allows_x509());

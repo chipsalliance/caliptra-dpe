@@ -165,13 +165,6 @@ func TestUnsupportedCommandFlag(d client.TestDPEInstance, c client.DPEClient, t 
 		t.Errorf("[ERROR]: Incorrect error type. Simulation is not supported by DPE, InitializeContext supported by DPE, should return %q, but returned %q", client.StatusArgumentNotSupported, err)
 	}
 
-	// Check whether error is returned since CA certificate request is unsupported by DPE profile
-	if _, err := c.CertifyKey(handle, make([]byte, digestLen), client.CertifyKeyX509, client.CertifyAddIsCA); err == nil {
-		t.Errorf("[ERROR]: IS_CA is not supported by DPE, CertifyKey should return %q, but returned no error", client.StatusArgumentNotSupported)
-	} else if !errors.Is(err, client.StatusArgumentNotSupported) {
-		t.Errorf("[ERROR]: Incorrect error type. IS_CA is not supported by DPE, CertifyKey should return %q, but returned %q", client.StatusArgumentNotSupported, err)
-	}
-
 	// Check whether error is returned since CSR format is unsupported by DPE profile
 	if _, err := c.CertifyKey(handle, make([]byte, digestLen), client.CertifyKeyCsr, 0); err == nil {
 		t.Errorf("[ERROR]: CSR format is not supported by DPE, CertifyKey should return %q, but returned no error", client.StatusArgumentNotSupported)
@@ -205,13 +198,6 @@ func TestUnsupportedCommandFlag(d client.TestDPEInstance, c client.DPEClient, t 
 		t.Errorf("[ERROR]:InternalDice is not supported by DPE, DeriveContext should return %q, but returned no error", client.StatusArgumentNotSupported)
 	} else if !errors.Is(err, client.StatusArgumentNotSupported) {
 		t.Errorf("[ERROR]: Incorrect error type. InternalDice is not supported by DPE, DeriveContext should return %q, but returned %q", client.StatusArgumentNotSupported, err)
-	}
-
-	// Check whether error is returned since InternalInfo usage is unsupported by DPE profile
-	if _, err := c.DeriveContext(handle, make([]byte, digestLen), client.DeriveContextFlags(client.InputAllowCA), 0, 0); err == nil {
-		t.Errorf("[ERROR]:IS_CA is not supported by DPE, DeriveContext should return %q, but returned no error", client.StatusArgumentNotSupported)
-	} else if !errors.Is(err, client.StatusArgumentNotSupported) {
-		t.Errorf("[ERROR]: Incorrect error type. IS_CA is not supported by DPE, DeriveContext should return %q, but returned %q", client.StatusArgumentNotSupported, err)
 	}
 
 	// Check whether error is returned since InternalDice usgae is unsupported by DPE profile
