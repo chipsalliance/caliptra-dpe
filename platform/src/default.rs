@@ -1,7 +1,7 @@
 // Licensed under the Apache-2.0 license
 
 use crate::{
-    CertValidity, Platform, PlatformError, SignerIdentifier, SubjectAltName, MAX_CHUNK_SIZE,
+    CertValidity, Platform, PlatformError, SignerIdentifier, SubjectAltName, Ueid, MAX_CHUNK_SIZE,
     MAX_ISSUER_NAME_SIZE, MAX_KEY_IDENTIFIER_SIZE,
 };
 use arrayvec::ArrayVec;
@@ -15,6 +15,7 @@ pub const VENDOR_ID: u32 = 0;
 pub const VENDOR_SKU: u32 = 0;
 pub const NOT_BEFORE: &str = "20230227000000Z";
 pub const NOT_AFTER: &str = "99991231235959Z";
+pub const TEST_UEID: [u8; 17] = [0xA; 17];
 
 // Run ./generate.sh to generate all test certs and test private keys
 #[cfg(feature = "dpe_profile_p256_sha256")]
@@ -200,5 +201,14 @@ impl Platform for DefaultPlatform {
 
     fn get_subject_alternative_name(&mut self) -> Result<SubjectAltName, PlatformError> {
         Err(PlatformError::NotImplemented)
+    }
+    fn get_ueid(&mut self) -> Result<Ueid, PlatformError> {
+        let buf_size = TEST_UEID.len() as u32;
+        let mut ueid = Ueid::default();
+
+        ueid.buf[..buf_size as usize].clone_from_slice(&TEST_UEID);
+        ueid.buf_size = buf_size;
+
+        Ok(ueid)
     }
 }

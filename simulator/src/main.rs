@@ -52,6 +52,7 @@ fn handle_request(dpe: &mut DpeInstance, env: &mut DpeEnv<impl DpeTypes>, stream
         Response::GetProfile(ref res) => res.resp_hdr.status,
         Response::InitCtx(ref res) => res.resp_hdr.status,
         Response::DeriveContext(ref res) => res.resp_hdr.status,
+        Response::DeriveContextExportedCdi(ref res) => res.resp_hdr.status,
         Response::RotateCtx(ref res) => res.resp_hdr.status,
         Response::CertifyKey(ref res) => res.resp_hdr.status,
         Response::Sign(ref res) => res.resp_hdr.status,
@@ -100,14 +101,6 @@ struct Args {
     #[arg(long)]
     supports_csr: bool,
 
-    // Supports the CertifyKey IS_CA flag
-    #[arg(long)]
-    supports_is_ca: bool,
-
-    /// Supports symmetric derivation.
-    #[arg(long)]
-    supports_is_symmetric: bool,
-
     /// Supports the INTERNAL_INPUT_INFO extension to DeriveContext
     #[arg(long)]
     supports_internal_info: bool,
@@ -119,6 +112,10 @@ struct Args {
     /// Supports the RETAIN_PARENT_CONTEXT extension to DeriveContext
     #[arg(long)]
     supports_retain_parent_context: bool,
+
+    /// Supports the CDI_EXPORT extension to DeriveContext
+    #[arg(long)]
+    supports_cdi_export: bool,
 }
 
 struct SimTypes {}
@@ -159,12 +156,11 @@ fn main() -> std::io::Result<()> {
     support.set(Support::ROTATE_CONTEXT, args.supports_rotate_context);
     support.set(Support::INTERNAL_DICE, args.supports_internal_dice);
     support.set(Support::INTERNAL_INFO, args.supports_internal_info);
-    support.set(Support::IS_CA, args.supports_is_ca);
-    support.set(Support::IS_SYMMETRIC, args.supports_is_symmetric);
     support.set(
         Support::RETAIN_PARENT_CONTEXT,
         args.supports_retain_parent_context,
     );
+    support.set(Support::CDI_EXPORT, args.supports_cdi_export);
 
     let mut env = DpeEnv::<SimTypes> {
         crypto: <SimTypes as DpeTypes>::Crypto::new(),

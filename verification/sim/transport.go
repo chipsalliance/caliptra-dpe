@@ -73,12 +73,6 @@ func (s *DpeSimulator) PowerOn() error {
 	if s.supports.Csr {
 		args = append(args, "--supports-csr")
 	}
-	if s.supports.IsCA {
-		args = append(args, "--supports-is-ca")
-	}
-	if s.supports.IsSymmetric {
-		args = append(args, "--supports-is-symmetric")
-	}
 	if s.supports.InternalInfo {
 		args = append(args, "--supports-internal-info")
 	}
@@ -87,6 +81,9 @@ func (s *DpeSimulator) PowerOn() error {
 	}
 	if s.supports.RetainParentContext {
 		args = append(args, "--supports-retain-parent-context")
+	}
+	if s.supports.CdiExport {
+		args = append(args, "--supports-cdi-export")
 	}
 
 	s.cmd = exec.Command(s.exePath, args...)

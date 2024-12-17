@@ -1,6 +1,9 @@
 // Licensed under the Apache-2.0 license
 
-use crate::{hkdf::*, AlgLen, Crypto, CryptoBuf, CryptoError, Digest, EcdsaPub, Hasher, HmacSig};
+use crate::{
+    hkdf::*, AlgLen, Crypto, CryptoBuf, CryptoError, Digest, EcdsaPub, ExportedCdiHandle, Hasher,
+    MAX_EXPORTED_CDI_SIZE,
+};
 #[cfg(not(feature = "no-cfi"))]
 use caliptra_cfi_derive_git::cfi_impl_fn;
 use openssl::{
@@ -10,8 +13,7 @@ use openssl::{
     error::ErrorStack,
     hash::MessageDigest,
     nid::Nid,
-    pkey::{PKey, Private},
-    sign::Signer,
+    pkey::Private,
 };
 #[cfg(feature = "deterministic_rand")]
 use rand::{rngs::StdRng, RngCore, SeedableRng};
@@ -42,23 +44,36 @@ impl Hasher for OpensslHasher {
     }
 }
 
+// Currently only supports one CDI handle but in the future we may want to support multiple.
+const MAX_CDI_HANDLES: usize = 1;
+
 #[cfg(feature = "deterministic_rand")]
-pub struct OpensslCrypto(StdRng);
+pub struct OpensslCrypto {
+    rng: StdRng,
+    export_cdi_slots: Vec<(<OpensslCrypto as Crypto>::Cdi, ExportedCdiHandle)>,
+}
 
 #[cfg(not(feature = "deterministic_rand"))]
-pub struct OpensslCrypto;
+pub struct OpensslCrypto {
+    export_cdi_slots: Vec<(<OpensslCrypto as Crypto>::Cdi, ExportedCdiHandle)>,
+}
 
 impl OpensslCrypto {
     #[cfg(feature = "deterministic_rand")]
     pub fn new() -> Self {
         const SEED: [u8; 32] = [1; 32];
         let seeded_rng = StdRng::from_seed(SEED);
-        OpensslCrypto(seeded_rng)
+        Self {
+            rng: seeded_rng,
+            export_cdi_slots: Vec::new(),
+        }
     }
 
     #[cfg(not(feature = "deterministic_rand"))]
     pub fn new() -> Self {
-        Self {}
+        Self {
+            export_cdi_slots: Vec::new(),
+        }
     }
 
     fn get_digest(algs: AlgLen) -> MessageDigest {
@@ -91,6 +106,35 @@ impl OpensslCrypto {
 
         EcKey::from_private_components(&group, priv_key_bn, &pub_point)
     }
+
+    fn derive_key_pair_inner(
+        &mut self,
+        algs: AlgLen,
+        cdi: &<OpensslCrypto as Crypto>::Cdi,
+        label: &[u8],
+        info: &[u8],
+    ) -> Result<(<OpensslCrypto as Crypto>::PrivKey, EcdsaPub), CryptoError> {
+        let priv_key = hkdf_get_priv_key(algs, cdi, label, info)?;
+
+        let ec_priv_key = OpensslCrypto::ec_key_from_priv_key(algs, &priv_key)?;
+        let nid = OpensslCrypto::get_curve(algs);
+
+        let group = EcGroup::from_curve_name(nid).unwrap();
+        let mut bn_ctx = BigNumContext::new().unwrap();
+
+        let mut x = BigNum::new().unwrap();
+        let mut y = BigNum::new().unwrap();
+
+        ec_priv_key
+            .public_key()
+            .affine_coordinates(&group, &mut x, &mut y, &mut bn_ctx)
+            .unwrap();
+
+        let x = CryptoBuf::new(&x.to_vec_padded(algs.size() as i32).unwrap()).unwrap();
+        let y = CryptoBuf::new(&y.to_vec_padded(algs.size() as i32).unwrap()).unwrap();
+
+        Ok((priv_key, EcdsaPub { x, y }))
+    }
 }
 
 impl Default for OpensslCrypto {
@@ -113,7 +157,7 @@ impl Crypto for OpensslCrypto {
 
     #[cfg(feature = "deterministic_rand")]
     fn rand_bytes(&mut self, dst: &mut [u8]) -> Result<(), CryptoError> {
-        StdRng::fill_bytes(&mut self.0, dst);
+        StdRng::fill_bytes(&mut self.rng, dst);
         Ok(())
     }
 
@@ -134,7 +178,33 @@ impl Crypto for OpensslCrypto {
         measurement: &Digest,
         info: &[u8],
     ) -> Result<Self::Cdi, CryptoError> {
-        hkdf_derive_cdi(algs, measurement, info)
+        let cdi = hkdf_derive_cdi(algs, measurement, info)?;
+        Ok(cdi)
+    }
+
+    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    fn derive_exported_cdi(
+        &mut self,
+        algs: AlgLen,
+        measurement: &Digest,
+        info: &[u8],
+    ) -> Result<ExportedCdiHandle, CryptoError> {
+        let cdi = hkdf_derive_cdi(algs, measurement, info)?;
+
+        for (stored_cdi, _) in self.export_cdi_slots.iter() {
+            if *stored_cdi == cdi {
+                return Err(CryptoError::ExportedCdiHandleDuplicateCdi);
+            }
+        }
+
+        if self.export_cdi_slots.len() >= MAX_CDI_HANDLES {
+            return Err(CryptoError::ExportedCdiHandleLimitExceeded);
+        }
+
+        let mut exported_cdi_handle = [0; MAX_EXPORTED_CDI_SIZE];
+        self.rand_bytes(&mut exported_cdi_handle)?;
+        self.export_cdi_slots.push((cdi, exported_cdi_handle));
+        Ok(exported_cdi_handle)
     }
 
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
@@ -145,26 +215,27 @@ impl Crypto for OpensslCrypto {
         label: &[u8],
         info: &[u8],
     ) -> Result<(Self::PrivKey, EcdsaPub), CryptoError> {
-        let priv_key = hkdf_get_priv_key(algs, cdi, label, info)?;
+        self.derive_key_pair_inner(algs, cdi, label, info)
+    }
 
-        let ec_priv_key = OpensslCrypto::ec_key_from_priv_key(algs, &priv_key)?;
-        let nid = OpensslCrypto::get_curve(algs);
-
-        let group = EcGroup::from_curve_name(nid).unwrap();
-        let mut bn_ctx = BigNumContext::new().unwrap();
-
-        let mut x = BigNum::new().unwrap();
-        let mut y = BigNum::new().unwrap();
-
-        ec_priv_key
-            .public_key()
-            .affine_coordinates(&group, &mut x, &mut y, &mut bn_ctx)
-            .unwrap();
-
-        let x = CryptoBuf::new(&x.to_vec_padded(algs.size() as i32).unwrap()).unwrap();
-        let y = CryptoBuf::new(&y.to_vec_padded(algs.size() as i32).unwrap()).unwrap();
-
-        Ok((priv_key, EcdsaPub { x, y }))
+    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    fn derive_key_pair_exported(
+        &mut self,
+        algs: AlgLen,
+        exported_handle: &ExportedCdiHandle,
+        label: &[u8],
+        info: &[u8],
+    ) -> Result<(Self::PrivKey, EcdsaPub), CryptoError> {
+        let cdi = {
+            let mut cdi = None;
+            for (stored_cdi, stored_handle) in self.export_cdi_slots.iter() {
+                if stored_handle == exported_handle {
+                    cdi = Some(stored_cdi.clone());
+                }
+            }
+            cdi.ok_or(CryptoError::InvalidExportedCdiHandle)
+        }?;
+        self.derive_key_pair_inner(algs, &cdi, label, info)
     }
 
     fn ecdsa_sign_with_alias(
@@ -207,24 +278,5 @@ impl Crypto for OpensslCrypto {
         let s = CryptoBuf::new(&sig.s().to_vec_padded(algs.size() as i32).unwrap()).unwrap();
 
         Ok(super::EcdsaSig { r, s })
-    }
-
-    fn hmac_sign_with_derived(
-        &mut self,
-        algs: AlgLen,
-        cdi: &Self::Cdi,
-        label: &[u8],
-        info: &[u8],
-        digest: &Digest,
-    ) -> Result<HmacSig, CryptoError> {
-        let (symmetric_key, _) = self.derive_key_pair(algs, cdi, label, info)?;
-        let hmac_key = PKey::hmac(symmetric_key.bytes()).unwrap();
-
-        let sha_size = Self::get_digest(algs);
-        let mut signer = Signer::new(sha_size, &hmac_key).unwrap();
-        signer.update(digest.bytes()).unwrap();
-        let hmac = signer.sign_to_vec().unwrap();
-
-        Ok(HmacSig::new(&hmac).unwrap())
     }
 }
