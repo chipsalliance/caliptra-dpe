@@ -15,7 +15,6 @@ bitflags! {
         const ROTATE_CONTEXT = 1u32 << 27;
         const X509 = 1u32 << 26;
         const CSR = 1u32 << 25;
-        const IS_SYMMETRIC = 1u32 << 24;
         const INTERNAL_INFO = 1u32 << 22;
         const INTERNAL_DICE = 1u32 << 21;
         const RETAIN_PARENT_CONTEXT = 1u32 << 19;
@@ -40,9 +39,6 @@ impl Support {
     }
     pub fn csr(&self) -> bool {
         self.contains(Support::CSR)
-    }
-    pub fn is_symmetric(&self) -> bool {
-        self.contains(Support::IS_SYMMETRIC)
     }
     pub fn internal_info(&self) -> bool {
         self.contains(Support::INTERNAL_INFO)
@@ -81,10 +77,6 @@ impl Support {
         #[cfg(feature = "disable_csr")]
         {
             support.insert(Support::CSR);
-        }
-        #[cfg(feature = "disable_is_symmetric")]
-        {
-            support.insert(Support::IS_SYMMETRIC);
         }
         #[cfg(feature = "disable_internal_info")]
         {
@@ -135,9 +127,6 @@ pub mod test {
         // Supports certify csr.
         let flags = Support::CSR.bits();
         assert_eq!(flags, 1 << 25);
-        // Supports is symmetric.
-        let flags = Support::IS_SYMMETRIC.bits();
-        assert_eq!(flags, 1 << 24);
         // Supports internal info.
         let flags = Support::INTERNAL_INFO.bits();
         assert_eq!(flags, 1 << 22);
@@ -157,10 +146,8 @@ pub mod test {
             flags,
             (1 << 31) | (1 << 29) | (1 << 27) | (1 << 25) | (1 << 21)
         );
-        let flags =
-            (Support::RECURSIVE | Support::X509 | Support::IS_SYMMETRIC | Support::INTERNAL_INFO)
-                .bits();
-        assert_eq!(flags, (1 << 30) | (1 << 26) | (1 << 24) | (1 << 22));
+        let flags = (Support::RECURSIVE | Support::X509 | Support::INTERNAL_INFO).bits();
+        assert_eq!(flags, (1 << 30) | (1 << 26) | (1 << 22));
         // Supports everything.
         let flags = Support::all().bits();
         assert_eq!(
@@ -171,7 +158,6 @@ pub mod test {
                 | (1 << 27)
                 | (1 << 26)
                 | (1 << 25)
-                | (1 << 24)
                 | (1 << 22)
                 | (1 << 21)
                 | (1 << 19)

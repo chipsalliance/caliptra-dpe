@@ -1,6 +1,6 @@
 // Licensed under the Apache-2.0 license
 
-use crate::{hkdf::*, AlgLen, Crypto, CryptoBuf, CryptoError, Digest, EcdsaPub, Hasher, HmacSig};
+use crate::{hkdf::*, AlgLen, Crypto, CryptoBuf, CryptoError, Digest, EcdsaPub, Hasher};
 #[cfg(not(feature = "no-cfi"))]
 use caliptra_cfi_derive_git::cfi_impl_fn;
 use openssl::{
@@ -10,8 +10,7 @@ use openssl::{
     error::ErrorStack,
     hash::MessageDigest,
     nid::Nid,
-    pkey::{PKey, Private},
-    sign::Signer,
+    pkey::Private,
 };
 #[cfg(feature = "deterministic_rand")]
 use rand::{rngs::StdRng, RngCore, SeedableRng};
@@ -207,24 +206,5 @@ impl Crypto for OpensslCrypto {
         let s = CryptoBuf::new(&sig.s().to_vec_padded(algs.size() as i32).unwrap()).unwrap();
 
         Ok(super::EcdsaSig { r, s })
-    }
-
-    fn hmac_sign_with_derived(
-        &mut self,
-        algs: AlgLen,
-        cdi: &Self::Cdi,
-        label: &[u8],
-        info: &[u8],
-        digest: &Digest,
-    ) -> Result<HmacSig, CryptoError> {
-        let (symmetric_key, _) = self.derive_key_pair(algs, cdi, label, info)?;
-        let hmac_key = PKey::hmac(symmetric_key.bytes()).unwrap();
-
-        let sha_size = Self::get_digest(algs);
-        let mut signer = Signer::new(sha_size, &hmac_key).unwrap();
-        signer.update(digest.bytes()).unwrap();
-        let hmac = signer.sign_to_vec().unwrap();
-
-        Ok(HmacSig::new(&hmac).unwrap())
     }
 }

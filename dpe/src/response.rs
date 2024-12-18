@@ -173,7 +173,7 @@ pub struct CertifyKeyResp {
 pub struct SignResp {
     pub resp_hdr: ResponseHdr,
     pub new_context_handle: ContextHandle,
-    pub sig_r_or_hmac: [u8; DPE_PROFILE.get_ecc_int_size()],
+    pub sig_r: [u8; DPE_PROFILE.get_ecc_int_size()],
     pub sig_s: [u8; DPE_PROFILE.get_ecc_int_size()],
 }
 

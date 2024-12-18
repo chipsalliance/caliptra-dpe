@@ -97,11 +97,6 @@ var SignAsymmetricTestCase = TestCase{
 	"Sign", TestAsymmetricSigning, []string{"AutoInit", "X509"},
 }
 
-// SignSymmetricTestCase tests Sign with is-symmetric = true
-var SignSymmetricTestCase = TestCase{
-	"SignSymmetric", TestSymmetricSigning, []string{"AutoInit", "IsSymmetric"},
-}
-
 // SignSimulationTestCase tests Sign with Simulation contexts
 var SignSimulationTestCase = TestCase{
 	"SignSimulation", TestSignSimulation, []string{"Simulation"},
@@ -162,7 +157,6 @@ var AllTestCases = []TestCase{
 	RotateContextTestCase,
 	RotateContextSimulationTestCase,
 	SignAsymmetricTestCase,
-	SignSymmetricTestCase,
 	SignSimulationTestCase,
 	GetProfileTestCase,
 	InitializeContextTestCase,

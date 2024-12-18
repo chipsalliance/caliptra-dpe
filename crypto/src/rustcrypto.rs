@@ -1,11 +1,8 @@
 // Licensed under the Apache-2.0 license
 
-use crate::{
-    hkdf::*, AlgLen, Crypto, CryptoBuf, CryptoError, Digest, EcdsaPub, EcdsaSig, Hasher, HmacSig,
-};
+use crate::{hkdf::*, AlgLen, Crypto, CryptoBuf, CryptoError, Digest, EcdsaPub, EcdsaSig, Hasher};
 use core::ops::Deref;
 use ecdsa::{signature::hazmat::PrehashSigner, Signature};
-use hmac::{Hmac, Mac};
 use p256::NistP256;
 use p384::NistP384;
 use rand::{rngs::StdRng, RngCore, SeedableRng};
@@ -174,29 +171,6 @@ impl Crypto for RustCryptoImpl {
                     p384::ecdsa::SigningKey::from_slice(priv_key.bytes())?
                         .sign_prehash(digest.bytes())?;
                 sig.try_into()
-            }
-        }
-    }
-
-    fn hmac_sign_with_derived(
-        &mut self,
-        algs: AlgLen,
-        cdi: &Self::Cdi,
-        label: &[u8],
-        info: &[u8],
-        digest: &Digest,
-    ) -> Result<HmacSig, CryptoError> {
-        let (symmetric_key, _) = self.derive_key_pair(algs, cdi, label, info)?;
-        match algs {
-            AlgLen::Bit256 => {
-                let mut hmac = Hmac::<Sha256>::new_from_slice(symmetric_key.bytes()).unwrap();
-                Mac::update(&mut hmac, digest.bytes());
-                HmacSig::new(hmac.finalize().into_bytes().as_slice())
-            }
-            AlgLen::Bit384 => {
-                let mut hmac = Hmac::<Sha384>::new_from_slice(symmetric_key.bytes()).unwrap();
-                Mac::update(&mut hmac, digest.bytes());
-                HmacSig::new(hmac.finalize().into_bytes().as_slice())
             }
         }
     }
