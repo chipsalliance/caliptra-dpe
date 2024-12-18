@@ -26,9 +26,6 @@ impl EcdsaPub {
     }
 }
 
-/// An HMAC Signature
-pub type HmacSig = CryptoBuf;
-
 /// A common base struct that can be used for all digests, signatures, and keys.
 #[derive(Debug, PartialEq, Eq, ZeroizeOnDrop)]
 pub struct CryptoBuf(ArrayVec<u8, { Self::MAX_SIZE }>);

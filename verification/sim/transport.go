@@ -73,9 +73,6 @@ func (s *DpeSimulator) PowerOn() error {
 	if s.supports.Csr {
 		args = append(args, "--supports-csr")
 	}
-	if s.supports.IsSymmetric {
-		args = append(args, "--supports-is-symmetric")
-	}
 	if s.supports.InternalInfo {
 		args = append(args, "--supports-internal-info")
 	}

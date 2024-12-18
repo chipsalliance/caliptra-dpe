@@ -678,7 +678,7 @@ mod tests {
             Ok(Response::Sign(resp)) => (
                 resp.new_context_handle,
                 EcdsaSig::from_private_components(
-                    BigNum::from_slice(&resp.sig_r_or_hmac).unwrap(),
+                    BigNum::from_slice(&resp.sig_r).unwrap(),
                     BigNum::from_slice(&resp.sig_s).unwrap(),
                 )
                 .unwrap(),

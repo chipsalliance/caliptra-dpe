@@ -240,24 +240,6 @@ pub trait Crypto {
         priv_key: &Self::PrivKey,
         pub_key: &EcdsaPub,
     ) -> Result<EcdsaSig, CryptoError>;
-
-    /// Sign `digest` with a derived HMAC key from the CDI.
-    ///
-    /// # Arguments
-    ///
-    /// * `algs` - Which length of algorithms to use.
-    /// * `cdi` - CDI from which to derive the signing key
-    /// * `label` - Caller-supplied label to use in symmetric key derivation
-    /// * `info` - Caller-supplied info string to use in symmetric key derivation
-    /// * `digest` - Digest of data to be signed.
-    fn hmac_sign_with_derived(
-        &mut self,
-        algs: AlgLen,
-        cdi: &Self::Cdi,
-        label: &[u8],
-        info: &[u8],
-        digest: &Digest,
-    ) -> Result<HmacSig, CryptoError>;
 }
 #[cfg(test)]
 mod tests {
