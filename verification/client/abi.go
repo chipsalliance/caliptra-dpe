@@ -259,7 +259,7 @@ type SignReq[Digest DigestAlgorithm] struct {
 // SignResp is the output response from Sign
 type SignResp[Digest DigestAlgorithm] struct {
 	NewContextHandle ContextHandle
-	HmacOrSignatureR Digest
+	SignatureR       Digest
 	SignatureS       Digest
 }
 
@@ -694,9 +694,9 @@ func (c *DPEABI[_, Digest, _]) Sign(handle *ContextHandle, label []byte, flags S
 	}
 
 	signedResp := &DPESignedHash{
-		Handle:           resp.NewContextHandle,
-		HmacOrSignatureR: resp.HmacOrSignatureR.Bytes(),
-		SignatureS:       resp.SignatureS.Bytes(),
+		Handle:     resp.NewContextHandle,
+		SignatureR: resp.SignatureR.Bytes(),
+		SignatureS: resp.SignatureS.Bytes(),
 	}
 
 	return signedResp, nil

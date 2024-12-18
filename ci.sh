@@ -83,7 +83,8 @@ run_verification_tests dpe_profile_p384_sha384 rustcrypto
 # Build fuzz target
 ( cd dpe/fuzz
   rustup toolchain install nightly-2023-11-16
-  cargo +nightly-2023-11-16 install cargo-fuzz cargo-afl --locked
+  cargo +nightly-2023-11-16 install cargo-fuzz --locked
+  cargo +nightly-2023-11-16 install cargo-afl --version 0.13.2 --locked
   cargo fmt --check
   cargo clippy --features libfuzzer-sys
   cargo clippy --features afl

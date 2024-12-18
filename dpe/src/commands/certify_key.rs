@@ -298,7 +298,6 @@ mod tests {
         dpe_instance::tests::{TestTypes, SIMULATION_HANDLE, TEST_LOCALITIES},
         support::Support,
         x509::tests::TcbInfo,
-        DpeProfile,
     };
     use caliptra_cfi_lib_git::CfiCounter;
     use cms::{
@@ -311,7 +310,6 @@ mod tests {
         bn::BigNum,
         ec::{EcGroup, EcKey},
         ecdsa::EcdsaSig,
-        hash::{Hasher, MessageDigest},
         nid::*,
     };
     use platform::default::DefaultPlatform;

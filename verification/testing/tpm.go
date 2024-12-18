@@ -130,7 +130,7 @@ func TestTpmPolicySigning(d dpe.TestDPEInstance, c dpe.DPEClient, t *testing.T) 
 	pkh := loadPubKey(t, pubKey, tpm, alg, ec)
 
 	// Get encoded signature from TPM
-	r := new(big.Int).SetBytes(signResp.HmacOrSignatureR)
+	r := new(big.Int).SetBytes(signResp.SignatureR)
 	s := new(big.Int).SetBytes(signResp.SignatureS)
 
 	encodedSignature := getEncodedSignature(t, r, s, alg)

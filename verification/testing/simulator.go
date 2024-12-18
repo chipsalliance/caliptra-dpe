@@ -42,7 +42,7 @@ func GetSimulatorTargets() []TestTarget {
 		},
 		{
 			"DefaultSupport",
-			getTestTarget([]string{"AutoInit", "Simulation", "X509", "Csr", "IsCA", "RotateContext", "Recursive", "IsSymmetric", "RetainParentContext"}),
+			getTestTarget([]string{"AutoInit", "Simulation", "X509", "Csr", "RotateContext", "Recursive", "RetainParentContext"}),
 			AllTestCases,
 		},
 		{
@@ -76,11 +76,6 @@ func GetSimulatorTargets() []TestTarget {
 			[]TestCase{GetProfileTestCase},
 		},
 		{
-			"GetProfile_Symmetric",
-			getTestTarget([]string{"IsSymmetric"}),
-			[]TestCase{GetProfileTestCase},
-		},
-		{
 			"GetProfile_InternalInfo",
 			getTestTarget([]string{"InternalInfo"}),
 			[]TestCase{GetProfileTestCase},
@@ -91,18 +86,13 @@ func GetSimulatorTargets() []TestTarget {
 			[]TestCase{GetProfileTestCase},
 		},
 		{
-			"GetProfile_IsCA",
-			getTestTarget([]string{"IsCA"}),
-			[]TestCase{GetProfileTestCase},
-		},
-		{
 			"GetProfile_RetainParentContext",
 			getTestTarget([]string{"RetainParentContext"}),
 			[]TestCase{GetProfileTestCase},
 		},
 		{
 			"GetProfile_Combo01",
-			getTestTarget([]string{"Simulation", "AutoInit", "RotateContext", "Csr", "InternalDice", "IsCA"}),
+			getTestTarget([]string{"Simulation", "AutoInit", "RotateContext", "Csr", "InternalDice"}),
 			[]TestCase{GetProfileTestCase},
 		},
 		{
@@ -112,7 +102,7 @@ func GetSimulatorTargets() []TestTarget {
 		},
 		{
 			"GetProfile_All",
-			getTestTarget([]string{"Simulation", "Recursive", "AutoInit", "RotateContext", "X509", "Csr", "IsSymmetric", "InternalInfo", "InternalDice", "IsCA"}),
+			getTestTarget([]string{"Simulation", "Recursive", "AutoInit", "RotateContext", "X509", "Csr", "InternalInfo", "InternalDice"}),
 			[]TestCase{GetProfileTestCase},
 		},
 		{
@@ -127,17 +117,17 @@ func GetSimulatorTargets() []TestTarget {
 		},
 		{
 			"DeriveContext",
-			getTestTarget([]string{"AutoInit", "X509", "IsCA", "RetainParentContext"}),
+			getTestTarget([]string{"AutoInit", "X509", "RetainParentContext"}),
 			[]TestCase{DeriveContextTestCase},
 		},
 		{
 			"DeriveContext_Simulation",
-			getTestTarget([]string{"AutoInit", "Simulation", "X509", "IsCA", "RetainParentContext"}),
+			getTestTarget([]string{"AutoInit", "Simulation", "X509", "RetainParentContext"}),
 			[]TestCase{DeriveContextSimulationTestCase},
 		},
 		{
 			"DeriveContext_PrivilegeEscalation",
-			getTestTarget([]string{"AutoInit", "X509", "IsCA"}),
+			getTestTarget([]string{"AutoInit", "X509"}),
 			[]TestCase{DeriveContextPrivilegeEscalationTestCase},
 		},
 		{
