@@ -469,7 +469,7 @@ pub mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe_validator = DpeValidator {
+        let dpe_validator = DpeValidator {
             dpe: &mut DpeInstance::new(&mut env, SUPPORT).unwrap(),
         };
 
@@ -532,7 +532,7 @@ pub mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe_validator = DpeValidator {
+        let dpe_validator = DpeValidator {
             dpe: &mut DpeInstance::new(&mut env, Support::empty()).unwrap(),
         };
 
@@ -584,7 +584,7 @@ pub mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe_validator = DpeValidator {
+        let dpe_validator = DpeValidator {
             dpe: &mut DpeInstance::new(&mut env, Support::all().difference(Support::AUTO_INIT))
                 .unwrap(),
         };
@@ -709,7 +709,7 @@ pub mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe_validator = DpeValidator {
+        let dpe_validator = DpeValidator {
             dpe: &mut DpeInstance::new(&mut env, Support::empty()).unwrap(),
         };
         dpe_validator.dpe.has_initialized = U8Bool::new(true);
