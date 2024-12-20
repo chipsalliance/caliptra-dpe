@@ -105,7 +105,10 @@ type OpensslPrivKey = CryptoBuf;
 
 impl Crypto for OpensslCrypto {
     type Cdi = OpensslCdi;
-    type Hasher<'c> = OpensslHasher where Self: 'c;
+    type Hasher<'c>
+        = OpensslHasher
+    where
+        Self: 'c;
     type PrivKey = OpensslPrivKey;
 
     #[cfg(feature = "deterministic_rand")]
