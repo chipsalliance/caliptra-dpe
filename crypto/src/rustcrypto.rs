@@ -74,7 +74,10 @@ impl RustCryptoImpl {
 
 impl Crypto for RustCryptoImpl {
     type Cdi = Vec<u8>;
-    type Hasher<'c>  = RustCryptoHasher where Self: 'c;
+    type Hasher<'c>
+        = RustCryptoHasher
+    where
+        Self: 'c;
     type PrivKey = CryptoBuf;
 
     fn hash_initialize(&mut self, algs: AlgLen) -> Result<Self::Hasher<'_>, CryptoError> {
