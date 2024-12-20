@@ -8,7 +8,7 @@ pub struct Printer<'a> {
     pub platform: &'a mut dyn Platform,
 }
 
-impl<'a> uWrite for Printer<'a> {
+impl uWrite for Printer<'_> {
     type Error = PlatformError;
 
     fn write_str(&mut self, str: &str) -> Result<(), Self::Error> {

@@ -34,6 +34,12 @@ pub struct Context {
     pub reserved: [u8; 1],
 }
 
+impl Default for Context {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Context {
     pub const ROOT_INDEX: u8 = 0xff;
 

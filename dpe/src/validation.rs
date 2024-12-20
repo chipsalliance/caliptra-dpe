@@ -59,7 +59,7 @@ pub struct DpeValidator<'a> {
     pub dpe: &'a mut DpeInstance,
 }
 
-impl<'a> DpeValidator<'a> {
+impl DpeValidator<'_> {
     /// Validates that the shape of the DPE instance is well-formed and that
     /// there is no illegal state present within the DPE.
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
@@ -466,7 +466,7 @@ pub mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe_validator = DpeValidator {
+        let dpe_validator = DpeValidator {
             dpe: &mut DpeInstance::new(&mut env, SUPPORT).unwrap(),
         };
 
@@ -529,7 +529,7 @@ pub mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe_validator = DpeValidator {
+        let dpe_validator = DpeValidator {
             dpe: &mut DpeInstance::new(&mut env, Support::empty()).unwrap(),
         };
 
@@ -581,7 +581,7 @@ pub mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe_validator = DpeValidator {
+        let dpe_validator = DpeValidator {
             dpe: &mut DpeInstance::new(&mut env, Support::all().difference(Support::AUTO_INIT))
                 .unwrap(),
         };
@@ -692,7 +692,7 @@ pub mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe_validator = DpeValidator {
+        let dpe_validator = DpeValidator {
             dpe: &mut DpeInstance::new(&mut env, Support::empty()).unwrap(),
         };
         dpe_validator.dpe.has_initialized = U8Bool::new(true);

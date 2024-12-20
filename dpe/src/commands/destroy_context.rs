@@ -302,7 +302,7 @@ mod tests {
         {
             Ok(Response::DeriveContext(resp)) => resp.handle,
             Ok(_) => panic!("Invalid response type"),
-            Err(e) => Err(e).unwrap(),
+            Err(e) => panic!("{:?}", e),
         };
 
         // retire context with handle 1 and create new context
@@ -317,7 +317,7 @@ mod tests {
         {
             Ok(Response::DeriveContext(resp)) => resp.handle,
             Ok(_) => panic!("Invalid response type"),
-            Err(e) => Err(e).unwrap(),
+            Err(e) => panic!("{:?}", e),
         };
 
         // retire context with handle 2 and create new context
@@ -332,7 +332,7 @@ mod tests {
         {
             Ok(Response::DeriveContext(resp)) => resp.handle,
             Ok(_) => panic!("Invalid response type"),
-            Err(e) => Err(e).unwrap(),
+            Err(e) => panic!("{:?}", e),
         };
 
         DestroyCtxCmd { handle: handle_3 }
@@ -371,7 +371,7 @@ mod tests {
         {
             Ok(Response::DeriveContext(resp)) => resp.handle,
             Ok(_) => panic!("Invalid response type"),
-            Err(e) => Err(e).unwrap(),
+            Err(e) => panic!("{:?}", e),
         };
 
         // derive one child from the parent
@@ -386,7 +386,7 @@ mod tests {
         {
             Ok(Response::DeriveContext(resp)) => resp.parent_handle,
             Ok(_) => panic!("Invalid response type"),
-            Err(e) => Err(e).unwrap(),
+            Err(e) => panic!("{:?}", e),
         };
 
         // derive another child while retiring the parent handle
@@ -401,7 +401,7 @@ mod tests {
         {
             Ok(Response::DeriveContext(resp)) => resp.handle,
             Ok(_) => panic!("Invalid response type"),
-            Err(e) => Err(e).unwrap(),
+            Err(e) => panic!("{:?}", e),
         };
 
         DestroyCtxCmd { handle: handle_b }
@@ -424,7 +424,7 @@ mod tests {
         parent_idx: u8,
         handle: &ContextHandle,
         children: &[u8],
-    ) -> () {
+    ) {
         dpe.contexts[idx].state = ContextState::Active;
         dpe.contexts[idx].handle = *handle;
         dpe.contexts[idx].parent_idx = parent_idx;
