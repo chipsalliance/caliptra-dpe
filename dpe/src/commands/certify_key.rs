@@ -632,7 +632,7 @@ mod tests {
         let econtent = &econtent_info.econtent.as_mut().unwrap().to_der().unwrap()[4..];
 
         // validate csr signature with the alias key
-        let csr_digest = env.crypto.hash(DPE_PROFILE.alg_len(), &econtent).unwrap();
+        let csr_digest = env.crypto.hash(DPE_PROFILE.alg_len(), econtent).unwrap();
         let priv_key = match DPE_PROFILE.alg_len() {
             AlgLen::Bit256 => EcKey::private_key_from_der(include_bytes!(
                 "../../../platform/src/test_data/key_256.der"
@@ -652,7 +652,7 @@ mod tests {
         assert!(csr_sig.verify(csr_digest.bytes(), &alias_key).unwrap());
 
         // validate csr
-        let (_, csr) = X509CertificationRequest::from_der(&econtent).unwrap();
+        let (_, csr) = X509CertificationRequest::from_der(econtent).unwrap();
         let cri = csr.certification_request_info;
         assert_eq!(cri.version.0, 0);
         assert_eq!(
@@ -673,7 +673,7 @@ mod tests {
         let y = BigNum::from_slice(&pub_key_der[DPE_PROFILE.get_ecc_int_size() + 1..]).unwrap();
         let pub_key = EcKey::from_public_key_affine_coordinates(group, &x, &y).unwrap();
 
-        let cri_digest = env.crypto.hash(DPE_PROFILE.alg_len(), &cri.raw).unwrap();
+        let cri_digest = env.crypto.hash(DPE_PROFILE.alg_len(), cri.raw).unwrap();
         assert!(cri_sig.verify(cri_digest.bytes(), &pub_key).unwrap());
 
         // validate subject_name
@@ -693,7 +693,7 @@ mod tests {
         let expected_subject_name = format!(
             "CN={}, serialNumber={}",
             str::from_utf8(subject_name.cn.bytes()).unwrap(),
-            str::from_utf8(&subject_name.serial.bytes()).unwrap()
+            str::from_utf8(subject_name.serial.bytes()).unwrap()
         );
         let actual_subject_name = cri.subject.to_string_with_registry(oid_registry()).unwrap();
         assert_eq!(expected_subject_name, actual_subject_name);

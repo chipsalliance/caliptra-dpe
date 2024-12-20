@@ -2343,7 +2343,7 @@ pub(crate) mod tests {
         let expected = format!(
             "CN={}, serialNumber={}",
             str::from_utf8(test_name.cn.bytes()).unwrap(),
-            str::from_utf8(&test_name.serial.bytes()).unwrap()
+            str::from_utf8(test_name.serial.bytes()).unwrap()
         );
         let actual = name.to_string_with_registry(oid_registry()).unwrap();
         assert_eq!(expected, actual);
@@ -2536,10 +2536,10 @@ pub(crate) mod tests {
 
     const ECC_INT_SIZE: usize = DPE_PROFILE.get_ecc_int_size();
 
-    const DEFAULT_OTHER_NAME_OID: &'static [u8] = &[0, 0, 0];
+    const DEFAULT_OTHER_NAME_OID: &[u8] = &[0, 0, 0];
     const DEFAULT_OTHER_NAME_VALUE: &str = "default-other-name";
 
-    fn build_test_tbs<'a>(is_ca: bool, cert_buf: &'a mut [u8]) -> (usize, TbsCertificate<'a>) {
+    fn build_test_tbs(is_ca: bool, cert_buf: &mut [u8]) -> (usize, TbsCertificate<'_>) {
         let mut issuer_der = [0u8; 1024];
         let mut issuer_writer = CertWriter::new(&mut issuer_der, true);
         let issuer_len = issuer_writer.encode_rdn(&TEST_ISSUER_NAME).unwrap();
@@ -2595,7 +2595,7 @@ pub(crate) mod tests {
         let mut tbs_writer = CertWriter::new(cert_buf, true);
         let bytes_written = tbs_writer
             .encode_ecdsa_tbs(
-                &TEST_SERIAL,
+                TEST_SERIAL,
                 &issuer_der[..issuer_len],
                 &TEST_SUBJECT_NAME,
                 &test_pub,
@@ -2611,7 +2611,7 @@ pub(crate) mod tests {
         )
     }
 
-    fn build_test_cert<'a>(is_ca: bool, cert_buf: &'a mut [u8]) -> (usize, X509Certificate<'a>) {
+    fn build_test_cert(is_ca: bool, cert_buf: &mut [u8]) -> (usize, X509Certificate<'_>) {
         let mut tbs_buf = [0u8; 1024];
         let (tbs_written, _) = build_test_tbs(is_ca, &mut tbs_buf);
 
@@ -2622,7 +2622,7 @@ pub(crate) mod tests {
 
         let mut w = CertWriter::new(cert_buf, true);
         let bytes_written = w
-            .encode_ecdsa_certificate(&mut tbs_buf[..tbs_written], &test_sig)
+            .encode_ecdsa_certificate(&tbs_buf[..tbs_written], &test_sig)
             .unwrap();
 
         let mut parser = X509CertificateParser::new().with_deep_parse_extensions(true);
@@ -2690,7 +2690,7 @@ pub(crate) mod tests {
                 assert!(!ext.critical);
                 let san = ext.value;
                 assert_eq!(san.general_names.len(), 1);
-                let general_name = san.general_names.get(0).unwrap();
+                let general_name = san.general_names.first().unwrap();
                 match general_name {
                     GeneralName::OtherName(oid, other_name_value) => {
                         assert_eq!(oid.as_bytes(), DEFAULT_OTHER_NAME_OID);
@@ -2701,7 +2701,7 @@ pub(crate) mod tests {
                 };
             }
             Ok(None) => panic!("No SubjectAltName extension found!"),
-            Err(e) => panic!("Error {} parsing SubjectAltName extension", e.to_string()),
+            Err(e) => panic!("Error {} parsing SubjectAltName extension", e),
         }
     }
 

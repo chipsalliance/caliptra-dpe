@@ -652,7 +652,7 @@ mod tests {
         {
             Ok(Response::RotateCtx(resp)) => resp.handle,
             Ok(_) => panic!("Invalid response type"),
-            Err(e) => Err(e).unwrap(),
+            Err(e) => panic!("{:?}", e),
         };
 
         let parent_handle = match (DeriveContextCmd {
@@ -666,7 +666,7 @@ mod tests {
         {
             Ok(Response::DeriveContext(resp)) => resp.parent_handle,
             Ok(_) => panic!("Invalid response type"),
-            Err(e) => Err(e).unwrap(),
+            Err(e) => panic!("{:?}", e),
         };
 
         let (new_context_handle, sig) = match (SignCmd {
@@ -686,7 +686,7 @@ mod tests {
                 .unwrap(),
             ),
             Ok(_) => panic!("Invalid response type"),
-            Err(e) => Err(e).unwrap(),
+            Err(e) => panic!("{:?}", e),
         };
 
         let parent_handle = match (DeriveContextCmd {
@@ -701,7 +701,7 @@ mod tests {
         {
             Ok(Response::DeriveContext(resp)) => resp.parent_handle,
             Ok(_) => panic!("Invalid response type"),
-            Err(e) => Err(e).unwrap(),
+            Err(e) => panic!("{:?}", e),
         };
 
         let ec_pub_key = {

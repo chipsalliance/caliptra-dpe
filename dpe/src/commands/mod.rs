@@ -81,9 +81,9 @@ impl Command<'_> {
     }
 
     fn parse_command<'a, T: FromBytes + KnownLayout + Immutable + 'a>(
-        build: impl FnOnce(&'a T) -> Command,
+        build: impl FnOnce(&'a T) -> Command<'a>,
         bytes: &'a [u8],
-    ) -> Result<Command, DpeErrorCode> {
+    ) -> Result<Command<'a>, DpeErrorCode> {
         let (prefix, _remaining_bytes) =
             T::ref_from_prefix(bytes).map_err(|_| DpeErrorCode::InvalidArgument)?;
         Ok(build(prefix))
