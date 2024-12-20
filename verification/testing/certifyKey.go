@@ -76,6 +76,7 @@ type Fwid struct {
 //			flags 		[7] IMPLICIT OperationalFlags OPTIONAL,
 //			vendorInfo 	[8] IMPLICIT OCTET STRING OPTIONAL,
 //			type 		[9] IMPLICIT OCTET STRING OPTIONAL,
+//			integrityRegisters 	[10] IMPLICIT IrList OPTIONAL,
 //	}
 //
 // FWIDLIST ::== SEQUENCE SIZE (1..MAX) OF FWID
@@ -91,17 +92,32 @@ type Fwid struct {
 //			recovery (2),
 //	 	debug (3)
 //	}
+//
+// IrList ::= SEQUENCE SIZE (1..MAX) OF IntegrityRegister
+// IntegrityRegister ::= SEQUENCE {
+//		registerName	[0] IMPLICIT IA5String OPTIONAL,
+//		registerNum		[1] IMPLICIT INTEGER OPTIONAL,
+//		registerDigests	[2] IMPLICIT FWIDLIST
+// }
+
 type DiceTcbInfo struct {
-	Vendor     string          `asn1:"optional,tag:0,utf8"`
-	Model      string          `asn1:"optional,tag:1,utf8"`
-	Version    string          `asn1:"optional,tag:2,utf8"`
-	SVN        int             `asn1:"optional,tag:3"`
-	Layer      int             `asn1:"optional,tag:4"`
-	Index      int             `asn1:"optional,tag:5"`
-	Fwids      []Fwid          `asn1:"optional,tag:6"`
-	Flags      OperationalFlag `asn1:"optional,tag:7"`
-	VendorInfo []byte          `asn1:"optional,tag:8"`
-	Type       []byte          `asn1:"optional,tag:9"`
+	Vendor             string              `asn1:"optional,tag:0,utf8"`
+	Model              string              `asn1:"optional,tag:1,utf8"`
+	Version            string              `asn1:"optional,tag:2,utf8"`
+	SVN                int                 `asn1:"optional,tag:3"`
+	Layer              int                 `asn1:"optional,tag:4"`
+	Index              int                 `asn1:"optional,tag:5"`
+	Fwids              []Fwid              `asn1:"optional,tag:6"`
+	Flags              OperationalFlag     `asn1:"optional,tag:7"`
+	VendorInfo         []byte              `asn1:"optional,tag:8"`
+	Type               []byte              `asn1:"optional,tag:9"`
+	IntegrityRegisters []IntegrityRegister `asn1:"optional,tag:10"`
+}
+
+type IntegrityRegister struct {
+	RegisterName    string `asn1:"optional,tag:0,ia5"`
+	RegisterNum     int    `asn1:"optional,tag:1"`
+	RegisterDigests []Fwid `asn1:"optional,tag:2"`
 }
 
 // OperationalFlag represents the TCBInfo Operational Flags field

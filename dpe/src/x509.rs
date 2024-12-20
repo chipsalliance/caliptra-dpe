@@ -363,16 +363,21 @@ impl CertWriter<'_> {
         supports_recursive: bool,
         tagged: bool,
     ) -> Result<usize, DpeErrorCode> {
-        let fwid0_size = Self::get_fwid_size(&node.tci_current.0, /*tagged=*/ true)?;
-        let fwid1_size = if supports_recursive {
-            Self::get_fwid_size(&node.tci_cumulative.0, /*tagged=*/ true)?
+        let fwid_size = Self::get_fwid_size(&node.tci_current.0, /*tagged=*/ true)?;
+        let integrity_registers_size = if supports_recursive {
+            let fwid_size = Self::get_fwid_size(&node.tci_cumulative.0, /*tagged=*/ true)?;
+            let fwid_list_size = Self::get_structure_size(fwid_size, /*tagged=*/ true)?;
+            let integrity_register_size =
+                Self::get_structure_size(fwid_list_size, /*tagged=*/ true)?;
+            Self::get_structure_size(integrity_register_size, /*tagged=*/ true)?
         } else {
             0
         };
-        let fwids_size = Self::get_structure_size(fwid0_size + fwid1_size, /*tagged=*/ true)?;
+        let fwids_size = Self::get_structure_size(fwid_size, /*tagged=*/ true)?;
 
         let size = fwids_size
-            + (2 * Self::get_structure_size(core::mem::size_of::<u32>(), /*tagged=*/ true)?); // vendorInfo and type
+            + (2 * Self::get_structure_size(core::mem::size_of::<u32>(), /*tagged=*/ true)?) // vendorInfo and type
+            + integrity_registers_size;
 
         Self::get_structure_size(size, tagged)
     }
@@ -1221,20 +1226,10 @@ impl CertWriter<'_> {
         // IMPLICIT [6] Constructed
         let fwid_size = Self::get_fwid_size(&node.tci_current.0, /*tagged=*/ true)?;
         bytes_written += self.encode_byte(Self::CONTEXT_SPECIFIC | Self::CONSTRUCTED | 0x06)?;
-        if supports_recursive {
-            bytes_written += self.encode_size_field(fwid_size * 2)?;
-        } else {
-            bytes_written += self.encode_size_field(fwid_size)?;
-        }
+        bytes_written += self.encode_size_field(fwid_size)?;
 
         // fwid[0] current measurement
         bytes_written += self.encode_fwid(&node.tci_current)?;
-
-        // fwid[1] journey measurement
-        // Omit fwid[1] from tcb_info if DPE_PROFILE does not support recursive
-        if supports_recursive {
-            bytes_written += self.encode_fwid(&node.tci_cumulative)?;
-        }
 
         // vendorInfo OCTET STRING
         // IMPLICIT[8] Primitive
@@ -1248,6 +1243,32 @@ impl CertWriter<'_> {
         bytes_written += self.encode_byte(Self::CONTEXT_SPECIFIC | 0x09)?;
         bytes_written += self.encode_size_field(core::mem::size_of::<u32>())?;
         bytes_written += self.encode_bytes(node.tci_type.as_bytes())?;
+
+        // Omit integrityRegisters from tcb_info if DPE_PROFILE does not support recursive
+        if supports_recursive {
+            // integrityRegisters SEQUENCE OF
+            // IMPLICIT [10] Constructed
+            let fwid_size = Self::get_fwid_size(&node.tci_cumulative.0, /*tagged=*/ true)?;
+            let fwid_list_size = Self::get_structure_size(fwid_size, /*tagged=*/ true)?;
+            let integrity_register_size =
+                Self::get_structure_size(fwid_list_size, /*tagged=*/ true)?;
+
+            bytes_written += self.encode_byte(Self::CONTEXT_SPECIFIC | Self::CONSTRUCTED | 0xa)?;
+            bytes_written += self.encode_size_field(integrity_register_size)?;
+
+            // integrityRegusters[0] SEQUENCE
+            bytes_written += self.encode_byte(Self::SEQUENCE_TAG)?;
+            bytes_written += self.encode_size_field(fwid_list_size)?;
+
+            // IMPLICIT [2] Constructed
+            // registerDigests SEQUENCE OF FWID
+            // cumulative measurement
+            // Note: registerName and registerNum are omitted because DPE only
+            // supports a single register.
+            bytes_written += self.encode_byte(Self::CONTEXT_SPECIFIC | Self::CONSTRUCTED | 0x02)?;
+            bytes_written += self.encode_size_field(fwid_size)?;
+            bytes_written += self.encode_fwid(&node.tci_cumulative)?;
+        }
 
         Ok(bytes_written)
     }
@@ -1582,7 +1603,7 @@ impl CertWriter<'_> {
     /// AuthorityKeyIdentifier ::= SEQUENCE {
     ///     keyIdentifier             [0] KeyIdentifier           OPTIONAL,
     ///     authorityCertIssuer       [1] GeneralNames            OPTIONAL,
-    ///     authorityCertSerialNumber [2] CertificateSerialNumber OPTIONAL  
+    ///     authorityCertSerialNumber [2] CertificateSerialNumber OPTIONAL
     /// }
     fn encode_authority_key_identifier_extension(
         &mut self,
@@ -2249,6 +2270,16 @@ pub(crate) mod tests {
     }
 
     #[derive(asn1::Asn1Read)]
+    pub struct IntegrityRegister<'a> {
+        #[implicit(0)]
+        _register_name: Option<asn1::IA5String<'a>>,
+        #[implicit(1)]
+        _register_num: Option<u64>,
+        #[implicit(2)]
+        pub register_digests: Option<asn1::SequenceOf<'a, Fwid<'a>>>,
+    }
+
+    #[derive(asn1::Asn1Read)]
     pub struct TcbInfo<'a> {
         #[implicit(0)]
         _vendor: Option<asn1::Utf8String<'a>>,
@@ -2270,6 +2301,8 @@ pub(crate) mod tests {
         pub vendor_info: Option<&'a [u8]>,
         #[implicit(9)]
         pub tci_type: Option<&'a [u8]>,
+        #[implicit(10)]
+        pub integrity_registers: Option<asn1::SequenceOf<'a, IntegrityRegister<'a>>>,
     }
 
     #[derive(asn1::Asn1Read)]
@@ -2394,15 +2427,19 @@ pub(crate) mod tests {
         // FWIDs
         let mut fwid_itr = parsed_tcb_info.fwids.unwrap();
         let expected_current = fwid_itr.next().unwrap().digest;
-        let expected_cumulative = fwid_itr.next().unwrap().digest;
         assert_eq!(expected_current, node.tci_current.0);
-        assert_eq!(expected_cumulative, node.tci_cumulative.0);
 
         assert_eq!(parsed_tcb_info.tci_type.unwrap(), node.tci_type.as_bytes());
         assert_eq!(
             parsed_tcb_info.vendor_info.unwrap(),
             node.locality.to_be_bytes()
         );
+
+        // Integrity registers
+        let mut ir_itr = parsed_tcb_info.integrity_registers.unwrap();
+        let mut fwid_itr = ir_itr.next().unwrap().register_digests.unwrap();
+        let expected_cumulative = fwid_itr.next().unwrap().digest;
+        assert_eq!(expected_cumulative, node.tci_cumulative.0);
 
         // test tbs_info with supports_recursive = false
         supports_recursive = false;
