@@ -25,6 +25,8 @@ pub mod x509;
 
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
+const MAX_EXPORTED_CDI_SIZE: usize = 256;
+
 // Max cert size returned by CertifyKey
 const MAX_CERT_SIZE: usize = 6144;
 #[cfg(not(feature = "arbitrary_max_handles"))]
