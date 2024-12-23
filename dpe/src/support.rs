@@ -18,6 +18,7 @@ bitflags! {
         const INTERNAL_INFO = 1u32 << 22;
         const INTERNAL_DICE = 1u32 << 21;
         const RETAIN_PARENT_CONTEXT = 1u32 << 19;
+        const CDI_EXPORT = 1u32 << 18;
     }
 }
 
@@ -48,6 +49,9 @@ impl Support {
     }
     pub fn retain_parent_context(&self) -> bool {
         self.contains(Support::RETAIN_PARENT_CONTEXT)
+    }
+    pub fn cdi_export(&self) -> bool {
+        self.contains(Support::CDI_EXPORT)
     }
 
     /// Disables supported features based on compilation features
@@ -89,6 +93,10 @@ impl Support {
         #[cfg(feature = "disable_retain_parent_context")]
         {
             support.insert(Support::RETAIN_PARENT_CONTEXT);
+        }
+        #[cfg(feature = "disable_export_cdi")]
+        {
+            support.insert(Support::CDI_EXPORT);
         }
         self.difference(support)
     }
@@ -135,6 +143,8 @@ pub mod test {
         assert_eq!(flags, 1 << 21);
         let flags = Support::RETAIN_PARENT_CONTEXT.bits();
         assert_eq!(flags, 1 << 19);
+        let flags = Support::CDI_EXPORT.bits();
+        assert_eq!(flags, 1 << 18);
         // Supports a couple combos.
         let flags = (Support::SIMULATION
             | Support::AUTO_INIT
@@ -161,6 +171,7 @@ pub mod test {
                 | (1 << 22)
                 | (1 << 21)
                 | (1 << 19)
+                | (1 << 18)
         );
     }
 }

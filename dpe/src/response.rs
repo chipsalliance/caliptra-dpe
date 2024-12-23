@@ -6,7 +6,7 @@ Abstract:
 --*/
 use crate::{
     context::ContextHandle, validation::ValidationError, CURRENT_PROFILE_MAJOR_VERSION,
-    CURRENT_PROFILE_MINOR_VERSION, DPE_PROFILE, MAX_CERT_SIZE, MAX_HANDLES,
+    CURRENT_PROFILE_MINOR_VERSION, DPE_PROFILE, MAX_CERT_SIZE, MAX_EXPORTED_CDI_SIZE, MAX_HANDLES,
 };
 use crypto::CryptoError;
 use platform::{PlatformError, MAX_CHUNK_SIZE};
@@ -18,6 +18,7 @@ pub enum Response {
     GetProfile(GetProfileResp),
     InitCtx(NewHandleResp),
     DeriveContext(DeriveContextResp),
+    DeriveContextExportedCdi(DeriveContextExportedCdiResp),
     RotateCtx(NewHandleResp),
     CertifyKey(CertifyKeyResp),
     Sign(SignResp),
@@ -32,6 +33,7 @@ impl Response {
             Response::GetProfile(res) => res.as_bytes(),
             Response::InitCtx(res) => res.as_bytes(),
             Response::DeriveContext(res) => res.as_bytes(),
+            Response::DeriveContextExportedCdi(res) => res.as_bytes(),
             Response::RotateCtx(res) => res.as_bytes(),
             Response::CertifyKey(res) => res.as_bytes(),
             Response::Sign(res) => res.as_bytes(),
@@ -139,6 +141,25 @@ pub struct DeriveContextResp {
     pub resp_hdr: ResponseHdr,
     pub handle: ContextHandle,
     pub parent_handle: ContextHandle,
+}
+
+#[repr(C)]
+#[derive(
+    Debug,
+    PartialEq,
+    Eq,
+    zerocopy::IntoBytes,
+    zerocopy::FromBytes,
+    zerocopy::Immutable,
+    zerocopy::KnownLayout,
+)]
+pub struct DeriveContextExportedCdiResp {
+    pub resp_hdr: ResponseHdr,
+    pub handle: ContextHandle,
+    pub parent_handle: ContextHandle,
+    pub exported_cdi: [u8; MAX_EXPORTED_CDI_SIZE],
+    pub certificate_size: u32,
+    pub new_certificate: [u8; MAX_CERT_SIZE],
 }
 
 #[repr(C)]
