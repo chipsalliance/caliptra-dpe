@@ -4,15 +4,18 @@ use crate::{
     context::{ActiveContextArgs, Context, ContextHandle, ContextState, ContextType},
     dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
     response::{DeriveContextResp, DpeErrorCode, Response, ResponseHdr},
-    tci::TciMeasurement,
-    DPE_PROFILE, MAX_CERT_SIZE, MAX_EXPORTED_CDI_SIZE,
+    tci::{TciMeasurement, TciNodeData},
+    x509::{CertWriter, DirectoryString, MeasurementData, Name},
+    DPE_PROFILE, MAX_CERT_SIZE, MAX_EXPORTED_CDI_SIZE, MAX_HANDLES,
 };
 use bitflags::bitflags;
 #[cfg(not(feature = "no-cfi"))]
 use caliptra_cfi_derive_git::cfi_impl_fn;
 #[cfg(not(feature = "no-cfi"))]
-use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq};
+use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq, cfi_launder};
 use cfg_if::cfg_if;
+use crypto::{Crypto, Hasher};
+use platform::{Platform, PlatformError, MAX_ISSUER_NAME_SIZE, MAX_KEY_IDENTIFIER_SIZE};
 
 #[repr(C)]
 #[derive(
@@ -293,7 +296,115 @@ impl CommandExecution for DeriveContextCmd {
                 }
             }
         } else if self.allows_create_certificate() && self.allows_exports_cdi() {
-            todo!("(clundin): Generate ECA certificiate / export random CDI")
+            let algs = DPE_PROFILE.alg_len();
+            let digest = dpe.compute_measurement_hash(env, parent_idx)?;
+            let cdi = env
+                .crypto
+                .derive_cdi(DPE_PROFILE.alg_len(), &digest, b"DPE")?;
+
+            let key_pair =
+                env.crypto
+                    .derive_key_pair(algs, &cdi, &[0xA; DPE_PROFILE.get_hash_size()], b"ECC");
+            let (_, pub_key) = key_pair?;
+
+            let mut subj_serial = [0u8; DPE_PROFILE.get_hash_size() * 2];
+            env.crypto
+                .get_pubkey_serial(DPE_PROFILE.alg_len(), &pub_key, &mut subj_serial)?;
+
+            // The serial number of the subject can be at most 64 bytes
+            let truncated_subj_serial = &subj_serial[..64];
+
+            let subject_name = Name {
+                cn: DirectoryString::PrintableString(b"DPE Leaf"), // TODO(clundin) Is this the correct CN?
+                serial: DirectoryString::PrintableString(truncated_subj_serial),
+            };
+
+            const INITIALIZER: TciNodeData = TciNodeData::new();
+            let mut nodes = [INITIALIZER; MAX_HANDLES];
+
+            let tcb_count = dpe.get_tcb_nodes(parent_idx, &mut nodes)?;
+            if tcb_count > MAX_HANDLES {
+                return Err(DpeErrorCode::InternalError);
+            }
+
+            let mut subject_key_identifier = [0u8; MAX_KEY_IDENTIFIER_SIZE];
+            // compute key identifier as SHA hash of the DER encoded subject public key
+            let mut hasher = env.crypto.hash_initialize(DPE_PROFILE.alg_len())?;
+            hasher.update(&[0x04])?;
+            hasher.update(pub_key.x.bytes())?;
+            hasher.update(pub_key.y.bytes())?;
+            let hashed_pub_key = hasher.finish()?;
+            if hashed_pub_key.len() < MAX_KEY_IDENTIFIER_SIZE {
+                return Err(DpeErrorCode::InternalError);
+            }
+            // truncate key identifier to 20 bytes
+            subject_key_identifier
+                .copy_from_slice(&hashed_pub_key.bytes()[..MAX_KEY_IDENTIFIER_SIZE]);
+
+            let mut authority_key_identifier = [0u8; MAX_KEY_IDENTIFIER_SIZE];
+            env.platform
+                .get_issuer_key_identifier(&mut authority_key_identifier)?;
+
+            let subject_alt_name = match env.platform.get_subject_alternative_name() {
+                Ok(subject_alt_name) => Some(subject_alt_name),
+                Err(PlatformError::NotImplemented) => None,
+                Err(e) => Err(DpeErrorCode::Platform(e))?,
+            };
+
+            let measurements = MeasurementData {
+                label: &[0xA; DPE_PROFILE.get_hash_size()], //TODO(clundin): Determine correct label
+                tci_nodes: &nodes[..tcb_count],
+                is_ca: true,
+                supports_recursive: false,
+                subject_key_identifier,
+                authority_key_identifier,
+                subject_alt_name,
+            };
+            let mut cert = [0u8; MAX_CERT_SIZE];
+            let cert_size = {
+                let mut issuer_name = [0u8; MAX_ISSUER_NAME_SIZE];
+                let issuer_len = env.platform.get_issuer_name(&mut issuer_name)?;
+
+                let mut tbs_buffer = [0u8; MAX_CERT_SIZE];
+                let mut tbs_writer = CertWriter::new(&mut tbs_buffer, true);
+                if issuer_len > MAX_ISSUER_NAME_SIZE {
+                    return Err(DpeErrorCode::InternalError);
+                }
+                let cert_validity = env.platform.get_cert_validity()?;
+                let mut bytes_written = tbs_writer.encode_ecdsa_tbs(
+                    /*serial=*/
+                    &subject_name.serial.bytes()[..20], // Serial number must be truncated to 20 bytes
+                    &issuer_name[..issuer_len],
+                    &subject_name,
+                    &pub_key,
+                    &measurements,
+                    &cert_validity,
+                )?;
+                if bytes_written > MAX_CERT_SIZE {
+                    return Err(DpeErrorCode::InternalError);
+                }
+
+                let tbs_digest = env
+                    .crypto
+                    .hash(DPE_PROFILE.alg_len(), &tbs_buffer[..bytes_written])?;
+                let sig = env
+                    .crypto
+                    .ecdsa_sign_with_alias(DPE_PROFILE.alg_len(), &tbs_digest)?;
+
+                let mut cert_writer = CertWriter::new(&mut cert, true);
+                bytes_written =
+                    cert_writer.encode_ecdsa_certificate(&tbs_buffer[..bytes_written], &sig)?;
+                u32::try_from(bytes_written).map_err(|_| DpeErrorCode::InternalError)?
+            };
+            Ok(Response::DeriveContext(DeriveContextResp {
+                handle: ContextHandle::default(), //TODO(clundin): Create an invalid ContextHandle.
+                parent_handle: dpe.contexts[parent_idx].handle,
+                resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
+                exported_cdi: [0; MAX_EXPORTED_CDI_SIZE], // TODO(clundin): Implement CDI storage
+                // behind a Platform trait.
+                certificate_size: cert_size,
+                new_certificate: cert,
+            }))
         } else {
             let child_idx = dpe
                 .get_next_inactive_context_pos()
@@ -393,13 +504,18 @@ mod tests {
         context::ContextType,
         dpe_instance::tests::{TestTypes, RANDOM_HANDLE, SIMULATION_HANDLE, TEST_LOCALITIES},
         support::Support,
-        MAX_CERT_SIZE, MAX_HANDLES,
+        DpeProfile, MAX_CERT_SIZE, MAX_HANDLES,
     };
     use caliptra_cfi_lib_git::CfiCounter;
     use crypto::{Crypto, Hasher, OpensslCrypto};
     use openssl::x509::X509;
-    use openssl::{bn::BigNum, ecdsa::EcdsaSig};
+    use openssl::{
+        bn::BigNum,
+        ecdsa::EcdsaSig,
+        hash::{Hasher as OpenSSLHasher, MessageDigest},
+    };
     use platform::default::DefaultPlatform;
+    use x509_parser::{nom::Parser, oid_registry::asn1_rs::oid, prelude::*};
     use zerocopy::IntoBytes;
 
     const TEST_DERIVE_CONTEXT_CMD: DeriveContextCmd = DeriveContextCmd {
@@ -1109,27 +1225,7 @@ mod tests {
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         .is_ok());
 
-        dpe = DpeInstance::new(
-            &mut env,
-            Support::AUTO_INIT | Support::CDI_EXPORT | Support::X509,
-        )
-        .unwrap();
-
-        assert!(DeriveContextCmd {
-            handle: ContextHandle::default(),
-            data: [0; DPE_PROFILE.get_tci_size()],
-            flags: DeriveContextFlags::EXPORT_CDI,
-            tci_type: 0,
-            target_locality: TEST_LOCALITIES[0]
-        }
-        .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
-        .is_ok());
-
-        let mut dpe = DpeInstance::new(
-            &mut env,
-            Support::AUTO_INIT | Support::INTERNAL_INFO | Support::INTERNAL_DICE | Support::X509,
-        )
-        .unwrap();
+        let mut dpe = DpeInstance::new(&mut env, Support::AUTO_INIT | Support::X509).unwrap();
 
         assert_eq!(
             Err(DpeErrorCode::ArgumentNotSupported),
@@ -1142,5 +1238,91 @@ mod tests {
             }
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         );
+    }
+
+    #[test]
+    fn test_create_ca() {
+        CfiCounter::reset_for_test();
+        let mut env = DpeEnv::<TestTypes> {
+            crypto: OpensslCrypto::new(),
+            platform: DefaultPlatform,
+        };
+        let mut dpe = DpeInstance::new(&mut env, Support::X509 | Support::CDI_EXPORT).unwrap();
+        let init_resp = match InitCtxCmd::new_use_default()
+            .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
+            .unwrap()
+        {
+            Response::InitCtx(resp) => resp,
+            _ => panic!("Incorrect return type."),
+        };
+        let derive_cmd = DeriveContextCmd {
+            handle: init_resp.handle,
+            flags: DeriveContextFlags::EXPORT_CDI
+                | DeriveContextFlags::CREATE_CERTIFICATE
+                | DeriveContextFlags::RETURN_CERTIFICATE,
+            data: [0; DPE_PROFILE.get_tci_size()],
+            tci_type: 0,
+            target_locality: TEST_LOCALITIES[0],
+        };
+        let derive_resp = match derive_cmd
+            .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
+            .unwrap()
+        {
+            Response::DeriveContext(resp) => resp,
+            _ => panic!("Wrong response type."),
+        };
+        let mut parser = X509CertificateParser::new().with_deep_parse_extensions(true);
+        match parser
+            .parse(&derive_resp.new_certificate[..derive_resp.certificate_size.try_into().unwrap()])
+        {
+            Ok((_, cert)) => {
+                match cert.basic_constraints() {
+                    Ok(Some(basic_constraints)) => {
+                        assert!(basic_constraints.value.ca);
+                    }
+                    Ok(None) => panic!("basic constraints extension not found"),
+                    Err(_) => panic!("multiple basic constraints extensions found"),
+                }
+                let pub_key = &cert.tbs_certificate.subject_pki.subject_public_key.data;
+                let mut hasher = match DPE_PROFILE {
+                    DpeProfile::P256Sha256 => OpenSSLHasher::new(MessageDigest::sha256()).unwrap(),
+                    DpeProfile::P384Sha384 => OpenSSLHasher::new(MessageDigest::sha384()).unwrap(),
+                };
+                hasher.update(pub_key).unwrap();
+                let expected_ski: &[u8] = &hasher.finish().unwrap();
+                match cert.get_extension_unique(&oid!(2.5.29 .14)) {
+                    Ok(Some(subject_key_identifier_ext)) => {
+                        if let ParsedExtension::SubjectKeyIdentifier(key_identifier) =
+                            subject_key_identifier_ext.parsed_extension()
+                        {
+                            assert_eq!(key_identifier.0, &expected_ski[..MAX_KEY_IDENTIFIER_SIZE]);
+                        } else {
+                            panic!("Extension has wrong type");
+                        }
+                    }
+                    Ok(None) => panic!("subject key identifier extension not found"),
+                    Err(_) => panic!("multiple subject key identifier extensions found"),
+                }
+                let mut expected_aki = [0u8; MAX_KEY_IDENTIFIER_SIZE];
+                env.platform
+                    .get_issuer_key_identifier(&mut expected_aki)
+                    .unwrap();
+                match cert.get_extension_unique(&oid!(2.5.29 .35)) {
+                    Ok(Some(extension)) => {
+                        if let ParsedExtension::AuthorityKeyIdentifier(aki) =
+                            extension.parsed_extension()
+                        {
+                            let key_identifier = aki.key_identifier.clone().unwrap();
+                            assert_eq!(&key_identifier.0, &expected_aki,);
+                        } else {
+                            panic!("Extension has wrong type");
+                        }
+                    }
+                    Ok(None) => panic!("authority key identifier extension not found"),
+                    Err(_) => panic!("multiple authority key identifier extensions found"),
+                }
+            }
+            Err(e) => panic!("x509 parsing failed: {:?}", e),
+        };
     }
 }
