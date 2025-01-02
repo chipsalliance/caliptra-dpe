@@ -12,7 +12,7 @@ use bitflags::bitflags;
 #[cfg(not(feature = "no-cfi"))]
 use caliptra_cfi_derive_git::cfi_impl_fn;
 #[cfg(not(feature = "no-cfi"))]
-use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq, cfi_launder};
+use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq};
 use cfg_if::cfg_if;
 use crypto::{Crypto, Hasher};
 use platform::{Platform, PlatformError, MAX_ISSUER_NAME_SIZE, MAX_KEY_IDENTIFIER_SIZE};
@@ -397,7 +397,7 @@ impl CommandExecution for DeriveContextCmd {
                 u32::try_from(bytes_written).map_err(|_| DpeErrorCode::InternalError)?
             };
             Ok(Response::DeriveContext(DeriveContextResp {
-                handle: ContextHandle::default(), //TODO(clundin): Create an invalid ContextHandle.
+                handle: ContextHandle::new_invalid(),
                 parent_handle: dpe.contexts[parent_idx].handle,
                 resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
                 exported_cdi: [0; MAX_EXPORTED_CDI_SIZE], // TODO(clundin): Implement CDI storage
@@ -1271,6 +1271,7 @@ mod tests {
             Response::DeriveContext(resp) => resp,
             _ => panic!("Wrong response type."),
         };
+        assert_eq!(ContextHandle::new_invalid(), derive_resp.handle);
         let mut parser = X509CertificateParser::new().with_deep_parse_extensions(true);
         match parser
             .parse(&derive_resp.new_certificate[..derive_resp.certificate_size.try_into().unwrap()])
