@@ -170,12 +170,38 @@ pub trait Crypto {
         info: &[u8],
     ) -> Result<Self::Cdi, CryptoError>;
 
+    /// Derive a CDI for an exported private key based on the current base CDI and measurements
+    ///
+    /// # Arguments
+    ///
+    /// * `algs` - Which length of algorithms to use.
+    /// * `measurement` - A digest of the measurements which should be used for CDI derivation
+    /// * `info` - Caller-supplied info string to use in CDI derivation
+    fn derive_cdi_exported(
+        &mut self,
+        algs: AlgLen,
+        measurement: &Digest,
+        info: &[u8],
+    ) -> Result<Self::Cdi, CryptoError>;
+
     /// CFI wrapper around derive_cdi
     ///
     /// To implement this function, you need to add the
     /// cfi_impl_fn proc_macro to derive_cdi.
     #[cfg(not(feature = "no-cfi"))]
     fn __cfi_derive_cdi(
+        &mut self,
+        algs: AlgLen,
+        measurement: &Digest,
+        info: &[u8],
+    ) -> Result<Self::Cdi, CryptoError>;
+
+    /// CFI wrapper around derive_cdi_exported
+    ///
+    /// To implement this function, you need to add the
+    /// cfi_impl_fn proc_macro to derive_cdi.
+    #[cfg(not(feature = "no-cfi"))]
+    fn __cfi_derive_cdi_exported(
         &mut self,
         algs: AlgLen,
         measurement: &Digest,
@@ -199,12 +225,42 @@ pub trait Crypto {
         info: &[u8],
     ) -> Result<(Self::PrivKey, EcdsaPub), CryptoError>;
 
+    /// Derives an exported key pair using a cryptographically secure KDF
+    ///
+    /// # Arguments
+    ///
+    /// * `algs` - Which length of algorithms to use.
+    /// * `cdi` - Caller-supplied private key to use in public key derivation
+    /// * `label` - Caller-supplied label to use in asymmetric key derivation
+    /// * `info` - Caller-supplied info string to use in asymmetric key derivation
+    ///
+    fn derive_key_pair_exported(
+        &mut self,
+        algs: AlgLen,
+        cdi: &Self::Cdi,
+        label: &[u8],
+        info: &[u8],
+    ) -> Result<(Self::PrivKey, EcdsaPub), CryptoError>;
+
     /// CFI wrapper around derive_key_pair
     ///
     /// To implement this function, you need to add the
     /// cfi_impl_fn proc_macro to derive_key_pair.
     #[cfg(not(feature = "no-cfi"))]
     fn __cfi_derive_key_pair(
+        &mut self,
+        algs: AlgLen,
+        cdi: &Self::Cdi,
+        label: &[u8],
+        info: &[u8],
+    ) -> Result<(Self::PrivKey, EcdsaPub), CryptoError>;
+
+    /// CFI wrapper around derive_key_pair_exported
+    ///
+    /// To implement this function, you need to add the
+    /// cfi_impl_fn proc_macro to derive_key_pair.
+    #[cfg(not(feature = "no-cfi"))]
+    fn __cfi_derive_key_pair_exported(
         &mut self,
         algs: AlgLen,
         cdi: &Self::Cdi,
