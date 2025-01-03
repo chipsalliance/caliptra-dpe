@@ -300,12 +300,19 @@ impl CommandExecution for DeriveContextCmd {
             let digest = dpe.compute_measurement_hash(env, parent_idx)?;
             let cdi = env
                 .crypto
-                .derive_cdi(DPE_PROFILE.alg_len(), &digest, b"DPE")?;
+                .derive_cdi(DPE_PROFILE.alg_len(), &digest, b"Exported CDI")?;
 
+            let mut exported_cdi_handle = [0; MAX_EXPORTED_CDI_SIZE];
+            env.crypto
+                .rand_bytes(&mut exported_cdi_handle)
+                .map_err(DpeErrorCode::Crypto)?;
+
+            let key_label = b"Exported ECC"; // TODO(clundin): Is this an appropriate
+                                             // label?
             let key_pair =
                 env.crypto
-                    .derive_key_pair(algs, &cdi, &[0xA; DPE_PROFILE.get_hash_size()], b"ECC");
-            let (_, pub_key) = key_pair?;
+                    .derive_key_pair_exported(algs, &cdi, key_label, &exported_cdi_handle);
+            let (priv_key, pub_key) = key_pair?;
 
             let mut subj_serial = [0u8; DPE_PROFILE.get_hash_size() * 2];
             env.crypto
@@ -352,7 +359,7 @@ impl CommandExecution for DeriveContextCmd {
             };
 
             let measurements = MeasurementData {
-                label: &[0xA; DPE_PROFILE.get_hash_size()], //TODO(clundin): Determine correct label
+                label: key_label, //TODO(clundin): Determine correct label
                 tci_nodes: &nodes[..tcb_count],
                 is_ca: true,
                 supports_recursive: false,
@@ -387,9 +394,12 @@ impl CommandExecution for DeriveContextCmd {
                 let tbs_digest = env
                     .crypto
                     .hash(DPE_PROFILE.alg_len(), &tbs_buffer[..bytes_written])?;
-                let sig = env
-                    .crypto
-                    .ecdsa_sign_with_alias(DPE_PROFILE.alg_len(), &tbs_digest)?;
+                let sig = env.crypto.ecdsa_sign_with_derived(
+                    DPE_PROFILE.alg_len(),
+                    &tbs_digest,
+                    &priv_key,
+                    &pub_key,
+                )?;
 
                 let mut cert_writer = CertWriter::new(&mut cert, true);
                 bytes_written =
@@ -400,8 +410,7 @@ impl CommandExecution for DeriveContextCmd {
                 handle: ContextHandle::new_invalid(),
                 parent_handle: dpe.contexts[parent_idx].handle,
                 resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
-                exported_cdi: [0; MAX_EXPORTED_CDI_SIZE], // TODO(clundin): Implement CDI storage
-                // behind a Platform trait.
+                exported_cdi: exported_cdi_handle,
                 certificate_size: cert_size,
                 new_certificate: cert,
             }))
