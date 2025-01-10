@@ -6,7 +6,7 @@ Abstract:
 --*/
 use crate::{
     context::ContextHandle, validation::ValidationError, CURRENT_PROFILE_MAJOR_VERSION,
-    CURRENT_PROFILE_MINOR_VERSION, DPE_PROFILE, MAX_CERT_SIZE, MAX_HANDLES,
+    CURRENT_PROFILE_MINOR_VERSION, DPE_PROFILE, MAX_CERT_SIZE, MAX_EXPORTED_CDI_SIZE, MAX_HANDLES,
 };
 use crypto::CryptoError;
 use platform::{PlatformError, MAX_CHUNK_SIZE};
@@ -21,6 +21,7 @@ pub enum Response {
     RotateCtx(NewHandleResp),
     CertifyKey(CertifyKeyResp),
     Sign(SignResp),
+    SignWithExported(SignWithExportedResp),
     DestroyCtx(ResponseHdr),
     GetCertificateChain(GetCertificateChainResp),
     Error(ResponseHdr),
@@ -35,6 +36,7 @@ impl Response {
             Response::RotateCtx(res) => res.as_bytes(),
             Response::CertifyKey(res) => res.as_bytes(),
             Response::Sign(res) => res.as_bytes(),
+            Response::SignWithExported(res) => res.as_bytes(),
             Response::DestroyCtx(res) => res.as_bytes(),
             Response::GetCertificateChain(res) => res.as_bytes(),
             Response::Error(res) => res.as_bytes(),
@@ -139,6 +141,9 @@ pub struct DeriveContextResp {
     pub resp_hdr: ResponseHdr,
     pub handle: ContextHandle,
     pub parent_handle: ContextHandle,
+    pub exported_cdi: [u8; MAX_EXPORTED_CDI_SIZE],
+    pub certificate_size: u32,
+    pub new_certificate: [u8; MAX_CERT_SIZE],
 }
 
 #[repr(C)]
@@ -173,6 +178,22 @@ pub struct CertifyKeyResp {
 pub struct SignResp {
     pub resp_hdr: ResponseHdr,
     pub new_context_handle: ContextHandle,
+    pub sig_r: [u8; DPE_PROFILE.get_ecc_int_size()],
+    pub sig_s: [u8; DPE_PROFILE.get_ecc_int_size()],
+}
+
+#[repr(C)]
+#[derive(
+    Debug,
+    PartialEq,
+    Eq,
+    zerocopy::IntoBytes,
+    zerocopy::FromBytes,
+    zerocopy::Immutable,
+    zerocopy::KnownLayout,
+)]
+pub struct SignWithExportedResp {
+    pub resp_hdr: ResponseHdr,
     pub sig_r: [u8; DPE_PROFILE.get_ecc_int_size()],
     pub sig_s: [u8; DPE_PROFILE.get_ecc_int_size()],
 }

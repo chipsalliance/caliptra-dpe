@@ -35,6 +35,7 @@ type Support struct {
 	InternalDice        bool
 	IsCA                bool
 	RetainParentContext bool
+	CdiExport           bool
 }
 
 // profileCommandCodes holds command codes for a specific revision of the
@@ -45,6 +46,7 @@ type profileCommandCodes struct {
 	DeriveContext       CommandCode
 	CertifyKey          CommandCode
 	Sign                CommandCode
+	SignWithExported    CommandCode
 	RotateContextHandle CommandCode
 	DestroyContext      CommandCode
 	GetCertificateChain CommandCode
@@ -67,6 +69,7 @@ func getProfileInfoV08() profileInfo {
 			DeriveContext:       0x6,
 			CertifyKey:          0x7,
 			Sign:                0x8,
+			SignWithExported:    0xA,
 			RotateContextHandle: 0xE,
 			DestroyContext:      0xF,
 			GetCertificateChain: 0x80,
@@ -85,6 +88,7 @@ func getProfileInfoV09() profileInfo {
 			DeriveContext:       0x8,
 			CertifyKey:          0x9,
 			Sign:                0xa,
+			SignWithExported:    0xb,
 			RotateContextHandle: 0xe,
 			DestroyContext:      0xf,
 			GetCertificateChain: 0x10,
@@ -124,6 +128,9 @@ const (
 
 // ContextHandle is a DPE context handle
 type ContextHandle [16]byte
+
+// ExportedCdi is a handle to an export cdi
+type ExportedCdi [256]byte
 
 // DestroyCtxCmd is input parameters to DestroyContext
 type DestroyCtxCmd struct {
@@ -223,6 +230,8 @@ const (
 	InputAllowCA        DeriveContextFlags = 1 << 26
 	InputAllowX509      DeriveContextFlags = 1 << 25
 	Recursive           DeriveContextFlags = 1 << 24
+	CdiExport           DeriveContextFlags = 1 << 23
+	CreateCertificate   DeriveContextFlags = 1 << 22
 )
 
 // DeriveContextReq is the input request to DeriveContext
@@ -238,15 +247,13 @@ type DeriveContextReq[Digest DigestAlgorithm] struct {
 type DeriveContextResp struct {
 	NewContextHandle    ContextHandle
 	ParentContextHandle ContextHandle
+	ExportedCdi         ExportedCdi
+	CertificateSize     uint32
+	NewCertificate      []byte
 }
 
 // SignFlags is the input flags to Sign
 type SignFlags uint32
-
-// Supported Sign flags
-const (
-	IsSymmetric SignFlags = 1 << 30
-)
 
 // SignReq is the input request to Sign
 type SignReq[Digest DigestAlgorithm] struct {
@@ -261,6 +268,22 @@ type SignResp[Digest DigestAlgorithm] struct {
 	NewContextHandle ContextHandle
 	SignatureR       Digest
 	SignatureS       Digest
+}
+
+// SignWithExportedFlags is the input flags to SignWithExported
+type SignWithExportedFlags uint32
+
+// SignWithExportedReq is the input request to SignWithExported
+type SignWithExportedReq[Digest DigestAlgorithm] struct {
+	Flags       SignWithExportedFlags
+	ExportedCdi ExportedCdi
+	Digest      Digest
+}
+
+// SignWithExportedResp is the output response from SignWithExported
+type SignWithExportedResp[Digest DigestAlgorithm] struct {
+	SignatureR Digest
+	SignatureS Digest
 }
 
 // DPEABI is a connection to a DPE instance, parameterized by hash algorithm and ECC curve.
@@ -517,15 +540,28 @@ func (c *DPEABI[_, _, _]) GetCertificateChainABI() (*GetCertificateChainResp, er
 }
 
 // DeriveContextABI calls DPE DeriveContext command.
-func (c *DPEABI[_, Digest, _]) DeriveContextABI(cmd *DeriveContextReq[Digest]) (*DeriveContextResp, error) {
-	var respStruct DeriveContextResp
+func (c *DPEABI[_, Digest, DPECertificate]) DeriveContextABI(cmd *DeriveContextReq[Digest]) (*DeriveContextResp, error) {
+	// Define an anonymous struct for the response, because we have to accept the variable-sized certificate.
+	respStruct := struct {
+		NewContextHandle    [16]byte
+		ParentContextHandle [16]byte
+		ExportedCdi         [256]byte
+		CertificateSize     uint32
+		Certificate         DPECertificate
+	}{}
 
 	_, err := execCommand(c.transport, c.constants.Codes.DeriveContext, c.Profile, cmd, &respStruct)
 	if err != nil {
 		return nil, err
 	}
 
-	return &respStruct, err
+	return &DeriveContextResp{
+		NewContextHandle:    respStruct.NewContextHandle,
+		ParentContextHandle: respStruct.ParentContextHandle,
+		ExportedCdi:         respStruct.ExportedCdi,
+		CertificateSize:     respStruct.CertificateSize,
+		NewCertificate:      respStruct.Certificate.Bytes()[:respStruct.CertificateSize],
+	}, nil
 }
 
 // RotateContextHandleABI calls DPE RotateContextHandle command.
@@ -545,6 +581,18 @@ func (c *DPEABI[_, Digest, _]) SignABI(cmd *SignReq[Digest]) (*SignResp[Digest],
 	var respStruct SignResp[Digest]
 
 	_, err := execCommand(c.transport, c.constants.Codes.Sign, c.Profile, cmd, &respStruct)
+	if err != nil {
+		return nil, err
+	}
+
+	return &respStruct, nil
+}
+
+// SignWithExportedABI calls the DPE SignWithExported command.
+func (c *DPEABI[_, Digest, _]) SignWithExportedABI(cmd *SignWithExportedReq[Digest]) (*SignWithExportedResp[Digest], error) {
+	var respStruct SignWithExportedResp[Digest]
+
+	_, err := execCommand(c.transport, c.constants.Codes.SignWithExported, c.Profile, cmd, &respStruct)
 	if err != nil {
 		return nil, err
 	}
@@ -702,6 +750,36 @@ func (c *DPEABI[_, Digest, _]) Sign(handle *ContextHandle, label []byte, flags S
 	return signedResp, nil
 }
 
+// Sign calls DPE SignWithExported command
+func (c *DPEABI[_, Digest, _]) SignWithExported(flags SignWithExportedFlags, digest []byte, exportedCdi ExportedCdi) (*DPESignedHash, error) {
+	dLen := DigestLen[Digest]()
+	if len(digest) != dLen {
+		return nil, fmt.Errorf("invalid toBeSigned length")
+	}
+
+	tbs, err := NewDigest[Digest](digest)
+	if err != nil {
+		return nil, err
+	}
+
+	cmd := SignWithExportedReq[Digest]{
+		Flags:       flags,
+		Digest:      tbs,
+		ExportedCdi: exportedCdi,
+	}
+	resp, err := c.SignWithExportedABI(&cmd)
+	if err != nil {
+		return nil, err
+	}
+
+	signedResp := &DPESignedHash{
+		SignatureR: resp.SignatureR.Bytes(),
+		SignatureS: resp.SignatureS.Bytes(),
+	}
+
+	return signedResp, nil
+}
+
 // ToFlags converts support to the profile-defined support flags format
 func (s *Support) ToFlags() uint32 {
 	flags := uint32(0)
@@ -737,6 +815,9 @@ func (s *Support) ToFlags() uint32 {
 	}
 	if s.RetainParentContext {
 		flags |= (1 << 19)
+	}
+	if s.CdiExport {
+		flags |= (1 << 18)
 	}
 	return flags
 }

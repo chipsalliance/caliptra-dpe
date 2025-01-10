@@ -167,6 +167,7 @@ impl DpeInstance {
             Command::DeriveContext(cmd) => cmd.execute(self, env, locality),
             Command::CertifyKey(cmd) => cmd.execute(self, env, locality),
             Command::Sign(cmd) => cmd.execute(self, env, locality),
+            Command::SignWithExported(cmd) => cmd.execute(self, env, locality),
             #[cfg(not(feature = "disable_rotate_context"))]
             Command::RotateCtx(cmd) => cmd.execute(self, env, locality),
             Command::DestroyCtx(cmd) => cmd.execute(self, env, locality),

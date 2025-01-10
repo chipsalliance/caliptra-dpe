@@ -42,7 +42,7 @@ func GetSimulatorTargets() []TestTarget {
 		},
 		{
 			"DefaultSupport",
-			getTestTarget([]string{"AutoInit", "Simulation", "X509", "Csr", "RotateContext", "Recursive", "RetainParentContext"}),
+			getTestTarget([]string{"AutoInit", "Simulation", "X509", "Csr", "RotateContext", "Recursive", "RetainParentContext", "CdiExport"}),
 			AllTestCases,
 		},
 		{

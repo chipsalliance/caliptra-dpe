@@ -97,6 +97,11 @@ var SignAsymmetricTestCase = TestCase{
 	"Sign", TestAsymmetricSigning, []string{"AutoInit", "X509"},
 }
 
+// SignWithExportedAsymmetricTestCase tests SignWIthExported
+var SignWithExportedAsymmetricTestCase = TestCase{
+	"SignWithExported", TestAsymmetricSignWithExported, []string{"AutoInit", "X509", "CdiExport"},
+}
+
 // SignSimulationTestCase tests Sign with Simulation contexts
 var SignSimulationTestCase = TestCase{
 	"SignSimulation", TestSignSimulation, []string{"Simulation"},
@@ -157,6 +162,7 @@ var AllTestCases = []TestCase{
 	RotateContextTestCase,
 	RotateContextSimulationTestCase,
 	SignAsymmetricTestCase,
+	SignWithExportedAsymmetricTestCase,
 	SignSimulationTestCase,
 	GetProfileTestCase,
 	InitializeContextTestCase,

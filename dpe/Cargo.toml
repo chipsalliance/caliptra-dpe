@@ -20,6 +20,7 @@ disable_csr = []
 disable_internal_info = []
 disable_internal_dice = []
 disable_retain_parent_context = []
+disable_export_cdi = []
 no-cfi = ["crypto/no-cfi"]
 
 [dependencies]

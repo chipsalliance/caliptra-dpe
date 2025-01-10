@@ -13,6 +13,7 @@ pub use self::certify_key::{CertifyKeyCmd, CertifyKeyFlags};
 #[cfg(not(feature = "disable_rotate_context"))]
 pub use self::rotate_context::{RotateCtxCmd, RotateCtxFlags};
 pub use self::sign::{SignCmd, SignFlags};
+pub use self::sign_with_exported::{SignWithExportedCmd, SignWithExportedFlags};
 
 use crate::{
     dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
@@ -30,6 +31,7 @@ mod initialize_context;
 #[cfg(not(feature = "disable_rotate_context"))]
 mod rotate_context;
 mod sign;
+mod sign_with_exported;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Command<'a> {
@@ -38,6 +40,7 @@ pub enum Command<'a> {
     DeriveContext(&'a DeriveContextCmd),
     CertifyKey(&'a CertifyKeyCmd),
     Sign(&'a SignCmd),
+    SignWithExported(&'a SignWithExportedCmd),
     #[cfg(not(feature = "disable_rotate_context"))]
     RotateCtx(&'a RotateCtxCmd),
     DestroyCtx(&'a DestroyCtxCmd),
@@ -50,6 +53,7 @@ impl Command<'_> {
     pub const DERIVE_CONTEXT: u32 = 0x08;
     pub const CERTIFY_KEY: u32 = 0x09;
     pub const SIGN: u32 = 0x0A;
+    pub const SIGN_WITH_EXPORTED: u32 = 0x0B;
     #[cfg(not(feature = "disable_rotate_context"))]
     pub const ROTATE_CONTEXT_HANDLE: u32 = 0x0e;
     pub const DESTROY_CONTEXT: u32 = 0x0f;
@@ -70,6 +74,7 @@ impl Command<'_> {
             Command::DERIVE_CONTEXT => Self::parse_command(Command::DeriveContext, bytes),
             Command::CERTIFY_KEY => Self::parse_command(Command::CertifyKey, bytes),
             Command::SIGN => Self::parse_command(Command::Sign, bytes),
+            Command::SIGN_WITH_EXPORTED => Self::parse_command(Command::SignWithExported, bytes),
             #[cfg(not(feature = "disable_rotate_context"))]
             Command::ROTATE_CONTEXT_HANDLE => Self::parse_command(Command::RotateCtx, bytes),
             Command::DESTROY_CONTEXT => Self::parse_command(Command::DestroyCtx, bytes),
@@ -98,6 +103,7 @@ impl From<Command<'_>> for u32 {
             Command::DeriveContext(_) => Command::DERIVE_CONTEXT,
             Command::CertifyKey(_) => Command::CERTIFY_KEY,
             Command::Sign(_) => Command::SIGN,
+            Command::SignWithExported(_) => Command::SIGN_WITH_EXPORTED,
             #[cfg(not(feature = "disable_rotate_context"))]
             Command::RotateCtx(_) => Command::ROTATE_CONTEXT_HANDLE,
             Command::DestroyCtx(_) => Command::DESTROY_CONTEXT,
