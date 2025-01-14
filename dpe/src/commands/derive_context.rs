@@ -1,7 +1,7 @@
 // Licensed under the Apache-2.0 license.
 use super::CommandExecution;
 use crate::{
-    context::{ActiveContextArgs, Context, ContextHandle, ContextState},
+    context::{ActiveContextArgs, Context, ContextHandle, ContextState, ContextType},
     dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
     response::{DeriveContextResp, DpeErrorCode, Response, ResponseHdr},
     tci::TciMeasurement,
@@ -36,6 +36,8 @@ bitflags! {
         const INPUT_ALLOW_CA = 1u32 << 26;
         const INPUT_ALLOW_X509 = 1u32 << 25;
         const RECURSIVE = 1u32 << 24;
+        const EXPORT_CDI = 1u32 << 23;
+        const CREATE_CERTIFICATE = 1u32 << 22;
     }
 }
 
@@ -89,6 +91,14 @@ impl DeriveContextCmd {
 
     pub const fn is_recursive(&self) -> bool {
         self.flags.contains(DeriveContextFlags::RECURSIVE)
+    }
+
+    pub const fn exports_cdi(&self) -> bool {
+        self.flags.contains(DeriveContextFlags::EXPORT_CDI)
+    }
+
+    pub const fn creates_certificate(&self) -> bool {
+        self.flags.contains(DeriveContextFlags::CREATE_CERTIFICATE)
     }
 
     /// Whether it is okay to make a default context.
@@ -196,6 +206,8 @@ impl CommandExecution for DeriveContextCmd {
             || (!dpe.support.internal_dice() && self.uses_internal_dice_input())
             || (!dpe.support.retain_parent_context() && self.retains_parent())
             || (!dpe.support.x509() && self.allows_x509())
+            || (!dpe.support.cdi_export()
+                && (self.creates_certificate() || self.exports_cdi()))
             || (!dpe.support.recursive() && self.is_recursive())
         {
             return Err(DpeErrorCode::ArgumentNotSupported);
@@ -204,6 +216,11 @@ impl CommandExecution for DeriveContextCmd {
         let parent_idx = dpe.get_active_context_pos(&self.handle, locality)?;
         if (!dpe.contexts[parent_idx].allow_ca() && self.allows_ca())
             || (!dpe.contexts[parent_idx].allow_x509() && self.allows_x509())
+            || (self.exports_cdi() && !self.creates_certificate())
+            || (self.exports_cdi() && self.is_recursive())
+            || (self.exports_cdi() && self.changes_locality())
+            || (self.exports_cdi()
+                && dpe.contexts[parent_idx].context_type == ContextType::Simulation)
             || (self.is_recursive() && self.retains_parent())
         {
             return Err(DpeErrorCode::InvalidArgument);
@@ -267,6 +284,8 @@ impl CommandExecution for DeriveContextCmd {
                     Err(DpeErrorCode::ArgumentNotSupported)?
                 }
             }
+        } else if self.creates_certificate() && self.exports_cdi() {
+            todo!("(clundin): Generate ECA certificiate / export random CDI")
         } else {
             let child_idx = dpe
                 .get_next_inactive_context_pos()
@@ -784,6 +803,7 @@ mod tests {
             handle,
             parent_handle,
             resp_hdr,
+            ..
         }) = DeriveContextCmd {
             handle: dpe.contexts[old_default_idx].handle,
             data: [0; DPE_PROFILE.get_tci_size()],
@@ -995,5 +1015,145 @@ mod tests {
             .unwrap();
         let digest = hasher_2.finish().unwrap();
         assert_eq!(digest.bytes(), dpe.contexts[child_idx].tci.tci_cumulative.0);
+    }
+
+    #[test]
+    fn test_cdi_export_flags() {
+        CfiCounter::reset_for_test();
+        let mut env = DpeEnv::<TestTypes> {
+            crypto: OpensslCrypto::new(),
+            platform: DefaultPlatform,
+        };
+        let mut dpe = DpeInstance::new(
+            &mut env,
+            Support::AUTO_INIT
+                | Support::CDI_EXPORT
+                | Support::X509
+                | Support::RECURSIVE
+                | Support::SIMULATION,
+        )
+        .unwrap();
+
+        // When `DeriveContextFlags::EXPORT_CDI` is set, `DeriveContextFlags::CREATE_CERTIFICATE` MUST
+        // also be set, or `DpeErrorCode::InvalidArgument` is raised.
+        assert_eq!(
+            Err(DpeErrorCode::InvalidArgument),
+            DeriveContextCmd {
+                handle: ContextHandle::default(),
+                data: [0; DPE_PROFILE.get_tci_size()],
+                flags: DeriveContextFlags::EXPORT_CDI | DeriveContextFlags::CHANGE_LOCALITY,
+                tci_type: 0,
+                target_locality: TEST_LOCALITIES[1]
+            }
+            .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
+        );
+        assert_eq!(
+            Err(DpeErrorCode::InvalidArgument),
+            DeriveContextCmd {
+                handle: ContextHandle::default(),
+                data: [0; DPE_PROFILE.get_tci_size()],
+                flags: DeriveContextFlags::EXPORT_CDI | DeriveContextFlags::RECURSIVE,
+                tci_type: 0,
+                target_locality: TEST_LOCALITIES[0]
+            }
+            .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
+        );
+
+        let simulation_handle = match InitCtxCmd::new_simulation()
+            .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
+            .unwrap()
+        {
+            Response::InitCtx(resp) => resp.handle,
+            _ => panic!("Wrong response type."),
+        };
+        // DPE must return an `DpeErrorCode::InvalidArgument` error if the context-handle refers to a simulation context.
+        assert_eq!(
+            Err(DpeErrorCode::InvalidArgument),
+            DeriveContextCmd {
+                handle: simulation_handle,
+                data: [0; DPE_PROFILE.get_tci_size()],
+                flags: DeriveContextFlags::CREATE_CERTIFICATE | DeriveContextFlags::EXPORT_CDI,
+                tci_type: 0,
+                target_locality: TEST_LOCALITIES[0]
+            }
+            .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
+        );
+
+        // DPE must return an `DpeErrorCode::InvalidArgument` if `DeriveContextFlags::EXPORT_CDI` and `DeriveContextFlags::RECURSIVE` are set.
+        assert_eq!(
+            Err(DpeErrorCode::InvalidArgument),
+            DeriveContextCmd {
+                handle: ContextHandle::default(),
+                data: [0; DPE_PROFILE.get_tci_size()],
+                flags: DeriveContextFlags::CREATE_CERTIFICATE
+                    | DeriveContextFlags::EXPORT_CDI
+                    | DeriveContextFlags::RECURSIVE,
+                tci_type: 0,
+                target_locality: TEST_LOCALITIES[0]
+            }
+            .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
+        );
+
+        dpe = DpeInstance::new(
+            &mut env,
+            Support::AUTO_INIT | Support::CDI_EXPORT | Support::X509,
+        )
+        .unwrap();
+
+        // Happy case!
+        assert!(DeriveContextCmd {
+            handle: ContextHandle::default(),
+            data: [0; DPE_PROFILE.get_tci_size()],
+            flags: DeriveContextFlags::EXPORT_CDI | DeriveContextFlags::CREATE_CERTIFICATE,
+            tci_type: 0,
+            target_locality: TEST_LOCALITIES[0]
+        }
+        .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
+        .is_ok());
+
+        let mut dpe = DpeInstance::new(
+            &mut env,
+            Support::AUTO_INIT | Support::INTERNAL_INFO | Support::INTERNAL_DICE | Support::X509,
+        )
+        .unwrap();
+
+        // `DpeInstance` needs `Support::EXPORT_CDI` to use `DeriveContextFlags::EXPORT_CDI`.
+        assert_eq!(
+            Err(DpeErrorCode::ArgumentNotSupported),
+            DeriveContextCmd {
+                handle: ContextHandle::default(),
+                data: [0; DPE_PROFILE.get_tci_size()],
+                flags: DeriveContextFlags::CREATE_CERTIFICATE | DeriveContextFlags::EXPORT_CDI,
+                tci_type: 0,
+                target_locality: TEST_LOCALITIES[0]
+            }
+            .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
+        );
+
+        // `DpeInstance` needs `Support::EXPORT_CDI` to use `DeriveContextFlags::EXPORT_CDI`.
+        assert_eq!(
+            Err(DpeErrorCode::ArgumentNotSupported),
+            DeriveContextCmd {
+                handle: ContextHandle::default(),
+                data: [0; DPE_PROFILE.get_tci_size()],
+                flags: DeriveContextFlags::EXPORT_CDI,
+                tci_type: 0,
+                target_locality: TEST_LOCALITIES[0]
+            }
+            .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
+        );
+
+        // `DpeInstance` needs `Support::EXPORT_CDI` to use `DeriveContextFlags::EXPORT_CDI`.
+        assert_eq!(
+            Err(DpeErrorCode::ArgumentNotSupported),
+            DeriveContextCmd {
+                handle: ContextHandle::default(),
+                data: [0; DPE_PROFILE.get_tci_size()],
+                flags: DeriveContextFlags::CREATE_CERTIFICATE,
+                tci_type: 0,
+                target_locality: TEST_LOCALITIES[0]
+            }
+            .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
+        );
     }
 }
