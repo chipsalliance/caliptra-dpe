@@ -8,7 +8,7 @@ use crate::{
     },
     tci::TciMeasurement,
     x509::{create_exported_dpe_cert, CreateDpeCertArgs, CreateDpeCertResult},
-    DPE_PROFILE, MAX_CERT_SIZE, MAX_EXPORTED_CDI_SIZE,
+    DPE_PROFILE, MAX_CERT_SIZE,
 };
 use bitflags::bitflags;
 #[cfg(not(feature = "no-cfi"))]
@@ -16,7 +16,6 @@ use caliptra_cfi_derive_git::cfi_impl_fn;
 #[cfg(not(feature = "no-cfi"))]
 use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq};
 use cfg_if::cfg_if;
-use crypto::Crypto;
 
 #[repr(C)]
 #[derive(
@@ -300,19 +299,15 @@ impl CommandExecution for DeriveContextCmd {
         } else if self.creates_certificate() && self.exports_cdi() {
             cfg_if! {
                 if #[cfg(not(feature = "disable_export_cdi"))] {
-                    let mut exported_cdi_handle = [0; MAX_EXPORTED_CDI_SIZE];
-                    env.crypto
-                        .rand_bytes(&mut exported_cdi_handle)
-                        .map_err(DpeErrorCode::Crypto)?;
                     let args = CreateDpeCertArgs {
                         handle: &self.handle,
                         locality,
                         cdi_label: b"Exported CDI",
                         key_label: b"Exported ECC",
-                        context: &exported_cdi_handle,
+                        context: b"Exported ECC",
                     };
                     let mut cert = [0; MAX_CERT_SIZE];
-                    let CreateDpeCertResult { cert_size, .. } = create_exported_dpe_cert(
+                    let CreateDpeCertResult { cert_size, exported_cdi_handle, .. } = create_exported_dpe_cert(
                         &args,
                         dpe,
                         env,
@@ -422,7 +417,7 @@ mod tests {
         context::ContextType,
         dpe_instance::tests::{TestTypes, RANDOM_HANDLE, SIMULATION_HANDLE, TEST_LOCALITIES},
         support::Support,
-        DpeProfile, MAX_HANDLES,
+        DpeProfile, MAX_EXPORTED_CDI_SIZE, MAX_HANDLES,
     };
     use caliptra_cfi_lib_git::CfiCounter;
     use crypto::{Crypto, Hasher, OpensslCrypto};

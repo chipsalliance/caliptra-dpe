@@ -16,7 +16,7 @@ use bitflags::bitflags;
 use caliptra_cfi_lib_git::cfi_launder;
 #[cfg(not(feature = "no-cfi"))]
 use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq};
-use crypto::{Crypto, Digest, EcdsaPub, EcdsaSig, Hasher};
+use crypto::{Crypto, Digest, EcdsaPub, EcdsaSig, Hasher, MAX_EXPORTED_CDI_SIZE};
 #[cfg(not(feature = "disable_x509"))]
 use platform::CertValidity;
 #[cfg(not(feature = "disable_csr"))]
@@ -2265,6 +2265,9 @@ pub(crate) struct CreateDpeCertResult {
     pub cert_size: u32,
     /// Public key embedded in Cert or CSR.
     pub pub_key: EcdsaPub,
+    /// If the cert_type is `CertificateType::Exported` the CDI is exchanged for a handle, and
+    /// returned via `exported_cdi_handle`.
+    pub exported_cdi_handle: [u8; MAX_EXPORTED_CDI_SIZE],
 }
 
 fn get_dpe_measurement_digest(
@@ -2390,13 +2393,20 @@ fn create_dpe_cert_or_csr(
     let algs = DPE_PROFILE.alg_len();
     let digest = get_dpe_measurement_digest(dpe, env, args.handle, args.locality)?;
 
+    let mut exported_cdi_handle = None;
+
     let key_pair = match cert_type {
         CertificateType::Exported => {
-            let cdi = env
+            let exported_handle = env
                 .crypto
                 .derive_exported_cdi(algs, &digest, args.cdi_label)?;
-            env.crypto
-                .derive_key_pair_exported(algs, &cdi, args.key_label, args.context)
+            exported_cdi_handle = Some(exported_handle);
+            env.crypto.derive_key_pair_exported(
+                algs,
+                &exported_handle,
+                args.key_label,
+                args.context,
+            )
         }
         CertificateType::Leaf => {
             let cdi = env.crypto.derive_cdi(algs, &digest, args.cdi_label)?;
@@ -2521,7 +2531,17 @@ fn create_dpe_cert_or_csr(
         }
     };
 
-    Ok(CreateDpeCertResult { cert_size, pub_key })
+    let exported_cdi_handle = match cert_type {
+        // If the `CertificateType::Exported` is set then we should have a valid exported_cdi_handle at this point.
+        CertificateType::Exported => exported_cdi_handle.ok_or(DpeErrorCode::InternalError)?,
+        _ => [0; MAX_EXPORTED_CDI_SIZE],
+    };
+
+    Ok(CreateDpeCertResult {
+        cert_size,
+        pub_key,
+        exported_cdi_handle,
+    })
 }
 
 #[cfg(test)]

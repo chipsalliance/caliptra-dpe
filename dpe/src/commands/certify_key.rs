@@ -97,7 +97,9 @@ impl CommandExecution for CertifyKeyCmd {
         };
         let mut cert = [0; MAX_CERT_SIZE];
 
-        let CreateDpeCertResult { cert_size, pub_key } = match self.format {
+        let CreateDpeCertResult {
+            cert_size, pub_key, ..
+        } = match self.format {
             Self::FORMAT_X509 => {
                 cfg_if! {
                     if #[cfg(not(feature = "disable_x509"))] {
