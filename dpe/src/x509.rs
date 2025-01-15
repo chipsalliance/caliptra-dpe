@@ -2465,17 +2465,9 @@ fn create_dpe_cert_or_csr(
                 return Err(DpeErrorCode::InternalError);
             }
             let tbs_digest = env.crypto.hash(algs, &scratch_buf[..bytes_written])?;
-            let sig = match cert_type {
-                CertificateType::Leaf => env
-                    .crypto
-                    .ecdsa_sign_with_alias(DPE_PROFILE.alg_len(), &tbs_digest),
-                CertificateType::Exported => env.crypto.ecdsa_sign_with_derived(
-                    DPE_PROFILE.alg_len(),
-                    &tbs_digest,
-                    &priv_key,
-                    &pub_key,
-                ),
-            }?;
+            let sig = env
+                .crypto
+                .ecdsa_sign_with_alias(DPE_PROFILE.alg_len(), &tbs_digest)?;
             let mut cert_writer = CertWriter::new(output_cert_or_csr, true);
             bytes_written =
                 cert_writer.encode_ecdsa_certificate(&scratch_buf[..bytes_written], &sig)?;
@@ -2509,17 +2501,9 @@ fn create_dpe_cert_or_csr(
             }
 
             let csr_digest = env.crypto.hash(algs, &csr_buffer[..bytes_written])?;
-            let csr_sig = match cert_type {
-                CertificateType::Leaf => env
-                    .crypto
-                    .ecdsa_sign_with_alias(DPE_PROFILE.alg_len(), &csr_digest),
-                CertificateType::Exported => env.crypto.ecdsa_sign_with_derived(
-                    DPE_PROFILE.alg_len(),
-                    &csr_digest,
-                    &priv_key,
-                    &pub_key,
-                ),
-            }?;
+            let csr_sig = env
+                .crypto
+                .ecdsa_sign_with_alias(DPE_PROFILE.alg_len(), &csr_digest)?;
             let sid = env.platform.get_signer_identifier()?;
 
             let mut cms_writer = CertWriter::new(output_cert_or_csr, true);
