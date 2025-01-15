@@ -67,42 +67,14 @@ impl RustCryptoImpl {
         let seeded_rng = StdRng::from_seed(SEED);
         RustCryptoImpl(seeded_rng)
     }
-}
 
-impl Crypto for RustCryptoImpl {
-    type Cdi = Vec<u8>;
-    type Hasher<'c>  = RustCryptoHasher where Self: 'c;
-    type PrivKey = CryptoBuf;
-
-    fn hash_initialize(&mut self, algs: AlgLen) -> Result<Self::Hasher<'_>, CryptoError> {
-        let hasher = match algs {
-            AlgLen::Bit256 => RustCryptoHasher(Box::new(Sha256::default())),
-            AlgLen::Bit384 => RustCryptoHasher(Box::new(Sha384::default())),
-        };
-        Ok(hasher)
-    }
-
-    fn rand_bytes(&mut self, dst: &mut [u8]) -> Result<(), CryptoError> {
-        StdRng::fill_bytes(&mut self.0, dst);
-        Ok(())
-    }
-
-    fn derive_cdi(
+    fn derive_key_pair_inner(
         &mut self,
         algs: AlgLen,
-        measurement: &Digest,
-        info: &[u8],
-    ) -> Result<Self::Cdi, CryptoError> {
-        hkdf_derive_cdi(algs, measurement, info)
-    }
-
-    fn derive_key_pair(
-        &mut self,
-        algs: AlgLen,
-        cdi: &Self::Cdi,
+        cdi: &<RustCryptoImpl as Crypto>::Cdi,
         label: &[u8],
         info: &[u8],
-    ) -> Result<(Self::PrivKey, EcdsaPub), CryptoError> {
+    ) -> Result<(<RustCryptoImpl as Crypto>::PrivKey, EcdsaPub), CryptoError> {
         let secret = hkdf_get_priv_key(algs, cdi, label, info)?;
         match algs {
             AlgLen::Bit256 => {
@@ -122,6 +94,71 @@ impl Crypto for RustCryptoImpl {
                 Ok((secret, EcdsaPub { x, y }))
             }
         }
+    }
+}
+
+impl Crypto for RustCryptoImpl {
+    type Cdi = Vec<u8>;
+    type Hasher<'c>
+        = RustCryptoHasher
+    where
+        Self: 'c;
+    type PrivKey = CryptoBuf;
+
+    fn hash_initialize(&mut self, algs: AlgLen) -> Result<Self::Hasher<'_>, CryptoError> {
+        let hasher = match algs {
+            AlgLen::Bit256 => RustCryptoHasher(Box::new(Sha256::default())),
+            AlgLen::Bit384 => RustCryptoHasher(Box::new(Sha384::default())),
+        };
+        Ok(hasher)
+    }
+
+    fn rand_bytes(&mut self, dst: &mut [u8]) -> Result<(), CryptoError> {
+        StdRng::fill_bytes(&mut self.0, dst);
+        Ok(())
+    }
+
+    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    fn derive_cdi(
+        &mut self,
+        algs: AlgLen,
+        measurement: &Digest,
+        info: &[u8],
+    ) -> Result<Self::Cdi, CryptoError> {
+        hkdf_derive_cdi(algs, measurement, info)
+    }
+
+    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    fn derive_exported_cdi(
+        &mut self,
+        algs: AlgLen,
+        measurement: &Digest,
+        info: &[u8],
+    ) -> Result<Self::Cdi, CryptoError> {
+        let cdi = hkdf_derive_cdi(algs, measurement, info)?;
+        Ok(cdi)
+    }
+
+    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    fn derive_key_pair(
+        &mut self,
+        algs: AlgLen,
+        cdi: &Self::Cdi,
+        label: &[u8],
+        info: &[u8],
+    ) -> Result<(Self::PrivKey, EcdsaPub), CryptoError> {
+        self.derive_key_pair_inner(algs, cdi, label, info)
+    }
+
+    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    fn derive_key_pair_exported(
+        &mut self,
+        algs: AlgLen,
+        cdi: &Self::Cdi,
+        label: &[u8],
+        info: &[u8],
+    ) -> Result<(Self::PrivKey, EcdsaPub), CryptoError> {
+        self.derive_key_pair_inner(algs, cdi, label, info)
     }
 
     fn ecdsa_sign_with_alias(
