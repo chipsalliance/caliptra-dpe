@@ -2245,16 +2245,25 @@ enum CertificateType {
     Exported,
 }
 
+/// Arguments for DPE cert or CSR creation.
 pub(crate) struct CreateDpeCertArgs<'a> {
+    /// Used by DPE to compute measurement digest
     pub handle: &'a ContextHandle,
+    /// The locality of the caller
     pub locality: u32,
+    /// Info string used in the CDI derivation
     pub cdi_label: &'a [u8],
+    /// Label string used in the key derivation
     pub key_label: &'a [u8],
+    /// Additional info string used in the key derivation
     pub context: &'a [u8],
 }
 
+/// Results for DPE cert or CSR creation.
 pub(crate) struct CreateDpeCertResult {
+    /// Size of certificate or CSR in bytes.
     pub cert_size: u32,
+    /// Public key embedded in Cert or CSR.
     pub pub_key: EcdsaPub,
 }
 
