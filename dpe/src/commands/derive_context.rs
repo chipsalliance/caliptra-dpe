@@ -206,8 +206,7 @@ impl CommandExecution for DeriveContextCmd {
             || (!dpe.support.internal_dice() && self.uses_internal_dice_input())
             || (!dpe.support.retain_parent_context() && self.retains_parent())
             || (!dpe.support.x509() && self.allows_x509())
-            || (!dpe.support.cdi_export()
-                && (self.creates_certificate() || self.exports_cdi()))
+            || (!dpe.support.cdi_export() && (self.creates_certificate() || self.exports_cdi()))
             || (!dpe.support.recursive() && self.is_recursive())
         {
             return Err(DpeErrorCode::ArgumentNotSupported);
