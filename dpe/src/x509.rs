@@ -16,7 +16,7 @@ use bitflags::bitflags;
 use caliptra_cfi_lib_git::cfi_launder;
 #[cfg(not(feature = "no-cfi"))]
 use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq};
-use crypto::{Crypto, Digest, EcdsaPub, EcdsaSig, Hasher};
+use crypto::{Crypto, Digest, EcdsaPub, EcdsaSig, Hasher, MAX_EXPORTED_CDI_SIZE};
 #[cfg(not(feature = "disable_x509"))]
 use platform::CertValidity;
 #[cfg(not(feature = "disable_csr"))]
@@ -2256,6 +2256,11 @@ pub(crate) struct CreateDpeCertArgs<'a> {
 pub(crate) struct CreateDpeCertResult {
     pub cert_size: u32,
     pub pub_key: EcdsaPub,
+    //TODO(clundin): Remove once https://github.com/chipsalliance/caliptra-dpe/pull/376 is merged.
+    /// If the cert_type is `CertificateType::Exported` the CDI is exchanged for a handle, and
+    /// returned via `exported_cdi_handle`.
+    #[allow(unused)]
+    pub exported_cdi_handle: [u8; MAX_EXPORTED_CDI_SIZE],
 }
 
 fn get_dpe_measurement_digest(
@@ -2381,18 +2386,20 @@ fn create_dpe_cert_or_csr(
     let algs = DPE_PROFILE.alg_len();
     let digest = get_dpe_measurement_digest(dpe, env, args.handle, args.locality)?;
 
-    let key_pair = match cert_type {
+    let (key_pair, cdi) = match cert_type {
         CertificateType::Exported => {
             let cdi = env
                 .crypto
                 .derive_exported_cdi(algs, &digest, args.cdi_label)?;
-            env.crypto
-                .derive_key_pair_exported(algs, &cdi, args.key_label, args.context)
+            let key_pair = env.crypto
+                .derive_key_pair_exported(algs, &cdi, args.key_label, args.context);
+            (key_pair, cdi)
         }
         CertificateType::Leaf => {
             let cdi = env.crypto.derive_cdi(algs, &digest, args.cdi_label)?;
-            env.crypto
-                .derive_key_pair(algs, &cdi, args.key_label, args.context)
+            let key_pair = env.crypto
+                .derive_key_pair(algs, &cdi, args.key_label, args.context);
+            (key_pair, cdi)
         }
     };
     if cfi_launder(key_pair.is_ok()) {
@@ -2528,7 +2535,17 @@ fn create_dpe_cert_or_csr(
         }
     };
 
-    Ok(CreateDpeCertResult { cert_size, pub_key })
+    let result = match cert_type {
+        CertificateType::Exported => {
+            let exported_cdi_handle = env.crypto.get_exported_cdi_handle(&cdi)?;
+            CreateDpeCertResult { cert_size, pub_key, exported_cdi_handle }
+        },
+        _ => {
+            CreateDpeCertResult { cert_size, pub_key, exported_cdi_handle: [0; MAX_EXPORTED_CDI_SIZE] }
+        }
+    };
+
+    Ok(result)
 }
 
 #[cfg(test)]

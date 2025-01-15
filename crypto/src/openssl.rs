@@ -1,6 +1,6 @@
 // Licensed under the Apache-2.0 license
 
-use crate::{hkdf::*, AlgLen, Crypto, CryptoBuf, CryptoError, Digest, EcdsaPub, Hasher};
+use crate::{hkdf::*, AlgLen, Crypto, CryptoBuf, CryptoError, Digest, EcdsaPub, Hasher, MAX_EXPORTED_CDI_SIZE};
 #[cfg(not(feature = "no-cfi"))]
 use caliptra_cfi_derive_git::cfi_impl_fn;
 use openssl::{
@@ -14,6 +14,7 @@ use openssl::{
 };
 #[cfg(feature = "deterministic_rand")]
 use rand::{rngs::StdRng, RngCore, SeedableRng};
+use std::collections::HashMap;
 
 impl From<ErrorStack> for CryptoError {
     fn from(e: ErrorStack) -> Self {
@@ -41,23 +42,32 @@ impl Hasher for OpensslHasher {
     }
 }
 
+// Only currently support one CDI handle, but in the future we may want to support multiple.
+const MAX_CDI_HANDLES: usize = 1;
+type ExportCdiHandle = [u8; MAX_EXPORTED_CDI_SIZE];
+
 #[cfg(feature = "deterministic_rand")]
-pub struct OpensslCrypto(StdRng);
+pub struct OpensslCrypto{
+    rng: StdRng,
+    export_cdi_slots: HashMap<<OpensslCrypto as Crypto>::Cdi, ExportCdiHandle>,
+}
 
 #[cfg(not(feature = "deterministic_rand"))]
-pub struct OpensslCrypto;
+pub struct OpensslCrypto {
+    export_cdi_slots: Vec<ExportCdiHandle>,
+}
 
 impl OpensslCrypto {
     #[cfg(feature = "deterministic_rand")]
     pub fn new() -> Self {
         const SEED: [u8; 32] = [1; 32];
         let seeded_rng = StdRng::from_seed(SEED);
-        OpensslCrypto(seeded_rng)
+        Self{ rng: seeded_rng, export_cdi_slots: HashMap::new()}
     }
 
     #[cfg(not(feature = "deterministic_rand"))]
     pub fn new() -> Self {
-        Self {}
+        Self{ export_cdi_slots: HashMap::new()}
     }
 
     fn get_digest(algs: AlgLen) -> MessageDigest {
@@ -141,7 +151,7 @@ impl Crypto for OpensslCrypto {
 
     #[cfg(feature = "deterministic_rand")]
     fn rand_bytes(&mut self, dst: &mut [u8]) -> Result<(), CryptoError> {
-        StdRng::fill_bytes(&mut self.0, dst);
+        StdRng::fill_bytes(&mut self.rng, dst);
         Ok(())
     }
 
@@ -175,6 +185,18 @@ impl Crypto for OpensslCrypto {
     ) -> Result<Self::Cdi, CryptoError> {
         let cdi = hkdf_derive_cdi(algs, measurement, info)?;
         Ok(cdi)
+    }
+
+    fn get_exported_cdi_handle(&mut self, cdi: &Self::Cdi) -> Result<[u8; MAX_EXPORTED_CDI_SIZE], CryptoError> {
+        if self.export_cdi_slots.len() >= MAX_CDI_HANDLES {
+            return Err(CryptoError::ExportedCdiHandleLimitExceeded);
+        }
+
+        let mut exported_cdi_handle = [0; MAX_EXPORTED_CDI_SIZE];
+        self.rand_bytes(&mut exported_cdi_handle)?;
+        self.export_cdi_slots.insert(cdi.clone(), exported_cdi_handle);
+
+        Ok(exported_cdi_handle)
     }
 
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]

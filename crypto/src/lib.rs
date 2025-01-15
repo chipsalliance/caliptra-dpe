@@ -25,6 +25,8 @@ pub use rand::*;
 mod hkdf;
 mod signer;
 
+pub const MAX_EXPORTED_CDI_SIZE: usize = 32;
+
 #[derive(Debug, Clone, Copy)]
 #[cfg_attr(test, derive(strum_macros::EnumIter))]
 pub enum AlgLen {
@@ -54,6 +56,7 @@ pub enum CryptoError {
     Size = 0x3,
     NotImplemented = 0x4,
     HashError(u32) = 0x5,
+    ExportedCdiHandleLimitExceeded = 0x6,
 }
 
 impl CryptoError {
@@ -66,11 +69,12 @@ impl CryptoError {
 
     pub fn get_error_detail(&self) -> Option<u32> {
         match self {
-            CryptoError::AbstractionLayer(code) => Some(*code),
-            CryptoError::CryptoLibError(code) => Some(*code),
-            CryptoError::Size => None,
-            CryptoError::NotImplemented => None,
-            CryptoError::HashError(code) => Some(*code),
+            CryptoError::AbstractionLayer(code) | 
+                CryptoError::CryptoLibError(code) | 
+                CryptoError::HashError(code) => Some(*code),
+            CryptoError::Size | 
+                CryptoError::ExportedCdiHandleLimitExceeded | 
+                CryptoError::NotImplemented => None,
         }
     }
 }
@@ -207,6 +211,13 @@ pub trait Crypto {
         measurement: &Digest,
         info: &[u8],
     ) -> Result<Self::Cdi, CryptoError>;
+
+    /// Retrieve an exported CDI Handle from a CDI.
+    ///
+    /// # Arguments
+    ///
+    /// * `cdi` - The CDI to request a handle for.
+    fn get_exported_cdi_handle(&mut self, cdi: &Self::Cdi) -> Result<[u8; MAX_EXPORTED_CDI_SIZE], CryptoError>;
 
     /// Derives a key pair using a cryptographically secure KDF
     ///
