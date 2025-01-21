@@ -3,9 +3,12 @@ use super::CommandExecution;
 use crate::{
     context::{ActiveContextArgs, Context, ContextHandle, ContextState, ContextType},
     dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
-    response::{DeriveContextResp, DpeErrorCode, Response, ResponseHdr},
+    response::{
+        DeriveContextExportedCdiResp, DeriveContextResp, DpeErrorCode, Response, ResponseHdr,
+    },
     tci::TciMeasurement,
-    DPE_PROFILE,
+    x509::{create_exported_dpe_cert, CreateDpeCertArgs, CreateDpeCertResult},
+    DPE_PROFILE, MAX_CERT_SIZE, MAX_EXPORTED_CDI_SIZE,
 };
 use bitflags::bitflags;
 #[cfg(not(feature = "no-cfi"))]
@@ -13,6 +16,7 @@ use caliptra_cfi_derive_git::cfi_impl_fn;
 #[cfg(not(feature = "no-cfi"))]
 use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq};
 use cfg_if::cfg_if;
+use crypto::Crypto;
 
 #[repr(C)]
 #[derive(
@@ -218,6 +222,7 @@ impl CommandExecution for DeriveContextCmd {
             || (self.exports_cdi() && !self.creates_certificate())
             || (self.exports_cdi() && self.is_recursive())
             || (self.exports_cdi() && self.changes_locality())
+            || (self.exports_cdi() && self.retains_parent())
             || (self.exports_cdi()
                 && dpe.contexts[parent_idx].context_type == ContextType::Simulation)
             || (self.is_recursive() && self.retains_parent())
@@ -245,6 +250,15 @@ impl CommandExecution for DeriveContextCmd {
                 cfi_assert!(dpe.contexts[parent_idx].allow_x509() || !self.allows_x509());
                 cfi_assert!(!self.is_recursive() || !self.retains_parent());
             }
+        }
+
+        // Copy the parent context to mutate so that we avoid mutating internal state upon an error.
+        let mut tmp_parent_context = dpe.contexts[parent_idx];
+        if !self.retains_parent() {
+            #[cfg(not(feature = "no-cfi"))]
+            cfi_assert!(!self.retains_parent());
+            tmp_parent_context.state = ContextState::Retired;
+            tmp_parent_context.handle = ContextHandle::new_invalid();
         }
 
         if self.is_recursive() {
@@ -284,7 +298,39 @@ impl CommandExecution for DeriveContextCmd {
                 }
             }
         } else if self.creates_certificate() && self.exports_cdi() {
-            todo!("(clundin): Generate ECA certificiate / export random CDI")
+            cfg_if! {
+                if #[cfg(not(feature = "disable_export_cdi"))] {
+                    let mut exported_cdi_handle = [0; MAX_EXPORTED_CDI_SIZE];
+                    env.crypto
+                        .rand_bytes(&mut exported_cdi_handle)
+                        .map_err(DpeErrorCode::Crypto)?;
+                    let args = CreateDpeCertArgs {
+                        handle: &self.handle,
+                        locality,
+                        cdi_label: b"Exported CDI",
+                        key_label: b"Exported ECC",
+                        context: &exported_cdi_handle,
+                    };
+                    let mut cert = [0; MAX_CERT_SIZE];
+                    let CreateDpeCertResult { cert_size, .. } = create_exported_dpe_cert(
+                        &args,
+                        dpe,
+                        env,
+                        &mut cert,
+                    )?;
+
+                    Ok(Response::DeriveContextExportedCdi(DeriveContextExportedCdiResp {
+                        handle: ContextHandle::new_invalid(),
+                        parent_handle: ContextHandle::new_invalid(),
+                        resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
+                        exported_cdi: exported_cdi_handle,
+                        certificate_size: cert_size,
+                        new_certificate: cert,
+                    }))
+                } else {
+                    Err(DpeErrorCode::ArgumentNotSupported)?
+                }
+            }
         } else {
             let child_idx = dpe
                 .get_next_inactive_context_pos()
@@ -334,20 +380,15 @@ impl CommandExecution for DeriveContextCmd {
                 target_locality,
             )?;
 
-            // Copy the parent context to mutate so that we avoid mutating internal state upon an error.
-            let mut tmp_parent_context = dpe.contexts[parent_idx];
-            if !self.retains_parent() {
-                #[cfg(not(feature = "no-cfi"))]
-                cfi_assert!(!self.retains_parent());
-                tmp_parent_context.state = ContextState::Retired;
-                tmp_parent_context.handle = ContextHandle([0xff; ContextHandle::SIZE]);
-            } else if !tmp_parent_context.handle.is_default() {
-                tmp_parent_context.handle = dpe.generate_new_handle(env)?;
-            } else {
-                cfg_if! {
-                    if #[cfg(not(feature = "no-cfi"))] {
-                        cfi_assert!(self.retains_parent());
-                        cfi_assert!(tmp_parent_context.handle.is_default());
+            if self.retains_parent() {
+                if !tmp_parent_context.handle.is_default() {
+                    tmp_parent_context.handle = dpe.generate_new_handle(env)?;
+                } else {
+                    cfg_if! {
+                        if #[cfg(not(feature = "no-cfi"))] {
+                            cfi_assert!(self.retains_parent());
+                            cfi_assert!(tmp_parent_context.handle.is_default());
+                        }
                     }
                 }
             }
@@ -381,13 +422,18 @@ mod tests {
         context::ContextType,
         dpe_instance::tests::{TestTypes, RANDOM_HANDLE, SIMULATION_HANDLE, TEST_LOCALITIES},
         support::Support,
-        MAX_HANDLES,
+        DpeProfile, MAX_HANDLES,
     };
     use caliptra_cfi_lib_git::CfiCounter;
     use crypto::{Crypto, Hasher, OpensslCrypto};
-    use openssl::x509::X509;
-    use openssl::{bn::BigNum, ecdsa::EcdsaSig};
-    use platform::default::DefaultPlatform;
+    use openssl::{
+        bn::BigNum,
+        ecdsa::EcdsaSig,
+        hash::{Hasher as OpenSSLHasher, MessageDigest},
+        x509::X509,
+    };
+    use platform::{default::DefaultPlatform, Platform, MAX_KEY_IDENTIFIER_SIZE};
+    use x509_parser::{nom::Parser, oid_registry::asn1_rs::oid, prelude::*};
     use zerocopy::IntoBytes;
 
     const TEST_DERIVE_CONTEXT_CMD: DeriveContextCmd = DeriveContextCmd {
@@ -1029,7 +1075,8 @@ mod tests {
                 | Support::CDI_EXPORT
                 | Support::X509
                 | Support::RECURSIVE
-                | Support::SIMULATION,
+                | Support::SIMULATION
+                | Support::RETAIN_PARENT_CONTEXT,
         )
         .unwrap();
 
@@ -1052,6 +1099,19 @@ mod tests {
                 handle: ContextHandle::default(),
                 data: [0; DPE_PROFILE.get_tci_size()],
                 flags: DeriveContextFlags::EXPORT_CDI | DeriveContextFlags::RECURSIVE,
+                tci_type: 0,
+                target_locality: TEST_LOCALITIES[0]
+            }
+            .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
+        );
+
+        // `DeriveContextFlags::EXPORT_CDI` cannot be set with `DeriveContextFlags::RETAIN_PARENT_CONTEXT`
+        assert_eq!(
+            Err(DpeErrorCode::InvalidArgument),
+            DeriveContextCmd {
+                handle: ContextHandle::default(),
+                data: [0; DPE_PROFILE.get_tci_size()],
+                flags: DeriveContextFlags::EXPORT_CDI | DeriveContextFlags::RETAIN_PARENT_CONTEXT,
                 tci_type: 0,
                 target_locality: TEST_LOCALITIES[0]
             }
@@ -1100,15 +1160,24 @@ mod tests {
         .unwrap();
 
         // Happy case!
-        assert!(DeriveContextCmd {
+        let res = DeriveContextCmd {
             handle: ContextHandle::default(),
             data: [0; DPE_PROFILE.get_tci_size()],
             flags: DeriveContextFlags::EXPORT_CDI | DeriveContextFlags::CREATE_CERTIFICATE,
             tci_type: 0,
-            target_locality: TEST_LOCALITIES[0]
+            target_locality: TEST_LOCALITIES[0],
         }
-        .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
-        .is_ok());
+        .execute(&mut dpe, &mut env, TEST_LOCALITIES[0]);
+
+        let res = match res {
+            Ok(Response::DeriveContextExportedCdi(res)) => res,
+            _ => panic!("expected to get a valid DeriveContextExportedCdi response."),
+        };
+        assert_eq!(res.parent_handle, ContextHandle::new_invalid());
+        assert_eq!(res.handle, ContextHandle::new_invalid());
+        assert_ne!(res.certificate_size, 0);
+        assert_ne!(res.new_certificate, [0; MAX_CERT_SIZE]);
+        assert_ne!(res.exported_cdi, [0; MAX_EXPORTED_CDI_SIZE]);
 
         let mut dpe = DpeInstance::new(
             &mut env,
@@ -1154,5 +1223,90 @@ mod tests {
             }
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         );
+    }
+    #[test]
+    fn test_create_ca() {
+        CfiCounter::reset_for_test();
+        let mut env = DpeEnv::<TestTypes> {
+            crypto: OpensslCrypto::new(),
+            platform: DefaultPlatform,
+        };
+        let mut dpe = DpeInstance::new(&mut env, Support::X509 | Support::CDI_EXPORT).unwrap();
+        let init_resp = match InitCtxCmd::new_use_default()
+            .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
+            .unwrap()
+        {
+            Response::InitCtx(resp) => resp,
+            _ => panic!("Incorrect return type."),
+        };
+        let derive_cmd = DeriveContextCmd {
+            handle: init_resp.handle,
+            flags: DeriveContextFlags::EXPORT_CDI | DeriveContextFlags::CREATE_CERTIFICATE,
+            data: [0; DPE_PROFILE.get_tci_size()],
+            tci_type: 0,
+            target_locality: TEST_LOCALITIES[0],
+        };
+        let derive_resp = match derive_cmd
+            .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
+            .unwrap()
+        {
+            Response::DeriveContextExportedCdi(resp) => resp,
+            _ => panic!("Wrong response type."),
+        };
+        assert_eq!(ContextHandle::new_invalid(), derive_resp.handle);
+        assert_eq!(ContextHandle::new_invalid(), derive_resp.parent_handle);
+        let mut parser = X509CertificateParser::new().with_deep_parse_extensions(true);
+        match parser
+            .parse(&derive_resp.new_certificate[..derive_resp.certificate_size.try_into().unwrap()])
+        {
+            Ok((_, cert)) => {
+                match cert.basic_constraints() {
+                    Ok(Some(basic_constraints)) => {
+                        assert!(basic_constraints.value.ca);
+                    }
+                    Ok(None) => panic!("basic constraints extension not found"),
+                    Err(_) => panic!("multiple basic constraints extensions found"),
+                }
+                let pub_key = &cert.tbs_certificate.subject_pki.subject_public_key.data;
+                let mut hasher = match DPE_PROFILE {
+                    DpeProfile::P256Sha256 => OpenSSLHasher::new(MessageDigest::sha256()).unwrap(),
+                    DpeProfile::P384Sha384 => OpenSSLHasher::new(MessageDigest::sha384()).unwrap(),
+                };
+                hasher.update(pub_key).unwrap();
+                let expected_ski: &[u8] = &hasher.finish().unwrap();
+                match cert.get_extension_unique(&oid!(2.5.29 .14)) {
+                    Ok(Some(subject_key_identifier_ext)) => {
+                        if let ParsedExtension::SubjectKeyIdentifier(key_identifier) =
+                            subject_key_identifier_ext.parsed_extension()
+                        {
+                            assert_eq!(key_identifier.0, &expected_ski[..MAX_KEY_IDENTIFIER_SIZE]);
+                        } else {
+                            panic!("Extension has wrong type");
+                        }
+                    }
+                    Ok(None) => panic!("subject key identifier extension not found"),
+                    Err(_) => panic!("multiple subject key identifier extensions found"),
+                }
+                let mut expected_aki = [0u8; MAX_KEY_IDENTIFIER_SIZE];
+                env.platform
+                    .get_issuer_key_identifier(&mut expected_aki)
+                    .unwrap();
+                match cert.get_extension_unique(&oid!(2.5.29 .35)) {
+                    Ok(Some(extension)) => {
+                        if let ParsedExtension::AuthorityKeyIdentifier(aki) =
+                            extension.parsed_extension()
+                        {
+                            let key_identifier = aki.key_identifier.clone().unwrap();
+                            assert_eq!(&key_identifier.0, &expected_aki,);
+                        } else {
+                            panic!("Extension has wrong type");
+                        }
+                    }
+                    Ok(None) => panic!("authority key identifier extension not found"),
+                    Err(_) => panic!("multiple authority key identifier extensions found"),
+                }
+            }
+            Err(e) => panic!("x509 parsing failed: {:?}", e),
+        };
     }
 }
