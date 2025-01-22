@@ -112,6 +112,11 @@ var DeriveContextTestCase = TestCase{
 	"DeriveContext", TestDeriveContext, []string{"AutoInit", "RetainParentContext"},
 }
 
+// TestDeriveContextCdiExport tests DeriveContext
+var TestDeriveContextCdiExportTestCase = TestCase{
+	"DeriveContextCdiExport", TestDeriveContextCdiExport, []string{"CdiExport"},
+}
+
 // DeriveContextSimulationTestCase tests DeriveContext with Simulation contexts
 var DeriveContextSimulationTestCase = TestCase{
 	"DeriveContextSimulation", TestDeriveContextSimulation, []string{"AutoInit", "Simulation", "X509", "InternalDice", "InternalInfo", "RetainParentContext"},
