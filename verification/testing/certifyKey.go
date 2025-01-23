@@ -144,7 +144,7 @@ func TestCertifyKeyCsr(d client.TestDPEInstance, c client.DPEClient, t *testing.
 	}
 	digestLen := profile.GetDigestSize()
 
-	flags := client.CertifyKeyFlags(client.CertifyAddIsCA)
+	flags := client.CertifyKeyFlags(0)
 	label := make([]byte, digestLen)
 
 	// Get DPE leaf certificate from CertifyKey
@@ -490,6 +490,10 @@ func checkCertificateStructure(t *testing.T, certBytes []byte) *x509.Certificate
 			// We will need to truncate the serial numbers for those certs and
 			// then enable this lint.
 			"e_subject_dn_serial_number_max_length",
+			// CertifKey does not support CA certificates.
+			"e_ext_authority_key_identifier_no_key_identifier",
+			// subject key identifiers are optional in leaf certificates.
+			"w_ext_subject_key_identifier_missing_sub_cert",
 		},
 	})
 	if err != nil {
@@ -549,8 +553,8 @@ func testCertifyKey(d client.TestDPEInstance, c client.DPEClient, t *testing.T, 
 	}
 
 	certifyKeyParams := []CertifyKeyParams{
-		{Label: make([]byte, digestLen), Flags: client.CertifyKeyFlags(client.CertifyAddIsCA)},
-		{Label: seqLabel, Flags: client.CertifyKeyFlags(client.CertifyAddIsCA)},
+		{Label: make([]byte, digestLen), Flags: client.CertifyKeyFlags(0)},
+		{Label: seqLabel, Flags: client.CertifyKeyFlags(0)},
 	}
 
 	for _, params := range certifyKeyParams {

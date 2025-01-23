@@ -192,7 +192,7 @@ func TestPrivilegesEscalation(d client.TestDPEInstance, c client.DPEClient, t *t
 
 	// Similarly, when commands like CertifyKey try to make use of features/flags that are unsupported
 	// by child context, it will fail.
-	if _, err = c.CertifyKey(handle, make([]byte, digestLen), client.CertifyKeyX509, client.CertifyAddIsCA); err == nil {
+	if _, err = c.CertifyKey(handle, make([]byte, digestLen), client.CertifyKeyX509, 0); err == nil {
 		t.Errorf("[ERROR]: Should return %q, but returned no error", client.StatusInvalidArgument)
 	} else if !errors.Is(err, client.StatusInvalidArgument) {
 		t.Errorf("[ERROR]: Incorrect error type. Should return %q, but returned %q", client.StatusInvalidArgument, err)
