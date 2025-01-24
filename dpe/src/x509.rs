@@ -511,7 +511,7 @@ impl CertWriter<'_> {
         tagged: bool,
         is_x509: bool,
     ) -> Result<usize, DpeErrorCode> {
-        if !measurements.is_ca || !is_x509 {
+        if !is_x509 {
             return Ok(0);
         }
         let aki_size = Self::get_key_identifier_size(
@@ -1597,7 +1597,7 @@ impl CertWriter<'_> {
         measurements: &MeasurementData,
         is_x509: bool,
     ) -> Result<usize, DpeErrorCode> {
-        if !measurements.is_ca || !is_x509 {
+        if !is_x509 {
             return Ok(0);
         }
 
@@ -2975,9 +2975,6 @@ pub(crate) mod tests {
         }
 
         match cert.get_extension_unique(&oid!(2.5.29 .35)) {
-            Ok(Some(_)) => {
-                panic!("authority key identifier extensions found for non CA certificate")
-            }
             Err(_) => panic!("multiple authority key identifier extensions found"),
             _ => (),
         }

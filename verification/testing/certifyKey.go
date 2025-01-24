@@ -421,15 +421,11 @@ func checkCertifyKeyAuthorityKeyIdentifierExtension(t *testing.T, extensions []p
 	if err != nil {
 		t.Errorf("[ERROR]: Failed to retrieve AuthorityKeyIdentifier extension: %v", err)
 	}
-	if ca {
-		if aki.KeyIdentifier == nil {
-			t.Fatal("[ERROR]: The certificate is a CA but the AuthorityKeyIdentifier extension is not present.")
-		}
-		if !reflect.DeepEqual(aki.KeyIdentifier, IssuerSki) {
-			t.Errorf("[ERROR]: The value of the authority key identifier %v is not equal to the issuer's subject key identifier %v", aki, IssuerSki)
-		}
-	} else if !ca && aki.KeyIdentifier != nil {
-		t.Errorf("[ERROR]: The certificate is not a CA but the AuthorityKeyIdentifier extension is present.")
+	if aki.KeyIdentifier == nil {
+		t.Fatal("[ERROR]: The certificate is a CA but the AuthorityKeyIdentifier extension is not present.")
+	}
+	if !reflect.DeepEqual(aki.KeyIdentifier, IssuerSki) {
+		t.Errorf("[ERROR]: The value of the authority key identifier %v is not equal to the issuer's subject key identifier %v", aki, IssuerSki)
 	}
 }
 
@@ -490,8 +486,6 @@ func checkCertificateStructure(t *testing.T, certBytes []byte) *x509.Certificate
 			// We will need to truncate the serial numbers for those certs and
 			// then enable this lint.
 			"e_subject_dn_serial_number_max_length",
-			// CertifKey does not support CA certificates.
-			"e_ext_authority_key_identifier_no_key_identifier",
 			// subject key identifiers are optional in leaf certificates.
 			"w_ext_subject_key_identifier_missing_sub_cert",
 		},
