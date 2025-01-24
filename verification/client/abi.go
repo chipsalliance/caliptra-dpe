@@ -149,11 +149,6 @@ type GetProfileResp struct {
 // CertifyKeyFlags is the input flags to CertifyKey
 type CertifyKeyFlags uint32
 
-// Supported flags to CertifyKey
-const (
-	CertifyAddIsCA CertifyKeyFlags = 1 << 30
-)
-
 // CertifyKeyFormat is the requested output format of the DPE key certification
 type CertifyKeyFormat uint32
 

@@ -39,17 +39,17 @@ var InitializeContextSimulationTestCase = TestCase{
 
 // CertifyKeyTestCase tests CertifyKey
 var CertifyKeyTestCase = TestCase{
-	"CertifyKey", TestCertifyKey, []string{"AutoInit", "X509", "IsCA"},
+	"CertifyKey", TestCertifyKey, []string{"AutoInit", "X509"},
 }
 
 // client.CertifyKeyCsrTestCase tests CertifyKey with type = CSR
 var CertifyKeyCsrTestCase = TestCase{
-	"CertifyKeyCsr", TestCertifyKeyCsr, []string{"AutoInit", "Csr", "IsCA"},
+	"CertifyKeyCsr", TestCertifyKeyCsr, []string{"AutoInit", "Csr"},
 }
 
 // CertifyKeySimulationTestCase tests CertifyKey on Simulation mode contexts
 var CertifyKeySimulationTestCase = TestCase{
-	"CertifyKeySimulation", TestCertifyKeySimulation, []string{"AutoInit", "Simulation", "X509", "IsCA"},
+	"CertifyKeySimulation", TestCertifyKeySimulation, []string{"AutoInit", "Simulation", "X509"},
 }
 
 // GetCertificateChainTestCase tests GetCertificateChain
@@ -129,7 +129,7 @@ var DeriveContextLocalityTestCase = TestCase{
 
 // DeriveContextPrivilegeEscalationTestCase tests that commands trying to use features that are unsupported by child context fail.
 var DeriveContextPrivilegeEscalationTestCase = TestCase{
-	"DeriveContext_PrivilegeEscalation", TestPrivilegesEscalation, []string{"AutoInit", "X509", "IsCA"},
+	"DeriveContext_PrivilegeEscalation", TestPrivilegesEscalation, []string{"AutoInit", "X509"},
 }
 
 // DeriveContextInputFlagsTestCase tests DeriveContext with the input flags InternalDiceInfo and InternalInputInfo.
