@@ -70,7 +70,7 @@ pub struct MeasurementData<'a> {
 pub struct CertWriter<'a> {
     certificate: &'a mut [u8],
     offset: usize,
-    crit_dice: bool,
+    encoding_options: EncodingOptions,
 }
 
 pub struct KeyUsageFlags(u8);
@@ -181,15 +181,16 @@ impl CertWriter<'_> {
         &[0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x09, 0x0E];
 
     /// Build new CertWriter that writes output to `cert`
-    ///
-    /// If `crit_dice`, all tcg-dice-* extensions will be marked as critical.
-    /// Else they will be marked as non-critical.
-    pub fn new(cert: &mut [u8], crit_dice: bool) -> CertWriter {
+    pub fn new(cert: &mut [u8]) -> CertWriter {
         CertWriter {
             certificate: cert,
             offset: 0,
-            crit_dice,
+            encoding_options: EncodingOptions::default(),
         }
+    }
+
+    pub fn with_encoding_options(&mut self, encoding_options: EncodingOptions) {
+        self.encoding_options = encoding_options;
     }
 
     /// Calculate the number of bytes the ASN.1 size field will be
@@ -579,9 +580,9 @@ impl CertWriter<'_> {
         tagged: bool,
         explicit: bool,
         is_x509: bool,
+        encoding_options: &EncodingOptions,
     ) -> Result<usize, DpeErrorCode> {
         let mut size = Self::get_multi_tcb_info_size(measurements, /*tagged=*/ true)?
-            + Self::get_ueid_size(measurements, /*tagged=*/ true)?
             + Self::get_basic_constraints_size(/*tagged=*/ true)?
             + Self::get_key_usage_size(/*tagged=*/ true)?
             + Self::get_extended_key_usage_size(measurements, /*tagged=*/ true)?
@@ -597,6 +598,9 @@ impl CertWriter<'_> {
             )?
             + Self::get_subject_alt_name_extension_size(measurements, /*tagged=*/ true)?;
 
+        if encoding_options.encode_ueid {
+            size += Self::get_ueid_size(measurements, /*tagged=*/ true)?;
+        }
         // Determine whether to include the explicit tag wrapping in the size calculation
         size = Self::get_structure_size(size, /*tagged=*/ explicit)?;
 
@@ -606,6 +610,8 @@ impl CertWriter<'_> {
     /// Get the size of the ASN.1 TBSCertificate structure
     /// If `tagged`, include the tag and size fields
     #[cfg(not(feature = "disable_x509"))]
+    #[allow(clippy::too_many_arguments)] // TODO(clundin): Refactor some of these params into a
+                                         // struct.
     fn get_tbs_size(
         serial_number: &[u8],
         issuer_der: &[u8],
@@ -614,6 +620,7 @@ impl CertWriter<'_> {
         measurements: &MeasurementData,
         validity: &CertValidity,
         tagged: bool,
+        encoding_options: &EncodingOptions,
     ) -> Result<usize, DpeErrorCode> {
         let tbs_size = Self::get_version_size(/*tagged=*/ true)?
             + Self::get_integer_bytes_size(serial_number, /*tagged=*/ true)?
@@ -627,6 +634,7 @@ impl CertWriter<'_> {
                 /*tagged=*/ true,
                 /*explicit=*/ true,
                 /*is_x509=*/ true,
+                encoding_options,
             )?;
 
         Self::get_structure_size(tbs_size, tagged)
@@ -640,11 +648,12 @@ impl CertWriter<'_> {
         pubkey: &EcdsaPub,
         measurements: &MeasurementData,
         tagged: bool,
+        encoding_options: &EncodingOptions,
     ) -> Result<usize, DpeErrorCode> {
         let cert_req_info_size = Self::get_integer_size(Self::CSR_V0, true)?
             + Self::get_rdn_size(subject_name, /*tagged=*/ true)?
             + Self::get_ecdsa_subject_pubkey_info_size(pubkey, /*tagged=*/ true)?
-            + Self::get_attributes_size(measurements, /*tagged=*/ true)?;
+            + Self::get_attributes_size(measurements, /*tagged=*/ true, encoding_options)?;
 
         Self::get_structure_size(cert_req_info_size, tagged)
     }
@@ -807,6 +816,7 @@ impl CertWriter<'_> {
     fn get_attribute_size(
         measurements: &MeasurementData,
         tagged: bool,
+        encoding_options: &EncodingOptions,
     ) -> Result<usize, DpeErrorCode> {
         let attribute_size =
             Self::get_structure_size(Self::ID_DATA_OID.len(), /*tagged=*/ true)?
@@ -816,6 +826,7 @@ impl CertWriter<'_> {
                         /*tagged=*/ true,
                         /*explicit=*/ false,
                         /*is_x509=*/ false,
+                        encoding_options,
                     )?,
                     /*tagged=*/ true,
                 )?;
@@ -829,8 +840,10 @@ impl CertWriter<'_> {
     fn get_attributes_size(
         measurements: &MeasurementData,
         tagged: bool,
+        encoding_options: &EncodingOptions,
     ) -> Result<usize, DpeErrorCode> {
-        let attribute_size = Self::get_attribute_size(measurements, /*tagged=*/ true)?;
+        let attribute_size =
+            Self::get_attribute_size(measurements, /*tagged=*/ true, encoding_options)?;
 
         Self::get_structure_size(attribute_size, tagged)
     }
@@ -1275,7 +1288,11 @@ impl CertWriter<'_> {
         bytes_written += self.encode_size_field(multi_tcb_info_size)?;
         bytes_written += self.encode_oid(Self::MULTI_TCBINFO_OID)?;
 
-        let crit = if self.crit_dice { 0xFF } else { 0x00 };
+        let crit = if self.encoding_options.crit_dice {
+            0xFF
+        } else {
+            0x00
+        };
         bytes_written += self.encode_byte(Self::BOOL_TAG)?;
         bytes_written += self.encode_size_field(Self::BOOL_SIZE)?;
         bytes_written += self.encode_byte(crit)?;
@@ -1318,7 +1335,11 @@ impl CertWriter<'_> {
         bytes_written += self.encode_size_field(ueid_size)?;
         bytes_written += self.encode_oid(Self::UEID_OID)?;
 
-        let crit = if self.crit_dice { 0xFF } else { 0x00 };
+        let crit = if self.encoding_options.crit_dice {
+            0xFF
+        } else {
+            0x00
+        };
         bytes_written += self.encode_byte(Self::BOOL_TAG)?;
         bytes_written += self.encode_size_field(Self::BOOL_SIZE)?;
         bytes_written += self.encode_byte(crit)?;
@@ -1682,6 +1703,7 @@ impl CertWriter<'_> {
         &mut self,
         measurements: &MeasurementData,
         is_x509: bool,
+        encoding_options: &EncodingOptions,
     ) -> Result<usize, DpeErrorCode> {
         let mut bytes_written = 0;
         if is_x509 {
@@ -1692,6 +1714,7 @@ impl CertWriter<'_> {
                 /*tagged=*/ true,
                 /*explicit=*/ false,
                 is_x509,
+                encoding_options,
             )?)?;
         }
 
@@ -1702,10 +1725,13 @@ impl CertWriter<'_> {
             /*tagged=*/ false,
             /*explicit=*/ false,
             is_x509,
+            encoding_options,
         )?)?;
 
         bytes_written += self.encode_multi_tcb_info(measurements)?;
-        bytes_written += self.encode_ueid(measurements)?;
+        if self.encoding_options.encode_ueid {
+            bytes_written += self.encode_ueid(measurements)?;
+        }
         bytes_written += self.encode_basic_constraints(measurements)?;
         bytes_written += self.encode_key_usage(measurements.is_ca)?;
         bytes_written += self.encode_extended_key_usage(measurements)?;
@@ -1803,6 +1829,7 @@ impl CertWriter<'_> {
         bytes_written += self.encode_size_field(Self::get_attributes_size(
             measurements,
             /*tagged=*/ false,
+            &self.encoding_options,
         )?)?;
 
         // Attribute Sequence
@@ -1810,6 +1837,7 @@ impl CertWriter<'_> {
         bytes_written += self.encode_size_field(Self::get_attribute_size(
             measurements,
             /*tagged=*/ false,
+            &self.encoding_options,
         )?)?;
         bytes_written += self.encode_oid(Self::EXTENSION_REQUEST_OID)?;
 
@@ -1820,10 +1848,15 @@ impl CertWriter<'_> {
             /*tagged=*/ true,
             /*explicit=*/ false,
             /*is_x509=*/ false,
+            &self.encoding_options,
         )?)?;
 
         // extensions
-        bytes_written += self.encode_extensions(measurements, /*is_x509=*/ false)?;
+        bytes_written += self.encode_extensions(
+            measurements,
+            /*is_x509=*/ false,
+            &self.encoding_options.clone(),
+        )?;
 
         Ok(bytes_written)
     }
@@ -2054,6 +2087,7 @@ impl CertWriter<'_> {
             measurements,
             validity,
             /*tagged=*/ false,
+            &self.encoding_options,
         )?;
 
         // TBS sequence
@@ -2082,7 +2116,11 @@ impl CertWriter<'_> {
         bytes_written += self.encode_ecdsa_subject_pubkey_info(pubkey)?;
 
         // extensions
-        bytes_written += self.encode_extensions(measurements, /*is_x509=*/ true)?;
+        bytes_written += self.encode_extensions(
+            measurements,
+            /*is_x509=*/ true,
+            &self.encoding_options.clone(),
+        )?;
 
         Ok(bytes_written)
     }
@@ -2149,6 +2187,7 @@ impl CertWriter<'_> {
             pub_key,
             measurements,
             /*tagged=*/ false,
+            &self.encoding_options,
         )?;
 
         // CertificationRequestInfo Sequence
@@ -2245,6 +2284,24 @@ enum CertificateType {
     Exported,
 }
 
+/// Modify the behavior of the `CertWriter` encoding
+#[derive(Clone)]
+pub struct EncodingOptions {
+    /// All tcg-dice-* extensions will be marked as critical when true.
+    pub crit_dice: bool,
+    /// Include the ueid extension.
+    pub encode_ueid: bool,
+}
+
+impl Default for EncodingOptions {
+    fn default() -> Self {
+        Self {
+            crit_dice: true,
+            encode_ueid: true,
+        }
+    }
+}
+
 /// Arguments for DPE cert or CSR creation.
 pub(crate) struct CreateDpeCertArgs<'a> {
     /// Used by DPE to compute measurement digest
@@ -2257,6 +2314,8 @@ pub(crate) struct CreateDpeCertArgs<'a> {
     pub key_label: &'a [u8],
     /// Additional info string used in the key derivation
     pub context: &'a [u8],
+    /// Override encoding options that modify the behavior of Cert / CSR encoding.
+    pub encoding_override: Option<EncodingOptions>,
 }
 
 /// Results for DPE cert or CSR creation.
@@ -2329,8 +2388,6 @@ fn get_subject_key_identifier(
     Ok(())
 }
 
-// TODO(clundin): Remove this lint when adding the DeriveContext certificate generation code.
-#[allow(unused)]
 pub(crate) fn create_exported_dpe_cert(
     args: &CreateDpeCertArgs,
     dpe: &mut DpeInstance,
@@ -2453,7 +2510,10 @@ fn create_dpe_cert_or_csr(
         subject_alt_name,
     };
     let mut scratch_buf = [0u8; MAX_CERT_SIZE];
-    let mut scratch_writer = CertWriter::new(&mut scratch_buf, true);
+    let mut scratch_writer = CertWriter::new(&mut scratch_buf);
+    if let Some(options_override) = &args.encoding_override {
+        scratch_writer.with_encoding_options(options_override.clone());
+    }
     let cert_size = match cert_format {
         CertificateFormat::X509 => {
             let mut issuer_name = [0u8; MAX_ISSUER_NAME_SIZE];
@@ -2477,7 +2537,10 @@ fn create_dpe_cert_or_csr(
             let sig = env
                 .crypto
                 .ecdsa_sign_with_alias(DPE_PROFILE.alg_len(), &tbs_digest)?;
-            let mut cert_writer = CertWriter::new(output_cert_or_csr, true);
+            let mut cert_writer = CertWriter::new(output_cert_or_csr);
+            if let Some(options_override) = &args.encoding_override {
+                cert_writer.with_encoding_options(options_override.clone());
+            }
             bytes_written =
                 cert_writer.encode_ecdsa_certificate(&scratch_buf[..bytes_written], &sig)?;
             u32::try_from(bytes_written).map_err(|_| DpeErrorCode::InternalError)?
@@ -2502,7 +2565,10 @@ fn create_dpe_cert_or_csr(
             )?;
 
             let mut csr_buffer = [0u8; MAX_CERT_SIZE];
-            let mut csr_writer = CertWriter::new(&mut csr_buffer, true);
+            let mut csr_writer = CertWriter::new(&mut csr_buffer);
+            if let Some(options_override) = &args.encoding_override {
+                csr_writer.with_encoding_options(options_override.clone());
+            }
             bytes_written =
                 csr_writer.encode_csr(&scratch_buf[..bytes_written], &cert_req_info_sig)?;
             if bytes_written > MAX_CERT_SIZE {
@@ -2515,7 +2581,10 @@ fn create_dpe_cert_or_csr(
                 .ecdsa_sign_with_alias(DPE_PROFILE.alg_len(), &csr_digest)?;
             let sid = env.platform.get_signer_identifier()?;
 
-            let mut cms_writer = CertWriter::new(output_cert_or_csr, true);
+            let mut cms_writer = CertWriter::new(output_cert_or_csr);
+            if let Some(options_override) = &args.encoding_override {
+                cms_writer.with_encoding_options(options_override.clone());
+            }
             bytes_written = cms_writer.encode_cms(&csr_buffer[..bytes_written], &csr_sig, &sid)?;
             u32::try_from(bytes_written).map_err(|_| DpeErrorCode::InternalError)?
         }
@@ -2581,7 +2650,7 @@ pub(crate) mod tests {
 
     fn encode_test_issuer() -> Vec<u8> {
         let mut issuer_der = vec![0u8; 256];
-        let mut issuer_writer = CertWriter::new(&mut issuer_der, true);
+        let mut issuer_writer = CertWriter::new(&mut issuer_der);
         let issuer_len = issuer_writer.encode_rdn(&TEST_ISSUER).unwrap();
         issuer_der.resize(issuer_len, 0);
         issuer_der
@@ -2599,7 +2668,7 @@ pub(crate) mod tests {
 
         for c in buffer_cases {
             let mut cert = [0u8; 128];
-            let mut w = CertWriter::new(&mut cert, true);
+            let mut w = CertWriter::new(&mut cert);
             let byte_count = w.encode_integer_bytes(&c).unwrap();
             let n = asn1::parse_single::<u64>(&cert[..byte_count]).unwrap();
             assert_eq!(n, u64::from_be_bytes(c));
@@ -2613,7 +2682,7 @@ pub(crate) mod tests {
 
         for c in integer_cases {
             let mut cert = [0; 128];
-            let mut w = CertWriter::new(&mut cert, true);
+            let mut w = CertWriter::new(&mut cert);
             let byte_count = w.encode_integer(c).unwrap();
             let n = asn1::parse_single::<u64>(&cert[..byte_count]).unwrap();
             assert_eq!(n, c);
@@ -2629,7 +2698,7 @@ pub(crate) mod tests {
             serial: DirectoryString::PrintableString(&[0x0u8; DPE_PROFILE.get_hash_size() * 2]),
         };
 
-        let mut w = CertWriter::new(&mut cert, true);
+        let mut w = CertWriter::new(&mut cert);
         let bytes_written = w.encode_rdn(&test_name).unwrap();
 
         let name = match X509Name::from_der(&cert[..bytes_written]) {
@@ -2656,7 +2725,7 @@ pub(crate) mod tests {
         let mut cert = [0u8; 256];
         let test_key = EcdsaPub::default(DPE_PROFILE.alg_len());
 
-        let mut w = CertWriter::new(&mut cert, true);
+        let mut w = CertWriter::new(&mut cert);
         let bytes_written = w.encode_ecdsa_subject_pubkey_info(&test_key).unwrap();
 
         SubjectPublicKeyInfo::from_der(&cert[..bytes_written]).unwrap();
@@ -2677,7 +2746,7 @@ pub(crate) mod tests {
         node.locality = 0xFFFFFFFF;
 
         let mut cert = [0u8; 256];
-        let mut w = CertWriter::new(&mut cert, true);
+        let mut w = CertWriter::new(&mut cert);
         let mut supports_recursive = true;
         let mut bytes_written = w.encode_tcb_info(&node, supports_recursive).unwrap();
 
@@ -2703,7 +2772,7 @@ pub(crate) mod tests {
 
         // test tbs_info with supports_recursive = false
         supports_recursive = false;
-        w = CertWriter::new(&mut cert, true);
+        w = CertWriter::new(&mut cert);
         bytes_written = w.encode_tcb_info(&node, supports_recursive).unwrap();
 
         parsed_tcb_info = asn1::parse_single::<TcbInfo>(&cert[..bytes_written]).unwrap();
@@ -2722,7 +2791,7 @@ pub(crate) mod tests {
 
     fn get_key_usage(is_ca: bool) -> KeyUsage {
         let mut cert = [0u8; 32];
-        let mut w = CertWriter::new(&mut cert, true);
+        let mut w = CertWriter::new(&mut cert);
         let bytes_written = w.encode_key_usage(is_ca).unwrap();
         assert_eq!(
             bytes_written,
@@ -2750,7 +2819,7 @@ pub(crate) mod tests {
     #[test]
     fn test_tbs() {
         let mut cert = [0u8; 4096];
-        let mut w = CertWriter::new(&mut cert, true);
+        let mut w = CertWriter::new(&mut cert);
 
         let test_serial = [0x1F; 20];
         let issuer_der = encode_test_issuer();
@@ -2838,7 +2907,7 @@ pub(crate) mod tests {
 
     fn build_test_tbs<'a>(is_ca: bool, cert_buf: &'a mut [u8]) -> (usize, TbsCertificate<'a>) {
         let mut issuer_der = [0u8; 1024];
-        let mut issuer_writer = CertWriter::new(&mut issuer_der, true);
+        let mut issuer_writer = CertWriter::new(&mut issuer_der);
         let issuer_len = issuer_writer.encode_rdn(&TEST_ISSUER_NAME).unwrap();
 
         let test_pub = EcdsaPub {
@@ -2889,7 +2958,7 @@ pub(crate) mod tests {
             not_after,
         };
 
-        let mut tbs_writer = CertWriter::new(cert_buf, true);
+        let mut tbs_writer = CertWriter::new(cert_buf);
         let bytes_written = tbs_writer
             .encode_ecdsa_tbs(
                 &TEST_SERIAL,
@@ -2917,7 +2986,7 @@ pub(crate) mod tests {
             s: CryptoBuf::new(&[0xDD; ECC_INT_SIZE]).unwrap(),
         };
 
-        let mut w = CertWriter::new(cert_buf, true);
+        let mut w = CertWriter::new(cert_buf);
         let bytes_written = w
             .encode_ecdsa_certificate(&mut tbs_buf[..tbs_written], &test_sig)
             .unwrap();

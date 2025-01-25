@@ -7,7 +7,7 @@ use crate::{
         DeriveContextExportedCdiResp, DeriveContextResp, DpeErrorCode, Response, ResponseHdr,
     },
     tci::TciMeasurement,
-    x509::{create_exported_dpe_cert, CreateDpeCertArgs, CreateDpeCertResult},
+    x509::{create_exported_dpe_cert, CreateDpeCertArgs, CreateDpeCertResult, EncodingOptions},
     DPE_PROFILE, MAX_CERT_SIZE, MAX_EXPORTED_CDI_SIZE,
 };
 use bitflags::bitflags;
@@ -310,6 +310,7 @@ impl CommandExecution for DeriveContextCmd {
                         cdi_label: b"Exported CDI",
                         key_label: b"Exported ECC",
                         context: &exported_cdi_handle,
+                        encoding_override: Some(EncodingOptions{ encode_ueid: false, ..Default::default()}),
                     };
                     let mut cert = [0; MAX_CERT_SIZE];
                     let CreateDpeCertResult { cert_size, .. } = create_exported_dpe_cert(
