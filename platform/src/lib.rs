@@ -23,6 +23,8 @@ pub const MAX_KEY_IDENTIFIER_SIZE: usize = 20;
 pub const MAX_VALIDITY_SIZE: usize = 24;
 pub const MAX_OTHER_NAME_SIZE: usize = 128;
 
+pub type Ueid = [u8; 17];
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum SignerIdentifier {
     IssuerAndSerialNumber {
@@ -61,6 +63,7 @@ pub enum PlatformError {
     CertValidityError(u32) = 0x7,
     IssuerKeyIdentifierError(u32) = 0x8,
     SubjectAlternativeNameError(u32) = 0x9,
+    MissingUeidError = 0xA,
 }
 
 impl PlatformError {
@@ -75,6 +78,7 @@ impl PlatformError {
         match self {
             PlatformError::CertificateChainError => None,
             PlatformError::NotImplemented => None,
+            PlatformError::MissingUeidError => None,
             PlatformError::IssuerNameError(code) => Some(*code),
             PlatformError::PrintError(code) => Some(*code),
             PlatformError::SerialNumberError(code) => Some(*code),
@@ -147,4 +151,9 @@ pub trait Platform {
     /// can be left unimplemented if the SubjectAlternativeName extension is
     /// not needed in the DPE leaf cert or CSR.
     fn get_subject_alternative_name(&mut self) -> Result<SubjectAltName, PlatformError>;
+
+    /// Retrieves the device serial number
+    ///
+    /// This is encoded into certificates created by DPE.
+    fn get_ueid(&mut self) -> Result<Ueid, PlatformError>;
 }

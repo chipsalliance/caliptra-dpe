@@ -17,6 +17,8 @@ use caliptra_cfi_derive_git::cfi_impl_fn;
 use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq};
 use cfg_if::cfg_if;
 
+use platform::Platform;
+
 #[repr(C)]
 #[derive(
     Debug,
@@ -299,12 +301,14 @@ impl CommandExecution for DeriveContextCmd {
         } else if self.creates_certificate() && self.exports_cdi() {
             cfg_if! {
                 if #[cfg(not(feature = "disable_export_cdi"))] {
+                    let ueid = &env.platform.get_ueid()?;
                     let args = CreateDpeCertArgs {
                         handle: &self.handle,
                         locality,
                         cdi_label: b"Exported CDI",
                         key_label: b"Exported ECC",
                         context: b"Exported ECC",
+                        ueid
                     };
                     let mut cert = [0; MAX_CERT_SIZE];
                     let CreateDpeCertResult { cert_size, exported_cdi_handle, .. } = create_exported_dpe_cert(
