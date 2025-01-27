@@ -25,6 +25,9 @@ pub use rand::*;
 mod hkdf;
 mod signer;
 
+pub const MAX_EXPORTED_CDI_SIZE: usize = 32;
+pub type ExportedCdiHandle = [u8; MAX_EXPORTED_CDI_SIZE];
+
 #[derive(Debug, Clone, Copy)]
 #[cfg_attr(test, derive(strum_macros::EnumIter))]
 pub enum AlgLen {
@@ -54,6 +57,9 @@ pub enum CryptoError {
     Size = 0x3,
     NotImplemented = 0x4,
     HashError(u32) = 0x5,
+    InvalidExportedCdiHandle = 0x6,
+    ExportedCdiHandleDuplicateCdi = 0x7,
+    ExportedCdiHandleLimitExceeded = 0x8,
 }
 
 impl CryptoError {
@@ -66,11 +72,14 @@ impl CryptoError {
 
     pub fn get_error_detail(&self) -> Option<u32> {
         match self {
-            CryptoError::AbstractionLayer(code) => Some(*code),
-            CryptoError::CryptoLibError(code) => Some(*code),
-            CryptoError::Size => None,
-            CryptoError::NotImplemented => None,
-            CryptoError::HashError(code) => Some(*code),
+            CryptoError::AbstractionLayer(code)
+            | CryptoError::CryptoLibError(code)
+            | CryptoError::HashError(code) => Some(*code),
+            CryptoError::Size
+            | CryptoError::InvalidExportedCdiHandle
+            | CryptoError::ExportedCdiHandleLimitExceeded
+            | CryptoError::ExportedCdiHandleDuplicateCdi
+            | CryptoError::NotImplemented => None,
         }
     }
 }
@@ -182,7 +191,7 @@ pub trait Crypto {
         algs: AlgLen,
         measurement: &Digest,
         info: &[u8],
-    ) -> Result<Self::Cdi, CryptoError>;
+    ) -> Result<ExportedCdiHandle, CryptoError>;
 
     /// CFI wrapper around derive_cdi
     ///
@@ -206,7 +215,7 @@ pub trait Crypto {
         algs: AlgLen,
         measurement: &Digest,
         info: &[u8],
-    ) -> Result<Self::Cdi, CryptoError>;
+    ) -> Result<ExportedCdiHandle, CryptoError>;
 
     /// Derives a key pair using a cryptographically secure KDF
     ///
@@ -230,14 +239,15 @@ pub trait Crypto {
     /// # Arguments
     ///
     /// * `algs` - Which length of algorithms to use.
-    /// * `cdi` - Caller-supplied private key to use in public key derivation
+    /// * `exported_handle` - The handle associated with an existing CDI. Created by
+    /// `derive_cdi_exported`
     /// * `label` - Caller-supplied label to use in asymmetric key derivation
     /// * `info` - Caller-supplied info string to use in asymmetric key derivation
     ///
     fn derive_key_pair_exported(
         &mut self,
         algs: AlgLen,
-        cdi: &Self::Cdi,
+        exported_handle: &ExportedCdiHandle,
         label: &[u8],
         info: &[u8],
     ) -> Result<(Self::PrivKey, EcdsaPub), CryptoError>;
@@ -263,7 +273,7 @@ pub trait Crypto {
     fn __cfi_derive_key_pair_exported(
         &mut self,
         algs: AlgLen,
-        cdi: &Self::Cdi,
+        exported_handle: &ExportedCdiHandle,
         label: &[u8],
         info: &[u8],
     ) -> Result<(Self::PrivKey, EcdsaPub), CryptoError>;

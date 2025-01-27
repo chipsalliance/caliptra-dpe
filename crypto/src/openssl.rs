@@ -1,6 +1,9 @@
 // Licensed under the Apache-2.0 license
 
-use crate::{hkdf::*, AlgLen, Crypto, CryptoBuf, CryptoError, Digest, EcdsaPub, Hasher};
+use crate::{
+    hkdf::*, AlgLen, Crypto, CryptoBuf, CryptoError, Digest, EcdsaPub, ExportedCdiHandle, Hasher,
+    MAX_EXPORTED_CDI_SIZE,
+};
 #[cfg(not(feature = "no-cfi"))]
 use caliptra_cfi_derive_git::cfi_impl_fn;
 use openssl::{
@@ -41,23 +44,36 @@ impl Hasher for OpensslHasher {
     }
 }
 
+// Currently only supports one CDI handle but in the future we may want to support multiple.
+const MAX_CDI_HANDLES: usize = 1;
+
 #[cfg(feature = "deterministic_rand")]
-pub struct OpensslCrypto(StdRng);
+pub struct OpensslCrypto {
+    rng: StdRng,
+    export_cdi_slots: Vec<(<OpensslCrypto as Crypto>::Cdi, ExportedCdiHandle)>,
+}
 
 #[cfg(not(feature = "deterministic_rand"))]
-pub struct OpensslCrypto;
+pub struct OpensslCrypto {
+    export_cdi_slots: Vec<(<OpensslCrypto as Crypto>::Cdi, ExportedCdiHandle)>,
+}
 
 impl OpensslCrypto {
     #[cfg(feature = "deterministic_rand")]
     pub fn new() -> Self {
         const SEED: [u8; 32] = [1; 32];
         let seeded_rng = StdRng::from_seed(SEED);
-        OpensslCrypto(seeded_rng)
+        Self {
+            rng: seeded_rng,
+            export_cdi_slots: Vec::new(),
+        }
     }
 
     #[cfg(not(feature = "deterministic_rand"))]
     pub fn new() -> Self {
-        Self {}
+        Self {
+            export_cdi_slots: Vec::new(),
+        }
     }
 
     fn get_digest(algs: AlgLen) -> MessageDigest {
@@ -141,7 +157,7 @@ impl Crypto for OpensslCrypto {
 
     #[cfg(feature = "deterministic_rand")]
     fn rand_bytes(&mut self, dst: &mut [u8]) -> Result<(), CryptoError> {
-        StdRng::fill_bytes(&mut self.0, dst);
+        StdRng::fill_bytes(&mut self.rng, dst);
         Ok(())
     }
 
@@ -172,9 +188,23 @@ impl Crypto for OpensslCrypto {
         algs: AlgLen,
         measurement: &Digest,
         info: &[u8],
-    ) -> Result<Self::Cdi, CryptoError> {
+    ) -> Result<ExportedCdiHandle, CryptoError> {
         let cdi = hkdf_derive_cdi(algs, measurement, info)?;
-        Ok(cdi)
+
+        for (stored_cdi, _) in self.export_cdi_slots.iter() {
+            if *stored_cdi == cdi {
+                return Err(CryptoError::ExportedCdiHandleDuplicateCdi);
+            }
+        }
+
+        if self.export_cdi_slots.len() >= MAX_CDI_HANDLES {
+            return Err(CryptoError::ExportedCdiHandleLimitExceeded);
+        }
+
+        let mut exported_cdi_handle = [0; MAX_EXPORTED_CDI_SIZE];
+        self.rand_bytes(&mut exported_cdi_handle)?;
+        self.export_cdi_slots.push((cdi, exported_cdi_handle));
+        Ok(exported_cdi_handle)
     }
 
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
@@ -192,11 +222,20 @@ impl Crypto for OpensslCrypto {
     fn derive_key_pair_exported(
         &mut self,
         algs: AlgLen,
-        cdi: &Self::Cdi,
+        exported_handle: &ExportedCdiHandle,
         label: &[u8],
         info: &[u8],
     ) -> Result<(Self::PrivKey, EcdsaPub), CryptoError> {
-        self.derive_key_pair_inner(algs, cdi, label, info)
+        let cdi = {
+            let mut cdi = None;
+            for (stored_cdi, stored_handle) in self.export_cdi_slots.iter() {
+                if stored_handle == exported_handle {
+                    cdi = Some(stored_cdi.clone());
+                }
+            }
+            cdi.ok_or(CryptoError::InvalidExportedCdiHandle)
+        }?;
+        self.derive_key_pair_inner(algs, &cdi, label, info)
     }
 
     fn ecdsa_sign_with_alias(
