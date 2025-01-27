@@ -94,6 +94,7 @@ impl CommandExecution for CertifyKeyCmd {
             cdi_label: b"DPE",
             key_label: &self.label,
             context: b"ECC",
+            ueid: &self.label,
         };
         let mut cert = [0; MAX_CERT_SIZE];
 

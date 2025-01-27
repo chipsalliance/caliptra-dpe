@@ -2257,6 +2257,8 @@ pub(crate) struct CreateDpeCertArgs<'a> {
     pub key_label: &'a [u8],
     /// Additional info string used in the key derivation
     pub context: &'a [u8],
+    /// Ueid extension value
+    pub ueid: &'a [u8],
 }
 
 /// Results for DPE cert or CSR creation.
@@ -2332,8 +2334,6 @@ fn get_subject_key_identifier(
     Ok(())
 }
 
-// TODO(clundin): Remove this lint when adding the DeriveContext certificate generation code.
-#[allow(unused)]
 pub(crate) fn create_exported_dpe_cert(
     args: &CreateDpeCertArgs,
     dpe: &mut DpeInstance,
@@ -2454,7 +2454,7 @@ fn create_dpe_cert_or_csr(
     };
 
     let measurements = MeasurementData {
-        label: args.key_label,
+        label: args.ueid,
         tci_nodes,
         is_ca,
         supports_recursive,
