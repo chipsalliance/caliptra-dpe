@@ -302,6 +302,7 @@ impl CommandExecution for DeriveContextCmd {
             cfg_if! {
                 if #[cfg(not(feature = "disable_export_cdi"))] {
                     let ueid = &env.platform.get_ueid()?;
+                    let ueid = ueid.get()?;
                     let args = CreateDpeCertArgs {
                         handle: &self.handle,
                         locality,

@@ -15,7 +15,7 @@ pub const VENDOR_ID: u32 = 0;
 pub const VENDOR_SKU: u32 = 0;
 pub const NOT_BEFORE: &str = "20230227000000Z";
 pub const NOT_AFTER: &str = "99991231235959Z";
-pub const TEST_UEID: Ueid = [0xA; 17];
+pub const TEST_UEID: [u8; 17] = [0xA; 17];
 
 // Run ./generate.sh to generate all test certs and test private keys
 #[cfg(feature = "dpe_profile_p256_sha256")]
@@ -203,6 +203,12 @@ impl Platform for DefaultPlatform {
         Err(PlatformError::NotImplemented)
     }
     fn get_ueid(&mut self) -> Result<Ueid, PlatformError> {
-        Ok(TEST_UEID)
+        let buf_size = TEST_UEID.len() as u32;
+        let mut ueid = Ueid::default();
+
+        ueid.buf[..buf_size as usize].clone_from_slice(&TEST_UEID);
+        ueid.buf_size = buf_size;
+
+        Ok(ueid)
     }
 }
