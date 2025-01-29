@@ -112,6 +112,10 @@ struct Args {
     /// Supports the RETAIN_PARENT_CONTEXT extension to DeriveContext
     #[arg(long)]
     supports_retain_parent_context: bool,
+
+    /// Supports the CDI_EXPORT extension to DeriveContext
+    #[arg(long)]
+    supports_cdi_export: bool,
 }
 
 struct SimTypes {}
@@ -156,6 +160,7 @@ fn main() -> std::io::Result<()> {
         Support::RETAIN_PARENT_CONTEXT,
         args.supports_retain_parent_context,
     );
+    support.set(Support::CDI_EXPORT, args.supports_cdi_export);
 
     let mut env = DpeEnv::<SimTypes> {
         crypto: <SimTypes as DpeTypes>::Crypto::new(),

@@ -121,6 +121,11 @@ func GetSimulatorTargets() []TestTarget {
 			[]TestCase{DeriveContextTestCase},
 		},
 		{
+			"TestDeriveContextCdiExport",
+			getTestTarget([]string{"AutoInit", "CdiExport"}),
+			[]TestCase{TestDeriveContextCdiExportTestCase},
+		},
+		{
 			"DeriveContext_Simulation",
 			getTestTarget([]string{"AutoInit", "Simulation", "X509", "RetainParentContext"}),
 			[]TestCase{DeriveContextSimulationTestCase},

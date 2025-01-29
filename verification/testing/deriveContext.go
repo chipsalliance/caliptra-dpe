@@ -73,6 +73,58 @@ func TestDeriveContext(d client.TestDPEInstance, c client.DPEClient, t *testing.
 	handle = &resp.NewContextHandle
 }
 
+func TestDeriveContextCdiExport(d client.TestDPEInstance, c client.DPEClient, t *testing.T) {
+	var resp *client.DeriveContextResp
+
+	simulation := false
+	handle := getInitialContextHandle(d, c, t, simulation)
+	defer func() {
+		c.DestroyContext(handle)
+	}()
+
+	profile, err := client.GetTransportProfile(d)
+	if err != nil {
+		t.Fatalf("Could not get profile: %v", err)
+	}
+	digestLen := profile.GetDigestSize()
+	resp, err = c.DeriveContext(handle, make([]byte, digestLen), client.CdiExport|client.CreateCertificate, 0, 0)
+	if err != nil {
+		t.Fatalf("[ERROR]: Error while exporting CdiExport: %s", err)
+	}
+
+	if resp.ExportedCdi == client.ExportedCdi(bytes.Repeat([]byte{0x0}, 32)) {
+		t.Fatalf("[FATAL]: Expected ExportedCdi field to be set but was %v", resp.ExportedCdi)
+	}
+	if resp.NewContextHandle != client.ContextHandle(bytes.Repeat([]byte{0xFF}, 16)) {
+		t.Fatalf("[FATAL]: Expected invalid NewContextHandle field but it was set to %v", resp.NewContextHandle)
+	}
+	if resp.ParentContextHandle != client.ContextHandle(bytes.Repeat([]byte{0xFF}, 16)) {
+		t.Fatalf("[FATAL]: Expected invalid ParentContextHandle field but it was set to %v", resp.ParentContextHandle)
+	}
+	if resp.CertificateSize == 0 {
+		t.Fatalf("[FATAL]: Expected CertificateSize to be set but was set to %v", resp.CertificateSize)
+	}
+
+	// Check whether certificate is correctly encoded.
+	if _, err := x509.ParseCertificate(resp.NewCertificate); err != nil {
+		t.Fatalf("[FATAL]: Could not parse certificate using crypto/x509: %v", err)
+	}
+	leafCert := checkCertificateStructure(t, resp.NewCertificate)
+
+	certChainBytes, err := c.GetCertificateChain()
+	certChain := checkCertificateChain(t, certChainBytes)
+	if err != nil {
+		t.Fatalf("[FATAL]: Could not get Certificate Chain: %v", err)
+	}
+
+	// Check all extensions
+	checkCertificateExtension(t, leafCert.Extensions, nil, nil, true, certChain[len(certChain)-1].SubjectKeyId, true)
+
+	// Ensure full certificate chain has valid signatures
+	// This also checks certificate lifetime, signatures as part of cert chain validation
+	validateLeafCertChain(t, certChain, leafCert)
+}
+
 // Validates DerivedChild command with ChangeLocality flag.
 func TestChangeLocality(d client.TestDPEInstance, c client.DPEClient, t *testing.T) {
 	if !d.HasLocalityControl() {

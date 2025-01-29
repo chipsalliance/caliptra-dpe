@@ -82,6 +82,9 @@ func (s *DpeSimulator) PowerOn() error {
 	if s.supports.RetainParentContext {
 		args = append(args, "--supports-retain-parent-context")
 	}
+	if s.supports.CdiExport {
+		args = append(args, "--supports-cdi-export")
+	}
 
 	s.cmd = exec.Command(s.exePath, args...)
 	s.cmd.Stdout = os.Stdout

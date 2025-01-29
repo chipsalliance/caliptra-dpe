@@ -35,6 +35,7 @@ type Support struct {
 	InternalDice        bool
 	IsCA                bool
 	RetainParentContext bool
+	CdiExport           bool
 }
 
 // profileCommandCodes holds command codes for a specific revision of the
@@ -124,6 +125,9 @@ const (
 
 // ContextHandle is a DPE context handle
 type ContextHandle [16]byte
+
+// ExportedCdi is a handle to an exported CDI
+type ExportedCdi [32]byte
 
 // DestroyCtxCmd is input parameters to DestroyContext
 type DestroyCtxCmd struct {
@@ -218,6 +222,8 @@ const (
 	InputAllowCA        DeriveContextFlags = 1 << 26
 	InputAllowX509      DeriveContextFlags = 1 << 25
 	Recursive           DeriveContextFlags = 1 << 24
+	CdiExport           DeriveContextFlags = 1 << 23
+	CreateCertificate   DeriveContextFlags = 1 << 22
 )
 
 // DeriveContextReq is the input request to DeriveContext
@@ -233,15 +239,13 @@ type DeriveContextReq[Digest DigestAlgorithm] struct {
 type DeriveContextResp struct {
 	NewContextHandle    ContextHandle
 	ParentContextHandle ContextHandle
+	ExportedCdi         ExportedCdi
+	CertificateSize     uint32
+	NewCertificate      []byte
 }
 
 // SignFlags is the input flags to Sign
 type SignFlags uint32
-
-// Supported Sign flags
-const (
-	IsSymmetric SignFlags = 1 << 30
-)
 
 // SignReq is the input request to Sign
 type SignReq[Digest DigestAlgorithm] struct {
@@ -512,15 +516,43 @@ func (c *DPEABI[_, _, _]) GetCertificateChainABI() (*GetCertificateChainResp, er
 }
 
 // DeriveContextABI calls DPE DeriveContext command.
-func (c *DPEABI[_, Digest, _]) DeriveContextABI(cmd *DeriveContextReq[Digest]) (*DeriveContextResp, error) {
-	var respStruct DeriveContextResp
+func (c *DPEABI[_, Digest, DPECertificate]) DeriveContextABI(cmd *DeriveContextReq[Digest]) (*DeriveContextResp, error) {
+	// Define an anonymous struct for the response, because the shape changes if exportCdi is set.
+	if cmd.Flags&CdiExport == CdiExport {
+		respStruct := struct {
+			NewContextHandle    [16]byte
+			ParentContextHandle [16]byte
+			ExportedCdi         [32]byte
+			CertificateSize     uint32
+			Certificate         DPECertificate
+		}{}
+		_, err := execCommand(c.transport, c.constants.Codes.DeriveContext, c.Profile, cmd, &respStruct)
+		if err != nil {
+			return nil, err
+		}
 
-	_, err := execCommand(c.transport, c.constants.Codes.DeriveContext, c.Profile, cmd, &respStruct)
-	if err != nil {
-		return nil, err
+		return &DeriveContextResp{
+			NewContextHandle:    respStruct.NewContextHandle,
+			ParentContextHandle: respStruct.ParentContextHandle,
+			ExportedCdi:         respStruct.ExportedCdi,
+			CertificateSize:     respStruct.CertificateSize,
+			NewCertificate:      respStruct.Certificate.Bytes()[:respStruct.CertificateSize],
+		}, nil
+	} else {
+		respStruct := struct {
+			NewContextHandle    [16]byte
+			ParentContextHandle [16]byte
+		}{}
+		_, err := execCommand(c.transport, c.constants.Codes.DeriveContext, c.Profile, cmd, &respStruct)
+		if err != nil {
+			return nil, err
+		}
+
+		return &DeriveContextResp{
+			NewContextHandle:    respStruct.NewContextHandle,
+			ParentContextHandle: respStruct.ParentContextHandle,
+		}, nil
 	}
-
-	return &respStruct, err
 }
 
 // RotateContextHandleABI calls DPE RotateContextHandle command.
@@ -732,6 +764,9 @@ func (s *Support) ToFlags() uint32 {
 	}
 	if s.RetainParentContext {
 		flags |= (1 << 19)
+	}
+	if s.CdiExport {
+		flags |= (1 << 18)
 	}
 	return flags
 }
