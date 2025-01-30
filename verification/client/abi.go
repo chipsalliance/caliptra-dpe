@@ -16,7 +16,7 @@ const (
 	RespMagic uint32 = 0x44504552
 
 	CurrentProfileMajorVersion uint16 = 0
-	CurrentProfileMinorVersion uint16 = 11
+	CurrentProfileMinorVersion uint16 = 12
 )
 
 // CommandCode is a DPE command code
