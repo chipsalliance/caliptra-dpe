@@ -2994,10 +2994,7 @@ pub(crate) mod tests {
             _ => (),
         }
 
-        match cert.get_extension_unique(&oid!(2.5.29 .35)) {
-            Err(_) => panic!("multiple authority key identifier extensions found"),
-            _ => (),
-        }
+        if let Err(_) = cert.get_extension_unique(&oid!(2.5.29 .35)) { panic!("multiple authority key identifier extensions found") }
 
         match cert.subject_alternative_name() {
             Ok(Some(ext)) => {
