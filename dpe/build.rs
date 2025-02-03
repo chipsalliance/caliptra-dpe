@@ -20,7 +20,9 @@ fn main() {
     let max_handles_str = format!("pub const MAX_HANDLES: usize = {};", arbitrary_max_handles);
 
     let dest_path = PathBuf::from(&dest_path);
-    if dest_path.exists() && std::fs::read_to_string(&dest_path).unwrap_or_default() != max_handles_str {
+    if dest_path.exists()
+        && std::fs::read_to_string(&dest_path).unwrap_or_default() != max_handles_str
+    {
         std::fs::write(&dest_path, max_handles_str).unwrap();
     }
     println!("cargo:rerun-if-changed={}", dest_path.display());
