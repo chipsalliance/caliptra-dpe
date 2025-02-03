@@ -1590,7 +1590,7 @@ impl CertWriter<'_> {
     /// AuthorityKeyIdentifier ::= SEQUENCE {
     ///     keyIdentifier             [0] KeyIdentifier           OPTIONAL,
     ///     authorityCertIssuer       [1] GeneralNames            OPTIONAL,
-    ///     authorityCertSerialNumber [2] CertificateSerialNumber OPTIONAL  
+    ///     authorityCertSerialNumber [2] CertificateSerialNumber OPTIONAL
     /// }
     fn encode_authority_key_identifier_extension(
         &mut self,
@@ -2994,7 +2994,9 @@ pub(crate) mod tests {
             _ => (),
         }
 
-        if let Err(_) = cert.get_extension_unique(&oid!(2.5.29 .35)) { panic!("multiple authority key identifier extensions found") }
+        if let Err(_) = cert.get_extension_unique(&oid!(2.5.29 .35)) {
+            panic!("multiple authority key identifier extensions found")
+        }
 
         match cert.subject_alternative_name() {
             Ok(Some(ext)) => {
