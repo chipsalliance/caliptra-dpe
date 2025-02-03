@@ -1,8 +1,7 @@
 // Licensed under the Apache-2.0 license
 
 use std::env;
-use std::fs::File;
-use std::io::Write;
+use std::path::PathBuf;
 
 fn main() {
     let default_value: usize = 24;
@@ -18,13 +17,11 @@ fn main() {
     println!("cargo:rerun-if-env-changed=ARBITRARY_MAX_HANDLES");
     println!("cargo:rerun-if-changed=build.rs");
 
-    let mut file = File::create(&dest_path).unwrap();
-    write!(
-        file,
-        "pub const MAX_HANDLES: usize = {};",
-        arbitrary_max_handles
-    )
-    .unwrap();
+    let max_handles_str = format!("pub const MAX_HANDLES: usize = {};", arbitrary_max_handles);
 
-    println!("cargo:rerun-if-changed={}", dest_path);
+    let dest_path = PathBuf::from(&dest_path);
+    if dest_path.exists() && std::fs::read_to_string(&dest_path).unwrap_or_default() != max_handles_str {
+        std::fs::write(&dest_path, max_handles_str).unwrap();
+    }
+    println!("cargo:rerun-if-changed={}", dest_path.display());
 }
