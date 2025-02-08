@@ -11,13 +11,13 @@ import (
 type Profile uint32
 
 const (
-	// ProfileIrotMinP256SHA256 is NIST P-256, SHA-256 "minimal profile"
+	// ProfileMinP256SHA256 is NIST P-256, SHA-256 "minimal profile"
 	ProfileMinP256SHA256 Profile = 1
-	// ProfileIrotMinP384SHA384 is NIST P-384, SHA-384 "minimal" profile
+	// ProfileMinP384SHA384 is NIST P-384, SHA-384 "minimal" profile
 	ProfileMinP384SHA384 Profile = 2
-	// ProfileIrotMinP256SHA256 is NIST P-256, SHA-256 "minimal profile"
+	// ProfileP256SHA256 is NIST P-256, SHA-256 "minimal profile"
 	ProfileP256SHA256 Profile = 3
-	// ProfileIrotP384SHA384 is NIST P-384, SHA-384 "minimal" profile
+	// ProfileP384SHA384 is NIST P-384, SHA-384 "minimal" profile
 	ProfileP384SHA384 Profile = 4
 )
 
@@ -72,6 +72,7 @@ type Curve interface {
 	Bytes() []byte
 }
 
+// CurveIntLen returns the length of the curve.
 func CurveIntLen[C Curve]() int {
 	return reflect.TypeOf((*C)(nil)).Elem().Len()
 }
@@ -105,12 +106,14 @@ type DPEMinCertificate [2046]byte
 // DPEFullCertificate represents a certificate for the DPE full iRoT profiles
 type DPEFullCertificate [6144]byte
 
+// DPECertificate is a type constraint for DPE certificates.
 type DPECertificate interface {
 	DPEMinCertificate | DPEFullCertificate
 
 	Bytes() []byte
 }
 
+// CertLen returns the length of the certificate.
 func CertLen[C DPECertificate]() int {
 	return reflect.TypeOf((*C)(nil)).Elem().Len()
 }
@@ -125,6 +128,7 @@ func (c DPEFullCertificate) Bytes() []byte {
 	return c[:]
 }
 
+// NewDigest creates a new digest value from a byte slice.
 func NewDigest[D DigestAlgorithm](b []byte) (D, error) {
 	var d D
 	switch tmp := any(&d).(type) {
@@ -139,6 +143,7 @@ func NewDigest[D DigestAlgorithm](b []byte) (D, error) {
 	return d, nil
 }
 
+// DigestLen returns the length of the digest.
 func DigestLen[D DigestAlgorithm]() int {
 	return reflect.TypeOf((*D)(nil)).Elem().Len()
 }

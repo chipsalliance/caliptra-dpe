@@ -42,7 +42,7 @@ var CertifyKeyTestCase = TestCase{
 	"CertifyKey", TestCertifyKey, []string{"AutoInit", "X509"},
 }
 
-// client.CertifyKeyCsrTestCase tests CertifyKey with type = CSR
+// CertifyKeyCsrTestCase tests CertifyKey with type = CSR
 var CertifyKeyCsrTestCase = TestCase{
 	"CertifyKeyCsr", TestCertifyKeyCsr, []string{"AutoInit", "Csr"},
 }
@@ -112,7 +112,7 @@ var DeriveContextTestCase = TestCase{
 	"DeriveContext", TestDeriveContext, []string{"AutoInit", "RetainParentContext"},
 }
 
-// TestDeriveContextCdiExport tests DeriveContext
+// TestDeriveContextCdiExportTestCase tests DeriveContext
 var TestDeriveContextCdiExportTestCase = TestCase{
 	"DeriveContextCdiExport", TestDeriveContextCdiExport, []string{"CdiExport"},
 }
@@ -170,6 +170,7 @@ var AllTestCases = []TestCase{
 	WrongLocalityTestCase,
 }
 
+// IrreversibleTestCases contains test cases that are not reversible.
 var IrreversibleTestCases = []TestCase{
 	DeriveContextTestCase,
 	DeriveContextLocalityTestCase,
