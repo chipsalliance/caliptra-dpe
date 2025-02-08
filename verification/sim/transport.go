@@ -43,6 +43,7 @@ type DpeSimulator struct {
 	client.Transport
 }
 
+// NewSimulator creates a new DpeSimulator instance.
 func NewSimulator(exe string, support client.Support) DpeSimulator {
 	return DpeSimulator{exePath: exe, supports: support}
 }

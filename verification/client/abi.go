@@ -275,10 +275,10 @@ type DPEABI[CurveParameter Curve, Digest DigestAlgorithm, Cert DPECertificate] s
 	Flags        uint32
 }
 
-// DPEABI256 is a client that implements DPE_PROFILE_IROT_P256_SHA256
+// DPEABI256Min is a client that implements DPE_PROFILE_IROT_P256_SHA256
 type DPEABI256Min = DPEABI[NISTP256Parameter, SHA256Digest, DPEMinCertificate]
 
-// DPEABI384 is a client that implements DPE_PROFILE_IROT_P384_SHA384
+// DPEABI384Min is a client that implements DPE_PROFILE_IROT_P384_SHA384
 type DPEABI384Min = DPEABI[NISTP384Parameter, SHA384Digest, DPEMinCertificate]
 
 // DPEABI256 is a client that implements DPE_PROFILE_IROT_P256_SHA256
@@ -555,7 +555,7 @@ func (c *DPEABI[_, Digest, DPECertificate]) DeriveContextABI(cmd *DeriveContextR
 	}
 }
 
-// RotateContextHandleABI calls DPE RotateContextHandle command.
+// RotateContextABI calls DPE RotateContextHandle command.
 func (c *DPEABI[_, Digest, _]) RotateContextABI(cmd *RotateContextHandleCmd) (*RotatedContextHandle, error) {
 	var respStruct RotatedContextHandle
 

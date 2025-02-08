@@ -132,7 +132,7 @@ func TestCertifyKeySimulation(d client.TestDPEInstance, c client.DPEClient, t *t
 	testCertifyKey(d, c, t, true)
 }
 
-// Testclient.CertifyKeyCsr tests calling CeritifyKey with type = CSR
+// TestCertifyKeyCsr tests calling CeritifyKey with type = CSR
 func TestCertifyKeyCsr(d client.TestDPEInstance, c client.DPEClient, t *testing.T) {
 	ctx := getInitialContextHandle(d, c, t, false)
 

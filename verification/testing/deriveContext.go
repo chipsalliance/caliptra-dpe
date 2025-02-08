@@ -14,6 +14,7 @@ import (
 	"github.com/chipsalliance/caliptra-dpe/verification/client"
 )
 
+// TestDeriveContext tests calling DeriveContext with different arguments.
 func TestDeriveContext(d client.TestDPEInstance, c client.DPEClient, t *testing.T) {
 	var resp *client.DeriveContextResp
 
@@ -73,6 +74,7 @@ func TestDeriveContext(d client.TestDPEInstance, c client.DPEClient, t *testing.
 	handle = &resp.NewContextHandle
 }
 
+// TestDeriveContextCdiExport tests calling DeriveContext with CdiExport flag set.
 func TestDeriveContextCdiExport(d client.TestDPEInstance, c client.DPEClient, t *testing.T) {
 	var resp *client.DeriveContextResp
 
@@ -125,7 +127,7 @@ func TestDeriveContextCdiExport(d client.TestDPEInstance, c client.DPEClient, t 
 	validateLeafCertChain(t, certChain, leafCert)
 }
 
-// Validates DerivedChild command with ChangeLocality flag.
+// TestChangeLocality validates DerivedChild command with ChangeLocality flag.
 func TestChangeLocality(d client.TestDPEInstance, c client.DPEClient, t *testing.T) {
 	if !d.HasLocalityControl() {
 		t.Skip("WARNING: DPE target does not have control over locality. Skipping this test...")
@@ -169,7 +171,7 @@ func TestChangeLocality(d client.TestDPEInstance, c client.DPEClient, t *testing
 	d.SetLocality(prevLocality)
 }
 
-// Checks whether the DeriveContext input flags - InternalDiceInfo, InternalInputInfo are supported
+// TestInternalInputFlags checks whether the DeriveContext input flags - InternalDiceInfo, InternalInputInfo are supported
 // while creating child contexts when these features are supported in DPE profile.
 func TestInternalInputFlags(d client.TestDPEInstance, c client.DPEClient, t *testing.T) {
 	var resp *client.DeriveContextResp
@@ -206,7 +208,7 @@ func TestInternalInputFlags(d client.TestDPEInstance, c client.DPEClient, t *tes
 	}
 }
 
-// Checks the privilege escalation of child
+// TestPrivilegesEscalation checks the privilege escalation of child
 // When commands try to make use of features that are unsupported by child context, they fail.
 func TestPrivilegesEscalation(d client.TestDPEInstance, c client.DPEClient, t *testing.T) {
 	var err error
@@ -251,7 +253,7 @@ func TestPrivilegesEscalation(d client.TestDPEInstance, c client.DPEClient, t *t
 	}
 }
 
-// Checks whether the number of derived contexts (TCI nodes) are limited by MAX_TCI_NODES attribute of the profile
+// TestMaxTCIs Checks whether the number of derived contexts (TCI nodes) are limited by MAX_TCI_NODES attribute of the profile
 func TestMaxTCIs(d client.TestDPEInstance, c client.DPEClient, t *testing.T) {
 	var resp *client.DeriveContextResp
 
@@ -303,6 +305,7 @@ func TestMaxTCIs(d client.TestDPEInstance, c client.DPEClient, t *testing.T) {
 	}
 }
 
+// TestDeriveContextSimulation tests calling DeriveContext in simulation context
 func TestDeriveContextSimulation(d client.TestDPEInstance, c client.DPEClient, t *testing.T) {
 	if !d.HasLocalityControl() {
 		t.Skip("WARNING: DPE target does not have control over locality, DeriveContext in Simulation mode cannot be tested without this support. Skipping this test...")
