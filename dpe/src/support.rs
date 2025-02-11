@@ -5,7 +5,7 @@ use zeroize::Zeroize;
 
 #[derive(Default, IntoBytes, FromBytes, KnownLayout, Immutable, Zeroize, Copy, Clone)]
 #[repr(C)]
-pub struct Support(u32);
+pub struct Support(pub u32);
 
 bitflags! {
     impl Support: u32 {

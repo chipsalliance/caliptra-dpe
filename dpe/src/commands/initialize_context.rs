@@ -22,7 +22,7 @@ use cfg_if::cfg_if;
     zerocopy::Immutable,
     zerocopy::KnownLayout,
 )]
-pub struct InitCtxCmd(u32);
+pub struct InitCtxCmd(pub u32);
 
 bitflags! {
     impl InitCtxCmd: u32 {

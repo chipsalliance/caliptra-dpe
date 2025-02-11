@@ -45,14 +45,14 @@ pub struct DpeEnv<'a, T: DpeTypes + 'a> {
 #[derive(IntoBytes, TryFromBytes, KnownLayout, Immutable, Zeroize)]
 pub struct DpeInstance {
     pub contexts: [Context; MAX_HANDLES],
-    pub(crate) support: Support,
+    pub support: Support,
 
     /// Can only successfully execute the initialize context command for non-simulation (i.e.
     /// `InitializeContext(simulation=false)`) once per reset cycle.
-    pub(crate) has_initialized: U8Bool,
+    pub has_initialized: U8Bool,
 
     // unused buffer added to make DpeInstance word aligned and remove padding
-    reserved: [u8; 3],
+    pub reserved: [u8; 3],
 }
 
 impl DpeInstance {

@@ -22,7 +22,7 @@ use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq};
     zerocopy::Immutable,
     zerocopy::KnownLayout,
 )]
-pub struct RotateCtxFlags(u32);
+pub struct RotateCtxFlags(pub u32);
 
 bitflags! {
     impl RotateCtxFlags: u32 {

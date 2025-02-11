@@ -48,7 +48,7 @@ const INTERNAL_INPUT_INFO_SIZE: usize = size_of::<GetProfileResp>() + size_of::<
 )]
 #[repr(C, align(1))]
 pub struct U8Bool {
-    val: u8,
+    pub val: u8,
 }
 
 impl U8Bool {
