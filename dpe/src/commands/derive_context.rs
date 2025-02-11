@@ -29,7 +29,7 @@ use platform::Platform;
     zerocopy::Immutable,
     zerocopy::KnownLayout,
 )]
-pub struct DeriveContextFlags(u32);
+pub struct DeriveContextFlags(pub u32);
 
 bitflags! {
     impl DeriveContextFlags: u32 {

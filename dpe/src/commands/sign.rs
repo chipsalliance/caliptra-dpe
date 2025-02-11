@@ -25,7 +25,7 @@ use crypto::{Crypto, Digest, EcdsaSig};
     zerocopy::Immutable,
     zerocopy::KnownLayout,
 )]
-pub struct SignFlags(u32);
+pub struct SignFlags(pub u32);
 
 bitflags! {
     impl SignFlags: u32 {}

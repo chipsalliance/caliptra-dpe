@@ -24,7 +24,7 @@ use cfg_if::cfg_if;
     zerocopy::Immutable,
     zerocopy::KnownLayout,
 )]
-pub struct CertifyKeyFlags(u32);
+pub struct CertifyKeyFlags(pub u32);
 
 bitflags! {
     impl CertifyKeyFlags: u32 {}
