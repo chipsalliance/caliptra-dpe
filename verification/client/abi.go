@@ -448,14 +448,14 @@ func (c *DPEABI[_, _, _]) DestroyContextABI(cmd *DestroyCtxCmd) error {
 }
 
 // CertifyKeyABI calls the DPE CertifyKey command.
-func (c *DPEABI[CurveParameter, Digest, DPECertificate]) CertifyKeyABI(cmd *CertifyKeyReq[Digest]) (*CertifyKeyResp[CurveParameter, Digest], error) {
+func (c *DPEABI[CurveParameter, Digest, Cert]) CertifyKeyABI(cmd *CertifyKeyReq[Digest]) (*CertifyKeyResp[CurveParameter, Digest], error) {
 	// Define an anonymous struct for the response, because we have to accept the variable-sized certificate.
 	respStruct := struct {
 		NewContextHandle  [16]byte
 		DerivedPublicKeyX CurveParameter
 		DerivedPublicKeyY CurveParameter
 		CertificateSize   uint32
-		Certificate       DPECertificate
+		Certificate       Cert
 	}{}
 
 	_, err := execCommand(c.transport, c.constants.Codes.CertifyKey, c.Profile, cmd, &respStruct)
@@ -464,7 +464,7 @@ func (c *DPEABI[CurveParameter, Digest, DPECertificate]) CertifyKeyABI(cmd *Cert
 	}
 
 	// Check that the reported cert size makes sense.
-	if respStruct.CertificateSize > uint32(CertLen[DPECertificate]()) {
+	if respStruct.CertificateSize > uint32(CertLen[Cert]()) {
 		return nil, fmt.Errorf("DPE reported a %d-byte cert, which was larger than 2048", respStruct.CertificateSize)
 	}
 
@@ -516,7 +516,7 @@ func (c *DPEABI[_, _, _]) GetCertificateChainABI() (*GetCertificateChainResp, er
 }
 
 // DeriveContextABI calls DPE DeriveContext command.
-func (c *DPEABI[_, Digest, DPECertificate]) DeriveContextABI(cmd *DeriveContextReq[Digest]) (*DeriveContextResp, error) {
+func (c *DPEABI[_, Digest, Cert]) DeriveContextABI(cmd *DeriveContextReq[Digest]) (*DeriveContextResp, error) {
 	// Define an anonymous struct for the response, because the shape changes if exportCdi is set.
 	if cmd.Flags&CdiExport == CdiExport {
 		respStruct := struct {
@@ -524,7 +524,7 @@ func (c *DPEABI[_, Digest, DPECertificate]) DeriveContextABI(cmd *DeriveContextR
 			ParentContextHandle [16]byte
 			ExportedCdi         [32]byte
 			CertificateSize     uint32
-			Certificate         DPECertificate
+			Certificate         Cert
 		}{}
 		_, err := execCommand(c.transport, c.constants.Codes.DeriveContext, c.Profile, cmd, &respStruct)
 		if err != nil {
