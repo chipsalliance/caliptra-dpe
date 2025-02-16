@@ -411,7 +411,7 @@ func TestDeriveContextRecursive(d client.TestDPEInstance, c client.DPEClient, t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	lastCumulative := tcbInfo.Fwids[1].Digest
+	lastCumulative := tcbInfo.IntegrityRegisters[0].RegisterDigests[0].Digest
 
 	// Set current TCI value
 	_, err = c.DeriveContext(handle,
@@ -495,12 +495,12 @@ func TestDeriveContextRecursiveOnDerivedContexts(d client.TestDPEInstance, c cli
 
 	// Check TCI_CUMULATIVE after creating child context
 	wantCumulativeTCI := computeExpectedCumulative(make([]byte, digestLen), childTcbInfo.Fwids[0].Digest)
-	if !bytes.Equal(childTcbInfo.Fwids[1].Digest, wantCumulativeTCI) {
-		t.Errorf("[ERROR]: Child node's cumulative TCI %x, expected %x", childTcbInfo.Fwids[1].Digest, wantCumulativeTCI)
+	if !bytes.Equal(childTcbInfo.IntegrityRegisters[0].RegisterDigests[0].Digest, wantCumulativeTCI) {
+		t.Errorf("[ERROR]: Child node's cumulative TCI %x, expected %x", childTcbInfo.IntegrityRegisters[0].RegisterDigests[0].Digest, wantCumulativeTCI)
 	}
 
 	// Set current TCI value
-	lastCumulative := childTcbInfo.Fwids[1].Digest
+	lastCumulative := childTcbInfo.IntegrityRegisters[0].RegisterDigests[0].Digest
 	resp, err := c.DeriveContext(childHandle,
 		extendTciValue,
 		client.DeriveContextFlags(client.Recursive),
@@ -520,8 +520,8 @@ func TestDeriveContextRecursiveOnDerivedContexts(d client.TestDPEInstance, c cli
 	}
 
 	wantCumulativeTCI = computeExpectedCumulative(lastCumulative, extendTciValue)
-	if !bytes.Equal(childTcbInfo.Fwids[1].Digest, wantCumulativeTCI) {
-		t.Errorf("[ERROR]: Child node's cumulative TCI %x, expected %x", childTcbInfo.Fwids[1].Digest, wantCumulativeTCI)
+	if !bytes.Equal(childTcbInfo.IntegrityRegisters[0].RegisterDigests[0].Digest, wantCumulativeTCI) {
+		t.Errorf("[ERROR]: Child node's cumulative TCI %x, expected %x", childTcbInfo.IntegrityRegisters[0].RegisterDigests[0].Digest, wantCumulativeTCI)
 	}
 }
 
@@ -546,7 +546,7 @@ func verifyMeasurements(c client.DPEClient, t *testing.T, handle *client.Context
 
 	// Check that the last TcbInfo current/cumulative are as expected
 	current := tcbInfo.Fwids[0].Digest
-	cumulative := tcbInfo.Fwids[1].Digest
+	cumulative := tcbInfo.IntegrityRegisters[0].RegisterDigests[0].Digest
 	if !bytes.Equal(current, expectedCurrent) {
 		t.Errorf("[ERROR]: Unexpected TCI_CURRENT digest, want %v but got %v", expectedCurrent, current)
 	}
