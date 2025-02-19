@@ -539,7 +539,7 @@ func computeExpectedCumulative(lastCumulative []byte, tciValue []byte) []byte {
 }
 
 func verifyMeasurements(c client.DPEClient, t *testing.T, handle *client.ContextHandle, expectedCurrent []byte, expectedCumulative []byte) {
-	handle, tcbInfo, err := getTcbInfoForHandle(c, handle)
+	_, tcbInfo, err := getTcbInfoForHandle(c, handle)
 	if err != nil {
 		t.Fatal(err)
 	}

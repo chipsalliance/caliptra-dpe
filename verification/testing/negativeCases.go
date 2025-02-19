@@ -185,14 +185,14 @@ func TestUnsupportedCommandFlag(d client.TestDPEInstance, c client.DPEClient, t 
 		t.Errorf("[ERROR]: Incorrect error type. InternalInfo is not supported by DPE, DeriveContext should return %q, but returned %q", client.StatusArgumentNotSupported, err)
 	}
 
-	// Check whether error is returned since InternalDice usgae is unsupported by DPE profile
+	// Check whether error is returned since InternalDice usage is unsupported by DPE profile
 	if _, err := c.DeriveContext(handle, make([]byte, digestLen), client.DeriveContextFlags(client.InternalInputDice), 0, 0); err == nil {
 		t.Errorf("[ERROR]:InternalDice is not supported by DPE, DeriveContext should return %q, but returned no error", client.StatusArgumentNotSupported)
 	} else if !errors.Is(err, client.StatusArgumentNotSupported) {
 		t.Errorf("[ERROR]: Incorrect error type. InternalDice is not supported by DPE, DeriveContext should return %q, but returned %q", client.StatusArgumentNotSupported, err)
 	}
 
-	// Check whether error is returned since InternalDice usgae is unsupported by DPE profile
+	// Check whether error is returned since InternalDice usage is unsupported by DPE profile
 	if _, err := c.DeriveContext(handle, make([]byte, digestLen), client.DeriveContextFlags(client.InputAllowX509), 0, 0); err == nil {
 		t.Errorf("[ERROR]:X509 is not supported by DPE, DeriveContext should return %q, but returned no error", client.StatusArgumentNotSupported)
 	} else if !errors.Is(err, client.StatusArgumentNotSupported) {
