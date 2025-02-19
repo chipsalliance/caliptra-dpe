@@ -85,7 +85,7 @@ func TestTpmPolicySigning(d dpe.TestDPEInstance, c dpe.DPEClient, t *testing.T) 
 		ec = tpm2.CurveNISTP384
 	}
 
-	//Create tpm auth session to get nonce and form label which is digest
+	// Create tpm auth session to get nonce and form label which is digest
 	tpm, err := simulator.Get()
 	if err != nil {
 		t.Fatalf("[FATAL]: Can't open TPM")
