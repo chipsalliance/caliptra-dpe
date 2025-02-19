@@ -80,7 +80,7 @@ func TestAsymmetricSigning(d client.TestDPEInstance, c client.DPEClient, t *test
 	}
 }
 
-// TestSignSimulation cheks command fails in simulated context because this context does not allow signing.
+// TestSignSimulation checks command fails in simulated context because this context does not allow signing.
 // This is because simulation context does not allow using context's private key.
 func TestSignSimulation(d client.TestDPEInstance, c client.DPEClient, t *testing.T) {
 	useSimulation := true
