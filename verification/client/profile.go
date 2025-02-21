@@ -101,7 +101,7 @@ type DigestAlgorithm interface {
 }
 
 // DPEMinCertificate represents a certificate for the DPE minimal iRoT profiles
-type DPEMinCertificate [2046]byte
+type DPEMinCertificate [2048]byte
 
 // DPEFullCertificate represents a certificate for the DPE full iRoT profiles
 type DPEFullCertificate [6144]byte
