@@ -27,11 +27,9 @@ pub struct Context {
     pub uses_internal_input_info: U8Bool,
     /// Whether we should hash internal dice info consisting of the certificate chain when deriving the CDI
     pub uses_internal_input_dice: U8Bool,
-    /// Whether this context can emit certificates with IsCA = True
-    pub allow_ca: U8Bool,
     /// Whether this context can emit certificates in X.509 format
     pub allow_x509: U8Bool,
-    pub reserved: [u8; 1],
+    pub reserved: [u8; 2],
 }
 
 impl Default for Context {
@@ -54,9 +52,8 @@ impl Context {
             locality: 0,
             uses_internal_input_info: U8Bool::new(false),
             uses_internal_input_dice: U8Bool::new(false),
-            allow_ca: U8Bool::new(false),
             allow_x509: U8Bool::new(false),
-            reserved: [0; 1],
+            reserved: [0; 2],
         }
     }
 
@@ -65,9 +62,6 @@ impl Context {
     }
     pub fn uses_internal_input_dice(&self) -> bool {
         self.uses_internal_input_dice.get()
-    }
-    pub fn allow_ca(&self) -> bool {
-        self.allow_ca.get()
     }
     pub fn allow_x509(&self) -> bool {
         self.allow_x509.get()
@@ -84,7 +78,6 @@ impl Context {
         self.context_type = args.context_type;
         self.state = ContextState::Active;
         self.locality = args.locality;
-        self.allow_ca = args.allow_ca.into();
         self.allow_x509 = args.allow_x509.into();
         self.uses_internal_input_info = args.uses_internal_input_info.into();
         self.uses_internal_input_dice = args.uses_internal_input_dice.into();
@@ -97,7 +90,6 @@ impl Context {
         self.state = ContextState::Inactive;
         self.uses_internal_input_info = false.into();
         self.uses_internal_input_dice = false.into();
-        self.allow_ca = false.into();
         self.allow_x509 = false.into();
         self.parent_idx = Self::ROOT_INDEX;
     }
@@ -176,7 +168,6 @@ pub struct ActiveContextArgs<'a> {
     pub handle: &'a ContextHandle,
     pub tci_type: u32,
     pub parent_idx: u8,
-    pub allow_ca: bool,
     pub allow_x509: bool,
     pub uses_internal_input_info: bool,
     pub uses_internal_input_dice: bool,
