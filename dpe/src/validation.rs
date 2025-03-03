@@ -208,18 +208,14 @@ impl DpeValidator<'_> {
                 cfi_assert!(self.dpe.support.internal_info() || !context.uses_internal_input_info());
             }
         }
-        // initialized contexts will always have parent = Context::ROOT_INDEX and their allow_ca and allow_x509
-        // fields will always be true regardless of support
+        // initialized contexts will always have parent = Context::ROOT_INDEX and then the allow_x509
+        // field will always be true regardless of support.
         if context.parent_idx != Context::ROOT_INDEX {
-            if !self.dpe.support.csr() && context.allow_ca() {
-                return Err(ValidationError::AllowCaNotSupported);
-            }
             if !self.dpe.support.x509() && context.allow_x509() {
                 return Err(ValidationError::AllowX509NotSupported);
             }
             cfg_if! {
                 if #[cfg(not(feature = "no-cfi"))] {
-                    cfi_assert!(self.dpe.support.csr() || !context.allow_ca());
                     cfi_assert!(self.dpe.support.x509() || !context.allow_x509());
                 }
             }
@@ -240,7 +236,6 @@ impl DpeValidator<'_> {
         } else if context.tci != TciNodeData::default() {
             Err(ValidationError::InactiveContextWithMeasurement)
         } else if context.uses_internal_input_dice()
-            || context.allow_ca()
             || context.allow_x509()
             || context.uses_internal_input_info()
         {
@@ -252,7 +247,6 @@ impl DpeValidator<'_> {
                     cfi_assert_eq(context.children, 0);
                     cfi_assert_eq(context.tci, TciNodeData::default());
                     cfi_assert!(!context.uses_internal_input_dice());
-                    cfi_assert!(!context.allow_ca());
                     cfi_assert!(!context.allow_x509());
                     cfi_assert!(!context.uses_internal_input_info());
                 }
@@ -556,17 +550,9 @@ pub mod tests {
             Err(ValidationError::InternalInfoNotSupported)
         );
 
-        // test allow_ca
+        // test x509
         dpe_validator.dpe.contexts[0].parent_idx = 1;
         dpe_validator.dpe.contexts[0].uses_internal_input_info = U8Bool::new(false);
-        dpe_validator.dpe.contexts[0].allow_ca = U8Bool::new(true);
-        assert_eq!(
-            dpe_validator.validate_dpe_state(),
-            Err(ValidationError::AllowCaNotSupported)
-        );
-
-        // test x509
-        dpe_validator.dpe.contexts[0].allow_ca = U8Bool::new(false);
         dpe_validator.dpe.contexts[0].allow_x509 = U8Bool::new(true);
         assert_eq!(
             dpe_validator.validate_dpe_state(),
@@ -609,7 +595,7 @@ pub mod tests {
         );
 
         dpe_validator.dpe.contexts[0].tci.tci_current = TciMeasurement::default();
-        dpe_validator.dpe.contexts[0].allow_ca = U8Bool::new(true);
+        dpe_validator.dpe.contexts[0].allow_x509 = U8Bool::new(true);
         assert_eq!(
             dpe_validator.validate_dpe_state(),
             Err(ValidationError::InactiveContextWithFlagSet)

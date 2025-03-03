@@ -38,6 +38,7 @@ bitflags! {
         const RETAIN_PARENT_CONTEXT = 1u32 << 29;
         const MAKE_DEFAULT = 1u32 << 28;
         const CHANGE_LOCALITY = 1u32 << 27;
+        /// INPUT_ALLOW_CA is no longer supported. This flag is ignored.
         const INPUT_ALLOW_CA = 1u32 << 26;
         const INPUT_ALLOW_X509 = 1u32 << 25;
         const RECURSIVE = 1u32 << 24;
@@ -84,10 +85,6 @@ impl DeriveContextCmd {
 
     pub const fn changes_locality(&self) -> bool {
         self.flags.contains(DeriveContextFlags::CHANGE_LOCALITY)
-    }
-
-    const fn allows_ca(&self) -> bool {
-        self.flags.contains(DeriveContextFlags::INPUT_ALLOW_CA)
     }
 
     const fn allows_x509(&self) -> bool {
@@ -218,8 +215,7 @@ impl CommandExecution for DeriveContextCmd {
         }
 
         let parent_idx = dpe.get_active_context_pos(&self.handle, locality)?;
-        if (!dpe.contexts[parent_idx].allow_ca() && self.allows_ca())
-            || (!dpe.contexts[parent_idx].allow_x509() && self.allows_x509())
+        if (!dpe.contexts[parent_idx].allow_x509() && self.allows_x509())
             || (self.exports_cdi() && !self.creates_certificate())
             || (self.exports_cdi() && self.is_recursive())
             || (self.exports_cdi() && self.changes_locality())
@@ -247,7 +243,6 @@ impl CommandExecution for DeriveContextCmd {
                 cfi_assert!(dpe.support.internal_dice() || !self.uses_internal_dice_input());
                 cfi_assert!(dpe.support.retain_parent_context() || !self.retains_parent());
                 cfi_assert!(dpe.support.x509() || !self.allows_x509());
-                cfi_assert!(dpe.contexts[parent_idx].allow_ca() || !self.allows_ca());
                 cfi_assert!(dpe.contexts[parent_idx].allow_x509() || !self.allows_x509());
                 cfi_assert!(!self.is_recursive() || !self.retains_parent());
             }
@@ -354,7 +349,6 @@ impl CommandExecution for DeriveContextCmd {
                 dpe.generate_new_handle(env)?
             };
 
-            let allow_ca = self.allows_ca();
             let allow_x509 = self.allows_x509();
             let uses_internal_input_info = self.uses_internal_info_input();
             let uses_internal_input_dice = self.uses_internal_dice_input();
@@ -367,7 +361,6 @@ impl CommandExecution for DeriveContextCmd {
                 handle: &child_handle,
                 tci_type: self.tci_type,
                 parent_idx: parent_idx as u8,
-                allow_ca,
                 allow_x509,
                 uses_internal_input_info,
                 uses_internal_input_dice,
@@ -1043,7 +1036,6 @@ mod tests {
             .get_active_context_pos(&ContextHandle::default(), 0)
             .unwrap();
         // ensure flags are unchanged
-        assert!(dpe.contexts[child_idx].allow_ca());
         assert!(dpe.contexts[child_idx].allow_x509());
         assert!(!dpe.contexts[child_idx].uses_internal_input_info());
         assert!(!dpe.contexts[child_idx].uses_internal_input_dice());

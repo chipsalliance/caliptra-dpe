@@ -448,8 +448,6 @@ impl DpeInstance {
             uses_internal_input_dice =
                 uses_internal_input_dice || context.uses_internal_input_dice();
 
-            // Add allow ca to hash
-            hasher.update(context.allow_ca().as_bytes())?;
             // Add allow x509 to hash
             hasher.update(context.allow_x509().as_bytes())?;
         }
@@ -793,9 +791,6 @@ pub mod tests {
             let context = result.unwrap();
             hasher.update(context.tci.as_bytes()).unwrap();
             hasher
-                .update(/*allow_ca=*/ context.allow_ca().as_bytes())
-                .unwrap();
-            hasher
                 .update(/*allow_x509=*/ context.allow_x509().as_bytes())
                 .unwrap();
         }
@@ -848,10 +843,8 @@ pub mod tests {
         let mut hasher = env.crypto.hash_initialize(DPE_PROFILE.alg_len()).unwrap();
 
         hasher.update(child_context.tci.as_bytes()).unwrap();
-        hasher.update(/*allow_ca=*/ false.as_bytes()).unwrap();
         hasher.update(/*allow_x509=*/ false.as_bytes()).unwrap();
         hasher.update(parent_context.tci.as_bytes()).unwrap();
-        hasher.update(/*allow_ca=*/ true.as_bytes()).unwrap();
         hasher.update(/*allow_x509=*/ true.as_bytes()).unwrap();
         let mut internal_input_info = [0u8; INTERNAL_INPUT_INFO_SIZE];
         dpe.serialize_internal_input_info(&mut env.platform, &mut internal_input_info)
@@ -909,10 +902,8 @@ pub mod tests {
         let mut hasher = env.crypto.hash_initialize(DPE_PROFILE.alg_len()).unwrap();
 
         hasher.update(child_context.tci.as_bytes()).unwrap();
-        hasher.update(/*allow_ca=*/ false.as_bytes()).unwrap();
         hasher.update(/*allow_x509=*/ false.as_bytes()).unwrap();
         hasher.update(parent_context.tci.as_bytes()).unwrap();
-        hasher.update(/*allow_ca=*/ true.as_bytes()).unwrap();
         hasher.update(/*allow_x509=*/ true.as_bytes()).unwrap();
         hasher
             .update(&TEST_CERT_CHAIN[..TEST_CERT_CHAIN.len()])
