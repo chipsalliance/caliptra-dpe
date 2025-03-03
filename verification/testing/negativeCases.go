@@ -143,7 +143,6 @@ func TestUnsupportedCommand(d client.TestDPEInstance, c client.DPEClient, t *tes
 // The DPE command may be available but some of its flags may not be supported by DPE.
 // DPE profile supports the below attributes.
 // Simulation	: Allows caller to request for context initialization in simulation mode
-// IsCA			: Allows caller to request the key cert of CA
 // Csr 			: Allows caller to request the key cert in CSR format
 // X509 		: Allows caller to request the key cert in X509 format
 // InternalInfo	: Allows caller to derive child context with InternalInfo

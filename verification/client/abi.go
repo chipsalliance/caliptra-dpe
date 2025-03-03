@@ -33,7 +33,6 @@ type Support struct {
 	IsSymmetric         bool
 	InternalInfo        bool
 	InternalDice        bool
-	IsCA                bool
 	RetainParentContext bool
 	CdiExport           bool
 }
@@ -758,9 +757,6 @@ func (s *Support) ToFlags() uint32 {
 	}
 	if s.InternalDice {
 		flags |= (1 << 21)
-	}
-	if s.IsCA {
-		flags |= (1 << 20)
 	}
 	if s.RetainParentContext {
 		flags |= (1 << 19)
