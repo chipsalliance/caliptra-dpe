@@ -99,6 +99,7 @@ impl CommandExecution for InitCtxCmd {
             allow_x509: true,
             uses_internal_input_info: false,
             uses_internal_input_dice: false,
+            allow_export_cdi: true,
         });
         Ok(Response::InitCtx(NewHandleResp {
             handle,
