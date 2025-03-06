@@ -29,7 +29,9 @@ pub struct Context {
     pub uses_internal_input_dice: U8Bool,
     /// Whether this context can emit certificates in X.509 format
     pub allow_x509: U8Bool,
-    pub reserved: [u8; 2],
+    /// Whether this context can use the `EXPORT_CDI` feature.
+    pub allow_export_cdi: U8Bool,
+    pub reserved: [u8; 1],
 }
 
 impl Default for Context {
@@ -53,7 +55,10 @@ impl Context {
             uses_internal_input_info: U8Bool::new(false),
             uses_internal_input_dice: U8Bool::new(false),
             allow_x509: U8Bool::new(false),
-            reserved: [0; 2],
+            // The root context needs to
+            // allow_export_cdi or it is never enabled.
+            allow_export_cdi: U8Bool::new(true),
+            reserved: [0; 1],
         }
     }
 
@@ -65,6 +70,9 @@ impl Context {
     }
     pub fn allow_x509(&self) -> bool {
         self.allow_x509.get()
+    }
+    pub fn allow_export_cdi(&self) -> bool {
+        self.allow_export_cdi.get()
     }
 
     /// Sets all values to an initialized state according to ActiveContextArgs
@@ -81,6 +89,7 @@ impl Context {
         self.allow_x509 = args.allow_x509.into();
         self.uses_internal_input_info = args.uses_internal_input_info.into();
         self.uses_internal_input_dice = args.uses_internal_input_dice.into();
+        self.allow_export_cdi = args.allow_export_cdi.into();
     }
 
     /// Destroy this context so it can no longer be used until it is re-initialized. The default
@@ -171,6 +180,7 @@ pub struct ActiveContextArgs<'a> {
     pub allow_x509: bool,
     pub uses_internal_input_info: bool,
     pub uses_internal_input_dice: bool,
+    pub allow_export_cdi: bool,
 }
 
 pub(crate) struct ChildToRootIter<'a> {

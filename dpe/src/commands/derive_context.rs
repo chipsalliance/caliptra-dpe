@@ -44,6 +44,8 @@ bitflags! {
         const RECURSIVE = 1u32 << 24;
         const EXPORT_CDI = 1u32 << 23;
         const CREATE_CERTIFICATE = 1u32 << 22;
+        /// ALLOW_NEW_CONTEXT_TO_EXPORT will default to false when omitted.
+        const ALLOW_NEW_CONTEXT_TO_EXPORT = 1u32 << 21;
     }
 }
 
@@ -101,6 +103,11 @@ impl DeriveContextCmd {
 
     pub const fn creates_certificate(&self) -> bool {
         self.flags.contains(DeriveContextFlags::CREATE_CERTIFICATE)
+    }
+
+    pub const fn allows_new_context_to_export(&self) -> bool {
+        self.flags
+            .contains(DeriveContextFlags::ALLOW_NEW_CONTEXT_TO_EXPORT)
     }
 
     /// Whether it is okay to make a default context.
@@ -222,6 +229,7 @@ impl CommandExecution for DeriveContextCmd {
             || (self.exports_cdi() && self.retains_parent())
             || (self.exports_cdi()
                 && dpe.contexts[parent_idx].context_type == ContextType::Simulation)
+            || (self.exports_cdi() && !dpe.contexts[parent_idx].allow_export_cdi())
             || (self.is_recursive() && self.retains_parent())
         {
             return Err(DpeErrorCode::InvalidArgument);
@@ -364,6 +372,8 @@ impl CommandExecution for DeriveContextCmd {
                 allow_x509,
                 uses_internal_input_info,
                 uses_internal_input_dice,
+                allow_export_cdi: self.allows_new_context_to_export()
+                    & tmp_parent_context.allow_export_cdi(),
             });
 
             dpe.add_tci_measurement(
@@ -1039,6 +1049,8 @@ mod tests {
         assert!(dpe.contexts[child_idx].allow_x509());
         assert!(!dpe.contexts[child_idx].uses_internal_input_info());
         assert!(!dpe.contexts[child_idx].uses_internal_input_dice());
+        // Still using the same context.
+        assert!(dpe.contexts[child_idx].allow_export_cdi());
 
         // check tci_cumulative correctly computed
         let mut hasher = env.crypto.hash_initialize(DPE_PROFILE.alg_len()).unwrap();
@@ -1215,6 +1227,125 @@ mod tests {
             }
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         );
+
+        // Children that did not have `DeriveContextFlags::ALLOW_NEW_CONTEXT_TO_EXPORT` should not
+        // be able to use `DeriveContextFlags::EXPORT_CDI`.
+        dpe = DpeInstance::new(
+            &mut env,
+            Support::AUTO_INIT | Support::CDI_EXPORT | Support::X509,
+        )
+        .unwrap();
+
+        let Ok(Response::DeriveContext(res)) = DeriveContextCmd {
+            handle: ContextHandle::default(),
+            data: [0xA; DPE_PROFILE.get_tci_size()],
+            flags: DeriveContextFlags::empty(),
+            tci_type: 0,
+            target_locality: TEST_LOCALITIES[0],
+        }
+        .execute(&mut dpe, &mut env, TEST_LOCALITIES[0]) else {
+            panic!("Unexpected result!");
+        };
+
+        let child_idx = dpe.get_active_context_pos(&res.handle, 0).unwrap();
+        assert!(!dpe.contexts[child_idx].allow_export_cdi());
+
+        let res = DeriveContextCmd {
+            handle: res.handle,
+            data: [0; DPE_PROFILE.get_tci_size()],
+            flags: DeriveContextFlags::EXPORT_CDI | DeriveContextFlags::CREATE_CERTIFICATE,
+            tci_type: 0,
+            target_locality: TEST_LOCALITIES[0],
+        }
+        .execute(&mut dpe, &mut env, TEST_LOCALITIES[0]);
+        assert_eq!(res, Err(DpeErrorCode::InvalidArgument));
+
+        // Children that did not have `DeriveContextFlags::ALLOW_NEW_CONTEXT_TO_EXPORT` should not
+        // be able to use `DeriveContextFlags::EXPORT_CDI` even if `DeriveContextFlags::ALLOW_NEW_CONTEXT_TO_EXPORT`
+        // was included.
+        dpe = DpeInstance::new(
+            &mut env,
+            Support::AUTO_INIT | Support::CDI_EXPORT | Support::X509,
+        )
+        .unwrap();
+
+        let Ok(Response::DeriveContext(res)) = DeriveContextCmd {
+            handle: ContextHandle::default(),
+            data: [0xA; DPE_PROFILE.get_tci_size()],
+            flags: DeriveContextFlags::empty(),
+            tci_type: 0,
+            target_locality: TEST_LOCALITIES[0],
+        }
+        .execute(&mut dpe, &mut env, TEST_LOCALITIES[0]) else {
+            panic!("Unexpected result!");
+        };
+        let child_idx = dpe.get_active_context_pos(&res.handle, 0).unwrap();
+        assert!(!dpe.contexts[child_idx].allow_export_cdi());
+
+        let res = DeriveContextCmd {
+            handle: res.handle,
+            data: [0; DPE_PROFILE.get_tci_size()],
+            flags: DeriveContextFlags::EXPORT_CDI
+                | DeriveContextFlags::CREATE_CERTIFICATE
+                | DeriveContextFlags::ALLOW_NEW_CONTEXT_TO_EXPORT,
+            tci_type: 0,
+            target_locality: TEST_LOCALITIES[0],
+        }
+        .execute(&mut dpe, &mut env, TEST_LOCALITIES[0]);
+        assert_eq!(res, Err(DpeErrorCode::InvalidArgument));
+
+        // Children whose parents set `DeriveContextFlags::ALLOW_NEW_CONTEXT_TO_EXPORT` should be able to
+        // use `DeriveContextFlags::EXPORT_CDI`.
+
+        // Create a new env to clear cached exported CDIs
+        let mut env = DpeEnv::<TestTypes> {
+            crypto: OpensslCrypto::new(),
+            platform: DefaultPlatform,
+        };
+        dpe = DpeInstance::new(
+            &mut env,
+            Support::AUTO_INIT | Support::CDI_EXPORT | Support::X509,
+        )
+        .unwrap();
+
+        let res = DeriveContextCmd {
+            handle: ContextHandle::default(),
+            data: [0xA; DPE_PROFILE.get_tci_size()],
+            flags: DeriveContextFlags::MAKE_DEFAULT
+                | DeriveContextFlags::ALLOW_NEW_CONTEXT_TO_EXPORT,
+            tci_type: 0,
+            target_locality: TEST_LOCALITIES[0],
+        }
+        .execute(&mut dpe, &mut env, TEST_LOCALITIES[0]);
+        let child_idx = dpe
+            .get_active_context_pos(&ContextHandle::default(), 0)
+            .unwrap();
+        assert!(dpe.contexts[child_idx].allow_export_cdi());
+
+        let res = match res {
+            Ok(Response::DeriveContext(res)) => res,
+            _ => panic!("expected to get a valid DeriveContext response."),
+        };
+
+        let res = DeriveContextCmd {
+            handle: res.handle,
+            data: [0; DPE_PROFILE.get_tci_size()],
+            flags: DeriveContextFlags::MAKE_DEFAULT
+                | DeriveContextFlags::EXPORT_CDI
+                | DeriveContextFlags::CREATE_CERTIFICATE,
+            tci_type: 0,
+            target_locality: TEST_LOCALITIES[0],
+        }
+        .execute(&mut dpe, &mut env, TEST_LOCALITIES[0]);
+        let res = match res {
+            Ok(Response::DeriveContextExportedCdi(res)) => res,
+            _ => panic!("expected to get a valid DeriveContextExportedCdi response."),
+        };
+        assert_eq!(res.parent_handle, ContextHandle::new_invalid());
+        assert_eq!(res.handle, ContextHandle::new_invalid());
+        assert_ne!(res.certificate_size, 0);
+        assert_ne!(res.new_certificate, [0; MAX_CERT_SIZE]);
+        assert_ne!(res.exported_cdi, [0; MAX_EXPORTED_CDI_SIZE]);
     }
     #[test]
     fn test_create_ca() {
@@ -1243,7 +1374,8 @@ mod tests {
             .unwrap()
         {
             Response::DeriveContextExportedCdi(resp) => resp,
-            _ => panic!("Wrong response type."),
+            Response::Error(e) => panic!("Got: {:?}", e),
+            _ => panic!("Got an unexpected response!"),
         };
         assert_eq!(ContextHandle::new_invalid(), derive_resp.handle);
         assert_eq!(ContextHandle::new_invalid(), derive_resp.parent_handle);
