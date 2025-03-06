@@ -128,6 +128,93 @@ func TestDeriveContextCdiExport(d client.TestDPEInstance, c client.DPEClient, t 
 	validateLeafCertChain(t, certChain, leafCert)
 }
 
+// TestDeriveContextDisallowedChildCdiExport tests calling DeriveContext with CdiExport flag set but the parent
+// never set the AllowNewContextToExport flag.
+func TestDeriveContextDisallowedChildCdiExport(d client.TestDPEInstance, c client.DPEClient, t *testing.T) {
+	simulation := false
+	handle := getInitialContextHandle(d, c, t, simulation)
+	defer func() {
+		c.DestroyContext(handle)
+	}()
+
+	profile, err := client.GetTransportProfile(d)
+	if err != nil {
+		t.Fatalf("Could not get profile: %v", err)
+	}
+	digestLen := profile.GetDigestSize()
+	res, err := c.DeriveContext(handle, make([]byte, digestLen), 0, 0, 0)
+	if err != nil {
+		t.Fatalf("[ERROR]: Error while making default: %s", err)
+	}
+
+	_, err = c.DeriveContext(&res.NewContextHandle, make([]byte, digestLen), client.CdiExport|client.CreateCertificate, 0, 0)
+	if err == nil {
+		t.Fatalf("[ERROR]: Expected error when exporting CDI: %s", err)
+	}
+}
+
+// TestDeriveContextAllowedChildCdiExport tests calling DeriveContext with CdiExport flag set and the parent
+// set the AllowNewContextToExport flag.
+func TestDeriveContextAllowedChildCdiExport(d client.TestDPEInstance, c client.DPEClient, t *testing.T) {
+	simulation := false
+	handle := getInitialContextHandle(d, c, t, simulation)
+	defer func() {
+		c.DestroyContext(handle)
+	}()
+
+	profile, err := client.GetTransportProfile(d)
+	if err != nil {
+		t.Fatalf("Could not get profile: %v", err)
+	}
+	digestLen := profile.GetDigestSize()
+	res, err := c.DeriveContext(handle, make([]byte, digestLen), client.AllowNewContextToExport, 0, 0)
+	if err != nil {
+		t.Fatalf("[ERROR]: Error while making default: %s", err)
+	}
+
+	resp, err := c.DeriveContext(&res.NewContextHandle, make([]byte, digestLen), client.CdiExport|client.CreateCertificate, 0, 0)
+	if err != nil {
+		t.Fatalf("[ERROR]: Expected error when exporting CDI: %s", err)
+	}
+
+	if err != nil {
+		t.Fatalf("[ERROR]: Error while exporting CdiExport: %s", err)
+	}
+
+	if resp.ExportedCdi == client.ExportedCdi(bytes.Repeat([]byte{0x0}, 32)) {
+		t.Fatalf("[FATAL]: Expected ExportedCdi field to be set but was %v", resp.ExportedCdi)
+	}
+	if resp.NewContextHandle != client.ContextHandle(bytes.Repeat([]byte{0xFF}, 16)) {
+		t.Fatalf("[FATAL]: Expected invalid NewContextHandle field but it was set to %v", resp.NewContextHandle)
+	}
+	if resp.ParentContextHandle != client.ContextHandle(bytes.Repeat([]byte{0xFF}, 16)) {
+		t.Fatalf("[FATAL]: Expected invalid ParentContextHandle field but it was set to %v", resp.ParentContextHandle)
+	}
+	if resp.CertificateSize == 0 {
+		t.Fatalf("[FATAL]: Expected CertificateSize to be set but was set to %v", resp.CertificateSize)
+	}
+
+	// Check whether certificate is correctly encoded.
+	if _, err := x509.ParseCertificate(resp.NewCertificate); err != nil {
+		t.Fatalf("[FATAL]: Could not parse certificate using crypto/x509: %v", err)
+	}
+	leafCert := checkCertificateStructure(t, resp.NewCertificate)
+
+	certChainBytes, err := c.GetCertificateChain()
+	certChain := checkCertificateChain(t, certChainBytes)
+	if err != nil {
+		t.Fatalf("[FATAL]: Could not get Certificate Chain: %v", err)
+	}
+
+	// Check all extensions
+	isCritical := d.GetSupport().DpeInstanceMarkDiceExtensionsCritical
+	checkCertificateExtension(t, leafCert.Extensions, nil, nil, true, certChain[len(certChain)-1].SubjectKeyId, true, isCritical)
+
+	// Ensure full certificate chain has valid signatures
+	// This also checks certificate lifetime, signatures as part of cert chain validation
+	validateLeafCertChain(t, certChain, leafCert)
+}
+
 // TestChangeLocality validates DerivedChild command with ChangeLocality flag.
 func TestChangeLocality(d client.TestDPEInstance, c client.DPEClient, t *testing.T) {
 	if !d.HasLocalityControl() {
@@ -237,7 +324,7 @@ func TestPrivilegesEscalation(d client.TestDPEInstance, c client.DPEClient, t *t
 	// Adding new privileges to child that parent does NOT possess will cause failure
 	_, err = c.DeriveContext(handle,
 		make([]byte, digestLen),
-		client.DeriveContextFlags(client.InputAllowX509|client.InputAllowCA),
+		client.DeriveContextFlags(client.InputAllowX509),
 		0, 0)
 	if err == nil {
 		t.Errorf("[ERROR]: Should return %q, but returned no error", client.StatusInvalidArgument)
