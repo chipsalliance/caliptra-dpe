@@ -117,6 +117,16 @@ var TestDeriveContextCdiExportTestCase = TestCase{
 	"DeriveContextCdiExport", TestDeriveContextCdiExport, []string{"CdiExport"},
 }
 
+// TestDeriveContextDisallowedChildCdiExportTestCase tests DeriveContext
+var TestDeriveContextDisallowedChildCdiExportTestCase = TestCase{
+	"DeriveContextCdiExportDisallowedChild", TestDeriveContextDisallowedChildCdiExport, []string{"CdiExport"},
+}
+
+// TestDeriveContextAllowedChildCdiExportTestCase tests DeriveContext
+var TestDeriveContextAllowedChildCdiExportTestCase = TestCase{
+	"DeriveContextCdiExportAllowedChild", TestDeriveContextAllowedChildCdiExport, []string{"CdiExport"},
+}
+
 // DeriveContextSimulationTestCase tests DeriveContext with Simulation contexts
 var DeriveContextSimulationTestCase = TestCase{
 	"DeriveContextSimulation", TestDeriveContextSimulation, []string{"AutoInit", "Simulation", "X509", "InternalDice", "InternalInfo", "RetainParentContext"},
@@ -168,6 +178,8 @@ var AllTestCases = []TestCase{
 	InitializeContextSimulationTestCase,
 	InvalidHandleTestCase,
 	WrongLocalityTestCase,
+	TestDeriveContextCdiExportTestCase,
+	TestDeriveContextDisallowedChildCdiExportTestCase,
 }
 
 // IrreversibleTestCases contains test cases that are not reversible.
