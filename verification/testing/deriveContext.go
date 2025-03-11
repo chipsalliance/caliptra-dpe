@@ -120,7 +120,8 @@ func TestDeriveContextCdiExport(d client.TestDPEInstance, c client.DPEClient, t 
 	}
 
 	// Check all extensions
-	checkCertificateExtension(t, leafCert.Extensions, nil, nil, true, certChain[len(certChain)-1].SubjectKeyId, true)
+	isCritical := d.GetSupport().DpeInstanceMarkDiceExtensionsCritical
+	checkCertificateExtension(t, leafCert.Extensions, nil, nil, true, certChain[len(certChain)-1].SubjectKeyId, true, isCritical)
 
 	// Ensure full certificate chain has valid signatures
 	// This also checks certificate lifetime, signatures as part of cert chain validation
@@ -407,7 +408,7 @@ func TestDeriveContextRecursive(d client.TestDPEInstance, c client.DPEClient, t 
 		tciValue[i] = byte(i)
 	}
 
-	handle, tcbInfo, err := getTcbInfoForHandle(c, handle)
+	handle, tcbInfo, err := getTcbInfoForHandle(d, c, handle)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -424,7 +425,7 @@ func TestDeriveContextRecursive(d client.TestDPEInstance, c client.DPEClient, t 
 
 	// Check current and cumulative measurement by CertifyKey
 	expectedCumulative := computeExpectedCumulative(lastCumulative, tciValue)
-	verifyMeasurements(c, t, handle, tciValue, expectedCumulative)
+	verifyMeasurements(d, c, t, handle, tciValue, expectedCumulative)
 }
 
 // TestDeriveContextRecursiveOnDerivedContexts tests the DeriveContext command with
@@ -484,7 +485,7 @@ func TestDeriveContextRecursiveOnDerivedContexts(d client.TestDPEInstance, c cli
 		}
 	}()
 
-	childHandle, childTcbInfo, err := getTcbInfoForHandle(c, childHandle)
+	childHandle, childTcbInfo, err := getTcbInfoForHandle(d, c, childHandle)
 	if err != nil {
 		t.Fatalf("[FATAL]: Could not get TcbInfo: %v", err)
 	}
@@ -510,7 +511,7 @@ func TestDeriveContextRecursiveOnDerivedContexts(d client.TestDPEInstance, c cli
 	}
 	childHandle = &resp.NewContextHandle
 
-	childHandle, childTcbInfo, err = getTcbInfoForHandle(c, childHandle)
+	childHandle, childTcbInfo, err = getTcbInfoForHandle(d, c, childHandle)
 	if err != nil {
 		t.Fatalf("[FATAL]: Could not get TcbInfo: %v", err)
 	}
@@ -538,8 +539,8 @@ func computeExpectedCumulative(lastCumulative []byte, tciValue []byte) []byte {
 	return hasher.Sum(nil)
 }
 
-func verifyMeasurements(c client.DPEClient, t *testing.T, handle *client.ContextHandle, expectedCurrent []byte, expectedCumulative []byte) {
-	_, tcbInfo, err := getTcbInfoForHandle(c, handle)
+func verifyMeasurements(d client.TestDPEInstance, c client.DPEClient, t *testing.T, handle *client.ContextHandle, expectedCurrent []byte, expectedCumulative []byte) {
+	_, tcbInfo, err := getTcbInfoForHandle(d, c, handle)
 	if err != nil {
 		t.Fatal(err)
 	}

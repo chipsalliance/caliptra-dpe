@@ -139,13 +139,15 @@ mod tests {
     use super::*;
     use crate::{
         commands::{
-            certify_key::CertifyKeyCmd,
-            certify_key::CertifyKeyFlags,
+            certify_key::{CertifyKeyCmd, CertifyKeyFlags},
             derive_context::DeriveContextFlags,
             tests::{TEST_DIGEST, TEST_LABEL},
             Command, CommandHdr, DeriveContextCmd, InitCtxCmd,
         },
-        dpe_instance::tests::{TestTypes, RANDOM_HANDLE, SIMULATION_HANDLE, TEST_LOCALITIES},
+        dpe_instance::{
+            tests::{TestTypes, RANDOM_HANDLE, SIMULATION_HANDLE, TEST_LOCALITIES},
+            DpeInstanceFlags,
+        },
         support::test::SUPPORT,
     };
     use caliptra_cfi_lib_git::CfiCounter;
@@ -180,7 +182,7 @@ mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe = DpeInstance::new(&mut env, SUPPORT).unwrap();
+        let mut dpe = DpeInstance::new(&mut env, SUPPORT, DpeInstanceFlags::empty()).unwrap();
 
         // Bad handle.
         assert_eq!(
@@ -235,7 +237,7 @@ mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe = DpeInstance::new(&mut env, SUPPORT).unwrap();
+        let mut dpe = DpeInstance::new(&mut env, SUPPORT, DpeInstanceFlags::empty()).unwrap();
 
         for i in 0..3 {
             DeriveContextCmd {

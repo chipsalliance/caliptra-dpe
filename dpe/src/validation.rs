@@ -446,7 +446,7 @@ pub mod tests {
 
     use crate::{
         context::{Context, ContextHandle, ContextState, ContextType},
-        dpe_instance::{tests::TestTypes, DpeEnv},
+        dpe_instance::{tests::TestTypes, DpeEnv, DpeInstanceFlags},
         support::{test::SUPPORT, Support},
         tci::TciMeasurement,
         validation::{DpeValidator, ValidationError},
@@ -461,7 +461,7 @@ pub mod tests {
             platform: DefaultPlatform,
         };
         let dpe_validator = DpeValidator {
-            dpe: &mut DpeInstance::new(&mut env, SUPPORT).unwrap(),
+            dpe: &mut DpeInstance::new(&mut env, SUPPORT, DpeInstanceFlags::empty()).unwrap(),
         };
 
         // validation fails on graph where child has multiple parents
@@ -524,7 +524,8 @@ pub mod tests {
             platform: DefaultPlatform,
         };
         let dpe_validator = DpeValidator {
-            dpe: &mut DpeInstance::new(&mut env, Support::empty()).unwrap(),
+            dpe: &mut DpeInstance::new(&mut env, Support::empty(), DpeInstanceFlags::empty())
+                .unwrap(),
         };
 
         // test simulation support
@@ -568,8 +569,12 @@ pub mod tests {
             platform: DefaultPlatform,
         };
         let dpe_validator = DpeValidator {
-            dpe: &mut DpeInstance::new(&mut env, Support::all().difference(Support::AUTO_INIT))
-                .unwrap(),
+            dpe: &mut DpeInstance::new(
+                &mut env,
+                Support::all().difference(Support::AUTO_INIT),
+                DpeInstanceFlags::empty(),
+            )
+            .unwrap(),
         };
 
         // inactive context validation
@@ -679,7 +684,8 @@ pub mod tests {
             platform: DefaultPlatform,
         };
         let dpe_validator = DpeValidator {
-            dpe: &mut DpeInstance::new(&mut env, Support::empty()).unwrap(),
+            dpe: &mut DpeInstance::new(&mut env, Support::empty(), DpeInstanceFlags::empty())
+                .unwrap(),
         };
         dpe_validator.dpe.has_initialized = U8Bool::new(true);
 

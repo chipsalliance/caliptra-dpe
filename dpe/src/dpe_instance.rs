@@ -14,12 +14,14 @@ use crate::{
     tci::{TciMeasurement, TciNodeData},
     U8Bool, DPE_PROFILE, MAX_HANDLES,
 };
+use bitflags::bitflags;
 #[cfg(not(feature = "no-cfi"))]
 use caliptra_cfi_derive_git::cfi_impl_fn;
 use caliptra_cfi_lib_git::cfi_launder;
 #[cfg(not(feature = "no-cfi"))]
 use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq};
 use cfg_if::cfg_if;
+use core::mem::align_of;
 use crypto::{Crypto, Digest, Hasher};
 use platform::Platform;
 #[cfg(not(feature = "disable_internal_dice"))]
@@ -41,19 +43,39 @@ pub struct DpeEnv<'a, T: DpeTypes + 'a> {
     pub platform: T::Platform<'a>,
 }
 
+#[repr(C)]
+#[derive(
+    Debug,
+    PartialEq,
+    Eq,
+    zerocopy::FromBytes,
+    zerocopy::IntoBytes,
+    zerocopy::Immutable,
+    zerocopy::KnownLayout,
+    Zeroize,
+)]
+pub struct DpeInstanceFlags(pub u16);
+
+bitflags! {
+    impl DpeInstanceFlags: u16 {
+        /// Mark DICE extensions as "Critical" in certificates created by `DpeInstance`.
+        const MARK_DICE_EXTENSIONS_CRITICAL = 1u16 << 15;
+    }
+}
+
 #[repr(C, align(4))]
 #[derive(IntoBytes, TryFromBytes, KnownLayout, Immutable, Zeroize)]
 pub struct DpeInstance {
     pub contexts: [Context; MAX_HANDLES],
     pub support: Support,
-
+    pub flags: DpeInstanceFlags,
     /// Can only successfully execute the initialize context command for non-simulation (i.e.
     /// `InitializeContext(simulation=false)`) once per reset cycle.
     pub has_initialized: U8Bool,
-
     // unused buffer added to make DpeInstance word aligned and remove padding
-    pub reserved: [u8; 3],
+    pub reserved: [u8; 1],
 }
+const _: () = assert!(align_of::<DpeInstance>() == 4);
 
 impl DpeInstance {
     const MAX_NEW_HANDLE_ATTEMPTS: usize = 8;
@@ -64,18 +86,21 @@ impl DpeInstance {
     ///
     /// * `env` - DPE environment containing Crypto and Platform implementations
     /// * `support` - optional functionality the instance supports
+    /// * `flags` - configures `Self` behaviors.
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     pub fn new(
         env: &mut DpeEnv<impl DpeTypes>,
         support: Support,
+        flags: DpeInstanceFlags,
     ) -> Result<DpeInstance, DpeErrorCode> {
         let updated_support = support.preprocess_support();
         const CONTEXT_INITIALIZER: Context = Context::new();
         let mut dpe = DpeInstance {
             contexts: [CONTEXT_INITIALIZER; MAX_HANDLES],
             support: updated_support,
+            flags,
             has_initialized: false.into(),
-            reserved: [0u8; 3],
+            reserved: [0; 1],
         };
 
         if dpe.support.auto_init() {
@@ -96,6 +121,7 @@ impl DpeInstance {
     /// * `support` - optional functionality the instance supports
     /// * `tci_type`- tci_type of initialized context
     /// * `auto_init_measurement` - TCI data of initialized context
+    /// * `flags` - configures `Self` behaviors.
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     #[cfg(not(feature = "disable_auto_init"))]
     pub fn new_auto_init(
@@ -103,6 +129,7 @@ impl DpeInstance {
         support: Support,
         tci_type: u32,
         auto_init_measurement: [u8; DPE_PROFILE.get_hash_size()],
+        flags: DpeInstanceFlags,
     ) -> Result<DpeInstance, DpeErrorCode> {
         let updated_support = support.preprocess_support();
         // auto-init must be supported to add an auto init measurement
@@ -112,7 +139,7 @@ impl DpeInstance {
             #[cfg(not(feature = "no-cfi"))]
             cfi_assert!(updated_support.auto_init());
         }
-        let mut dpe = Self::new(env, updated_support)?;
+        let mut dpe = Self::new(env, updated_support, flags)?;
 
         let locality = env.platform.get_auto_init_locality()?;
         let idx = dpe.get_active_context_pos(&ContextHandle::default(), locality)?;
@@ -553,7 +580,7 @@ pub mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe = DpeInstance::new(&mut env, SUPPORT).unwrap();
+        let mut dpe = DpeInstance::new(&mut env, SUPPORT, DpeInstanceFlags::empty()).unwrap();
 
         assert_eq!(
             Response::GetProfile(GetProfileResp::new(
@@ -592,7 +619,7 @@ pub mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let dpe = DpeInstance::new(&mut env, SUPPORT).unwrap();
+        let dpe = DpeInstance::new(&mut env, SUPPORT, DpeInstanceFlags::empty()).unwrap();
         let profile = dpe.get_profile(&mut env.platform).unwrap();
         assert_eq!(profile.major_version, CURRENT_PROFILE_MAJOR_VERSION);
         assert_eq!(profile.flags, SUPPORT.bits());
@@ -605,7 +632,8 @@ pub mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe = DpeInstance::new(&mut env, Support::default()).unwrap();
+        let mut dpe =
+            DpeInstance::new(&mut env, Support::default(), DpeInstanceFlags::empty()).unwrap();
         let expected_index = 7;
         dpe.contexts[expected_index].handle = SIMULATION_HANDLE;
 
@@ -644,7 +672,8 @@ pub mod tests {
             platform: DefaultPlatform,
         };
 
-        let mut dpe = DpeInstance::new(&mut env, Support::AUTO_INIT).unwrap();
+        let mut dpe =
+            DpeInstance::new(&mut env, Support::AUTO_INIT, DpeInstanceFlags::empty()).unwrap();
 
         let data = [1; DPE_PROFILE.get_hash_size()];
         let mut context = dpe.contexts[0];
@@ -695,7 +724,8 @@ pub mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe = DpeInstance::new(&mut env, Support::default()).unwrap();
+        let mut dpe =
+            DpeInstance::new(&mut env, Support::default(), DpeInstanceFlags::empty()).unwrap();
         let root = 7;
         let child_1 = 3;
         let child_1_1 = 0;
@@ -751,7 +781,7 @@ pub mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe = DpeInstance::new(&mut env, SUPPORT).unwrap();
+        let mut dpe = DpeInstance::new(&mut env, SUPPORT, DpeInstanceFlags::empty()).unwrap();
 
         let mut last_cdi = vec![];
 
@@ -810,7 +840,12 @@ pub mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe = DpeInstance::new(&mut env, SUPPORT | Support::INTERNAL_INFO).unwrap();
+        let mut dpe = DpeInstance::new(
+            &mut env,
+            SUPPORT | Support::INTERNAL_INFO,
+            DpeInstanceFlags::empty(),
+        )
+        .unwrap();
 
         let parent_context_idx = dpe
             .get_active_context_pos(&ContextHandle::default(), TEST_LOCALITIES[0])
@@ -869,7 +904,12 @@ pub mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe = DpeInstance::new(&mut env, SUPPORT | Support::INTERNAL_DICE).unwrap();
+        let mut dpe = DpeInstance::new(
+            &mut env,
+            SUPPORT | Support::INTERNAL_DICE,
+            DpeInstanceFlags::empty(),
+        )
+        .unwrap();
 
         let parent_context_idx = dpe
             .get_active_context_pos(&ContextHandle::default(), TEST_LOCALITIES[0])
@@ -927,8 +967,14 @@ pub mod tests {
         let tci_type = 0xdeadbeef_u32;
         let auto_init_measurement = [0x1; DPE_PROFILE.get_hash_size()];
         let auto_init_locality = env.platform.get_auto_init_locality().unwrap();
-        let mut dpe =
-            DpeInstance::new_auto_init(&mut env, SUPPORT, tci_type, auto_init_measurement).unwrap();
+        let mut dpe = DpeInstance::new_auto_init(
+            &mut env,
+            SUPPORT,
+            tci_type,
+            auto_init_measurement,
+            DpeInstanceFlags::empty(),
+        )
+        .unwrap();
 
         let idx = dpe
             .get_active_context_pos(&ContextHandle::default(), auto_init_locality)
@@ -940,7 +986,7 @@ pub mod tests {
         assert_eq!(dpe.contexts[idx].children, 0);
         assert_eq!(dpe.contexts[idx].state, ContextState::Active);
         assert_eq!(dpe.contexts[idx].handle, ContextHandle::default());
-        assert!(dpe.has_initialized.get());
+        assert!(dpe.has_initialized());
 
         // check that initialize context fails if new_auto_init was used
         assert_eq!(

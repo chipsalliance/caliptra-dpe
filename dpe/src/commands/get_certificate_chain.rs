@@ -53,7 +53,10 @@ mod tests {
     use super::*;
     use crate::{
         commands::{Command, CommandHdr},
-        dpe_instance::tests::{TestTypes, TEST_LOCALITIES},
+        dpe_instance::{
+            tests::{TestTypes, TEST_LOCALITIES},
+            DpeInstanceFlags,
+        },
         support::test::SUPPORT,
     };
     use caliptra_cfi_lib_git::CfiCounter;
@@ -88,7 +91,7 @@ mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe = DpeInstance::new(&mut env, SUPPORT).unwrap();
+        let mut dpe = DpeInstance::new(&mut env, SUPPORT, DpeInstanceFlags::empty()).unwrap();
 
         assert_eq!(
             Err(DpeErrorCode::InvalidArgument),

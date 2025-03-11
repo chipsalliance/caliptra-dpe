@@ -2,7 +2,7 @@
 use super::CommandExecution;
 use crate::{
     context::{ActiveContextArgs, Context, ContextHandle, ContextState, ContextType},
-    dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
+    dpe_instance::{DpeEnv, DpeInstance, DpeInstanceFlags, DpeTypes},
     response::{
         DeriveContextExportedCdiResp, DeriveContextResp, DpeErrorCode, Response, ResponseHdr,
     },
@@ -304,7 +304,8 @@ impl CommandExecution for DeriveContextCmd {
                         cdi_label: b"Exported CDI",
                         key_label: b"Exported ECC",
                         context: b"Exported ECC",
-                        ueid
+                        ueid,
+                        dice_extensions_are_critical: dpe.flags.contains(DpeInstanceFlags::MARK_DICE_EXTENSIONS_CRITICAL),
                     };
                     let mut cert = [0; MAX_CERT_SIZE];
                     let CreateDpeCertResult { cert_size, exported_cdi_handle, .. } = create_exported_dpe_cert(
@@ -460,6 +461,7 @@ mod tests {
         let mut dpe = DpeInstance::new(
             &mut env,
             Support::AUTO_INIT | Support::INTERNAL_INFO | Support::RETAIN_PARENT_CONTEXT,
+            DpeInstanceFlags::empty(),
         )
         .unwrap();
 
@@ -478,6 +480,7 @@ mod tests {
         dpe = DpeInstance::new(
             &mut env,
             Support::AUTO_INIT | Support::INTERNAL_DICE | Support::RETAIN_PARENT_CONTEXT,
+            DpeInstanceFlags::empty(),
         )
         .unwrap();
 
@@ -496,6 +499,7 @@ mod tests {
         let mut dpe = DpeInstance::new(
             &mut env,
             Support::AUTO_INIT | Support::INTERNAL_INFO | Support::INTERNAL_DICE,
+            DpeInstanceFlags::empty(),
         )
         .unwrap();
 
@@ -519,7 +523,8 @@ mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe = DpeInstance::new(&mut env, Support::default()).unwrap();
+        let mut dpe =
+            DpeInstance::new(&mut env, Support::default(), DpeInstanceFlags::empty()).unwrap();
 
         InitCtxCmd::new_use_default()
             .execute(&mut dpe, &mut env, 0)
@@ -546,7 +551,8 @@ mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe = DpeInstance::new(&mut env, Support::AUTO_INIT).unwrap();
+        let mut dpe =
+            DpeInstance::new(&mut env, Support::AUTO_INIT, DpeInstanceFlags::empty()).unwrap();
 
         // Fill all contexts with children (minus the auto-init context).
         for _ in 0..MAX_HANDLES - 1 {
@@ -582,7 +588,8 @@ mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe = DpeInstance::new(&mut env, Support::AUTO_INIT).unwrap();
+        let mut dpe =
+            DpeInstance::new(&mut env, Support::AUTO_INIT, DpeInstanceFlags::empty()).unwrap();
 
         let parent_idx = dpe
             .get_active_context_pos(&ContextHandle::default(), TEST_LOCALITIES[0])
@@ -617,7 +624,8 @@ mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe = DpeInstance::new(&mut env, Support::AUTO_INIT).unwrap();
+        let mut dpe =
+            DpeInstance::new(&mut env, Support::AUTO_INIT, DpeInstanceFlags::empty()).unwrap();
 
         DeriveContextCmd {
             handle: ContextHandle::default(),
@@ -645,7 +653,8 @@ mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe = DpeInstance::new(&mut env, Support::AUTO_INIT).unwrap();
+        let mut dpe =
+            DpeInstance::new(&mut env, Support::AUTO_INIT, DpeInstanceFlags::empty()).unwrap();
 
         // Make sure child handle is default when creating default child.
         assert_eq!(
@@ -696,6 +705,7 @@ mod tests {
                 | Support::AUTO_INIT
                 | Support::ROTATE_CONTEXT
                 | Support::RETAIN_PARENT_CONTEXT,
+            DpeInstanceFlags::empty(),
         )
         .unwrap();
 
@@ -789,6 +799,7 @@ mod tests {
         let mut dpe = DpeInstance::new(
             &mut env,
             Support::AUTO_INIT | Support::RETAIN_PARENT_CONTEXT,
+            DpeInstanceFlags::empty(),
         )
         .unwrap();
 
@@ -929,6 +940,7 @@ mod tests {
         let mut dpe = DpeInstance::new(
             &mut env,
             Support::AUTO_INIT | Support::RETAIN_PARENT_CONTEXT,
+            DpeInstanceFlags::empty(),
         )
         .unwrap();
 
@@ -955,6 +967,7 @@ mod tests {
         let mut dpe = DpeInstance::new(
             &mut env,
             Support::AUTO_INIT | Support::RETAIN_PARENT_CONTEXT,
+            DpeInstanceFlags::empty(),
         )
         .unwrap();
 
@@ -997,6 +1010,7 @@ mod tests {
                 | Support::RECURSIVE
                 | Support::INTERNAL_DICE
                 | Support::INTERNAL_INFO,
+            DpeInstanceFlags::empty(),
         )
         .unwrap();
 
@@ -1069,6 +1083,7 @@ mod tests {
                 | Support::RECURSIVE
                 | Support::SIMULATION
                 | Support::RETAIN_PARENT_CONTEXT,
+            DpeInstanceFlags::empty(),
         )
         .unwrap();
 
@@ -1148,6 +1163,7 @@ mod tests {
         dpe = DpeInstance::new(
             &mut env,
             Support::AUTO_INIT | Support::CDI_EXPORT | Support::X509,
+            DpeInstanceFlags::empty(),
         )
         .unwrap();
 
@@ -1174,6 +1190,7 @@ mod tests {
         let mut dpe = DpeInstance::new(
             &mut env,
             Support::AUTO_INIT | Support::INTERNAL_INFO | Support::INTERNAL_DICE | Support::X509,
+            DpeInstanceFlags::empty(),
         )
         .unwrap();
 
@@ -1216,89 +1233,116 @@ mod tests {
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         );
     }
+
     #[test]
     fn test_create_ca() {
-        CfiCounter::reset_for_test();
-        let mut env = DpeEnv::<TestTypes> {
-            crypto: OpensslCrypto::new(),
-            platform: DefaultPlatform,
-        };
-        let mut dpe = DpeInstance::new(&mut env, Support::X509 | Support::CDI_EXPORT).unwrap();
-        let init_resp = match InitCtxCmd::new_use_default()
-            .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
-            .unwrap()
-        {
-            Response::InitCtx(resp) => resp,
-            _ => panic!("Incorrect return type."),
-        };
-        let derive_cmd = DeriveContextCmd {
-            handle: init_resp.handle,
-            flags: DeriveContextFlags::EXPORT_CDI | DeriveContextFlags::CREATE_CERTIFICATE,
-            data: [0; DPE_PROFILE.get_tci_size()],
-            tci_type: 0,
-            target_locality: TEST_LOCALITIES[0],
-        };
-        let derive_resp = match derive_cmd
-            .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
-            .unwrap()
-        {
-            Response::DeriveContextExportedCdi(resp) => resp,
-            _ => panic!("Wrong response type."),
-        };
-        assert_eq!(ContextHandle::new_invalid(), derive_resp.handle);
-        assert_eq!(ContextHandle::new_invalid(), derive_resp.parent_handle);
-        let mut parser = X509CertificateParser::new().with_deep_parse_extensions(true);
-        match parser
-            .parse(&derive_resp.new_certificate[..derive_resp.certificate_size.try_into().unwrap()])
-        {
-            Ok((_, cert)) => {
-                match cert.basic_constraints() {
-                    Ok(Some(basic_constraints)) => {
-                        assert!(basic_constraints.value.ca);
+        for mark_dice_extensions_critical in [true, false] {
+            CfiCounter::reset_for_test();
+            let mut env = DpeEnv::<TestTypes> {
+                crypto: OpensslCrypto::new(),
+                platform: DefaultPlatform,
+            };
+            let flags = {
+                let mut flags = DpeInstanceFlags::empty();
+                flags.set(
+                    DpeInstanceFlags::MARK_DICE_EXTENSIONS_CRITICAL,
+                    mark_dice_extensions_critical,
+                );
+                flags
+            };
+            let mut dpe =
+                DpeInstance::new(&mut env, Support::X509 | Support::CDI_EXPORT, flags).unwrap();
+            let init_resp = match InitCtxCmd::new_use_default()
+                .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
+                .unwrap()
+            {
+                Response::InitCtx(resp) => resp,
+                _ => panic!("Incorrect return type."),
+            };
+            let derive_cmd = DeriveContextCmd {
+                handle: init_resp.handle,
+                flags: DeriveContextFlags::EXPORT_CDI | DeriveContextFlags::CREATE_CERTIFICATE,
+                data: [0; DPE_PROFILE.get_tci_size()],
+                tci_type: 0,
+                target_locality: TEST_LOCALITIES[0],
+            };
+            let derive_resp = match derive_cmd
+                .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
+                .unwrap()
+            {
+                Response::DeriveContextExportedCdi(resp) => resp,
+                _ => panic!("Wrong response type."),
+            };
+            assert_eq!(ContextHandle::new_invalid(), derive_resp.handle);
+            assert_eq!(ContextHandle::new_invalid(), derive_resp.parent_handle);
+            let mut parser = X509CertificateParser::new().with_deep_parse_extensions(true);
+            match parser.parse(
+                &derive_resp.new_certificate[..derive_resp.certificate_size.try_into().unwrap()],
+            ) {
+                Ok((_, cert)) => {
+                    match cert.basic_constraints() {
+                        Ok(Some(basic_constraints)) => {
+                            assert!(basic_constraints.value.ca);
+                        }
+                        Ok(None) => panic!("basic constraints extension not found"),
+                        Err(_) => panic!("multiple basic constraints extensions found"),
                     }
-                    Ok(None) => panic!("basic constraints extension not found"),
-                    Err(_) => panic!("multiple basic constraints extensions found"),
-                }
-                let pub_key = &cert.tbs_certificate.subject_pki.subject_public_key.data;
-                let mut hasher = match DPE_PROFILE {
-                    DpeProfile::P256Sha256 => OpenSSLHasher::new(MessageDigest::sha256()).unwrap(),
-                    DpeProfile::P384Sha384 => OpenSSLHasher::new(MessageDigest::sha384()).unwrap(),
-                };
-                hasher.update(pub_key).unwrap();
-                let expected_ski: &[u8] = &hasher.finish().unwrap();
-                match cert.get_extension_unique(&oid!(2.5.29 .14)) {
-                    Ok(Some(subject_key_identifier_ext)) => {
-                        if let ParsedExtension::SubjectKeyIdentifier(key_identifier) =
-                            subject_key_identifier_ext.parsed_extension()
-                        {
-                            assert_eq!(key_identifier.0, &expected_ski[..MAX_KEY_IDENTIFIER_SIZE]);
-                        } else {
-                            panic!("Extension has wrong type");
+                    let pub_key = &cert.tbs_certificate.subject_pki.subject_public_key.data;
+                    let mut hasher = match DPE_PROFILE {
+                        DpeProfile::P256Sha256 => {
+                            OpenSSLHasher::new(MessageDigest::sha256()).unwrap()
+                        }
+                        DpeProfile::P384Sha384 => {
+                            OpenSSLHasher::new(MessageDigest::sha384()).unwrap()
+                        }
+                    };
+                    hasher.update(pub_key).unwrap();
+                    let expected_ski: &[u8] = &hasher.finish().unwrap();
+                    match cert.get_extension_unique(&oid!(2.5.29 .14)) {
+                        Ok(Some(subject_key_identifier_ext)) => {
+                            if let ParsedExtension::SubjectKeyIdentifier(key_identifier) =
+                                subject_key_identifier_ext.parsed_extension()
+                            {
+                                assert_eq!(
+                                    key_identifier.0,
+                                    &expected_ski[..MAX_KEY_IDENTIFIER_SIZE]
+                                );
+                            } else {
+                                panic!("Extension has wrong type");
+                            }
+                        }
+                        Ok(None) => panic!("subject key identifier extension not found"),
+                        Err(_) => panic!("multiple subject key identifier extensions found"),
+                    }
+                    let mut expected_aki = [0u8; MAX_KEY_IDENTIFIER_SIZE];
+                    env.platform
+                        .get_issuer_key_identifier(&mut expected_aki)
+                        .unwrap();
+                    match cert.get_extension_unique(&oid!(2.5.29 .35)) {
+                        Ok(Some(extension)) => {
+                            if let ParsedExtension::AuthorityKeyIdentifier(aki) =
+                                extension.parsed_extension()
+                            {
+                                let key_identifier = aki.key_identifier.clone().unwrap();
+                                assert_eq!(&key_identifier.0, &expected_aki,);
+                            } else {
+                                panic!("Extension has wrong type");
+                            }
+                        }
+                        Ok(None) => panic!("authority key identifier extension not found"),
+                        Err(_) => panic!("multiple authority key identifier extensions found"),
+                    }
+
+                    for extension in cert.iter_extensions() {
+                        // Unknown extensions are DICE extensions, and they should match the
+                        // criticality set by the DPE instance.
+                        if extension.parsed_extension().unsupported() {
+                            assert_eq!(extension.critical, mark_dice_extensions_critical);
                         }
                     }
-                    Ok(None) => panic!("subject key identifier extension not found"),
-                    Err(_) => panic!("multiple subject key identifier extensions found"),
                 }
-                let mut expected_aki = [0u8; MAX_KEY_IDENTIFIER_SIZE];
-                env.platform
-                    .get_issuer_key_identifier(&mut expected_aki)
-                    .unwrap();
-                match cert.get_extension_unique(&oid!(2.5.29 .35)) {
-                    Ok(Some(extension)) => {
-                        if let ParsedExtension::AuthorityKeyIdentifier(aki) =
-                            extension.parsed_extension()
-                        {
-                            let key_identifier = aki.key_identifier.clone().unwrap();
-                            assert_eq!(&key_identifier.0, &expected_aki,);
-                        } else {
-                            panic!("Extension has wrong type");
-                        }
-                    }
-                    Ok(None) => panic!("authority key identifier extension not found"),
-                    Err(_) => panic!("multiple authority key identifier extensions found"),
-                }
-            }
-            Err(e) => panic!("x509 parsing failed: {:?}", e),
-        };
+                Err(e) => panic!("x509 parsing failed: {:?}", e),
+            };
+        }
     }
 }

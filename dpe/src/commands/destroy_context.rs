@@ -98,7 +98,10 @@ mod tests {
     use crate::{
         commands::{Command, CommandHdr, DeriveContextCmd, DeriveContextFlags, InitCtxCmd},
         context::{Context, ContextState},
-        dpe_instance::tests::{TestTypes, SIMULATION_HANDLE, TEST_HANDLE, TEST_LOCALITIES},
+        dpe_instance::{
+            tests::{TestTypes, SIMULATION_HANDLE, TEST_HANDLE, TEST_LOCALITIES},
+            DpeInstanceFlags,
+        },
         support::{test::SUPPORT, Support},
         DPE_PROFILE,
     };
@@ -131,7 +134,8 @@ mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe = DpeInstance::new(&mut env, Support::default()).unwrap();
+        let mut dpe =
+            DpeInstance::new(&mut env, Support::default(), DpeInstanceFlags::empty()).unwrap();
 
         InitCtxCmd::new_use_default()
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
@@ -288,7 +292,7 @@ mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe = DpeInstance::new(&mut env, SUPPORT).unwrap();
+        let mut dpe = DpeInstance::new(&mut env, SUPPORT, DpeInstanceFlags::empty()).unwrap();
 
         // create new context while preserving auto-initialized context
         let handle_1 = match (DeriveContextCmd {
@@ -357,7 +361,7 @@ mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe = DpeInstance::new(&mut env, SUPPORT).unwrap();
+        let mut dpe = DpeInstance::new(&mut env, SUPPORT, DpeInstanceFlags::empty()).unwrap();
 
         // create new context while preserving auto-initialized context
         let parent_handle = match (DeriveContextCmd {

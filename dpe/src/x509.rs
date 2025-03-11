@@ -2280,6 +2280,8 @@ pub(crate) struct CreateDpeCertArgs<'a> {
     pub context: &'a [u8],
     /// Ueid extension value
     pub ueid: &'a [u8],
+    /// DICE extensions are marked as critical
+    pub dice_extensions_are_critical: bool,
 }
 
 /// Results for DPE cert or CSR creation.
@@ -2484,7 +2486,7 @@ fn create_dpe_cert_or_csr(
         subject_alt_name,
     };
     let mut scratch_buf = [0u8; MAX_CERT_SIZE];
-    let mut scratch_writer = CertWriter::new(&mut scratch_buf, true);
+    let mut scratch_writer = CertWriter::new(&mut scratch_buf, args.dice_extensions_are_critical);
     let cert_size = match cert_format {
         CertificateFormat::X509 => {
             let mut issuer_name = [0u8; MAX_ISSUER_NAME_SIZE];
@@ -2508,7 +2510,8 @@ fn create_dpe_cert_or_csr(
             let sig = env
                 .crypto
                 .ecdsa_sign_with_alias(DPE_PROFILE.alg_len(), &tbs_digest)?;
-            let mut cert_writer = CertWriter::new(output_cert_or_csr, true);
+            let mut cert_writer =
+                CertWriter::new(output_cert_or_csr, args.dice_extensions_are_critical);
             bytes_written =
                 cert_writer.encode_ecdsa_certificate(&scratch_buf[..bytes_written], &sig)?;
             u32::try_from(bytes_written).map_err(|_| DpeErrorCode::InternalError)?
@@ -2533,7 +2536,8 @@ fn create_dpe_cert_or_csr(
             )?;
 
             let mut csr_buffer = [0u8; MAX_CERT_SIZE];
-            let mut csr_writer = CertWriter::new(&mut csr_buffer, true);
+            let mut csr_writer =
+                CertWriter::new(&mut csr_buffer, args.dice_extensions_are_critical);
             bytes_written =
                 csr_writer.encode_csr(&scratch_buf[..bytes_written], &cert_req_info_sig)?;
             if bytes_written > MAX_CERT_SIZE {
@@ -2546,7 +2550,8 @@ fn create_dpe_cert_or_csr(
                 .ecdsa_sign_with_alias(DPE_PROFILE.alg_len(), &csr_digest)?;
             let sid = env.platform.get_signer_identifier()?;
 
-            let mut cms_writer = CertWriter::new(output_cert_or_csr, true);
+            let mut cms_writer =
+                CertWriter::new(output_cert_or_csr, args.dice_extensions_are_critical);
             bytes_written = cms_writer.encode_cms(&csr_buffer[..bytes_written], &csr_sig, &sid)?;
             u32::try_from(bytes_written).map_err(|_| DpeErrorCode::InternalError)?
         }
