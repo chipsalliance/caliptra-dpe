@@ -128,8 +128,9 @@ mod tests {
     use super::*;
     use crate::{
         commands::{Command, CommandHdr, InitCtxCmd},
-        dpe_instance::tests::{
-            TestTypes, RANDOM_HANDLE, SIMULATION_HANDLE, TEST_HANDLE, TEST_LOCALITIES,
+        dpe_instance::{
+            tests::{TestTypes, RANDOM_HANDLE, SIMULATION_HANDLE, TEST_HANDLE, TEST_LOCALITIES},
+            DpeInstanceFlags,
         },
         support::Support,
     };
@@ -163,7 +164,8 @@ mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe = DpeInstance::new(&mut env, Support::default()).unwrap();
+        let mut dpe =
+            DpeInstance::new(&mut env, Support::default(), DpeInstanceFlags::empty()).unwrap();
         // Make sure it returns an error if the command is marked unsupported.
         assert_eq!(
             Err(DpeErrorCode::InvalidCommand),
@@ -175,7 +177,8 @@ mod tests {
         );
 
         // Make a new instance that supports RotateContext.
-        let mut dpe = DpeInstance::new(&mut env, Support::ROTATE_CONTEXT).unwrap();
+        let mut dpe =
+            DpeInstance::new(&mut env, Support::ROTATE_CONTEXT, DpeInstanceFlags::empty()).unwrap();
         InitCtxCmd::new_use_default()
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
             .unwrap();

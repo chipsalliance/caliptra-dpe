@@ -2,7 +2,7 @@
 use super::CommandExecution;
 use crate::{
     context::ContextHandle,
-    dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
+    dpe_instance::{DpeEnv, DpeInstance, DpeInstanceFlags, DpeTypes},
     response::{CertifyKeyResp, DpeErrorCode, Response, ResponseHdr},
     x509::{create_dpe_cert, create_dpe_csr, CreateDpeCertArgs, CreateDpeCertResult},
     DPE_PROFILE, MAX_CERT_SIZE,
@@ -95,6 +95,9 @@ impl CommandExecution for CertifyKeyCmd {
             key_label: &self.label,
             context: b"ECC",
             ueid: &self.label,
+            dice_extensions_are_critical: dpe
+                .flags
+                .contains(DpeInstanceFlags::MARK_DICE_EXTENSIONS_CRITICAL),
         };
         let mut cert = [0; MAX_CERT_SIZE];
 
@@ -208,262 +211,293 @@ mod tests {
 
     #[test]
     fn test_certify_key_x509() {
-        CfiCounter::reset_for_test();
-        let mut env = DpeEnv::<TestTypes> {
-            crypto: OpensslCrypto::new(),
-            platform: DefaultPlatform,
-        };
-        let mut dpe = DpeInstance::new(&mut env, Support::X509).unwrap();
+        for mark_dice_extensions_critical in [true, false] {
+            CfiCounter::reset_for_test();
+            let mut env = DpeEnv::<TestTypes> {
+                crypto: OpensslCrypto::new(),
+                platform: DefaultPlatform,
+            };
+            let flags = {
+                let mut flags = DpeInstanceFlags::empty();
+                flags.set(
+                    DpeInstanceFlags::MARK_DICE_EXTENSIONS_CRITICAL,
+                    mark_dice_extensions_critical,
+                );
+                flags
+            };
+            let mut dpe = DpeInstance::new(&mut env, Support::X509, flags).unwrap();
 
-        let init_resp = match InitCtxCmd::new_use_default()
-            .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
-            .unwrap()
-        {
-            Response::InitCtx(resp) => resp,
-            _ => panic!("Incorrect return type."),
-        };
-        let certify_cmd = CertifyKeyCmd {
-            handle: init_resp.handle,
-            flags: CertifyKeyFlags::empty(),
-            label: [0; DPE_PROFILE.get_hash_size()],
-            format: CertifyKeyCmd::FORMAT_X509,
-        };
+            let init_resp = match InitCtxCmd::new_use_default()
+                .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
+                .unwrap()
+            {
+                Response::InitCtx(resp) => resp,
+                _ => panic!("Incorrect return type."),
+            };
+            let certify_cmd = CertifyKeyCmd {
+                handle: init_resp.handle,
+                flags: CertifyKeyFlags::empty(),
+                label: [0; DPE_PROFILE.get_hash_size()],
+                format: CertifyKeyCmd::FORMAT_X509,
+            };
 
-        let certify_resp = match certify_cmd
-            .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
-            .unwrap()
-        {
-            Response::CertifyKey(resp) => resp,
-            _ => panic!("Wrong response type."),
-        };
-        assert_ne!(certify_resp.cert_size, 0);
+            let certify_resp = match certify_cmd
+                .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
+                .unwrap()
+            {
+                Response::CertifyKey(resp) => resp,
+                _ => panic!("Wrong response type."),
+            };
+            assert_ne!(certify_resp.cert_size, 0);
 
-        let mut parser = X509CertificateParser::new().with_deep_parse_extensions(false);
-        match parser.parse(&certify_resp.cert[..certify_resp.cert_size.try_into().unwrap()]) {
-            Ok((_, cert)) => {
-                assert_eq!(cert.version(), X509Version::V3);
-            }
-            Err(e) => panic!("x509 parsing failed: {:?}", e),
-        };
+            let mut parser = X509CertificateParser::new().with_deep_parse_extensions(true);
+            match parser.parse(&certify_resp.cert[..certify_resp.cert_size.try_into().unwrap()]) {
+                Ok((_, cert)) => {
+                    assert_eq!(cert.version(), X509Version::V3);
+                    for ext in cert.iter_extensions() {
+                        if ext.parsed_extension().unsupported() {
+                            assert_eq!(ext.critical, mark_dice_extensions_critical);
+                        }
+                    }
+                }
+                Err(e) => panic!("x509 parsing failed: {:?}", e),
+            };
+        }
     }
 
     #[test]
     fn test_certify_key_csr() {
-        CfiCounter::reset_for_test();
-        let mut env = DpeEnv::<TestTypes> {
-            crypto: OpensslCrypto::new(),
-            platform: DefaultPlatform,
-        };
-        let mut dpe = DpeInstance::new(&mut env, Support::CSR).unwrap();
-
-        let init_resp = match InitCtxCmd::new_use_default()
-            .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
-            .unwrap()
-        {
-            Response::InitCtx(resp) => resp,
-            _ => panic!("Incorrect return type."),
-        };
-        let certify_cmd = CertifyKeyCmd {
-            handle: init_resp.handle,
-            flags: CertifyKeyFlags::empty(),
-            label: [0; DPE_PROFILE.get_hash_size()],
-            format: CertifyKeyCmd::FORMAT_CSR,
-        };
-
-        let certify_resp = match certify_cmd
-            .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
-            .unwrap()
-        {
-            Response::CertifyKey(resp) => resp,
-            _ => panic!("Wrong response type."),
-        };
-        assert_ne!(certify_resp.cert_size, 0);
-
-        // parse CMS ContentInfo
-        let content_info =
-            ContentInfo::from_der(&certify_resp.cert[..certify_resp.cert_size.try_into().unwrap()])
-                .unwrap();
-        // parse SignedData
-        let mut signed_data =
-            SignedData::from_der(&content_info.content.to_der().unwrap()).unwrap();
-        assert_eq!(signed_data.version, CmsVersion::V1);
-
-        // optional field certificates is not populated
-        assert!(signed_data.certificates.is_none());
-        // optional field crls is not populated
-        assert!(signed_data.crls.is_none());
-
-        // validate hash algorithm OID
-        assert_eq!(signed_data.digest_algorithms.len(), 1);
-        let digest_alg = &signed_data.digest_algorithms.get(0).unwrap();
-        let hash_alg_oid = match DPE_PROFILE.alg_len() {
-            AlgLen::Bit256 => "2.16.840.1.101.3.4.2.1",
-            AlgLen::Bit384 => "2.16.840.1.101.3.4.2.2",
-        };
-        assert!(digest_alg
-            .assert_algorithm_oid(ObjectIdentifier::new_unwrap(hash_alg_oid))
-            .is_ok());
-
-        // validate signer infos
-        let signer_infos = signed_data.signer_infos.0;
-        // ensure there is only 1 signer info
-        assert_eq!(signer_infos.len(), 1);
-        let signer_info = signer_infos.get(0).unwrap();
-        assert_eq!(signer_info.version, CmsVersion::V1);
-
-        // optional field signed_attrs is not populated
-        assert!(signer_info.signed_attrs.is_none());
-
-        // optional field unsigned_attrs is not populated
-        assert!(signer_info.unsigned_attrs.is_none());
-
-        // validate hash algorithm OID
-        assert!(signer_info
-            .digest_alg
-            .assert_algorithm_oid(ObjectIdentifier::new_unwrap(hash_alg_oid))
-            .is_ok());
-
-        // validate signature algorithm OID
-        let sig_alg_oid = match DPE_PROFILE.alg_len() {
-            AlgLen::Bit256 => "1.2.840.10045.4.3.2",
-            AlgLen::Bit384 => "1.2.840.10045.4.3.3",
-        };
-        assert!(signer_info
-            .signature_algorithm
-            .assert_algorithm_oid(ObjectIdentifier::new_unwrap(sig_alg_oid))
-            .is_ok());
-
-        // validate signer identifier
-        let sid = &signer_info.sid;
-        match sid {
-            SignerIdentifier::IssuerAndSerialNumber(issuer_and_serial_number) => {
-                let cert_serial_number = &issuer_and_serial_number.serial_number;
-                let cert_issuer_name = &issuer_and_serial_number.issuer.to_der().unwrap();
-
-                let platform::SignerIdentifier::IssuerAndSerialNumber {
-                    issuer_name,
-                    serial_number,
-                } = env.platform.get_signer_identifier().unwrap()
-                else {
-                    panic!("Error: Signer Identifier is not IssuerAndSerialNumber in default platform!")
-                };
-
-                assert_eq!(serial_number.as_bytes(), cert_serial_number.as_bytes());
-                assert_eq!(issuer_name.as_bytes(), cert_issuer_name.as_bytes())
-            }
-            _ => panic!("Error: Signer Identifier is not IssuerAndSerialNumber!"),
-        };
-
-        // parse encapsulated content info
-        let econtent_info = &mut signed_data.encap_content_info;
-        assert_eq!(
-            econtent_info.econtent_type.to_string(),
-            "1.2.840.113549.1.7.1"
-        );
-        // skip first 4 explicit encoding bytes
-        let econtent = &econtent_info.econtent.as_mut().unwrap().to_der().unwrap()[4..];
-
-        // validate csr signature with the alias key
-        let csr_digest = env.crypto.hash(DPE_PROFILE.alg_len(), econtent).unwrap();
-        let priv_key = match DPE_PROFILE.alg_len() {
-            AlgLen::Bit256 => EcKey::private_key_from_der(include_bytes!(
-                "../../../platform/src/test_data/key_256.der"
-            )),
-            AlgLen::Bit384 => EcKey::private_key_from_der(include_bytes!(
-                "../../../platform/src/test_data/key_384.der"
-            )),
-        }
-        .unwrap();
-        let curve = match DPE_PROFILE.alg_len() {
-            AlgLen::Bit256 => Nid::X9_62_PRIME256V1,
-            AlgLen::Bit384 => Nid::SECP384R1,
-        };
-        let group = &EcGroup::from_curve_name(curve).unwrap();
-        let alias_key = EcKey::from_public_key(group, priv_key.public_key()).unwrap();
-        let csr_sig = EcdsaSig::from_der(signer_info.signature.as_bytes()).unwrap();
-        assert!(csr_sig.verify(csr_digest.bytes(), &alias_key).unwrap());
-
-        // validate csr
-        let (_, csr) = X509CertificationRequest::from_der(econtent).unwrap();
-        let cri = csr.certification_request_info;
-        assert_eq!(cri.version.0, 0);
-        assert_eq!(
-            csr.signature_algorithm.algorithm.to_id_string(),
-            sig_alg_oid
-        );
-
-        // validate certification request info signature
-        let cri_sig = EcdsaSig::from_der(csr.signature_value.data.as_ref()).unwrap();
-
-        // validate certification request info subject pki
-        let PublicKey::EC(ec_point) = cri.subject_pki.parsed().unwrap() else {
-            panic!("Error: Failed to parse public key correctly.");
-        };
-        let pub_key_der = ec_point.data();
-        // skip first 0x04 der encoding byte
-        let x = BigNum::from_slice(&pub_key_der[1..DPE_PROFILE.get_ecc_int_size() + 1]).unwrap();
-        let y = BigNum::from_slice(&pub_key_der[DPE_PROFILE.get_ecc_int_size() + 1..]).unwrap();
-        let pub_key = EcKey::from_public_key_affine_coordinates(group, &x, &y).unwrap();
-
-        let cri_digest = env.crypto.hash(DPE_PROFILE.alg_len(), cri.raw).unwrap();
-        assert!(cri_sig.verify(cri_digest.bytes(), &pub_key).unwrap());
-
-        // validate subject_name
-        let mut subj_serial = [0u8; DPE_PROFILE.get_hash_size() * 2];
-        let pub_key = EcdsaPub {
-            x: CryptoBuf::new(&certify_resp.derived_pubkey_x).unwrap(),
-            y: CryptoBuf::new(&certify_resp.derived_pubkey_y).unwrap(),
-        };
-        env.crypto
-            .get_pubkey_serial(DPE_PROFILE.alg_len(), &pub_key, &mut subj_serial)
-            .unwrap();
-        let truncated_subj_serial = &subj_serial[..64];
-        let subject_name = Name {
-            cn: DirectoryString::PrintableString(b"DPE Leaf"),
-            serial: DirectoryString::PrintableString(truncated_subj_serial),
-        };
-        let expected_subject_name = format!(
-            "CN={}, serialNumber={}",
-            str::from_utf8(subject_name.cn.bytes()).unwrap(),
-            str::from_utf8(subject_name.serial.bytes()).unwrap()
-        );
-        let actual_subject_name = cri.subject.to_string_with_registry(oid_registry()).unwrap();
-        assert_eq!(expected_subject_name, actual_subject_name);
-
-        // validate attributes/extensions
-        let attributes = cri.attributes();
-        assert_eq!(attributes.len(), 1);
-        let attribute = attributes[0].parsed_attribute();
-        let ParsedCriAttribute::ExtensionRequest(extension_req) = attribute else {
-            panic!(
-                "Error: Certification Request Info does not have the Extension Request attribute!"
-            );
-        };
-        for extension in &extension_req.extensions {
-            match extension.parsed_extension() {
-                ParsedExtension::BasicConstraints(basic_constraints) => {
-                    assert!(!basic_constraints.ca);
-                }
-                ParsedExtension::KeyUsage(key_usage) => {
-                    assert!(KeyUsage::digital_signature(key_usage));
-                    assert!(!KeyUsage::key_cert_sign(key_usage));
-                }
-                ParsedExtension::ExtendedKeyUsage(extended_key_usage) => {
-                    // Expect tcg-dice-kp-eca OID (2.23.133.5.4.100.9)
-                    assert_eq!(extended_key_usage.other, [oid!(2.23.133 .5 .4 .100 .9)]);
-                }
-                ParsedExtension::UnsupportedExtension { oid } => {
-                    // Must be a UEID or MultiTcbInfo extension
-                    if *oid != oid!(2.23.133 .5 .4 .5) && *oid != oid!(2.23.133 .5 .4 .4) {
-                        panic!("Error: Unparsed extension has unexpected OID: {:?}", oid);
-                    }
-                }
-                _ => panic!(
-                    "Error: Unexpected extension found {:?}",
-                    extension.parsed_extension()
-                ),
+        // Verify that certify_key csr DICE extensions criticality matches the dpe_instance.
+        for mark_dice_extensions_critical in [true, false] {
+            CfiCounter::reset_for_test();
+            let mut env = DpeEnv::<TestTypes> {
+                crypto: OpensslCrypto::new(),
+                platform: DefaultPlatform,
             };
-            assert!(extension.critical);
+            let flags = {
+                let mut flags = DpeInstanceFlags::empty();
+                flags.set(
+                    DpeInstanceFlags::MARK_DICE_EXTENSIONS_CRITICAL,
+                    mark_dice_extensions_critical,
+                );
+                flags
+            };
+            let mut dpe = DpeInstance::new(&mut env, Support::CSR, flags).unwrap();
+
+            let init_resp = match InitCtxCmd::new_use_default()
+                .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
+                .unwrap()
+            {
+                Response::InitCtx(resp) => resp,
+                _ => panic!("Incorrect return type."),
+            };
+            let certify_cmd = CertifyKeyCmd {
+                handle: init_resp.handle,
+                flags: CertifyKeyFlags::empty(),
+                label: [0; DPE_PROFILE.get_hash_size()],
+                format: CertifyKeyCmd::FORMAT_CSR,
+            };
+
+            let certify_resp = match certify_cmd
+                .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
+                .unwrap()
+            {
+                Response::CertifyKey(resp) => resp,
+                _ => panic!("Wrong response type."),
+            };
+            assert_ne!(certify_resp.cert_size, 0);
+
+            // parse CMS ContentInfo
+            let content_info = ContentInfo::from_der(
+                &certify_resp.cert[..certify_resp.cert_size.try_into().unwrap()],
+            )
+            .unwrap();
+            // parse SignedData
+            let mut signed_data =
+                SignedData::from_der(&content_info.content.to_der().unwrap()).unwrap();
+            assert_eq!(signed_data.version, CmsVersion::V1);
+
+            // optional field certificates is not populated
+            assert!(signed_data.certificates.is_none());
+            // optional field crls is not populated
+            assert!(signed_data.crls.is_none());
+
+            // validate hash algorithm OID
+            assert_eq!(signed_data.digest_algorithms.len(), 1);
+            let digest_alg = &signed_data.digest_algorithms.get(0).unwrap();
+            let hash_alg_oid = match DPE_PROFILE.alg_len() {
+                AlgLen::Bit256 => "2.16.840.1.101.3.4.2.1",
+                AlgLen::Bit384 => "2.16.840.1.101.3.4.2.2",
+            };
+            assert!(digest_alg
+                .assert_algorithm_oid(ObjectIdentifier::new_unwrap(hash_alg_oid))
+                .is_ok());
+
+            // validate signer infos
+            let signer_infos = signed_data.signer_infos.0;
+            // ensure there is only 1 signer info
+            assert_eq!(signer_infos.len(), 1);
+            let signer_info = signer_infos.get(0).unwrap();
+            assert_eq!(signer_info.version, CmsVersion::V1);
+
+            // optional field signed_attrs is not populated
+            assert!(signer_info.signed_attrs.is_none());
+
+            // optional field unsigned_attrs is not populated
+            assert!(signer_info.unsigned_attrs.is_none());
+
+            // validate hash algorithm OID
+            assert!(signer_info
+                .digest_alg
+                .assert_algorithm_oid(ObjectIdentifier::new_unwrap(hash_alg_oid))
+                .is_ok());
+
+            // validate signature algorithm OID
+            let sig_alg_oid = match DPE_PROFILE.alg_len() {
+                AlgLen::Bit256 => "1.2.840.10045.4.3.2",
+                AlgLen::Bit384 => "1.2.840.10045.4.3.3",
+            };
+            assert!(signer_info
+                .signature_algorithm
+                .assert_algorithm_oid(ObjectIdentifier::new_unwrap(sig_alg_oid))
+                .is_ok());
+
+            // validate signer identifier
+            let sid = &signer_info.sid;
+            match sid {
+                SignerIdentifier::IssuerAndSerialNumber(issuer_and_serial_number) => {
+                    let cert_serial_number = &issuer_and_serial_number.serial_number;
+                    let cert_issuer_name = &issuer_and_serial_number.issuer.to_der().unwrap();
+
+                    let platform::SignerIdentifier::IssuerAndSerialNumber {
+                        issuer_name,
+                        serial_number,
+                    } = env.platform.get_signer_identifier().unwrap()
+                    else {
+                        panic!("Error: Signer Identifier is not IssuerAndSerialNumber in default platform!")
+                    };
+
+                    assert_eq!(serial_number.as_bytes(), cert_serial_number.as_bytes());
+                    assert_eq!(issuer_name.as_bytes(), cert_issuer_name.as_bytes())
+                }
+                _ => panic!("Error: Signer Identifier is not IssuerAndSerialNumber!"),
+            };
+
+            // parse encapsulated content info
+            let econtent_info = &mut signed_data.encap_content_info;
+            assert_eq!(
+                econtent_info.econtent_type.to_string(),
+                "1.2.840.113549.1.7.1"
+            );
+            // skip first 4 explicit encoding bytes
+            let econtent = &econtent_info.econtent.as_mut().unwrap().to_der().unwrap()[4..];
+
+            // validate csr signature with the alias key
+            let csr_digest = env.crypto.hash(DPE_PROFILE.alg_len(), econtent).unwrap();
+            let priv_key = match DPE_PROFILE.alg_len() {
+                AlgLen::Bit256 => EcKey::private_key_from_der(include_bytes!(
+                    "../../../platform/src/test_data/key_256.der"
+                )),
+                AlgLen::Bit384 => EcKey::private_key_from_der(include_bytes!(
+                    "../../../platform/src/test_data/key_384.der"
+                )),
+            }
+            .unwrap();
+            let curve = match DPE_PROFILE.alg_len() {
+                AlgLen::Bit256 => Nid::X9_62_PRIME256V1,
+                AlgLen::Bit384 => Nid::SECP384R1,
+            };
+            let group = &EcGroup::from_curve_name(curve).unwrap();
+            let alias_key = EcKey::from_public_key(group, priv_key.public_key()).unwrap();
+            let csr_sig = EcdsaSig::from_der(signer_info.signature.as_bytes()).unwrap();
+            assert!(csr_sig.verify(csr_digest.bytes(), &alias_key).unwrap());
+
+            // validate csr
+            let (_, csr) = X509CertificationRequest::from_der(econtent).unwrap();
+            let cri = csr.certification_request_info;
+            assert_eq!(cri.version.0, 0);
+            assert_eq!(
+                csr.signature_algorithm.algorithm.to_id_string(),
+                sig_alg_oid
+            );
+
+            // validate certification request info signature
+            let cri_sig = EcdsaSig::from_der(csr.signature_value.data.as_ref()).unwrap();
+
+            // validate certification request info subject pki
+            let PublicKey::EC(ec_point) = cri.subject_pki.parsed().unwrap() else {
+                panic!("Error: Failed to parse public key correctly.");
+            };
+            let pub_key_der = ec_point.data();
+            // skip first 0x04 der encoding byte
+            let x =
+                BigNum::from_slice(&pub_key_der[1..DPE_PROFILE.get_ecc_int_size() + 1]).unwrap();
+            let y = BigNum::from_slice(&pub_key_der[DPE_PROFILE.get_ecc_int_size() + 1..]).unwrap();
+            let pub_key = EcKey::from_public_key_affine_coordinates(group, &x, &y).unwrap();
+
+            let cri_digest = env.crypto.hash(DPE_PROFILE.alg_len(), cri.raw).unwrap();
+            assert!(cri_sig.verify(cri_digest.bytes(), &pub_key).unwrap());
+
+            // validate subject_name
+            let mut subj_serial = [0u8; DPE_PROFILE.get_hash_size() * 2];
+            let pub_key = EcdsaPub {
+                x: CryptoBuf::new(&certify_resp.derived_pubkey_x).unwrap(),
+                y: CryptoBuf::new(&certify_resp.derived_pubkey_y).unwrap(),
+            };
+            env.crypto
+                .get_pubkey_serial(DPE_PROFILE.alg_len(), &pub_key, &mut subj_serial)
+                .unwrap();
+            let truncated_subj_serial = &subj_serial[..64];
+            let subject_name = Name {
+                cn: DirectoryString::PrintableString(b"DPE Leaf"),
+                serial: DirectoryString::PrintableString(truncated_subj_serial),
+            };
+            let expected_subject_name = format!(
+                "CN={}, serialNumber={}",
+                str::from_utf8(subject_name.cn.bytes()).unwrap(),
+                str::from_utf8(subject_name.serial.bytes()).unwrap()
+            );
+            let actual_subject_name = cri.subject.to_string_with_registry(oid_registry()).unwrap();
+            assert_eq!(expected_subject_name, actual_subject_name);
+
+            // validate attributes/extensions
+            let attributes = cri.attributes();
+            assert_eq!(attributes.len(), 1);
+            let attribute = attributes[0].parsed_attribute();
+            let ParsedCriAttribute::ExtensionRequest(extension_req) = attribute else {
+                panic!(
+                    "Error: Certification Request Info does not have the Extension Request attribute!"
+                );
+            };
+            for extension in &extension_req.extensions {
+                match extension.parsed_extension() {
+                    ParsedExtension::BasicConstraints(basic_constraints) => {
+                        assert!(!basic_constraints.ca);
+                        assert!(extension.critical);
+                    }
+                    ParsedExtension::KeyUsage(key_usage) => {
+                        assert!(KeyUsage::digital_signature(key_usage));
+                        assert!(!KeyUsage::key_cert_sign(key_usage));
+                        assert!(extension.critical);
+                    }
+                    ParsedExtension::ExtendedKeyUsage(extended_key_usage) => {
+                        // Expect tcg-dice-kp-eca OID (2.23.133.5.4.100.9)
+                        assert_eq!(extended_key_usage.other, [oid!(2.23.133 .5 .4 .100 .9)]);
+                        assert!(extension.critical);
+                    }
+                    ParsedExtension::UnsupportedExtension { oid } => {
+                        // Must be a UEID or MultiTcbInfo extension
+                        if *oid != oid!(2.23.133 .5 .4 .5) && *oid != oid!(2.23.133 .5 .4 .4) {
+                            panic!("Error: Unparsed extension has unexpected OID: {:?}", oid);
+                        }
+                        assert_eq!(extension.critical, mark_dice_extensions_critical);
+                    }
+                    _ => panic!(
+                        "Error: Unexpected extension found {:?}",
+                        extension.parsed_extension()
+                    ),
+                };
+            }
         }
     }
 
@@ -474,7 +508,12 @@ mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe = DpeInstance::new(&mut env, Support::X509 | Support::AUTO_INIT).unwrap();
+        let mut dpe = DpeInstance::new(
+            &mut env,
+            Support::X509 | Support::AUTO_INIT,
+            DpeInstanceFlags::empty(),
+        )
+        .unwrap();
 
         // Derive context twice with different types
         let derive_cmd = DeriveContextCmd {

@@ -113,7 +113,10 @@ mod tests {
     use crate::{
         commands::{Command, CommandHdr},
         context::ContextState,
-        dpe_instance::tests::{TestTypes, TEST_LOCALITIES},
+        dpe_instance::{
+            tests::{TestTypes, TEST_LOCALITIES},
+            DpeInstanceFlags,
+        },
         support::Support,
     };
     use caliptra_cfi_lib_git::CfiCounter;
@@ -143,7 +146,8 @@ mod tests {
             crypto: OpensslCrypto::new(),
             platform: DefaultPlatform,
         };
-        let mut dpe = DpeInstance::new(&mut env, Support::default()).unwrap();
+        let mut dpe =
+            DpeInstance::new(&mut env, Support::default(), DpeInstanceFlags::empty()).unwrap();
 
         let handle = match InitCtxCmd::new_use_default()
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
@@ -174,7 +178,8 @@ mod tests {
         );
 
         // Change to support simulation.
-        let mut dpe = DpeInstance::new(&mut env, Support::SIMULATION).unwrap();
+        let mut dpe =
+            DpeInstance::new(&mut env, Support::SIMULATION, DpeInstanceFlags::empty()).unwrap();
 
         // Try setting both flags.
         assert_eq!(

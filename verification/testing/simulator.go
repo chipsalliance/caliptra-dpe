@@ -42,6 +42,11 @@ func GetSimulatorTargets() []TestTarget {
 		},
 		{
 			"DefaultSupport",
+			getTestTarget([]string{"AutoInit", "Simulation", "X509", "Csr", "RotateContext", "Recursive", "RetainParentContext", "DpeInstanceMarkDiceExtensionsCritical"}),
+			AllTestCases,
+		},
+		{
+			"DefaultSupportNonCriticalDiceExtensions",
 			getTestTarget([]string{"AutoInit", "Simulation", "X509", "Csr", "RotateContext", "Recursive", "RetainParentContext"}),
 			AllTestCases,
 		},
@@ -122,6 +127,11 @@ func GetSimulatorTargets() []TestTarget {
 		},
 		{
 			"TestDeriveContextCdiExport",
+			getTestTarget([]string{"AutoInit", "CdiExport", "DpeInstanceMarkDiceExtensionsCritical"}),
+			[]TestCase{TestDeriveContextCdiExportTestCase},
+		},
+		{
+			"TestDeriveContextCdiExportNonCritical",
 			getTestTarget([]string{"AutoInit", "CdiExport"}),
 			[]TestCase{TestDeriveContextCdiExportTestCase},
 		},
@@ -152,12 +162,12 @@ func GetSimulatorTargets() []TestTarget {
 		},
 		{
 			"DeriveContext_Recursive",
-			getTestTarget([]string{"AutoInit", "Recursive", "X509"}),
+			getTestTarget([]string{"AutoInit", "Recursive", "X509", "DpeInstanceMarkDiceExtensionsCritical"}),
 			[]TestCase{DeriveContextRecursiveTestCase},
 		},
 		{
 			"DeriveContext_RecursiveOnDerivedContexts",
-			getTestTarget([]string{"AutoInit", "Recursive", "RetainParentContext", "X509", "RotateContext"}),
+			getTestTarget([]string{"AutoInit", "Recursive", "RetainParentContext", "X509", "RotateContext", "DpeInstanceMarkDiceExtensionsCritical"}),
 			[]TestCase{DeriveContextRecursiveOnDerivedContextsTestCase},
 		},
 	}

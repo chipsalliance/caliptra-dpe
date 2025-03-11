@@ -35,6 +35,10 @@ type Support struct {
 	InternalDice        bool
 	RetainParentContext bool
 	CdiExport           bool
+	// Not a compile time feature but a runtime feature to determine if all DICE extensions
+	// should be marked as critical.
+	// It's passed to the caliptra simulator using this flag, but there is no real "Support" feature this maps to.
+	DpeInstanceMarkDiceExtensionsCritical bool
 }
 
 // profileCommandCodes holds command codes for a specific revision of the

@@ -1,6 +1,8 @@
 // Licensed under the Apache-2.0 license
 
+use dpe::dpe_instance::DpeInstanceFlags;
 use std::env;
+
 use {
     crypto::OpensslCrypto,
     dpe::commands::{
@@ -101,7 +103,7 @@ fn main() {
         platform: DefaultPlatform,
     };
 
-    let mut dpe = DpeInstance::new(&mut env, support).unwrap();
+    let mut dpe = DpeInstance::new(&mut env, support, DpeInstanceFlags::empty()).unwrap();
 
     add_tcb_info(
         &mut dpe,

@@ -5,7 +5,7 @@
 #[cfg(all(not(feature = "libfuzzer-sys"), not(feature = "afl")))]
 compile_error!("Either feature \"libfuzzer-sys\" or \"afl\" must be enabled!");
 
-use dpe::response::DpeErrorCode;
+use dpe::{dpe_instance::DpeInstanceFlags, response::DpeErrorCode};
 #[cfg(feature = "libfuzzer-sys")]
 use libfuzzer_sys::fuzz_target;
 
@@ -65,7 +65,7 @@ fn harness(data: &[u8]) {
         crypto: OpensslCrypto::new(),
         platform: DefaultPlatform,
     };
-    let mut dpe = DpeInstance::new(&mut env, SUPPORT).unwrap();
+    let mut dpe = DpeInstance::new(&mut env, SUPPORT, DpeInstanceFlags::empty()).unwrap();
     let prev_contexts = dpe.contexts;
 
     // Hard-code working locality
