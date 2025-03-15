@@ -217,16 +217,16 @@ type DeriveContextFlags uint32
 
 // Supported flags to DeriveContext
 const (
-	InternalInputInfo   DeriveContextFlags = 1 << 31
-	InternalInputDice   DeriveContextFlags = 1 << 30
-	RetainParentContext DeriveContextFlags = 1 << 29
-	MakeDefault         DeriveContextFlags = 1 << 28
-	ChangeLocality      DeriveContextFlags = 1 << 27
-	InputAllowCA        DeriveContextFlags = 1 << 26
-	InputAllowX509      DeriveContextFlags = 1 << 25
-	Recursive           DeriveContextFlags = 1 << 24
-	CdiExport           DeriveContextFlags = 1 << 23
-	CreateCertificate   DeriveContextFlags = 1 << 22
+	InternalInputInfo       DeriveContextFlags = 1 << 31
+	InternalInputDice       DeriveContextFlags = 1 << 30
+	RetainParentContext     DeriveContextFlags = 1 << 29
+	MakeDefault             DeriveContextFlags = 1 << 28
+	ChangeLocality          DeriveContextFlags = 1 << 27
+	AllowNewContextToExport DeriveContextFlags = 1 << 26
+	InputAllowX509          DeriveContextFlags = 1 << 25
+	Recursive               DeriveContextFlags = 1 << 24
+	CdiExport               DeriveContextFlags = 1 << 23
+	CreateCertificate       DeriveContextFlags = 1 << 22
 )
 
 // DeriveContextReq is the input request to DeriveContext
