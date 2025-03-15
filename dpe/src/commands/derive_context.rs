@@ -219,7 +219,6 @@ impl CommandExecution for DeriveContextCmd {
             || (self.exports_cdi() && !self.creates_certificate())
             || (self.exports_cdi() && self.is_recursive())
             || (self.exports_cdi() && self.changes_locality())
-            || (self.exports_cdi() && self.retains_parent())
             || (self.exports_cdi()
                 && dpe.contexts[parent_idx].context_type == ContextType::Simulation)
             || (self.is_recursive() && self.retains_parent())
@@ -248,15 +247,6 @@ impl CommandExecution for DeriveContextCmd {
             }
         }
 
-        // Copy the parent context to mutate so that we avoid mutating internal state upon an error.
-        let mut tmp_parent_context = dpe.contexts[parent_idx];
-        if !self.retains_parent() {
-            #[cfg(not(feature = "no-cfi"))]
-            cfi_assert!(!self.retains_parent());
-            tmp_parent_context.state = ContextState::Retired;
-            tmp_parent_context.handle = ContextHandle::new_invalid();
-        }
-
         if self.is_recursive() {
             cfg_if! {
                 if #[cfg(not(feature = "disable_recursive"))] {
@@ -283,17 +273,39 @@ impl CommandExecution for DeriveContextCmd {
                     };
 
                     // Return new handle in new_context_handle
-                    Ok(Response::DeriveContext(DeriveContextResp {
+                    return Ok(Response::DeriveContext(DeriveContextResp {
                         handle: dpe.contexts[parent_idx].handle,
                         // Should be ignored since retain_parent cannot be true
                         parent_handle: ContextHandle::default(),
                         resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
-                    }))
+                    }));
                 } else {
                     Err(DpeErrorCode::ArgumentNotSupported)?
                 }
             }
-        } else if self.creates_certificate() && self.exports_cdi() {
+        }
+
+        // Copy the parent context to mutate so that we avoid mutating internal state upon an error.
+        let mut tmp_parent_context = dpe.contexts[parent_idx];
+        if self.retains_parent() {
+            if !tmp_parent_context.handle.is_default() {
+                tmp_parent_context.handle = dpe.generate_new_handle(env)?;
+            } else {
+                cfg_if! {
+                    if #[cfg(not(feature = "no-cfi"))] {
+                        cfi_assert!(self.retains_parent());
+                        cfi_assert!(tmp_parent_context.handle.is_default());
+                    }
+                }
+            }
+        } else {
+            #[cfg(not(feature = "no-cfi"))]
+            cfi_assert!(!self.retains_parent());
+            tmp_parent_context.state = ContextState::Retired;
+            tmp_parent_context.handle = ContextHandle::new_invalid();
+        }
+
+        if self.creates_certificate() && self.exports_cdi() {
             cfg_if! {
                 if #[cfg(not(feature = "disable_export_cdi"))] {
                     let ueid = &env.platform.get_ueid()?;
@@ -315,9 +327,12 @@ impl CommandExecution for DeriveContextCmd {
                         &mut cert,
                     )?;
 
-                    Ok(Response::DeriveContextExportedCdi(DeriveContextExportedCdiResp {
+                    // At this point we cannot error out anymore, so it is safe to set the updated child and parent contexts.
+                    dpe.contexts[parent_idx] = tmp_parent_context;
+
+                    return Ok(Response::DeriveContextExportedCdi(DeriveContextExportedCdiResp {
                         handle: ContextHandle::new_invalid(),
-                        parent_handle: ContextHandle::new_invalid(),
+                        parent_handle: dpe.contexts[parent_idx].handle,
                         resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
                         exported_cdi: exported_cdi_handle,
                         certificate_size: cert_size,
@@ -327,80 +342,67 @@ impl CommandExecution for DeriveContextCmd {
                     Err(DpeErrorCode::ArgumentNotSupported)?
                 }
             }
-        } else {
-            let child_idx = dpe
-                .get_next_inactive_context_pos()
-                .ok_or(DpeErrorCode::MaxTcis)?;
-
-            let safe_to_make_child = self.safe_to_make_child(dpe, parent_idx, target_locality)?;
-            if !safe_to_make_child {
-                return Err(DpeErrorCode::InvalidArgument);
-            } else {
-                #[cfg(not(feature = "no-cfi"))]
-                cfi_assert!(safe_to_make_child);
-            }
-
-            let child_handle = if self.makes_default() {
-                #[cfg(not(feature = "no-cfi"))]
-                cfi_assert!(self.makes_default());
-                ContextHandle::default()
-            } else {
-                #[cfg(not(feature = "no-cfi"))]
-                cfi_assert!(!self.makes_default());
-                dpe.generate_new_handle(env)?
-            };
-
-            let allow_x509 = self.allows_x509();
-            let uses_internal_input_info = self.uses_internal_info_input();
-            let uses_internal_input_dice = self.uses_internal_dice_input();
-
-            // Create a temporary context to mutate so that we avoid mutating internal state upon an error.
-            let mut tmp_child_context = Context::new();
-            tmp_child_context.activate(&ActiveContextArgs {
-                context_type: dpe.contexts[parent_idx].context_type,
-                locality: target_locality,
-                handle: &child_handle,
-                tci_type: self.tci_type,
-                parent_idx: parent_idx as u8,
-                allow_x509,
-                uses_internal_input_info,
-                uses_internal_input_dice,
-            });
-
-            dpe.add_tci_measurement(
-                env,
-                &mut tmp_child_context,
-                &TciMeasurement(self.data),
-                target_locality,
-            )?;
-
-            if self.retains_parent() {
-                if !tmp_parent_context.handle.is_default() {
-                    tmp_parent_context.handle = dpe.generate_new_handle(env)?;
-                } else {
-                    cfg_if! {
-                        if #[cfg(not(feature = "no-cfi"))] {
-                            cfi_assert!(self.retains_parent());
-                            cfi_assert!(tmp_parent_context.handle.is_default());
-                        }
-                    }
-                }
-            }
-
-            // Add child to the parent's list of children.
-            let children_with_child_idx = tmp_parent_context.add_child(child_idx)?;
-            tmp_parent_context.children = children_with_child_idx;
-
-            // At this point we cannot error out anymore, so it is safe to set the updated child and parent contexts.
-            dpe.contexts[child_idx] = tmp_child_context;
-            dpe.contexts[parent_idx] = tmp_parent_context;
-
-            Ok(Response::DeriveContext(DeriveContextResp {
-                handle: child_handle,
-                parent_handle: dpe.contexts[parent_idx].handle,
-                resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
-            }))
         }
+
+        let child_idx = dpe
+            .get_next_inactive_context_pos()
+            .ok_or(DpeErrorCode::MaxTcis)?;
+
+        let safe_to_make_child = self.safe_to_make_child(dpe, parent_idx, target_locality)?;
+        if !safe_to_make_child {
+            return Err(DpeErrorCode::InvalidArgument);
+        } else {
+            #[cfg(not(feature = "no-cfi"))]
+            cfi_assert!(safe_to_make_child);
+        }
+
+        let child_handle = if self.makes_default() {
+            #[cfg(not(feature = "no-cfi"))]
+            cfi_assert!(self.makes_default());
+            ContextHandle::default()
+        } else {
+            #[cfg(not(feature = "no-cfi"))]
+            cfi_assert!(!self.makes_default());
+            dpe.generate_new_handle(env)?
+        };
+
+        let allow_x509 = self.allows_x509();
+        let uses_internal_input_info = self.uses_internal_info_input();
+        let uses_internal_input_dice = self.uses_internal_dice_input();
+
+        // Create a temporary context to mutate so that we avoid mutating internal state upon an error.
+        let mut tmp_child_context = Context::new();
+        tmp_child_context.activate(&ActiveContextArgs {
+            context_type: dpe.contexts[parent_idx].context_type,
+            locality: target_locality,
+            handle: &child_handle,
+            tci_type: self.tci_type,
+            parent_idx: parent_idx as u8,
+            allow_x509,
+            uses_internal_input_info,
+            uses_internal_input_dice,
+        });
+
+        dpe.add_tci_measurement(
+            env,
+            &mut tmp_child_context,
+            &TciMeasurement(self.data),
+            target_locality,
+        )?;
+
+        // Add child to the parent's list of children.
+        let children_with_child_idx = tmp_parent_context.add_child(child_idx)?;
+        tmp_parent_context.children = children_with_child_idx;
+
+        // At this point we cannot error out anymore, so it is safe to set the updated child and parent contexts.
+        dpe.contexts[child_idx] = tmp_child_context;
+        dpe.contexts[parent_idx] = tmp_parent_context;
+
+        Ok(Response::DeriveContext(DeriveContextResp {
+            handle: child_handle,
+            parent_handle: dpe.contexts[parent_idx].handle,
+            resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
+        }))
     }
 }
 
@@ -865,8 +867,14 @@ mod tests {
         else {
             panic!("Derive Child Failed");
         };
-        assert_eq!(handle, RANDOM_HANDLE);
-        assert_eq!(handle, RANDOM_HANDLE);
+
+        let next_random_handle = ContextHandle([
+            112, 83, 173, 43, 197, 57, 135, 119, 186, 3, 155, 37, 142, 89, 173, 157,
+        ]);
+
+        // parent_handle is the first rotated handle, so it gets the RANDOM_HANDLE.
+        assert_eq!(parent_handle, RANDOM_HANDLE);
+        assert_eq!(handle, next_random_handle);
         assert_ne!(parent_handle, ContextHandle::default());
         assert_eq!(resp_hdr, ResponseHdr::new(DpeErrorCode::NoError));
     }
@@ -1232,6 +1240,95 @@ mod tests {
             }
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         );
+
+        // New ENV so the exported-cdi slot is clear.
+        let mut env = DpeEnv::<TestTypes> {
+            crypto: OpensslCrypto::new(),
+            platform: DefaultPlatform,
+        };
+        dpe = DpeInstance::new(
+            &mut env,
+            Support::AUTO_INIT
+                | Support::CDI_EXPORT
+                | Support::X509
+                | Support::RETAIN_PARENT_CONTEXT,
+            DpeInstanceFlags::empty(),
+        )
+        .unwrap();
+
+        let Ok(Response::DeriveContext(DeriveContextResp { handle, .. })) = DeriveContextCmd {
+            handle: ContextHandle::default(),
+            data: [0; DPE_PROFILE.get_tci_size()],
+            flags: DeriveContextFlags::empty(),
+            tci_type: 0,
+            target_locality: TEST_LOCALITIES[0],
+        }
+        .execute(&mut dpe, &mut env, TEST_LOCALITIES[0]) else {
+            panic!("exptected a valid DeriveContextResp");
+        };
+
+        let res = DeriveContextCmd {
+            handle,
+            data: [0; DPE_PROFILE.get_tci_size()],
+            flags: DeriveContextFlags::EXPORT_CDI
+                | DeriveContextFlags::CREATE_CERTIFICATE
+                | DeriveContextFlags::RETAIN_PARENT_CONTEXT,
+            tci_type: 0,
+            target_locality: TEST_LOCALITIES[0],
+        }
+        .execute(&mut dpe, &mut env, TEST_LOCALITIES[0]);
+
+        // When `DeriveContextFlags::RETAIN_PARENT_CONTEXT` a new handle to the parent should be
+        // returned.
+        let res = match res {
+            Ok(Response::DeriveContextExportedCdi(res)) => res,
+            Err(e) => panic!("{:?}", e),
+            _ => panic!("expected to get a valid DeriveContextExportedCdi response."),
+        };
+        assert_ne!(res.parent_handle, ContextHandle::new_invalid());
+        assert_ne!(res.parent_handle, ContextHandle::default());
+        assert_eq!(res.handle, ContextHandle::new_invalid());
+        assert_ne!(res.certificate_size, 0);
+        assert_ne!(res.new_certificate, [0; MAX_CERT_SIZE]);
+        assert_ne!(res.exported_cdi, [0; MAX_EXPORTED_CDI_SIZE]);
+
+        // New ENV so the exported-cdi slot is clear.
+        let mut env = DpeEnv::<TestTypes> {
+            crypto: OpensslCrypto::new(),
+            platform: DefaultPlatform,
+        };
+        dpe = DpeInstance::new(
+            &mut env,
+            Support::AUTO_INIT
+                | Support::CDI_EXPORT
+                | Support::X509
+                | Support::RETAIN_PARENT_CONTEXT,
+            DpeInstanceFlags::empty(),
+        )
+        .unwrap();
+
+        // When `DeriveContextFlags::RETAIN_PARENT_CONTEXT` a new handle to the parent should be
+        // returned. If the default handle was used, it should be the default handle.
+        let res = DeriveContextCmd {
+            handle: ContextHandle::default(),
+            data: [0; DPE_PROFILE.get_tci_size()],
+            flags: DeriveContextFlags::EXPORT_CDI
+                | DeriveContextFlags::CREATE_CERTIFICATE
+                | DeriveContextFlags::RETAIN_PARENT_CONTEXT,
+            tci_type: 0,
+            target_locality: TEST_LOCALITIES[0],
+        }
+        .execute(&mut dpe, &mut env, TEST_LOCALITIES[0]);
+
+        let res = match res {
+            Ok(Response::DeriveContextExportedCdi(res)) => res,
+            _ => panic!("expected to get a valid DeriveContextExportedCdi response."),
+        };
+        assert_eq!(res.parent_handle, ContextHandle::default());
+        assert_eq!(res.handle, ContextHandle::new_invalid());
+        assert_ne!(res.certificate_size, 0);
+        assert_ne!(res.new_certificate, [0; MAX_CERT_SIZE]);
+        assert_ne!(res.exported_cdi, [0; MAX_EXPORTED_CDI_SIZE]);
     }
 
     #[test]
