@@ -57,7 +57,7 @@ bitflags! {
 )]
 pub struct DeriveContextCmd {
     pub handle: ContextHandle,
-    pub data: [u8; DPE_PROFILE.get_hash_size()],
+    pub data: [u8; DPE_PROFILE.hash_size()],
     pub flags: DeriveContextFlags,
     pub tci_type: u32,
     pub target_locality: u32,
@@ -490,7 +490,7 @@ mod tests {
             Err(DpeErrorCode::ArgumentNotSupported),
             DeriveContextCmd {
                 handle: ContextHandle::default(),
-                data: [0; DPE_PROFILE.get_tci_size()],
+                data: [0; DPE_PROFILE.tci_size()],
                 flags: DeriveContextFlags::INTERNAL_INPUT_DICE,
                 tci_type: 0,
                 target_locality: 0
@@ -509,7 +509,7 @@ mod tests {
             Err(DpeErrorCode::ArgumentNotSupported),
             DeriveContextCmd {
                 handle: ContextHandle::default(),
-                data: [0; DPE_PROFILE.get_tci_size()],
+                data: [0; DPE_PROFILE.tci_size()],
                 flags: DeriveContextFlags::INTERNAL_INPUT_INFO,
                 tci_type: 0,
                 target_locality: 0
@@ -528,7 +528,7 @@ mod tests {
             Err(DpeErrorCode::ArgumentNotSupported),
             DeriveContextCmd {
                 handle: ContextHandle::default(),
-                data: [0; DPE_PROFILE.get_tci_size()],
+                data: [0; DPE_PROFILE.tci_size()],
                 flags: DeriveContextFlags::RETAIN_PARENT_CONTEXT,
                 tci_type: 0,
                 target_locality: 0
@@ -556,7 +556,7 @@ mod tests {
             Err(DpeErrorCode::InvalidLocality),
             DeriveContextCmd {
                 handle: ContextHandle::default(),
-                data: [0; DPE_PROFILE.get_tci_size()],
+                data: [0; DPE_PROFILE.tci_size()],
                 flags: DeriveContextFlags::empty(),
                 tci_type: 0,
                 target_locality: 0
@@ -579,7 +579,7 @@ mod tests {
         for _ in 0..MAX_HANDLES - 1 {
             DeriveContextCmd {
                 handle: ContextHandle::default(),
-                data: [0; DPE_PROFILE.get_tci_size()],
+                data: [0; DPE_PROFILE.tci_size()],
                 flags: DeriveContextFlags::MAKE_DEFAULT,
                 tci_type: 0,
                 target_locality: 0,
@@ -593,7 +593,7 @@ mod tests {
             Err(DpeErrorCode::MaxTcis),
             DeriveContextCmd {
                 handle: ContextHandle::default(),
-                data: [0; DPE_PROFILE.get_tci_size()],
+                data: [0; DPE_PROFILE.tci_size()],
                 flags: DeriveContextFlags::empty(),
                 tci_type: 0,
                 target_locality: 0
@@ -617,7 +617,7 @@ mod tests {
             .unwrap();
         DeriveContextCmd {
             handle: ContextHandle::default(),
-            data: [0; DPE_PROFILE.get_tci_size()],
+            data: [0; DPE_PROFILE.tci_size()],
             flags: DeriveContextFlags::MAKE_DEFAULT | DeriveContextFlags::CHANGE_LOCALITY,
             tci_type: 7,
             target_locality: TEST_LOCALITIES[1],
@@ -650,7 +650,7 @@ mod tests {
 
         DeriveContextCmd {
             handle: ContextHandle::default(),
-            data: [0; DPE_PROFILE.get_tci_size()],
+            data: [0; DPE_PROFILE.tci_size()],
             flags: DeriveContextFlags::MAKE_DEFAULT | DeriveContextFlags::CHANGE_LOCALITY,
             tci_type: 7,
             target_locality: TEST_LOCALITIES[1],
@@ -686,7 +686,7 @@ mod tests {
             })),
             DeriveContextCmd {
                 handle: ContextHandle::default(),
-                data: [0; DPE_PROFILE.get_tci_size()],
+                data: [0; DPE_PROFILE.tci_size()],
                 flags: DeriveContextFlags::MAKE_DEFAULT,
                 tci_type: 0,
                 target_locality: 0,
@@ -703,7 +703,7 @@ mod tests {
             })),
             DeriveContextCmd {
                 handle: ContextHandle::default(),
-                data: [0; DPE_PROFILE.get_tci_size()],
+                data: [0; DPE_PROFILE.tci_size()],
                 flags: DeriveContextFlags::empty(),
                 tci_type: 0,
                 target_locality: 0,
@@ -743,7 +743,7 @@ mod tests {
 
         let parent_handle = match (DeriveContextCmd {
             handle,
-            data: [0; DPE_PROFILE.get_tci_size()],
+            data: [0; DPE_PROFILE.tci_size()],
             flags: DeriveContextFlags::RETAIN_PARENT_CONTEXT,
             tci_type: 0,
             target_locality: 0,
@@ -777,7 +777,7 @@ mod tests {
 
         let parent_handle = match (DeriveContextCmd {
             handle: new_context_handle,
-            data: [0; DPE_PROFILE.get_tci_size()],
+            data: [0; DPE_PROFILE.tci_size()],
             flags: DeriveContextFlags::RETAIN_PARENT_CONTEXT
                 | DeriveContextFlags::INTERNAL_INPUT_INFO,
             tci_type: 0,
@@ -833,7 +833,7 @@ mod tests {
             })),
             DeriveContextCmd {
                 handle: ContextHandle::default(),
-                data: [0; DPE_PROFILE.get_tci_size()],
+                data: [0; DPE_PROFILE.tci_size()],
                 flags: DeriveContextFlags::MAKE_DEFAULT,
                 tci_type: 0,
                 target_locality: 0,
@@ -850,7 +850,7 @@ mod tests {
             })),
             DeriveContextCmd {
                 handle: ContextHandle::default(),
-                data: [0; DPE_PROFILE.get_tci_size()],
+                data: [0; DPE_PROFILE.tci_size()],
                 flags: DeriveContextFlags::RETAIN_PARENT_CONTEXT
                     | DeriveContextFlags::MAKE_DEFAULT
                     | DeriveContextFlags::CHANGE_LOCALITY,
@@ -876,7 +876,7 @@ mod tests {
             ..
         }) = DeriveContextCmd {
             handle: dpe.contexts[old_default_idx].handle,
-            data: [0; DPE_PROFILE.get_tci_size()],
+            data: [0; DPE_PROFILE.tci_size()],
             flags: DeriveContextFlags::RETAIN_PARENT_CONTEXT,
             tci_type: 0,
             target_locality: 0,
@@ -1000,7 +1000,7 @@ mod tests {
 
         DeriveContextCmd {
             handle: ContextHandle::default(),
-            data: [0; DPE_PROFILE.get_tci_size()],
+            data: [0; DPE_PROFILE.tci_size()],
             flags: DeriveContextFlags::RETAIN_PARENT_CONTEXT
                 | DeriveContextFlags::MAKE_DEFAULT
                 | DeriveContextFlags::CHANGE_LOCALITY,
@@ -1013,7 +1013,7 @@ mod tests {
         assert_eq!(
             DeriveContextCmd {
                 handle: ContextHandle::default(),
-                data: [0; DPE_PROFILE.get_tci_size()],
+                data: [0; DPE_PROFILE.tci_size()],
                 flags: DeriveContextFlags::RETAIN_PARENT_CONTEXT
                     | DeriveContextFlags::CHANGE_LOCALITY,
                 tci_type: 7,
@@ -1049,7 +1049,7 @@ mod tests {
             })),
             DeriveContextCmd {
                 handle: ContextHandle::default(),
-                data: [1; DPE_PROFILE.get_tci_size()],
+                data: [1; DPE_PROFILE.tci_size()],
                 flags: DeriveContextFlags::MAKE_DEFAULT
                     | DeriveContextFlags::RECURSIVE
                     | DeriveContextFlags::INTERNAL_INPUT_INFO
@@ -1062,7 +1062,7 @@ mod tests {
 
         DeriveContextCmd {
             handle: ContextHandle::default(),
-            data: [2; DPE_PROFILE.get_tci_size()],
+            data: [2; DPE_PROFILE.tci_size()],
             flags: DeriveContextFlags::MAKE_DEFAULT
                 | DeriveContextFlags::RECURSIVE
                 | DeriveContextFlags::INTERNAL_INPUT_INFO
@@ -1085,14 +1085,12 @@ mod tests {
 
         // check tci_cumulative correctly computed
         let mut hasher = env.crypto.hash_initialize(DPE_PROFILE.alg_len()).unwrap();
-        hasher.update(&[0u8; DPE_PROFILE.get_hash_size()]).unwrap();
-        hasher.update(&[1u8; DPE_PROFILE.get_hash_size()]).unwrap();
+        hasher.update(&[0u8; DPE_PROFILE.hash_size()]).unwrap();
+        hasher.update(&[1u8; DPE_PROFILE.hash_size()]).unwrap();
         let temp_digest = hasher.finish().unwrap();
         let mut hasher_2 = env.crypto.hash_initialize(DPE_PROFILE.alg_len()).unwrap();
         hasher_2.update(temp_digest.bytes()).unwrap();
-        hasher_2
-            .update(&[2u8; DPE_PROFILE.get_hash_size()])
-            .unwrap();
+        hasher_2.update(&[2u8; DPE_PROFILE.hash_size()]).unwrap();
         let digest = hasher_2.finish().unwrap();
         assert_eq!(digest.bytes(), dpe.contexts[child_idx].tci.tci_cumulative.0);
     }
@@ -1122,7 +1120,7 @@ mod tests {
             Err(DpeErrorCode::InvalidArgument),
             DeriveContextCmd {
                 handle: ContextHandle::default(),
-                data: [0; DPE_PROFILE.get_tci_size()],
+                data: [0; DPE_PROFILE.tci_size()],
                 flags: DeriveContextFlags::EXPORT_CDI | DeriveContextFlags::CHANGE_LOCALITY,
                 tci_type: 0,
                 target_locality: TEST_LOCALITIES[1]
@@ -1133,7 +1131,7 @@ mod tests {
             Err(DpeErrorCode::InvalidArgument),
             DeriveContextCmd {
                 handle: ContextHandle::default(),
-                data: [0; DPE_PROFILE.get_tci_size()],
+                data: [0; DPE_PROFILE.tci_size()],
                 flags: DeriveContextFlags::EXPORT_CDI | DeriveContextFlags::RECURSIVE,
                 tci_type: 0,
                 target_locality: TEST_LOCALITIES[0]
@@ -1146,7 +1144,7 @@ mod tests {
             Err(DpeErrorCode::InvalidArgument),
             DeriveContextCmd {
                 handle: ContextHandle::default(),
-                data: [0; DPE_PROFILE.get_tci_size()],
+                data: [0; DPE_PROFILE.tci_size()],
                 flags: DeriveContextFlags::EXPORT_CDI | DeriveContextFlags::RETAIN_PARENT_CONTEXT,
                 tci_type: 0,
                 target_locality: TEST_LOCALITIES[0]
@@ -1166,7 +1164,7 @@ mod tests {
             Err(DpeErrorCode::InvalidArgument),
             DeriveContextCmd {
                 handle: simulation_handle,
-                data: [0; DPE_PROFILE.get_tci_size()],
+                data: [0; DPE_PROFILE.tci_size()],
                 flags: DeriveContextFlags::CREATE_CERTIFICATE | DeriveContextFlags::EXPORT_CDI,
                 tci_type: 0,
                 target_locality: TEST_LOCALITIES[0]
@@ -1179,7 +1177,7 @@ mod tests {
             Err(DpeErrorCode::InvalidArgument),
             DeriveContextCmd {
                 handle: ContextHandle::default(),
-                data: [0; DPE_PROFILE.get_tci_size()],
+                data: [0; DPE_PROFILE.tci_size()],
                 flags: DeriveContextFlags::CREATE_CERTIFICATE
                     | DeriveContextFlags::EXPORT_CDI
                     | DeriveContextFlags::RECURSIVE,
@@ -1199,7 +1197,7 @@ mod tests {
         // Happy case!
         let res = DeriveContextCmd {
             handle: ContextHandle::default(),
-            data: [0; DPE_PROFILE.get_tci_size()],
+            data: [0; DPE_PROFILE.tci_size()],
             flags: DeriveContextFlags::EXPORT_CDI | DeriveContextFlags::CREATE_CERTIFICATE,
             tci_type: 0,
             target_locality: 0,
@@ -1228,7 +1226,7 @@ mod tests {
             Err(DpeErrorCode::ArgumentNotSupported),
             DeriveContextCmd {
                 handle: ContextHandle::default(),
-                data: [0; DPE_PROFILE.get_tci_size()],
+                data: [0; DPE_PROFILE.tci_size()],
                 flags: DeriveContextFlags::CREATE_CERTIFICATE | DeriveContextFlags::EXPORT_CDI,
                 tci_type: 0,
                 target_locality: TEST_LOCALITIES[0]
@@ -1241,7 +1239,7 @@ mod tests {
             Err(DpeErrorCode::ArgumentNotSupported),
             DeriveContextCmd {
                 handle: ContextHandle::default(),
-                data: [0; DPE_PROFILE.get_tci_size()],
+                data: [0; DPE_PROFILE.tci_size()],
                 flags: DeriveContextFlags::EXPORT_CDI,
                 tci_type: 0,
                 target_locality: TEST_LOCALITIES[0]
@@ -1254,7 +1252,7 @@ mod tests {
             Err(DpeErrorCode::ArgumentNotSupported),
             DeriveContextCmd {
                 handle: ContextHandle::default(),
-                data: [0; DPE_PROFILE.get_tci_size()],
+                data: [0; DPE_PROFILE.tci_size()],
                 flags: DeriveContextFlags::CREATE_CERTIFICATE,
                 tci_type: 0,
                 target_locality: TEST_LOCALITIES[0]
@@ -1279,7 +1277,7 @@ mod tests {
 
         let Ok(Response::DeriveContext(DeriveContextResp { handle, .. })) = DeriveContextCmd {
             handle: ContextHandle::default(),
-            data: [0; DPE_PROFILE.get_tci_size()],
+            data: [0; DPE_PROFILE.tci_size()],
             flags: DeriveContextFlags::ALLOW_NEW_CONTEXT_TO_EXPORT,
             tci_type: 0,
             target_locality: TEST_LOCALITIES[0],
@@ -1290,7 +1288,7 @@ mod tests {
 
         let res = DeriveContextCmd {
             handle,
-            data: [0; DPE_PROFILE.get_tci_size()],
+            data: [0; DPE_PROFILE.tci_size()],
             flags: DeriveContextFlags::EXPORT_CDI
                 | DeriveContextFlags::CREATE_CERTIFICATE
                 | DeriveContextFlags::RETAIN_PARENT_CONTEXT,
@@ -1331,7 +1329,7 @@ mod tests {
         // returned. If the default handle was used, it should be the default handle.
         let res = DeriveContextCmd {
             handle: ContextHandle::default(),
-            data: [0; DPE_PROFILE.get_tci_size()],
+            data: [0; DPE_PROFILE.tci_size()],
             flags: DeriveContextFlags::EXPORT_CDI
                 | DeriveContextFlags::CREATE_CERTIFICATE
                 | DeriveContextFlags::RETAIN_PARENT_CONTEXT,
@@ -1361,7 +1359,7 @@ mod tests {
 
         let Ok(Response::DeriveContext(res)) = DeriveContextCmd {
             handle: ContextHandle::default(),
-            data: [0xA; DPE_PROFILE.get_tci_size()],
+            data: [0xA; DPE_PROFILE.tci_size()],
             flags: DeriveContextFlags::empty(),
             tci_type: 0,
             target_locality: TEST_LOCALITIES[0],
@@ -1375,7 +1373,7 @@ mod tests {
 
         let res = DeriveContextCmd {
             handle: res.handle,
-            data: [0; DPE_PROFILE.get_tci_size()],
+            data: [0; DPE_PROFILE.tci_size()],
             flags: DeriveContextFlags::EXPORT_CDI | DeriveContextFlags::CREATE_CERTIFICATE,
             tci_type: 0,
             target_locality: TEST_LOCALITIES[0],
@@ -1395,7 +1393,7 @@ mod tests {
 
         let Ok(Response::DeriveContext(res)) = DeriveContextCmd {
             handle: ContextHandle::default(),
-            data: [0xA; DPE_PROFILE.get_tci_size()],
+            data: [0xA; DPE_PROFILE.tci_size()],
             flags: DeriveContextFlags::empty(),
             tci_type: 0,
             target_locality: TEST_LOCALITIES[0],
@@ -1408,7 +1406,7 @@ mod tests {
 
         let res = DeriveContextCmd {
             handle: res.handle,
-            data: [0; DPE_PROFILE.get_tci_size()],
+            data: [0; DPE_PROFILE.tci_size()],
             flags: DeriveContextFlags::EXPORT_CDI
                 | DeriveContextFlags::CREATE_CERTIFICATE
                 | DeriveContextFlags::ALLOW_NEW_CONTEXT_TO_EXPORT,
@@ -1435,7 +1433,7 @@ mod tests {
 
         let res = DeriveContextCmd {
             handle: ContextHandle::default(),
-            data: [0xA; DPE_PROFILE.get_tci_size()],
+            data: [0xA; DPE_PROFILE.tci_size()],
             flags: DeriveContextFlags::MAKE_DEFAULT
                 | DeriveContextFlags::ALLOW_NEW_CONTEXT_TO_EXPORT,
             tci_type: 0,
@@ -1454,7 +1452,7 @@ mod tests {
 
         let res = DeriveContextCmd {
             handle: res.handle,
-            data: [0; DPE_PROFILE.get_tci_size()],
+            data: [0; DPE_PROFILE.tci_size()],
             flags: DeriveContextFlags::MAKE_DEFAULT
                 | DeriveContextFlags::EXPORT_CDI
                 | DeriveContextFlags::CREATE_CERTIFICATE,
@@ -1771,7 +1769,7 @@ mod tests {
             let derive_cmd = DeriveContextCmd {
                 handle: init_resp.handle,
                 flags: DeriveContextFlags::EXPORT_CDI | DeriveContextFlags::CREATE_CERTIFICATE,
-                data: [0; DPE_PROFILE.get_tci_size()],
+                data: [0; DPE_PROFILE.tci_size()],
                 tci_type: 0,
                 target_locality: TEST_LOCALITIES[0],
             };
