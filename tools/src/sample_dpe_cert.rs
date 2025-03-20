@@ -30,7 +30,7 @@ impl DpeTypes for TestTypes {
 fn add_tcb_info(
     dpe: &mut DpeInstance,
     env: &mut DpeEnv<TestTypes>,
-    data: &[u8; DPE_PROFILE.get_hash_size()],
+    data: &[u8; DPE_PROFILE.hash_size()],
     tci_type: u32,
 ) {
     let cmd = DeriveContextCmd {
@@ -61,7 +61,7 @@ fn certify_key(dpe: &mut DpeInstance, env: &mut DpeEnv<TestTypes>, format: u32) 
     let certify_key_cmd: CertifyKeyCmd = commands::CertifyKeyCmd {
         handle: ContextHandle::default(),
         flags: CertifyKeyFlags::empty(),
-        label: [0; DPE_PROFILE.get_hash_size()],
+        label: [0; DPE_PROFILE.hash_size()],
         format,
     };
     let cmd_body = certify_key_cmd.as_bytes().to_vec();
@@ -113,7 +113,7 @@ fn main() {
     add_tcb_info(
         &mut dpe,
         &mut env,
-        &[0; DPE_PROFILE.get_hash_size()],
+        &[0; DPE_PROFILE.hash_size()],
         u32::from_be_bytes(*b"TEST"),
     );
     let cert = certify_key(&mut dpe, &mut env, format);

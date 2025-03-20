@@ -78,17 +78,17 @@ pub enum DpeProfile {
 }
 
 impl DpeProfile {
-    pub const fn get_tci_size(&self) -> usize {
+    pub const fn tci_size(&self) -> usize {
         match self {
             DpeProfile::P256Sha256 => 32,
             DpeProfile::P384Sha384 => 48,
         }
     }
-    pub const fn get_ecc_int_size(&self) -> usize {
-        self.get_tci_size()
+    pub const fn ecc_int_size(&self) -> usize {
+        self.tci_size()
     }
-    pub const fn get_hash_size(&self) -> usize {
-        self.get_tci_size()
+    pub const fn hash_size(&self) -> usize {
+        self.tci_size()
     }
     pub const fn alg_len(&self) -> crypto::AlgLen {
         match self {
