@@ -135,7 +135,7 @@ impl DpeInstance {
         env: &mut DpeEnv<impl DpeTypes>,
         support: Support,
         tci_type: u32,
-        auto_init_measurement: [u8; DPE_PROFILE.get_hash_size()],
+        auto_init_measurement: [u8; DPE_PROFILE.hash_size()],
         flags: DpeInstanceFlags,
     ) -> Result<DpeInstance, DpeErrorCode> {
         let updated_support = support.preprocess_support();
@@ -689,7 +689,7 @@ pub mod tests {
         let mut dpe =
             DpeInstance::new(&mut env, Support::AUTO_INIT, DpeInstanceFlags::empty()).unwrap();
 
-        let data = [1; DPE_PROFILE.get_hash_size()];
+        let data = [1; DPE_PROFILE.hash_size()];
         let mut context = dpe.contexts[0];
         dpe.add_tci_measurement(
             &mut env,
@@ -703,14 +703,14 @@ pub mod tests {
 
         // Compute cumulative.
         let mut hasher = env.crypto.hash_initialize(DPE_PROFILE.alg_len()).unwrap();
-        hasher.update(&[0; DPE_PROFILE.get_hash_size()]).unwrap();
+        hasher.update(&[0; DPE_PROFILE.hash_size()]).unwrap();
         hasher.update(&data).unwrap();
         let first_cumulative = hasher.finish().unwrap();
 
         // Make sure the cumulative was computed correctly.
         assert_eq!(first_cumulative.bytes(), context.tci.tci_cumulative.0);
 
-        let data = [2; DPE_PROFILE.get_hash_size()];
+        let data = [2; DPE_PROFILE.hash_size()];
         dpe.add_tci_measurement(
             &mut env,
             &mut context,
@@ -802,7 +802,7 @@ pub mod tests {
         for i in 0..3 {
             DeriveContextCmd {
                 handle: ContextHandle::default(),
-                data: [i; DPE_PROFILE.get_hash_size()],
+                data: [i; DPE_PROFILE.hash_size()],
                 flags: DeriveContextFlags::MAKE_DEFAULT,
                 tci_type: i as u32,
                 target_locality: 0,
@@ -866,7 +866,7 @@ pub mod tests {
             .unwrap();
         DeriveContextCmd {
             handle: ContextHandle::default(),
-            data: [0; DPE_PROFILE.get_hash_size()],
+            data: [0; DPE_PROFILE.hash_size()],
             flags: DeriveContextFlags::MAKE_DEFAULT | DeriveContextFlags::INTERNAL_INPUT_INFO,
             tci_type: 0u32,
             target_locality: 0,
@@ -930,7 +930,7 @@ pub mod tests {
             .unwrap();
         DeriveContextCmd {
             handle: ContextHandle::default(),
-            data: [0; DPE_PROFILE.get_hash_size()],
+            data: [0; DPE_PROFILE.hash_size()],
             flags: DeriveContextFlags::MAKE_DEFAULT | DeriveContextFlags::INTERNAL_INPUT_DICE,
             tci_type: 0u32,
             target_locality: 0,
@@ -978,7 +978,7 @@ pub mod tests {
             platform: DEFAULT_PLATFORM,
         };
         let tci_type = 0xdeadbeef_u32;
-        let auto_init_measurement = [0x1; DPE_PROFILE.get_hash_size()];
+        let auto_init_measurement = [0x1; DPE_PROFILE.hash_size()];
         let auto_init_locality = env.platform.get_auto_init_locality().unwrap();
         let mut dpe = DpeInstance::new_auto_init(
             &mut env,

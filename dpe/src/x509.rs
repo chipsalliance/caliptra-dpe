@@ -2446,7 +2446,7 @@ fn create_dpe_cert_or_csr(
     }
     let (priv_key, pub_key) = key_pair?;
 
-    let mut subj_serial = [0u8; DPE_PROFILE.get_hash_size() * 2];
+    let mut subj_serial = [0u8; DPE_PROFILE.hash_size() * 2];
     let subject_name = get_subject_name(env, &pub_key, &mut subj_serial)?;
 
     const INITIALIZER: TciNodeData = TciNodeData::new();
@@ -2634,7 +2634,7 @@ pub(crate) mod tests {
 
     const TEST_ISSUER: Name = Name {
         cn: DirectoryString::PrintableString(b"Caliptra Alias"),
-        serial: DirectoryString::PrintableString(&[0x00; DPE_PROFILE.get_hash_size() * 2]),
+        serial: DirectoryString::PrintableString(&[0x00; DPE_PROFILE.hash_size() * 2]),
     };
 
     fn encode_test_issuer() -> Vec<u8> {
@@ -2684,7 +2684,7 @@ pub(crate) mod tests {
         let mut cert = [0u8; 256];
         let test_name = Name {
             cn: DirectoryString::PrintableString(b"Caliptra Alias"),
-            serial: DirectoryString::PrintableString(&[0x0u8; DPE_PROFILE.get_hash_size() * 2]),
+            serial: DirectoryString::PrintableString(&[0x0u8; DPE_PROFILE.hash_size() * 2]),
         };
 
         let mut w = CertWriter::new(&mut cert, true);
@@ -2730,8 +2730,8 @@ pub(crate) mod tests {
         let mut node = TciNodeData::new();
 
         node.tci_type = 0x11223344;
-        node.tci_cumulative = TciMeasurement([0xaau8; DPE_PROFILE.get_hash_size()]);
-        node.tci_current = TciMeasurement([0xbbu8; DPE_PROFILE.get_hash_size()]);
+        node.tci_cumulative = TciMeasurement([0xaau8; DPE_PROFILE.hash_size()]);
+        node.tci_current = TciMeasurement([0xbbu8; DPE_PROFILE.hash_size()]);
         node.locality = 0xFFFFFFFF;
 
         let mut cert = [0u8; 256];
@@ -2819,10 +2819,10 @@ pub(crate) mod tests {
 
         let test_subject_name = Name {
             cn: DirectoryString::PrintableString(b"DPE Leaf"),
-            serial: DirectoryString::PrintableString(&[0x00; DPE_PROFILE.get_hash_size() * 2]),
+            serial: DirectoryString::PrintableString(&[0x00; DPE_PROFILE.hash_size() * 2]),
         };
 
-        const ECC_INT_SIZE: usize = DPE_PROFILE.get_ecc_int_size();
+        const ECC_INT_SIZE: usize = DPE_PROFILE.ecc_int_size();
         let test_pub = EcdsaPub {
             x: CryptoBuf::new(&[0xAA; ECC_INT_SIZE]).unwrap(),
             y: CryptoBuf::new(&[0xBB; ECC_INT_SIZE]).unwrap(),
@@ -2831,7 +2831,7 @@ pub(crate) mod tests {
         let node = TciNodeData::new();
 
         let measurements = MeasurementData {
-            label: &[0xCC; DPE_PROFILE.get_hash_size()],
+            label: &[0xCC; DPE_PROFILE.hash_size()],
             tci_nodes: &[node],
             is_ca: false,
             supports_recursive: true,
@@ -2886,14 +2886,14 @@ pub(crate) mod tests {
     const TEST_SERIAL: &[u8] = &[0x1F; 20];
     const TEST_ISSUER_NAME: Name = Name {
         cn: DirectoryString::PrintableString(b"Caliptra Alias"),
-        serial: DirectoryString::PrintableString(&[0x00; DPE_PROFILE.get_hash_size() * 2]),
+        serial: DirectoryString::PrintableString(&[0x00; DPE_PROFILE.hash_size() * 2]),
     };
     const TEST_SUBJECT_NAME: Name = Name {
         cn: DirectoryString::PrintableString(b"DPE Leaf"),
-        serial: DirectoryString::PrintableString(&[0x00; DPE_PROFILE.get_hash_size() * 2]),
+        serial: DirectoryString::PrintableString(&[0x00; DPE_PROFILE.hash_size() * 2]),
     };
 
-    const ECC_INT_SIZE: usize = DPE_PROFILE.get_ecc_int_size();
+    const ECC_INT_SIZE: usize = DPE_PROFILE.ecc_int_size();
 
     const DEFAULT_OTHER_NAME_OID: &[u8] = &[0, 0, 0];
     const DEFAULT_OTHER_NAME_VALUE: &str = "default-other-name";
@@ -2929,7 +2929,7 @@ pub(crate) mod tests {
             other_name,
         });
         let measurements = MeasurementData {
-            label: &[0; DPE_PROFILE.get_hash_size()],
+            label: &[0; DPE_PROFILE.hash_size()],
             tci_nodes: &[node],
             is_ca,
             supports_recursive: true,

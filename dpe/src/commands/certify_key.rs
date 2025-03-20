@@ -44,7 +44,7 @@ pub struct CertifyKeyCmd {
     pub handle: ContextHandle,
     pub flags: CertifyKeyFlags,
     pub format: u32,
-    pub label: [u8; DPE_PROFILE.get_hash_size()],
+    pub label: [u8; DPE_PROFILE.hash_size()],
 }
 
 impl CertifyKeyCmd {
@@ -129,18 +129,16 @@ impl CommandExecution for CertifyKeyCmd {
             _ => return Err(DpeErrorCode::InvalidArgument),
         }?;
 
-        let derived_pubkey_x: [u8; DPE_PROFILE.get_ecc_int_size()] =
-            pub_key
-                .x
-                .bytes()
-                .try_into()
-                .map_err(|_| DpeErrorCode::InternalError)?;
-        let derived_pubkey_y: [u8; DPE_PROFILE.get_ecc_int_size()] =
-            pub_key
-                .y
-                .bytes()
-                .try_into()
-                .map_err(|_| DpeErrorCode::InternalError)?;
+        let derived_pubkey_x: [u8; DPE_PROFILE.ecc_int_size()] = pub_key
+            .x
+            .bytes()
+            .try_into()
+            .map_err(|_| DpeErrorCode::InternalError)?;
+        let derived_pubkey_y: [u8; DPE_PROFILE.ecc_int_size()] = pub_key
+            .y
+            .bytes()
+            .try_into()
+            .map_err(|_| DpeErrorCode::InternalError)?;
 
         // Rotate handle if it isn't the default
         dpe.roll_onetime_use_handle(env, idx)?;
@@ -195,7 +193,7 @@ mod tests {
     const TEST_CERTIFY_KEY_CMD: CertifyKeyCmd = CertifyKeyCmd {
         handle: SIMULATION_HANDLE,
         flags: CertifyKeyFlags(0x1234_5678),
-        label: [0xaa; DPE_PROFILE.get_hash_size()],
+        label: [0xaa; DPE_PROFILE.hash_size()],
         format: CertifyKeyCmd::FORMAT_X509,
     };
 
@@ -240,7 +238,7 @@ mod tests {
             let certify_cmd = CertifyKeyCmd {
                 handle: init_resp.handle,
                 flags: CertifyKeyFlags::empty(),
-                label: [0; DPE_PROFILE.get_hash_size()],
+                label: [0; DPE_PROFILE.hash_size()],
                 format: CertifyKeyCmd::FORMAT_X509,
             };
 
@@ -297,7 +295,7 @@ mod tests {
             let certify_cmd = CertifyKeyCmd {
                 handle: init_resp.handle,
                 flags: CertifyKeyFlags::empty(),
-                label: [0; DPE_PROFILE.get_hash_size()],
+                label: [0; DPE_PROFILE.hash_size()],
                 format: CertifyKeyCmd::FORMAT_CSR,
             };
 
@@ -433,16 +431,15 @@ mod tests {
             };
             let pub_key_der = ec_point.data();
             // skip first 0x04 der encoding byte
-            let x =
-                BigNum::from_slice(&pub_key_der[1..DPE_PROFILE.get_ecc_int_size() + 1]).unwrap();
-            let y = BigNum::from_slice(&pub_key_der[DPE_PROFILE.get_ecc_int_size() + 1..]).unwrap();
+            let x = BigNum::from_slice(&pub_key_der[1..DPE_PROFILE.ecc_int_size() + 1]).unwrap();
+            let y = BigNum::from_slice(&pub_key_der[DPE_PROFILE.ecc_int_size() + 1..]).unwrap();
             let pub_key = EcKey::from_public_key_affine_coordinates(group, &x, &y).unwrap();
 
             let cri_digest = env.crypto.hash(DPE_PROFILE.alg_len(), cri.raw).unwrap();
             assert!(cri_sig.verify(cri_digest.bytes(), &pub_key).unwrap());
 
             // validate subject_name
-            let mut subj_serial = [0u8; DPE_PROFILE.get_hash_size() * 2];
+            let mut subj_serial = [0u8; DPE_PROFILE.hash_size() * 2];
             let pub_key = EcdsaPub {
                 x: CryptoBuf::new(&certify_resp.derived_pubkey_x).unwrap(),
                 y: CryptoBuf::new(&certify_resp.derived_pubkey_y).unwrap(),
@@ -521,7 +518,7 @@ mod tests {
         // Derive context twice with different types
         let derive_cmd = DeriveContextCmd {
             handle: ContextHandle::default(),
-            data: [1; DPE_PROFILE.get_tci_size()],
+            data: [1; DPE_PROFILE.tci_size()],
             flags: DeriveContextFlags::MAKE_DEFAULT | DeriveContextFlags::INPUT_ALLOW_X509,
             tci_type: 1,
             target_locality: 0,
@@ -534,7 +531,7 @@ mod tests {
         let certify_cmd = CertifyKeyCmd {
             handle: ContextHandle::default(),
             flags: CertifyKeyFlags(0),
-            label: [0; DPE_PROFILE.get_hash_size()],
+            label: [0; DPE_PROFILE.hash_size()],
             format: CertifyKeyCmd::FORMAT_X509,
         };
 

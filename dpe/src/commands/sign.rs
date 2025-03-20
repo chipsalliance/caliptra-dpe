@@ -43,9 +43,9 @@ bitflags! {
 )]
 pub struct SignCmd {
     pub handle: ContextHandle,
-    pub label: [u8; DPE_PROFILE.get_hash_size()],
+    pub label: [u8; DPE_PROFILE.hash_size()],
     pub flags: SignFlags,
-    pub digest: [u8; DPE_PROFILE.get_hash_size()],
+    pub digest: [u8; DPE_PROFILE.hash_size()],
 }
 
 impl SignCmd {
@@ -112,12 +112,12 @@ impl CommandExecution for SignCmd {
         let digest = Digest::new(&self.digest)?;
         let EcdsaSig { r, s } = self.ecdsa_sign(dpe, env, idx, &digest)?;
 
-        let sig_r: [u8; DPE_PROFILE.get_ecc_int_size()] = r
+        let sig_r: [u8; DPE_PROFILE.ecc_int_size()] = r
             .bytes()
             .try_into()
             .map_err(|_| DpeErrorCode::InternalError)?;
 
-        let sig_s: [u8; DPE_PROFILE.get_ecc_int_size()] = s
+        let sig_s: [u8; DPE_PROFILE.ecc_int_size()] = s
             .bytes()
             .try_into()
             .map_err(|_| DpeErrorCode::InternalError)?;
@@ -241,7 +241,7 @@ mod tests {
         for i in 0..3 {
             DeriveContextCmd {
                 handle: ContextHandle::default(),
-                data: [i; DPE_PROFILE.get_hash_size()],
+                data: [i; DPE_PROFILE.hash_size()],
                 flags: DeriveContextFlags::MAKE_DEFAULT | DeriveContextFlags::INPUT_ALLOW_X509,
                 tci_type: i as u32,
                 target_locality: 0,

@@ -601,8 +601,7 @@ pub mod tests {
         );
 
         dpe_validator.dpe.contexts[0].children = 0;
-        dpe_validator.dpe.contexts[0].tci.tci_current =
-            TciMeasurement([1; DPE_PROFILE.get_tci_size()]);
+        dpe_validator.dpe.contexts[0].tci.tci_current = TciMeasurement([1; DPE_PROFILE.tci_size()]);
         assert_eq!(
             dpe_validator.validate_dpe_state(),
             Err(ValidationError::InactiveContextWithMeasurement)
