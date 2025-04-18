@@ -12,7 +12,7 @@ use crate::{
     response::{DpeErrorCode, GetProfileResp, Response, ResponseHdr},
     support::Support,
     tci::{TciMeasurement, TciNodeData},
-    U8Bool, DPE_PROFILE, MAX_HANDLES,
+    DpeProfile, U8Bool, DPE_PROFILE, MAX_HANDLES,
 };
 use bitflags::bitflags;
 #[cfg(not(feature = "no-cfi"))]
@@ -69,6 +69,7 @@ pub struct DpeInstance {
     /// Layout version of this structure. If the layout of this structure changes, Self::VERSION
     /// must be updated.
     pub version: u32,
+    pub profile: DpeProfile,
     pub contexts: [Context; MAX_HANDLES],
     pub support: Support,
     pub flags: DpeInstanceFlags,
@@ -101,6 +102,7 @@ impl DpeInstance {
         const CONTEXT_INITIALIZER: Context = Context::new();
         let mut dpe = DpeInstance {
             version: Self::VERSION,
+            profile: DPE_PROFILE,
             contexts: [CONTEXT_INITIALIZER; MAX_HANDLES],
             support: updated_support,
             flags,
@@ -172,6 +174,7 @@ impl DpeInstance {
         let vendor_id = platform.get_vendor_id()?;
         let vendor_sku = platform.get_vendor_sku()?;
         Ok(GetProfileResp::new(
+            self.profile,
             self.support.bits(),
             vendor_id,
             vendor_sku,
@@ -207,8 +210,12 @@ impl DpeInstance {
 
         match resp {
             Ok(resp) => Ok(resp),
-            Err(err_code) => Ok(Response::Error(ResponseHdr::new(err_code))),
+            Err(err_code) => Ok(Response::Error(self.response_hdr(err_code))),
         }
+    }
+
+    pub fn response_hdr(&self, err_code: DpeErrorCode) -> ResponseHdr {
+        ResponseHdr::new(self.profile, err_code)
     }
 
     /// Finds the index of the context having `handle` in `locality`
@@ -590,6 +597,7 @@ pub mod tests {
 
         assert_eq!(
             Response::GetProfile(GetProfileResp::new(
+                dpe.profile,
                 SUPPORT.bits(),
                 env.platform.get_vendor_id().unwrap(),
                 env.platform.get_vendor_sku().unwrap()
@@ -611,7 +619,7 @@ pub mod tests {
         assert_eq!(
             Response::InitCtx(NewHandleResp {
                 handle: RANDOM_HANDLE,
-                resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
+                resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
             }),
             dpe.execute_serialized_command(&mut env, TEST_LOCALITIES[0], &command)
                 .unwrap()

@@ -3,7 +3,7 @@ use super::CommandExecution;
 use crate::{
     context::{ActiveContextArgs, Context, ContextHandle, ContextType},
     dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
-    response::{DpeErrorCode, NewHandleResp, Response, ResponseHdr},
+    response::{DpeErrorCode, NewHandleResp, Response},
 };
 use bitflags::bitflags;
 #[cfg(not(feature = "no-cfi"))]
@@ -103,7 +103,7 @@ impl CommandExecution for InitCtxCmd {
         });
         Ok(Response::InitCtx(NewHandleResp {
             handle,
-            resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
+            resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
         }))
     }
 }

@@ -3,7 +3,7 @@ use super::CommandExecution;
 use crate::{
     context::{ContextHandle, ContextType},
     dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
-    response::{DpeErrorCode, Response, ResponseHdr, SignResp},
+    response::{DpeErrorCode, Response, SignResp},
     DPE_PROFILE,
 };
 use bitflags::bitflags;
@@ -129,7 +129,7 @@ impl CommandExecution for SignCmd {
             new_context_handle: dpe.contexts[idx].handle,
             sig_r,
             sig_s,
-            resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
+            resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
         }))
     }
 }
