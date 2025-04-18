@@ -3,7 +3,7 @@ use super::CommandExecution;
 use crate::{
     context::{Context, ContextHandle, ContextState},
     dpe_instance::{flags_iter, DpeEnv, DpeInstance, DpeTypes},
-    response::{DpeErrorCode, Response, ResponseHdr},
+    response::{DpeErrorCode, Response},
     MAX_HANDLES,
 };
 #[cfg(not(feature = "no-cfi"))]
@@ -86,9 +86,9 @@ impl CommandExecution for DestroyCtxCmd {
             }
         }
 
-        Ok(Response::DestroyCtx(ResponseHdr::new(
-            DpeErrorCode::NoError,
-        )))
+        Ok(Response::DestroyCtx(
+            dpe.response_hdr(DpeErrorCode::NoError),
+        ))
     }
 }
 
@@ -157,9 +157,9 @@ mod tests {
         activate_dummy_context(&mut dpe, 1, 0, &ContextHandle::default(), &[]);
         // destroy context[1]
         assert_eq!(
-            Ok(Response::DestroyCtx(ResponseHdr::new(
-                DpeErrorCode::NoError,
-            ))),
+            Ok(Response::DestroyCtx(
+                dpe.response_hdr(DpeErrorCode::NoError)
+            )),
             DestroyCtxCmd {
                 handle: ContextHandle::default(),
             }
@@ -169,9 +169,9 @@ mod tests {
         assert_eq!(dpe.contexts[0].children, 0);
         // destroy context[0]
         assert_eq!(
-            Ok(Response::DestroyCtx(ResponseHdr::new(
-                DpeErrorCode::NoError,
-            ))),
+            Ok(Response::DestroyCtx(
+                dpe.response_hdr(DpeErrorCode::NoError)
+            )),
             DestroyCtxCmd {
                 handle: TEST_HANDLE,
             }
@@ -231,9 +231,9 @@ mod tests {
 
         // destroy context[0] and all descendents
         assert_eq!(
-            Ok(Response::DestroyCtx(ResponseHdr::new(
-                DpeErrorCode::NoError,
-            ))),
+            Ok(Response::DestroyCtx(
+                dpe.response_hdr(DpeErrorCode::NoError)
+            )),
             DestroyCtxCmd {
                 handle: ContextHandle::default(),
             }
@@ -274,9 +274,9 @@ mod tests {
         );
         // destroy context[1]
         assert_eq!(
-            Ok(Response::DestroyCtx(ResponseHdr::new(
-                DpeErrorCode::NoError,
-            ))),
+            Ok(Response::DestroyCtx(
+                dpe.response_hdr(DpeErrorCode::NoError)
+            )),
             DestroyCtxCmd {
                 handle: ContextHandle([1; ContextHandle::SIZE]),
             }

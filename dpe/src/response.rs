@@ -5,7 +5,7 @@ Abstract:
     DPE reponses and serialization.
 --*/
 use crate::{
-    context::ContextHandle, validation::ValidationError, CURRENT_PROFILE_MAJOR_VERSION,
+    context::ContextHandle, validation::ValidationError, DpeProfile, CURRENT_PROFILE_MAJOR_VERSION,
     CURRENT_PROFILE_MINOR_VERSION, DPE_PROFILE, MAX_CERT_SIZE, MAX_EXPORTED_CDI_SIZE, MAX_HANDLES,
 };
 use crypto::CryptoError;
@@ -52,24 +52,24 @@ impl Response {
     PartialEq,
     Eq,
     zerocopy::IntoBytes,
-    zerocopy::FromBytes,
+    zerocopy::TryFromBytes,
     zerocopy::Immutable,
     zerocopy::KnownLayout,
 )]
 pub struct ResponseHdr {
     pub magic: u32,
     pub status: u32,
-    pub profile: u32,
+    pub profile: DpeProfile,
 }
 
 impl ResponseHdr {
     pub const DPE_RESPONSE_MAGIC: u32 = u32::from_be_bytes(*b"DPER");
 
-    pub fn new(error_code: DpeErrorCode) -> ResponseHdr {
+    pub fn new(profile: DpeProfile, error_code: DpeErrorCode) -> ResponseHdr {
         ResponseHdr {
             magic: Self::DPE_RESPONSE_MAGIC,
             status: error_code.get_error_code(),
-            profile: DPE_PROFILE as u32,
+            profile,
         }
     }
 }
@@ -80,7 +80,7 @@ impl ResponseHdr {
     PartialEq,
     Eq,
     zerocopy::IntoBytes,
-    zerocopy::FromBytes,
+    zerocopy::TryFromBytes,
     zerocopy::Immutable,
     zerocopy::KnownLayout,
 )]
@@ -95,7 +95,12 @@ pub struct GetProfileResp {
 }
 
 impl GetProfileResp {
-    pub const fn new(flags: u32, vendor_id: u32, vendor_sku: u32) -> GetProfileResp {
+    pub const fn new(
+        profile: DpeProfile,
+        flags: u32,
+        vendor_id: u32,
+        vendor_sku: u32,
+    ) -> GetProfileResp {
         GetProfileResp {
             major_version: CURRENT_PROFILE_MAJOR_VERSION,
             minor_version: CURRENT_PROFILE_MINOR_VERSION,
@@ -106,7 +111,7 @@ impl GetProfileResp {
             resp_hdr: ResponseHdr {
                 magic: ResponseHdr::DPE_RESPONSE_MAGIC,
                 status: 0,
-                profile: DPE_PROFILE as u32,
+                profile,
             },
         }
     }
@@ -118,7 +123,7 @@ impl GetProfileResp {
     PartialEq,
     Eq,
     zerocopy::IntoBytes,
-    zerocopy::FromBytes,
+    zerocopy::TryFromBytes,
     zerocopy::KnownLayout,
     zerocopy::Immutable,
 )]
@@ -133,7 +138,7 @@ pub struct NewHandleResp {
     PartialEq,
     Eq,
     zerocopy::IntoBytes,
-    zerocopy::FromBytes,
+    zerocopy::TryFromBytes,
     zerocopy::Immutable,
     zerocopy::KnownLayout,
 )]
@@ -149,7 +154,7 @@ pub struct DeriveContextResp {
     PartialEq,
     Eq,
     zerocopy::IntoBytes,
-    zerocopy::FromBytes,
+    zerocopy::TryFromBytes,
     zerocopy::Immutable,
     zerocopy::KnownLayout,
 )]
@@ -168,7 +173,7 @@ pub struct DeriveContextExportedCdiResp {
     PartialEq,
     Eq,
     zerocopy::IntoBytes,
-    zerocopy::FromBytes,
+    zerocopy::TryFromBytes,
     zerocopy::Immutable,
     zerocopy::KnownLayout,
 )]
@@ -187,7 +192,7 @@ pub struct CertifyKeyResp {
     PartialEq,
     Eq,
     zerocopy::IntoBytes,
-    zerocopy::FromBytes,
+    zerocopy::TryFromBytes,
     zerocopy::Immutable,
     zerocopy::KnownLayout,
 )]
@@ -204,7 +209,7 @@ pub struct SignResp {
     PartialEq,
     Eq,
     zerocopy::IntoBytes,
-    zerocopy::FromBytes,
+    zerocopy::TryFromBytes,
     zerocopy::Immutable,
     zerocopy::KnownLayout,
 )]

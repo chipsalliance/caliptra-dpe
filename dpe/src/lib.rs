@@ -23,7 +23,7 @@ use response::GetProfileResp;
 pub mod tci;
 pub mod x509;
 
-use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes};
 
 pub use crypto::{ExportedCdiHandle, MAX_EXPORTED_CDI_SIZE};
 
@@ -67,6 +67,10 @@ impl From<bool> for U8Bool {
     }
 }
 
+#[derive(
+    Copy, Clone, Debug, PartialEq, Eq, IntoBytes, TryFromBytes, KnownLayout, Immutable, Zeroize,
+)]
+#[repr(u32)]
 pub enum DpeProfile {
     // Note: Min profiles (1 & 2) are not supported by this implementation
     P256Sha256 = 3,

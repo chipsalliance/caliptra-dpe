@@ -2,7 +2,7 @@
 use super::CommandExecution;
 use crate::{
     dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
-    response::{DpeErrorCode, GetCertificateChainResp, Response, ResponseHdr},
+    response::{DpeErrorCode, GetCertificateChainResp, Response},
 };
 #[cfg(not(feature = "no-cfi"))]
 use caliptra_cfi_derive_git::cfi_impl_fn;
@@ -27,7 +27,7 @@ impl CommandExecution for GetCertificateChainCmd {
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     fn execute(
         &self,
-        _dpe: &mut DpeInstance,
+        dpe: &mut DpeInstance,
         env: &mut DpeEnv<impl DpeTypes>,
         _locality: u32,
     ) -> Result<Response, DpeErrorCode> {
@@ -43,7 +43,7 @@ impl CommandExecution for GetCertificateChainCmd {
         Ok(Response::GetCertificateChain(GetCertificateChainResp {
             certificate_chain: cert_chunk,
             certificate_size: len,
-            resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
+            resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
         }))
     }
 }
