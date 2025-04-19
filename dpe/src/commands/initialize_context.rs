@@ -111,7 +111,7 @@ impl CommandExecution for InitCtxCmd {
 mod tests {
     use super::*;
     use crate::{
-        commands::{Command, CommandHdr},
+        commands::{tests::DEFAULT_PLATFORM, Command, CommandHdr},
         context::ContextState,
         dpe_instance::{
             tests::{TestTypes, TEST_LOCALITIES},
@@ -121,7 +121,6 @@ mod tests {
     };
     use caliptra_cfi_lib_git::CfiCounter;
     use crypto::OpensslCrypto;
-    use platform::default::DefaultPlatform;
     use zerocopy::IntoBytes;
 
     const TEST_INIT_CTX_CMD: InitCtxCmd = InitCtxCmd(0x1234_5678);
@@ -144,7 +143,7 @@ mod tests {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
-            platform: DefaultPlatform,
+            platform: DEFAULT_PLATFORM,
         };
         let mut dpe =
             DpeInstance::new(&mut env, Support::default(), DpeInstanceFlags::empty()).unwrap();

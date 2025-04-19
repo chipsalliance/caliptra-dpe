@@ -24,7 +24,7 @@ use dpe::{
     support::Support,
     DpeInstance,
 };
-use platform::default::{DefaultPlatform, AUTO_INIT_LOCALITY};
+use platform::default::{DefaultPlatform, DefaultPlatformProfile, AUTO_INIT_LOCALITY};
 
 // https://github.com/chipsalliance/caliptra-sw/issues/624 will consider matrix fuzzing.
 const SUPPORT: Support = Support::all();
@@ -63,7 +63,7 @@ fn harness(data: &[u8]) {
 
     let mut env = DpeEnv::<SimTypes> {
         crypto: OpensslCrypto::new(),
-        platform: DefaultPlatform,
+        platform: DefaultPlatform(DefaultPlatformProfile::P256),
     };
     let mut dpe = DpeInstance::new(&mut env, SUPPORT, DpeInstanceFlags::empty()).unwrap();
     let prev_contexts = dpe.contexts;

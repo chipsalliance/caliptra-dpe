@@ -6,7 +6,7 @@ compile_error!("must provide a crypto implementation");
 use clap::Parser;
 use dpe::dpe_instance::DpeInstanceFlags;
 use log::{error, info, trace, warn};
-use platform::default::DefaultPlatform;
+use platform::default::{DefaultPlatform, DefaultPlatformProfile};
 use std::fs;
 use std::io::{Error, ErrorKind, Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -167,9 +167,13 @@ fn main() -> std::io::Result<()> {
     );
     support.set(Support::CDI_EXPORT, args.supports_cdi_export);
 
+    #[cfg(feature = "dpe_profile_p256_sha256")]
+    let p = DefaultPlatformProfile::P256;
+    #[cfg(feature = "dpe_profile_p384_sha384")]
+    let p = DefaultPlatformProfile::P384;
     let mut env = DpeEnv::<SimTypes> {
         crypto: <SimTypes as DpeTypes>::Crypto::new(),
-        platform: DefaultPlatform,
+        platform: DefaultPlatform(p),
     };
 
     let mut flags = DpeInstanceFlags::empty();

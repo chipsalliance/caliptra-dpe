@@ -141,7 +141,7 @@ mod tests {
         commands::{
             certify_key::{CertifyKeyCmd, CertifyKeyFlags},
             derive_context::DeriveContextFlags,
-            tests::{TEST_DIGEST, TEST_LABEL},
+            tests::{DEFAULT_PLATFORM, TEST_DIGEST, TEST_LABEL},
             Command, CommandHdr, DeriveContextCmd, InitCtxCmd,
         },
         dpe_instance::{
@@ -154,7 +154,6 @@ mod tests {
     use crypto::OpensslCrypto;
     use openssl::x509::X509;
     use openssl::{bn::BigNum, ecdsa::EcdsaSig};
-    use platform::default::DefaultPlatform;
     use zerocopy::IntoBytes;
 
     const TEST_SIGN_CMD: SignCmd = SignCmd {
@@ -180,7 +179,7 @@ mod tests {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
-            platform: DefaultPlatform,
+            platform: DEFAULT_PLATFORM,
         };
         let mut dpe = DpeInstance::new(&mut env, SUPPORT, DpeInstanceFlags::empty()).unwrap();
 
@@ -235,7 +234,7 @@ mod tests {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
-            platform: DefaultPlatform,
+            platform: DEFAULT_PLATFORM,
         };
         let mut dpe = DpeInstance::new(&mut env, SUPPORT, DpeInstanceFlags::empty()).unwrap();
 

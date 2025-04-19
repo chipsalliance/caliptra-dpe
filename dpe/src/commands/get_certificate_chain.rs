@@ -52,7 +52,7 @@ impl CommandExecution for GetCertificateChainCmd {
 mod tests {
     use super::*;
     use crate::{
-        commands::{Command, CommandHdr},
+        commands::{tests::DEFAULT_PLATFORM, Command, CommandHdr},
         dpe_instance::{
             tests::{TestTypes, TEST_LOCALITIES},
             DpeInstanceFlags,
@@ -61,7 +61,6 @@ mod tests {
     };
     use caliptra_cfi_lib_git::CfiCounter;
     use crypto::OpensslCrypto;
-    use platform::default::DefaultPlatform;
     use zerocopy::IntoBytes;
 
     const TEST_GET_CERTIFICATE_CHAIN_CMD: GetCertificateChainCmd = GetCertificateChainCmd {
@@ -89,7 +88,7 @@ mod tests {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
-            platform: DefaultPlatform,
+            platform: DEFAULT_PLATFORM,
         };
         let mut dpe = DpeInstance::new(&mut env, SUPPORT, DpeInstanceFlags::empty()).unwrap();
 

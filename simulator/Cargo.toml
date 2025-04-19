@@ -7,8 +7,8 @@ edition = "2021"
 
 [features]
 default = ["dpe_profile_p256_sha256", "openssl"]
-dpe_profile_p256_sha256 = ["dpe/dpe_profile_p256_sha256", "platform/dpe_profile_p256_sha256"]
-dpe_profile_p384_sha384 = ["dpe/dpe_profile_p384_sha384", "platform/dpe_profile_p384_sha384"]
+dpe_profile_p256_sha256 = ["dpe/dpe_profile_p256_sha256"]
+dpe_profile_p384_sha384 = ["dpe/dpe_profile_p384_sha384"]
 openssl = ["dep:openssl", "crypto/openssl", "platform/openssl"]
 rustcrypto = ["crypto/rustcrypto", "platform/rustcrypto"]
 

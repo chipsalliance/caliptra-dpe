@@ -160,7 +160,10 @@ impl CommandExecution for CertifyKeyCmd {
 mod tests {
     use super::*;
     use crate::{
-        commands::{Command, CommandHdr, DeriveContextCmd, DeriveContextFlags, InitCtxCmd},
+        commands::{
+            tests::DEFAULT_PLATFORM, Command, CommandHdr, DeriveContextCmd, DeriveContextFlags,
+            InitCtxCmd,
+        },
         dpe_instance::tests::{TestTypes, SIMULATION_HANDLE, TEST_LOCALITIES},
         support::Support,
         x509::{tests::TcbInfo, DirectoryString, Name},
@@ -178,7 +181,7 @@ mod tests {
         ecdsa::EcdsaSig,
         nid::*,
     };
-    use platform::{default::DefaultPlatform, Platform};
+    use platform::Platform;
     use spki::ObjectIdentifier;
     use std::str;
     use x509_parser::nom::Parser;
@@ -215,7 +218,7 @@ mod tests {
             CfiCounter::reset_for_test();
             let mut env = DpeEnv::<TestTypes> {
                 crypto: OpensslCrypto::new(),
-                platform: DefaultPlatform,
+                platform: DEFAULT_PLATFORM,
             };
             let flags = {
                 let mut flags = DpeInstanceFlags::empty();
@@ -272,7 +275,7 @@ mod tests {
             CfiCounter::reset_for_test();
             let mut env = DpeEnv::<TestTypes> {
                 crypto: OpensslCrypto::new(),
-                platform: DefaultPlatform,
+                platform: DEFAULT_PLATFORM,
             };
             let flags = {
                 let mut flags = DpeInstanceFlags::empty();
@@ -506,7 +509,7 @@ mod tests {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
-            platform: DefaultPlatform,
+            platform: DEFAULT_PLATFORM,
         };
         let mut dpe = DpeInstance::new(
             &mut env,
