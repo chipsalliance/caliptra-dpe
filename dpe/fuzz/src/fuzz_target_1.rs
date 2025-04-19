@@ -18,7 +18,6 @@ use std::fs::OpenOptions;
 
 use crypto::RustCryptoImpl;
 use dpe::{
-    commands::Command,
     dpe_instance::{DpeEnv, DpeTypes},
     response::Response,
     support::Support,
@@ -51,8 +50,13 @@ fn harness(data: &[u8]) {
             .unwrap(),
     );
 
+    let mut env = DpeEnv::<SimTypes> {
+        crypto: RustCryptoImpl::new(),
+        platform: DefaultPlatform(DefaultPlatformProfile::P256),
+    };
+    let mut dpe = DpeInstance::new(&mut env, SUPPORT, DpeInstanceFlags::empty()).unwrap();
     trace!("----------------------------------");
-    if let Ok(command) = Command::deserialize(data) {
+    if let Ok(command) = dpe.deserialize_command(data) {
         trace!("| Fuzzer's locality requested {command:x?}");
         trace!("|");
     } else {
@@ -61,11 +65,6 @@ fn harness(data: &[u8]) {
         return;
     }
 
-    let mut env = DpeEnv::<SimTypes> {
-        crypto: RustCryptoImpl::new(),
-        platform: DefaultPlatform(DefaultPlatformProfile::P256),
-    };
-    let mut dpe = DpeInstance::new(&mut env, SUPPORT, DpeInstanceFlags::empty()).unwrap();
     let prev_contexts = dpe.contexts;
 
     // Hard-code working locality

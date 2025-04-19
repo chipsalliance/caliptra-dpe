@@ -17,7 +17,7 @@ pub use self::sign::{SignCmd, SignFlags};
 use crate::{
     dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
     response::{DpeErrorCode, Response},
-    DPE_PROFILE,
+    DpeProfile,
 };
 use core::mem::size_of;
 use zerocopy::{FromBytes, Immutable, KnownLayout};
@@ -60,8 +60,8 @@ impl Command<'_> {
     /// # Arguments
     ///
     /// * `bytes` - serialized command
-    pub fn deserialize(bytes: &[u8]) -> Result<Command, DpeErrorCode> {
-        let header = CommandHdr::try_from(bytes)?;
+    pub fn deserialize(profile: DpeProfile, bytes: &[u8]) -> Result<Command, DpeErrorCode> {
+        let header = CommandHdr::try_from_with_profile(profile, bytes)?;
         let bytes = &bytes[size_of::<CommandHdr>()..];
 
         match header.cmd_id {
@@ -148,12 +148,22 @@ pub struct CommandHdr {
 impl CommandHdr {
     const DPE_COMMAND_MAGIC: u32 = u32::from_be_bytes(*b"DPEC");
 
-    pub fn new_for_test(cmd_id: u32) -> CommandHdr {
+    pub fn new(profile: DpeProfile, cmd_id: u32) -> CommandHdr {
         CommandHdr {
             magic: Self::DPE_COMMAND_MAGIC,
             cmd_id,
-            profile: DPE_PROFILE as u32,
+            profile: profile as u32,
         }
+    }
+
+    fn try_from_with_profile(profile: DpeProfile, raw: &[u8]) -> Result<Self, DpeErrorCode> {
+        let header = CommandHdr::try_from(raw)?;
+        // The client doesn't know what profile is implemented when calling the `GetProfile`
+        // command. But, all other commands should be directed towards the correct profile.
+        if header.cmd_id != Command::GET_PROFILE && header.profile != profile as u32 {
+            return Err(DpeErrorCode::InvalidCommand);
+        }
+        Ok(header)
     }
 }
 
@@ -164,11 +174,6 @@ impl TryFrom<&[u8]> for CommandHdr {
         let (header, _remaining_bytes) =
             CommandHdr::read_from_prefix(raw).map_err(|_| DpeErrorCode::InvalidCommand)?;
         if header.magic != Self::DPE_COMMAND_MAGIC {
-            return Err(DpeErrorCode::InvalidCommand);
-        }
-        // The client doesn't know what profile is implemented when calling the `GetProfile`
-        // command. But, all other commands should be directed towards the correct profile.
-        if header.cmd_id != Command::GET_PROFILE && header.profile != DPE_PROFILE as u32 {
             return Err(DpeErrorCode::InvalidCommand);
         }
         Ok(header)
@@ -210,6 +215,8 @@ pub mod tests {
     #[cfg(feature = "dpe_profile_p384_sha384")]
     pub const DEFAULT_PLATFORM: DefaultPlatform = DefaultPlatform(DefaultPlatformProfile::P384);
 
+    pub const PROFILES: [DpeProfile; 2] = [DpeProfile::P256Sha256, DpeProfile::P384Sha384];
+
     const DEFAULT_COMMAND: CommandHdr = CommandHdr {
         magic: CommandHdr::DPE_COMMAND_MAGIC,
         cmd_id: Command::GET_PROFILE,
@@ -219,11 +226,12 @@ pub mod tests {
     #[test]
     fn test_deserialize_get_profile() {
         CfiCounter::reset_for_test();
-        // Commands that can be deserialized.
-        assert_eq!(
-            Ok(Command::GetProfile),
-            Command::deserialize(CommandHdr::new_for_test(Command::GET_PROFILE).as_bytes())
-        );
+        for p in [DpeProfile::P256Sha256, DpeProfile::P384Sha384] {
+            assert_eq!(
+                Ok(Command::GetProfile),
+                Command::deserialize(p, CommandHdr::new(p, Command::GET_PROFILE).as_bytes())
+            );
+        }
     }
 
     #[test]
@@ -250,6 +258,7 @@ pub mod tests {
         );
 
         // Test wrong profile.
+        let profile = DPE_PROFILE;
         #[cfg(feature = "dpe_profile_p256_sha256")]
         let wrong_profile = DpeProfile::P384Sha384 as u32;
         #[cfg(feature = "dpe_profile_p384_sha384")]
@@ -257,8 +266,9 @@ pub mod tests {
 
         // All commands should check the profile except GetProfile.
         assert_eq!(
-            invalid_command,
-            CommandHdr::try_from(
+            Err(DpeErrorCode::InvalidCommand),
+            Command::deserialize(
+                profile,
                 CommandHdr {
                     profile: wrong_profile,
                     cmd_id: Command::INITIALIZE_CONTEXT,
@@ -269,7 +279,8 @@ pub mod tests {
         );
 
         // Make sure GetProfile doesn't care.
-        assert!(CommandHdr::try_from(
+        assert!(Command::deserialize(
+            profile,
             CommandHdr {
                 profile: wrong_profile,
                 ..DEFAULT_COMMAND

@@ -112,7 +112,10 @@ impl CommandExecution for InitCtxCmd {
 mod tests {
     use super::*;
     use crate::{
-        commands::{tests::DEFAULT_PLATFORM, Command, CommandHdr},
+        commands::{
+            tests::{DEFAULT_PLATFORM, PROFILES},
+            Command, CommandHdr,
+        },
         context::ContextState,
         dpe_instance::{
             tests::{TestTypes, TEST_LOCALITIES},
@@ -129,14 +132,16 @@ mod tests {
     #[test]
     fn test_deserialize_init_ctx() {
         CfiCounter::reset_for_test();
-        let mut command = CommandHdr::new_for_test(Command::INITIALIZE_CONTEXT)
-            .as_bytes()
-            .to_vec();
-        command.extend(TEST_INIT_CTX_CMD.as_bytes());
-        assert_eq!(
-            Ok(Command::InitCtx(&TEST_INIT_CTX_CMD)),
-            Command::deserialize(&command)
-        );
+        for p in PROFILES {
+            let mut command = CommandHdr::new(p, Command::INITIALIZE_CONTEXT)
+                .as_bytes()
+                .to_vec();
+            command.extend(TEST_INIT_CTX_CMD.as_bytes());
+            assert_eq!(
+                Ok(Command::InitCtx(&TEST_INIT_CTX_CMD)),
+                Command::deserialize(p, &command)
+            );
+        }
     }
 
     #[test]

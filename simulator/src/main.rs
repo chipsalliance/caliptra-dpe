@@ -14,7 +14,6 @@ use std::path::Path;
 use std::process;
 
 use dpe::{
-    commands::Command,
     dpe_instance::{DpeEnv, DpeTypes},
     response::Response,
     support::Support,
@@ -37,7 +36,7 @@ fn handle_request(dpe: &mut DpeInstance, env: &mut DpeEnv<impl DpeTypes>, stream
     };
 
     trace!("----------------------------------");
-    if let Ok(command) = Command::deserialize(cmd) {
+    if let Ok(command) = dpe.deserialize_command(cmd) {
         trace!("| Locality `{locality:#x}` requested {command:x?}",);
     } else {
         trace!("| Locality `{locality:#010x}` requested invalid command. {cmd:02x?}")

@@ -7,7 +7,7 @@ Abstract:
 #[cfg(not(feature = "disable_internal_info"))]
 use crate::INTERNAL_INPUT_INFO_SIZE;
 use crate::{
-    commands::{Command, CommandExecution, InitCtxCmd},
+    commands::{Command, CommandExecution, CommandHdr, InitCtxCmd},
     context::{ChildToRootIter, Context, ContextHandle, ContextState},
     response::{DpeErrorCode, GetProfileResp, Response, ResponseHdr},
     support::Support,
@@ -195,7 +195,7 @@ impl DpeInstance {
         locality: u32,
         cmd: &[u8],
     ) -> Result<Response, DpeErrorCode> {
-        let command = Command::deserialize(cmd)?;
+        let command = self.deserialize_command(cmd)?;
         let resp = match cfi_launder(command) {
             Command::GetProfile => Ok(Response::GetProfile(self.get_profile(&mut env.platform)?)),
             Command::InitCtx(cmd) => cmd.execute(self, env, locality),
@@ -216,6 +216,14 @@ impl DpeInstance {
 
     pub fn response_hdr(&self, err_code: DpeErrorCode) -> ResponseHdr {
         ResponseHdr::new(self.profile, err_code)
+    }
+
+    pub fn command_hdr(&self, cmd_id: u32) -> CommandHdr {
+        CommandHdr::new(self.profile, cmd_id)
+    }
+
+    pub fn deserialize_command<'a>(&self, cmd: &'a [u8]) -> Result<Command<'a>, DpeErrorCode> {
+        Command::deserialize(self.profile, cmd)
     }
 
     /// Finds the index of the context having `handle` in `locality`
@@ -564,7 +572,7 @@ pub mod tests {
     use crate::commands::{DeriveContextCmd, DeriveContextFlags};
     use crate::response::NewHandleResp;
     use crate::support::test::SUPPORT;
-    use crate::{commands::CommandHdr, CURRENT_PROFILE_MAJOR_VERSION};
+    use crate::CURRENT_PROFILE_MAJOR_VERSION;
     use caliptra_cfi_lib_git::CfiCounter;
     use crypto::RustCryptoImpl;
     use platform::default::{DefaultPlatform, AUTO_INIT_LOCALITY};
@@ -605,14 +613,15 @@ pub mod tests {
             dpe.execute_serialized_command(
                 &mut env,
                 TEST_LOCALITIES[0],
-                CommandHdr::new_for_test(Command::GET_PROFILE).as_bytes(),
+                dpe.command_hdr(Command::GET_PROFILE).as_bytes(),
             )
             .unwrap()
         );
 
         // The default context was initialized while creating the instance. Now lets create a
         // simulation context.
-        let mut command = CommandHdr::new_for_test(Command::INITIALIZE_CONTEXT)
+        let mut command = dpe
+            .command_hdr(Command::INITIALIZE_CONTEXT)
             .as_bytes()
             .to_vec();
         command.extend(InitCtxCmd::new_simulation().as_bytes());
