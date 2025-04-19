@@ -127,7 +127,10 @@ impl CommandExecution for RotateCtxCmd {
 mod tests {
     use super::*;
     use crate::{
-        commands::{tests::DEFAULT_PLATFORM, Command, CommandHdr, InitCtxCmd},
+        commands::{
+            tests::{DEFAULT_PLATFORM, PROFILES},
+            Command, CommandHdr, InitCtxCmd,
+        },
         dpe_instance::{
             tests::{TestTypes, RANDOM_HANDLE, SIMULATION_HANDLE, TEST_HANDLE, TEST_LOCALITIES},
             DpeInstanceFlags,
@@ -146,14 +149,16 @@ mod tests {
     #[test]
     fn test_deserialize_rotate_context() {
         CfiCounter::reset_for_test();
-        let mut command = CommandHdr::new_for_test(Command::ROTATE_CONTEXT_HANDLE)
-            .as_bytes()
-            .to_vec();
-        command.extend(TEST_ROTATE_CTX_CMD.as_bytes());
-        assert_eq!(
-            Ok(Command::RotateCtx(&TEST_ROTATE_CTX_CMD)),
-            Command::deserialize(&command)
-        );
+        for p in PROFILES {
+            let mut command = CommandHdr::new(p, Command::ROTATE_CONTEXT_HANDLE)
+                .as_bytes()
+                .to_vec();
+            command.extend(TEST_ROTATE_CTX_CMD.as_bytes());
+            assert_eq!(
+                Ok(Command::RotateCtx(&TEST_ROTATE_CTX_CMD)),
+                Command::deserialize(p, &command)
+            );
+        }
     }
 
     #[test]
