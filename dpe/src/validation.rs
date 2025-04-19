@@ -442,9 +442,9 @@ impl DpeValidator<'_> {
 pub mod tests {
     use caliptra_cfi_lib_git::CfiCounter;
     use crypto::OpensslCrypto;
-    use platform::default::DefaultPlatform;
 
     use crate::{
+        commands::tests::DEFAULT_PLATFORM,
         context::{Context, ContextHandle, ContextState, ContextType},
         dpe_instance::{tests::TestTypes, DpeEnv, DpeInstanceFlags},
         support::{test::SUPPORT, Support},
@@ -458,7 +458,7 @@ pub mod tests {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
-            platform: DefaultPlatform,
+            platform: DEFAULT_PLATFORM,
         };
         let dpe_validator = DpeValidator {
             dpe: &mut DpeInstance::new(&mut env, SUPPORT, DpeInstanceFlags::empty()).unwrap(),
@@ -521,7 +521,7 @@ pub mod tests {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
-            platform: DefaultPlatform,
+            platform: DEFAULT_PLATFORM,
         };
         let dpe_validator = DpeValidator {
             dpe: &mut DpeInstance::new(&mut env, Support::empty(), DpeInstanceFlags::empty())
@@ -566,7 +566,7 @@ pub mod tests {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
-            platform: DefaultPlatform,
+            platform: DEFAULT_PLATFORM,
         };
         let dpe_validator = DpeValidator {
             dpe: &mut DpeInstance::new(
@@ -681,7 +681,7 @@ pub mod tests {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
-            platform: DefaultPlatform,
+            platform: DEFAULT_PLATFORM,
         };
         let dpe_validator = DpeValidator {
             dpe: &mut DpeInstance::new(&mut env, Support::empty(), DpeInstanceFlags::empty())

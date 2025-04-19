@@ -548,13 +548,14 @@ impl Iterator for FlagsIter {
 #[cfg(test)]
 pub mod tests {
     use super::*;
+    use crate::commands::tests::DEFAULT_PLATFORM;
     use crate::commands::{DeriveContextCmd, DeriveContextFlags};
     use crate::response::NewHandleResp;
     use crate::support::test::SUPPORT;
     use crate::{commands::CommandHdr, CURRENT_PROFILE_MAJOR_VERSION};
     use caliptra_cfi_lib_git::CfiCounter;
     use crypto::OpensslCrypto;
-    use platform::default::{DefaultPlatform, AUTO_INIT_LOCALITY, TEST_CERT_CHAIN};
+    use platform::default::{DefaultPlatform, AUTO_INIT_LOCALITY};
     use zerocopy::IntoBytes;
 
     pub struct TestTypes;
@@ -578,7 +579,7 @@ pub mod tests {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
-            platform: DefaultPlatform,
+            platform: DEFAULT_PLATFORM,
         };
         let mut dpe = DpeInstance::new(&mut env, SUPPORT, DpeInstanceFlags::empty()).unwrap();
 
@@ -617,7 +618,7 @@ pub mod tests {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
-            platform: DefaultPlatform,
+            platform: DEFAULT_PLATFORM,
         };
         let dpe = DpeInstance::new(&mut env, SUPPORT, DpeInstanceFlags::empty()).unwrap();
         let profile = dpe.get_profile(&mut env.platform).unwrap();
@@ -630,7 +631,7 @@ pub mod tests {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
-            platform: DefaultPlatform,
+            platform: DEFAULT_PLATFORM,
         };
         let mut dpe =
             DpeInstance::new(&mut env, Support::default(), DpeInstanceFlags::empty()).unwrap();
@@ -669,7 +670,7 @@ pub mod tests {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
-            platform: DefaultPlatform,
+            platform: DEFAULT_PLATFORM,
         };
 
         let mut dpe =
@@ -722,7 +723,7 @@ pub mod tests {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
-            platform: DefaultPlatform,
+            platform: DEFAULT_PLATFORM,
         };
         let mut dpe =
             DpeInstance::new(&mut env, Support::default(), DpeInstanceFlags::empty()).unwrap();
@@ -779,7 +780,7 @@ pub mod tests {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
-            platform: DefaultPlatform,
+            platform: DEFAULT_PLATFORM,
         };
         let mut dpe = DpeInstance::new(&mut env, SUPPORT, DpeInstanceFlags::empty()).unwrap();
 
@@ -838,7 +839,7 @@ pub mod tests {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
-            platform: DefaultPlatform,
+            platform: DEFAULT_PLATFORM,
         };
         let mut dpe = DpeInstance::new(
             &mut env,
@@ -902,7 +903,7 @@ pub mod tests {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
-            platform: DefaultPlatform,
+            platform: DEFAULT_PLATFORM,
         };
         let mut dpe = DpeInstance::new(
             &mut env,
@@ -945,9 +946,8 @@ pub mod tests {
         hasher.update(/*allow_x509=*/ false.as_bytes()).unwrap();
         hasher.update(parent_context.tci.as_bytes()).unwrap();
         hasher.update(/*allow_x509=*/ true.as_bytes()).unwrap();
-        hasher
-            .update(&TEST_CERT_CHAIN[..TEST_CERT_CHAIN.len()])
-            .unwrap();
+        let cert_chain = env.platform.0.cert_chain();
+        hasher.update(&cert_chain).unwrap();
 
         let digest = hasher.finish().unwrap();
         let answer = env
@@ -962,7 +962,7 @@ pub mod tests {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
-            platform: DefaultPlatform,
+            platform: DEFAULT_PLATFORM,
         };
         let tci_type = 0xdeadbeef_u32;
         let auto_init_measurement = [0x1; DPE_PROFILE.get_hash_size()];

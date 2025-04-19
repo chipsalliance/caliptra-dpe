@@ -1,6 +1,7 @@
 // Licensed under the Apache-2.0 license
 
 use dpe::dpe_instance::DpeInstanceFlags;
+use platform::default::DefaultPlatformProfile;
 use std::env;
 
 use {
@@ -98,9 +99,13 @@ fn main() {
     };
     let support = Support::AUTO_INIT | Support::X509 | Support::CSR;
 
+    #[cfg(feature = "dpe_profile_p256_sha256")]
+    let p = DefaultPlatformProfile::P256;
+    #[cfg(feature = "dpe_profile_p384_sha384")]
+    let p = DefaultPlatformProfile::P384;
     let mut env = DpeEnv::<TestTypes> {
         crypto: OpensslCrypto::new(),
-        platform: DefaultPlatform,
+        platform: DefaultPlatform(p),
     };
 
     let mut dpe = DpeInstance::new(&mut env, support, DpeInstanceFlags::empty()).unwrap();

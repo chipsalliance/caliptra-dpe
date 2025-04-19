@@ -96,7 +96,10 @@ impl CommandExecution for DestroyCtxCmd {
 mod tests {
     use super::*;
     use crate::{
-        commands::{Command, CommandHdr, DeriveContextCmd, DeriveContextFlags, InitCtxCmd},
+        commands::{
+            tests::DEFAULT_PLATFORM, Command, CommandHdr, DeriveContextCmd, DeriveContextFlags,
+            InitCtxCmd,
+        },
         context::{Context, ContextState},
         dpe_instance::{
             tests::{TestTypes, SIMULATION_HANDLE, TEST_HANDLE, TEST_LOCALITIES},
@@ -107,7 +110,6 @@ mod tests {
     };
     use caliptra_cfi_lib_git::CfiCounter;
     use crypto::OpensslCrypto;
-    use platform::default::DefaultPlatform;
     use zerocopy::IntoBytes;
 
     const TEST_DESTROY_CTX_CMD: DestroyCtxCmd = DestroyCtxCmd {
@@ -132,7 +134,7 @@ mod tests {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
-            platform: DefaultPlatform,
+            platform: DEFAULT_PLATFORM,
         };
         let mut dpe =
             DpeInstance::new(&mut env, Support::default(), DpeInstanceFlags::empty()).unwrap();
@@ -290,7 +292,7 @@ mod tests {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
-            platform: DefaultPlatform,
+            platform: DEFAULT_PLATFORM,
         };
         let mut dpe = DpeInstance::new(&mut env, SUPPORT, DpeInstanceFlags::empty()).unwrap();
 
@@ -359,7 +361,7 @@ mod tests {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
-            platform: DefaultPlatform,
+            platform: DEFAULT_PLATFORM,
         };
         let mut dpe = DpeInstance::new(&mut env, SUPPORT, DpeInstanceFlags::empty()).unwrap();
 

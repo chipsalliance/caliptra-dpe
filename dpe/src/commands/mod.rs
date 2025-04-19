@@ -180,6 +180,7 @@ pub mod tests {
     use super::*;
     use crate::{DpeProfile, DPE_PROFILE};
     use caliptra_cfi_lib_git::CfiCounter;
+    use platform::default::{DefaultPlatform, DefaultPlatformProfile};
     use zerocopy::IntoBytes;
 
     #[cfg(feature = "dpe_profile_p256_sha256")]
@@ -203,6 +204,11 @@ pub mod tests {
         48, 47, 46, 45, 44, 43, 42, 41, 40, 39, 38, 37, 36, 35, 34, 33, 32, 31, 30, 29, 28, 27, 26,
         25, 24, 23, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1,
     ];
+
+    #[cfg(feature = "dpe_profile_p256_sha256")]
+    pub const DEFAULT_PLATFORM: DefaultPlatform = DefaultPlatform(DefaultPlatformProfile::P256);
+    #[cfg(feature = "dpe_profile_p384_sha384")]
+    pub const DEFAULT_PLATFORM: DefaultPlatform = DefaultPlatform(DefaultPlatformProfile::P384);
 
     const DEFAULT_COMMAND: CommandHdr = CommandHdr {
         magic: CommandHdr::DPE_COMMAND_MAGIC,

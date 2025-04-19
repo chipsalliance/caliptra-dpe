@@ -6,11 +6,9 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = ["dpe_profile_p256_sha256", "openssl", "rustcrypto"]
+default = ["openssl", "rustcrypto"]
 openssl = ["dep:openssl"]
 rustcrypto = ["dep:x509-cert"]
-dpe_profile_p256_sha256 = []
-dpe_profile_p384_sha384 = []
 
 [dependencies]
 arrayvec = { version = "0.7.4", default-features = false, features = ["zeroize"] }

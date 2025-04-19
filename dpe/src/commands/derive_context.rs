@@ -412,7 +412,7 @@ mod tests {
     use crate::{
         commands::{
             rotate_context::{RotateCtxCmd, RotateCtxFlags},
-            tests::{TEST_DIGEST, TEST_LABEL},
+            tests::{DEFAULT_PLATFORM, TEST_DIGEST, TEST_LABEL},
             CertifyKeyCmd, CertifyKeyFlags, Command, CommandHdr, InitCtxCmd, SignCmd, SignFlags,
         },
         context::ContextType,
@@ -428,7 +428,7 @@ mod tests {
         hash::{Hasher as OpenSSLHasher, MessageDigest},
         x509::X509,
     };
-    use platform::{default::DefaultPlatform, Platform, MAX_KEY_IDENTIFIER_SIZE};
+    use platform::{Platform, MAX_KEY_IDENTIFIER_SIZE};
     use x509_parser::{nom::Parser, oid_registry::asn1_rs::oid, prelude::*};
     use zerocopy::IntoBytes;
 
@@ -458,7 +458,7 @@ mod tests {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
-            platform: DefaultPlatform,
+            platform: DEFAULT_PLATFORM,
         };
         let mut dpe = DpeInstance::new(
             &mut env,
@@ -523,7 +523,7 @@ mod tests {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
-            platform: DefaultPlatform,
+            platform: DEFAULT_PLATFORM,
         };
         let mut dpe =
             DpeInstance::new(&mut env, Support::default(), DpeInstanceFlags::empty()).unwrap();
@@ -551,7 +551,7 @@ mod tests {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
-            platform: DefaultPlatform,
+            platform: DEFAULT_PLATFORM,
         };
         let mut dpe =
             DpeInstance::new(&mut env, Support::AUTO_INIT, DpeInstanceFlags::empty()).unwrap();
@@ -588,7 +588,7 @@ mod tests {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
-            platform: DefaultPlatform,
+            platform: DEFAULT_PLATFORM,
         };
         let mut dpe =
             DpeInstance::new(&mut env, Support::AUTO_INIT, DpeInstanceFlags::empty()).unwrap();
@@ -624,7 +624,7 @@ mod tests {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
-            platform: DefaultPlatform,
+            platform: DEFAULT_PLATFORM,
         };
         let mut dpe =
             DpeInstance::new(&mut env, Support::AUTO_INIT, DpeInstanceFlags::empty()).unwrap();
@@ -653,7 +653,7 @@ mod tests {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
-            platform: DefaultPlatform,
+            platform: DEFAULT_PLATFORM,
         };
         let mut dpe =
             DpeInstance::new(&mut env, Support::AUTO_INIT, DpeInstanceFlags::empty()).unwrap();
@@ -698,7 +698,7 @@ mod tests {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
-            platform: DefaultPlatform,
+            platform: DEFAULT_PLATFORM,
         };
         let mut dpe = DpeInstance::new(
             &mut env,
@@ -796,7 +796,7 @@ mod tests {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
-            platform: DefaultPlatform,
+            platform: DEFAULT_PLATFORM,
         };
         let mut dpe = DpeInstance::new(
             &mut env,
@@ -943,7 +943,7 @@ mod tests {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
-            platform: DefaultPlatform,
+            platform: DEFAULT_PLATFORM,
         };
         let mut dpe = DpeInstance::new(
             &mut env,
@@ -970,7 +970,7 @@ mod tests {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
-            platform: DefaultPlatform,
+            platform: DEFAULT_PLATFORM,
         };
         let mut dpe = DpeInstance::new(
             &mut env,
@@ -1010,7 +1010,7 @@ mod tests {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
-            platform: DefaultPlatform,
+            platform: DEFAULT_PLATFORM,
         };
         let mut dpe = DpeInstance::new(
             &mut env,
@@ -1081,7 +1081,7 @@ mod tests {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
-            platform: DefaultPlatform,
+            platform: DEFAULT_PLATFORM,
         };
         let mut dpe = DpeInstance::new(
             &mut env,
@@ -1244,7 +1244,7 @@ mod tests {
         // New ENV so the exported-cdi slot is clear.
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
-            platform: DefaultPlatform,
+            platform: DEFAULT_PLATFORM,
         };
         dpe = DpeInstance::new(
             &mut env,
@@ -1295,7 +1295,7 @@ mod tests {
         // New ENV so the exported-cdi slot is clear.
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
-            platform: DefaultPlatform,
+            platform: DEFAULT_PLATFORM,
         };
         dpe = DpeInstance::new(
             &mut env,
@@ -1337,7 +1337,7 @@ mod tests {
             CfiCounter::reset_for_test();
             let mut env = DpeEnv::<TestTypes> {
                 crypto: OpensslCrypto::new(),
-                platform: DefaultPlatform,
+                platform: DEFAULT_PLATFORM,
             };
             let flags = {
                 let mut flags = DpeInstanceFlags::empty();
