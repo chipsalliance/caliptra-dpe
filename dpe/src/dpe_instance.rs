@@ -66,6 +66,9 @@ bitflags! {
 #[repr(C, align(4))]
 #[derive(IntoBytes, TryFromBytes, KnownLayout, Immutable, Zeroize)]
 pub struct DpeInstance {
+    /// Layout version of this structure. If the layout of this structure changes, Self::VERSION
+    /// must be updated.
+    pub version: u32,
     pub contexts: [Context; MAX_HANDLES],
     pub support: Support,
     pub flags: DpeInstanceFlags,
@@ -78,6 +81,7 @@ pub struct DpeInstance {
 const _: () = assert!(align_of::<DpeInstance>() == 4);
 
 impl DpeInstance {
+    pub const VERSION: u32 = 1;
     const MAX_NEW_HANDLE_ATTEMPTS: usize = 8;
 
     /// Create a new DPE instance.
@@ -96,6 +100,7 @@ impl DpeInstance {
         let updated_support = support.preprocess_support();
         const CONTEXT_INITIALIZER: Context = Context::new();
         let mut dpe = DpeInstance {
+            version: Self::VERSION,
             contexts: [CONTEXT_INITIALIZER; MAX_HANDLES],
             support: updated_support,
             flags,
