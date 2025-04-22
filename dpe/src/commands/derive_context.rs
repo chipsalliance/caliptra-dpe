@@ -1412,7 +1412,7 @@ mod tests {
         // Create a new env to clear cached exported CDIs
         let mut env = DpeEnv::<TestTypes> {
             crypto: OpensslCrypto::new(),
-            platform: DefaultPlatform,
+            platform: DEFAULT_PLATFORM,
         };
         dpe = DpeInstance::new(
             &mut env,

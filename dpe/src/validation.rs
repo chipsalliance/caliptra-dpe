@@ -47,6 +47,7 @@ pub enum ValidationError {
     InactiveParent = 0x16,
     InactiveChild = 0x17,
     DpeNotMarkedInitialized = 0x18,
+    VersionMismatch = 0x19,
 }
 
 impl ValidationError {
@@ -91,6 +92,14 @@ impl DpeValidator<'_> {
     /// present within the DPE instance.
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     fn validate_dpe_state(&self) -> Result<(), ValidationError> {
+        if cfi_launder(self.dpe.version == DpeInstance::VERSION) {
+            #[cfg(not(feature = "no-cfi"))]
+            cfi_assert!(self.dpe.version == DpeInstance::VERSION);
+        } else {
+            #[cfg(not(feature = "no-cfi"))]
+            cfi_assert!(self.dpe.version != DpeInstance::VERSION);
+            return Err(ValidationError::VersionMismatch);
+        }
         for i in 0..MAX_HANDLES {
             let context = &self.dpe.contexts[i];
 
@@ -706,6 +715,27 @@ pub mod tests {
         assert_eq!(
             dpe_validator.validate_dpe_state(),
             Err(ValidationError::MixedContextLocality)
+        );
+    }
+
+    #[test]
+    fn test_version_mismatch() {
+        CfiCounter::reset_for_test();
+        let mut env = DpeEnv::<TestTypes> {
+            crypto: OpensslCrypto::new(),
+            platform: DEFAULT_PLATFORM,
+        };
+        let dpe_validator = DpeValidator {
+            dpe: &mut DpeInstance::new(&mut env, Support::empty(), DpeInstanceFlags::empty())
+                .unwrap(),
+        };
+        assert_eq!(Ok(()), dpe_validator.validate_dpe_state());
+
+        // Changing the version number should cause an error
+        dpe_validator.dpe.version = 0;
+        assert_eq!(
+            dpe_validator.validate_dpe_state(),
+            Err(ValidationError::VersionMismatch)
         );
     }
 }
