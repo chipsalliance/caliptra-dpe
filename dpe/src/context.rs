@@ -109,7 +109,7 @@ impl Context {
         if idx >= MAX_HANDLES {
             return Err(DpeErrorCode::InternalError);
         }
-        let children_with_idx = self.children | 1 << idx;
+        let children_with_idx = self.children | (1 << idx);
         Ok(children_with_idx)
     }
 }
