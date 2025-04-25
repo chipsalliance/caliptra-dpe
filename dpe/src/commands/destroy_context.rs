@@ -26,6 +26,61 @@ pub struct DestroyCtxCmd {
     pub handle: ContextHandle,
 }
 
+pub(crate) fn destroy_context(
+    context_handle: &ContextHandle,
+    dpe: &mut DpeInstance,
+    locality: u32,
+) -> Result<(), DpeErrorCode> {
+    let idx = dpe.get_active_context_pos(context_handle, locality)?;
+    let context = &dpe.contexts[idx];
+    // Make sure the command is coming from the right locality.
+    if context.locality != locality {
+        return Err(DpeErrorCode::InvalidLocality);
+    } else {
+        #[cfg(not(feature = "no-cfi"))]
+        cfi_assert_eq(context.locality, locality);
+    }
+
+    // mark consecutive retired parent contexts without active children to be destroyed
+    let mut retired_contexts = 0u32;
+    let mut parent_idx = context.parent_idx as usize;
+    loop {
+        if parent_idx == Context::ROOT_INDEX as usize {
+            break;
+        } else if parent_idx >= dpe.contexts.len() {
+            return Err(DpeErrorCode::InternalError);
+        }
+        let parent_context = &dpe.contexts[parent_idx];
+        // make sure the retired context does not have other active child contexts
+        let child_context_count = flags_iter(parent_context.children, MAX_HANDLES).count();
+        if parent_context.state == ContextState::Retired && cfi_launder(child_context_count) == 1 {
+            retired_contexts |= 1 << parent_idx;
+        } else {
+            #[cfg(not(feature = "no-cfi"))]
+            cfi_assert!(parent_context.state != ContextState::Retired || child_context_count != 1);
+            break;
+        }
+
+        parent_idx = parent_context.parent_idx as usize;
+    }
+
+    // create a bitmask indicating that the current context, all its descendants, and its consecutive
+    // retired parent contexts should be destroyed
+    let to_destroy = (1 << idx) | dpe.get_descendants(context)? | retired_contexts;
+
+    for (idx, c) in dpe.contexts.iter_mut().enumerate() {
+        // Clears all the to_destroy bits in the children of every context
+        c.children &= !cfi_launder(to_destroy);
+        if to_destroy & (1 << idx) != 0 {
+            c.destroy();
+        } else {
+            #[cfg(not(feature = "no-cfi"))]
+            cfi_assert_eq(to_destroy & (1 << idx), 0);
+        }
+    }
+    Ok(())
+}
+
 impl CommandExecution for DestroyCtxCmd {
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     fn execute(
@@ -34,58 +89,7 @@ impl CommandExecution for DestroyCtxCmd {
         _env: &mut DpeEnv<impl DpeTypes>,
         locality: u32,
     ) -> Result<Response, DpeErrorCode> {
-        let idx = dpe.get_active_context_pos(&self.handle, locality)?;
-        let context = &dpe.contexts[idx];
-        // Make sure the command is coming from the right locality.
-        if context.locality != locality {
-            return Err(DpeErrorCode::InvalidLocality);
-        } else {
-            #[cfg(not(feature = "no-cfi"))]
-            cfi_assert_eq(context.locality, locality);
-        }
-
-        // mark consecutive retired parent contexts without active children to be destroyed
-        let mut retired_contexts = 0u32;
-        let mut parent_idx = context.parent_idx as usize;
-        loop {
-            if parent_idx == Context::ROOT_INDEX as usize {
-                break;
-            } else if parent_idx >= dpe.contexts.len() {
-                return Err(DpeErrorCode::InternalError);
-            }
-            let parent_context = &dpe.contexts[parent_idx];
-            // make sure the retired context does not have other active child contexts
-            let child_context_count = flags_iter(parent_context.children, MAX_HANDLES).count();
-            if parent_context.state == ContextState::Retired
-                && cfi_launder(child_context_count) == 1
-            {
-                retired_contexts |= 1 << parent_idx;
-            } else {
-                #[cfg(not(feature = "no-cfi"))]
-                cfi_assert!(
-                    parent_context.state != ContextState::Retired || child_context_count != 1
-                );
-                break;
-            }
-
-            parent_idx = parent_context.parent_idx as usize;
-        }
-
-        // create a bitmask indicating that the current context, all its descendants, and its consecutive
-        // retired parent contexts should be destroyed
-        let to_destroy = (1 << idx) | dpe.get_descendants(context)? | retired_contexts;
-
-        for (idx, c) in dpe.contexts.iter_mut().enumerate() {
-            // Clears all the to_destroy bits in the children of every context
-            c.children &= !cfi_launder(to_destroy);
-            if to_destroy & (1 << idx) != 0 {
-                c.destroy();
-            } else {
-                #[cfg(not(feature = "no-cfi"))]
-                cfi_assert_eq(to_destroy & (1 << idx), 0);
-            }
-        }
-
+        destroy_context(&self.handle, dpe, locality)?;
         Ok(Response::DestroyCtx(
             dpe.response_hdr(DpeErrorCode::NoError),
         ))
