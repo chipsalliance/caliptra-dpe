@@ -65,7 +65,9 @@ impl DpeValidator<'_> {
     /// there is no illegal state present within the DPE.
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     pub fn validate_dpe(&self) -> Result<(), DpeErrorCode> {
-        let dpe_state_validation = self.validate_dpe_state().map_err(DpeErrorCode::Validation);
+        let dpe_state_validation = self
+            .validate_dpe_state()
+            .map_err(|e| DpeErrorCode::Validation(e));
         if cfi_launder(dpe_state_validation.is_ok()) {
             #[cfg(not(feature = "no-cfi"))]
             cfi_assert!(dpe_state_validation.is_ok());
@@ -77,7 +79,7 @@ impl DpeValidator<'_> {
 
         let context_forest_validation = self
             .validate_context_forest()
-            .map_err(DpeErrorCode::Validation);
+            .map_err(|e| DpeErrorCode::Validation(e));
         if cfi_launder(context_forest_validation.is_ok()) {
             #[cfg(not(feature = "no-cfi"))]
             cfi_assert!(context_forest_validation.is_ok());
