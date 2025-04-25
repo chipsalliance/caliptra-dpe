@@ -161,8 +161,8 @@ mod tests {
     use super::*;
     use crate::{
         commands::{
-            tests::DEFAULT_PLATFORM, Command, CommandHdr, DeriveContextCmd, DeriveContextFlags,
-            InitCtxCmd,
+            tests::{DEFAULT_PLATFORM, PROFILES},
+            Command, CommandHdr, DeriveContextCmd, DeriveContextFlags, InitCtxCmd,
         },
         dpe_instance::tests::{TestTypes, SIMULATION_HANDLE, TEST_LOCALITIES},
         support::Support,
@@ -201,15 +201,15 @@ mod tests {
 
     #[test]
     fn test_deserialize_certify_key() {
-        CfiCounter::reset_for_test();
-        let mut command = CommandHdr::new_for_test(Command::CERTIFY_KEY)
-            .as_bytes()
-            .to_vec();
-        command.extend(TEST_CERTIFY_KEY_CMD.as_bytes());
-        assert_eq!(
-            Ok(Command::CertifyKey(&TEST_CERTIFY_KEY_CMD)),
-            Command::deserialize(&command)
-        );
+        for p in PROFILES {
+            CfiCounter::reset_for_test();
+            let mut command = CommandHdr::new(p, Command::CERTIFY_KEY).as_bytes().to_vec();
+            command.extend(TEST_CERTIFY_KEY_CMD.as_bytes());
+            assert_eq!(
+                Ok(Command::CertifyKey(&TEST_CERTIFY_KEY_CMD)),
+                Command::deserialize(p, &command)
+            );
+        }
     }
 
     #[test]

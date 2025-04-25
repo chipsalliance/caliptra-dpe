@@ -52,7 +52,10 @@ impl CommandExecution for GetCertificateChainCmd {
 mod tests {
     use super::*;
     use crate::{
-        commands::{tests::DEFAULT_PLATFORM, Command, CommandHdr},
+        commands::{
+            tests::{DEFAULT_PLATFORM, PROFILES},
+            Command, CommandHdr,
+        },
         dpe_instance::{
             tests::{TestTypes, TEST_LOCALITIES},
             DpeInstanceFlags,
@@ -71,16 +74,18 @@ mod tests {
     #[test]
     fn test_deserialize_get_certificate_chain() {
         CfiCounter::reset_for_test();
-        let mut command = CommandHdr::new_for_test(Command::GET_CERTIFICATE_CHAIN)
-            .as_bytes()
-            .to_vec();
-        command.extend(TEST_GET_CERTIFICATE_CHAIN_CMD.as_bytes());
-        assert_eq!(
-            Ok(Command::GetCertificateChain(
-                &TEST_GET_CERTIFICATE_CHAIN_CMD
-            )),
-            Command::deserialize(&command)
-        );
+        for p in PROFILES {
+            let mut command = CommandHdr::new(p, Command::GET_CERTIFICATE_CHAIN)
+                .as_bytes()
+                .to_vec();
+            command.extend(TEST_GET_CERTIFICATE_CHAIN_CMD.as_bytes());
+            assert_eq!(
+                Ok(Command::GetCertificateChain(
+                    &TEST_GET_CERTIFICATE_CHAIN_CMD
+                )),
+                Command::deserialize(p, &command)
+            );
+        }
     }
 
     #[test]
