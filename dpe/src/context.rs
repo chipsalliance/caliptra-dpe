@@ -4,6 +4,9 @@ use constant_time_eq::constant_time_eq_16;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes};
 use zeroize::Zeroize;
 
+#[cfg(test)]
+use std::fmt::Debug;
+
 #[repr(C, align(4))]
 #[derive(IntoBytes, TryFromBytes, KnownLayout, Immutable, Copy, Clone, PartialEq, Eq, Zeroize)]
 pub struct Context {
@@ -30,6 +33,19 @@ pub struct Context {
     /// Whether this context can emit certificates in X.509 format
     pub allow_x509: U8Bool,
     pub reserved: [u8; 2],
+}
+
+#[cfg(test)]
+impl Debug for Context {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Context")
+            .field("handle", &self.handle.0.get(0..2).unwrap())
+            .field("state", &self.state)
+            .field("chilren", &self.children)
+            .field("locality", &self.locality)
+            .field("parent_idx", &self.parent_idx)
+            .finish()
+    }
 }
 
 impl Default for Context {
@@ -92,6 +108,9 @@ impl Context {
         self.uses_internal_input_dice = false.into();
         self.allow_x509 = false.into();
         self.parent_idx = Self::ROOT_INDEX;
+        self.locality = 0;
+        self.children = 0;
+        self.handle = ContextHandle::new_invalid();
     }
 
     /// Return the list of children of the context with idx added.
@@ -102,6 +121,11 @@ impl Context {
         }
         let children_with_idx = self.children | 1 << idx;
         Ok(children_with_idx)
+    }
+
+    /// Check if `Self` has any children.
+    pub fn has_children(&self) -> bool {
+        self.children != 0
     }
 }
 

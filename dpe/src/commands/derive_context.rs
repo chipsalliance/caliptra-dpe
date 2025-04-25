@@ -1,6 +1,7 @@
 // Licensed under the Apache-2.0 license.
 use super::CommandExecution;
 use crate::{
+    commands::destroy_context,
     context::{ActiveContextArgs, Context, ContextHandle, ContextState, ContextType},
     dpe_instance::{DpeEnv, DpeInstance, DpeInstanceFlags, DpeTypes},
     response::{
@@ -327,8 +328,17 @@ impl CommandExecution for DeriveContextCmd {
                         &mut cert,
                     )?;
 
-                    // At this point we cannot error out anymore, so it is safe to set the updated child and parent contexts.
-                    dpe.contexts[parent_idx] = tmp_parent_context;
+                    if !self.retains_parent() && !dpe.contexts[parent_idx].has_children() {
+                        // When the parent is not retained and there are no other children,
+                        // destroy it.
+                        destroy_context::destroy_context(&self.handle, dpe, locality)?;
+                    } else {
+                        // We either retained the parent or it has other children, so retire it and
+                        // make it's handle invalid.
+                        // At this point we cannot error out anymore, so it is safe to set the parent context.
+                        dpe.contexts[parent_idx] = tmp_parent_context;
+                    }
+
 
                     return Ok(Response::DeriveContextExportedCdi(DeriveContextExportedCdiResp {
                         handle: ContextHandle::new_invalid(),
@@ -417,7 +427,9 @@ mod tests {
         },
         context::ContextType,
         dpe_instance::tests::{TestTypes, RANDOM_HANDLE, SIMULATION_HANDLE, TEST_LOCALITIES},
+        response::NewHandleResp,
         support::Support,
+        validation::DpeValidator,
         DpeProfile, MAX_EXPORTED_CDI_SIZE, MAX_HANDLES,
     };
     use caliptra_cfi_lib_git::CfiCounter;
@@ -1181,7 +1193,7 @@ mod tests {
             data: [0; DPE_PROFILE.get_tci_size()],
             flags: DeriveContextFlags::EXPORT_CDI | DeriveContextFlags::CREATE_CERTIFICATE,
             tci_type: 0,
-            target_locality: TEST_LOCALITIES[0],
+            target_locality: 0,
         }
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[0]);
 
@@ -1285,8 +1297,7 @@ mod tests {
             Err(e) => panic!("{:?}", e),
             _ => panic!("expected to get a valid DeriveContextExportedCdi response."),
         };
-        assert_ne!(res.parent_handle, ContextHandle::new_invalid());
-        assert_ne!(res.parent_handle, ContextHandle::default());
+        assert_ne!(res.parent_handle, handle);
         assert_eq!(res.handle, ContextHandle::new_invalid());
         assert_ne!(res.certificate_size, 0);
         assert_ne!(res.new_certificate, [0; MAX_CERT_SIZE]);
@@ -1329,6 +1340,275 @@ mod tests {
         assert_ne!(res.certificate_size, 0);
         assert_ne!(res.new_certificate, [0; MAX_CERT_SIZE]);
         assert_ne!(res.exported_cdi, [0; MAX_EXPORTED_CDI_SIZE]);
+    }
+
+    #[test]
+    fn export_cdi_parent_without_children() {
+        CfiCounter::reset_for_test();
+        let mut env = DpeEnv::<TestTypes> {
+            crypto: OpensslCrypto::new(),
+            platform: DefaultPlatform,
+        };
+        let mut dpe = DpeInstance::new(
+            &mut env,
+            Support::AUTO_INIT | Support::CDI_EXPORT | Support::X509,
+            DpeInstanceFlags::empty(),
+        )
+        .unwrap();
+
+        let res = DeriveContextCmd {
+            handle: ContextHandle::default(),
+            data: [0; DPE_PROFILE.get_tci_size()],
+            flags: DeriveContextFlags::EXPORT_CDI | DeriveContextFlags::CREATE_CERTIFICATE,
+            tci_type: 0,
+            target_locality: 0,
+        }
+        .execute(&mut dpe, &mut env, TEST_LOCALITIES[0]);
+
+        let Ok(Response::DeriveContextExportedCdi(_)) = res else {
+            panic!("expected to get a valid DeriveContextExportedCdi response.");
+        };
+
+        // Make sure we did not leak a context.
+        assert_eq!(
+            dpe.contexts
+                .iter()
+                .filter(|&c| c.state == ContextState::Inactive)
+                .count(),
+            dpe.contexts.len()
+        );
+        let validator = DpeValidator { dpe: &mut dpe };
+        assert!(validator.validate_dpe().is_ok());
+    }
+
+    #[test]
+    fn export_cdi_parent_retained() {
+        CfiCounter::reset_for_test();
+        let mut env = DpeEnv::<TestTypes> {
+            crypto: OpensslCrypto::new(),
+            platform: DefaultPlatform,
+        };
+        let mut dpe = DpeInstance::new(
+            &mut env,
+            Support::AUTO_INIT
+                | Support::CDI_EXPORT
+                | Support::X509
+                | Support::RETAIN_PARENT_CONTEXT,
+            DpeInstanceFlags::empty(),
+        )
+        .unwrap();
+
+        let res = DeriveContextCmd {
+            handle: ContextHandle::default(),
+            data: [0; DPE_PROFILE.get_tci_size()],
+            flags: DeriveContextFlags::EXPORT_CDI
+                | DeriveContextFlags::CREATE_CERTIFICATE
+                | DeriveContextFlags::RETAIN_PARENT_CONTEXT,
+            tci_type: 0,
+            target_locality: 0,
+        }
+        .execute(&mut dpe, &mut env, TEST_LOCALITIES[0]);
+
+        let Ok(Response::DeriveContextExportedCdi(_)) = res else {
+            panic!("expected to get a valid DeriveContextExportedCdi response.");
+        };
+
+        let validator = DpeValidator { dpe: &mut dpe };
+        assert!(validator.validate_dpe().is_ok());
+
+        // Parent is still valid.
+        assert_eq!(
+            dpe.contexts
+                .iter()
+                .filter(|&c| c.state == ContextState::Active)
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn export_cdi_child_with_siblings() {
+        CfiCounter::reset_for_test();
+        // This test will export a CDI that has multiple siblings without retaining the parent.
+        // We verify:
+        // * DPE is in a valid state after the test.
+        // * Active siblings are not destroyed.
+        // * The grand-parent remains active.
+
+        let mut env = DpeEnv::<TestTypes> {
+            crypto: OpensslCrypto::new(),
+            platform: DefaultPlatform,
+        };
+        let mut dpe = DpeInstance::new(
+            &mut env,
+            Support::AUTO_INIT
+                | Support::CDI_EXPORT
+                | Support::X509
+                | Support::RETAIN_PARENT_CONTEXT
+                | Support::ROTATE_CONTEXT,
+            DpeInstanceFlags::empty(),
+        )
+        .unwrap();
+
+        // We want to use multiple contexts, so rotate out the default handle for a new handle.
+        let Ok(Response::RotateCtx(NewHandleResp {
+            handle: root_handle,
+            ..
+        })) = RotateCtxCmd {
+            handle: ContextHandle::default(),
+            flags: RotateCtxFlags::empty(),
+        }
+        .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
+        else {
+            panic!("Failed to rotate default handle")
+        };
+
+        let children_count = 3;
+        let mut handle = ContextHandle::new_invalid();
+        let mut parent_handle = root_handle;
+        for i in 1..=children_count {
+            // Children + Parent
+            let expected_active_contexts = i + 1;
+            // Create the next context from the current context.
+            (handle, parent_handle) = derive_context_and_check_active_child_count(
+                &mut dpe,
+                &mut env,
+                DeriveContextCmd {
+                    handle: parent_handle,
+                    data: [0; DPE_PROFILE.get_tci_size()],
+                    flags: DeriveContextFlags::RETAIN_PARENT_CONTEXT,
+                    tci_type: 0,
+                    target_locality: TEST_LOCALITIES[0],
+                },
+                expected_active_contexts,
+            );
+        }
+
+        let root_idx = dpe
+            .get_active_context_pos(&parent_handle, TEST_LOCALITIES[0])
+            .unwrap();
+        let exported_idx = dpe
+            .get_active_context_pos(&handle, TEST_LOCALITIES[0])
+            .unwrap();
+
+        // The `expected_active_contexts` = the children + the root parent - destroyed sibling.
+        let expected_active_contexts = (children_count + 1) - 1;
+
+        // Export a CDI and verify that the parent context is `destroyed`. Check that siblings remain active.
+        let _ = derive_context_and_check_active_child_count(
+            &mut dpe,
+            &mut env,
+            DeriveContextCmd {
+                handle,
+                data: [0; DPE_PROFILE.get_tci_size()],
+                flags: DeriveContextFlags::EXPORT_CDI | DeriveContextFlags::CREATE_CERTIFICATE,
+                tci_type: 0,
+                target_locality: TEST_LOCALITIES[0],
+            },
+            expected_active_contexts,
+        );
+
+        // The parent of the exported CDI is destroyed.
+        assert_eq!(dpe.contexts[exported_idx].state, ContextState::Inactive);
+        assert_eq!(
+            dpe.contexts[exported_idx].handle,
+            ContextHandle::new_invalid()
+        );
+
+        // The root node should not have been destroyed since it has other children.
+        assert_eq!(dpe.contexts[root_idx].state, ContextState::Active);
+        assert_eq!(dpe.contexts[root_idx].handle, parent_handle);
+
+        let validator = DpeValidator { dpe: &mut dpe };
+        assert!(validator.validate_dpe().is_ok());
+    }
+
+    #[test]
+    fn export_cdi_parent_with_children() {
+        CfiCounter::reset_for_test();
+        // This test will export a CDI that has multiple children without retaining the parent.
+        // We verify:
+        // * DPE is in a valid state after the test.
+        // * Active siblings are not destroyed.
+        // * The parent is retired, instead of destroyed, since it has active children.
+
+        let mut env = DpeEnv::<TestTypes> {
+            crypto: OpensslCrypto::new(),
+            platform: DefaultPlatform,
+        };
+        let mut dpe = DpeInstance::new(
+            &mut env,
+            Support::AUTO_INIT
+                | Support::CDI_EXPORT
+                | Support::X509
+                | Support::RETAIN_PARENT_CONTEXT
+                | Support::ROTATE_CONTEXT,
+            DpeInstanceFlags::empty(),
+        )
+        .unwrap();
+
+        // We want to use multiple contexts, so rotate out the default handle for a new handle.
+        let Ok(Response::RotateCtx(NewHandleResp {
+            handle: root_handle,
+            ..
+        })) = RotateCtxCmd {
+            handle: ContextHandle::default(),
+            flags: RotateCtxFlags::empty(),
+        }
+        .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
+        else {
+            panic!("Failed to rotate default handle")
+        };
+
+        let children_count = 3;
+        let mut parent_handle = root_handle;
+        for i in 1..=children_count {
+            // Children + Parent
+            let expected_active_contexts = i + 1;
+            // Create the next context from the current context.
+            (_, parent_handle) = derive_context_and_check_active_child_count(
+                &mut dpe,
+                &mut env,
+                DeriveContextCmd {
+                    handle: parent_handle,
+                    data: [0; DPE_PROFILE.get_tci_size()],
+                    flags: DeriveContextFlags::RETAIN_PARENT_CONTEXT,
+                    tci_type: 0,
+                    target_locality: TEST_LOCALITIES[0],
+                },
+                expected_active_contexts,
+            );
+        }
+
+        let parent_idx = dpe
+            .get_active_context_pos(&parent_handle, TEST_LOCALITIES[0])
+            .unwrap();
+
+        let expected_active_contexts = children_count;
+
+        // Now export the parent context and expect that the parent context is retired and all
+        // children remain active.
+        let _ = derive_context_and_check_active_child_count(
+            &mut dpe,
+            &mut env,
+            DeriveContextCmd {
+                handle: parent_handle,
+                data: [0; DPE_PROFILE.get_tci_size()],
+                flags: DeriveContextFlags::EXPORT_CDI | DeriveContextFlags::CREATE_CERTIFICATE,
+                tci_type: 0,
+                target_locality: TEST_LOCALITIES[0],
+            },
+            expected_active_contexts,
+        );
+
+        assert_eq!(dpe.contexts[parent_idx].state, ContextState::Retired);
+        assert_eq!(
+            dpe.contexts[parent_idx].handle,
+            ContextHandle::new_invalid()
+        );
+
+        let validator = DpeValidator { dpe: &mut dpe };
+        assert!(validator.validate_dpe().is_ok());
     }
 
     #[test]
@@ -1440,6 +1720,33 @@ mod tests {
                 }
                 Err(e) => panic!("x509 parsing failed: {:?}", e),
             };
+        }
+    }
+
+    fn derive_context_and_check_active_child_count(
+        dpe: &mut DpeInstance,
+        env: &mut DpeEnv<TestTypes>,
+        cmd: DeriveContextCmd,
+        expected_active_child_count: usize,
+    ) -> (ContextHandle, ContextHandle) {
+        match cmd.execute(dpe, env, TEST_LOCALITIES[0]) {
+            Ok(Response::DeriveContext(DeriveContextResp {
+                handle,
+                parent_handle,
+                ..
+            }))
+            | Ok(Response::DeriveContextExportedCdi(DeriveContextExportedCdiResp {
+                handle,
+                parent_handle,
+                ..
+            })) => {
+                assert_eq!(
+                    dpe.count_contexts(|context: &Context| context.state == ContextState::Active),
+                    Ok(expected_active_child_count)
+                );
+                (handle, parent_handle)
+            }
+            _ => panic!("expected to get a valid DeriveContext response"),
         }
     }
 }
