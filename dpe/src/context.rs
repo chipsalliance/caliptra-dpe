@@ -34,6 +34,12 @@ pub struct Context {
     pub reserved: [u8; 1],
 }
 
+// As long as a `u32` is used for the children bit map the MAX_HANDLES upper bound is 32.
+const _: () = assert!(
+    MAX_HANDLES <= 32,
+    "More than 32 MAX_HANDLES will cause an arithmatic overflow."
+);
+
 impl Default for Context {
     fn default() -> Self {
         Self::new()
@@ -299,6 +305,15 @@ mod tests {
         }
 
         assert_eq!(DpeErrorCode::MaxTcis, iter.next().unwrap().err().unwrap());
+    }
+
+    #[test]
+    fn test_add_child_overflow() {
+        let mut contexts = [CONTEXT_INITIALIZER; MAX_HANDLES];
+        assert_eq!(
+            contexts[0].add_child(MAX_HANDLES + 1),
+            Err(DpeErrorCode::InternalError)
+        );
     }
 
     #[test]
