@@ -34,15 +34,6 @@ jobs:
         run: |
           go install golang.org/x/lint/golint@latest
 
-      # The runner image has rustup with stable (with clippy and rustfmt). So we
-      # just need to update to use the most recent stable.
-      - name: Update rustup
-        run: |
-          # Keep this in sync with rust-toolchain.toml
-          rustup toolchain install 1.83-x86_64-unknown-linux-gnu
-          rustup component add --toolchain 1.83-x86_64-unknown-linux-gnu rustfmt
-          rustup component add --toolchain 1.83-x86_64-unknown-linux-gnu clippy
-
       - name: Restore sccache binary
         uses: actions/cache/restore@v3
         id: sccache_bin_restore
