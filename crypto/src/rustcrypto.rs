@@ -2,7 +2,7 @@
 
 use crate::{
     hkdf::*, AlgLen, Crypto, CryptoBuf, CryptoError, Digest, EcdsaPub, EcdsaSig, ExportedCdiHandle,
-    Hasher, MAX_EXPORTED_CDI_SIZE,
+    ExportedPubKey, Hasher, MAX_EXPORTED_CDI_SIZE,
 };
 use core::ops::Deref;
 use ecdsa::{signature::hazmat::PrehashSigner, Signature};
@@ -120,6 +120,7 @@ impl Crypto for RustCryptoImpl {
     where
         Self: 'c;
     type PrivKey = CryptoBuf;
+    type PubKey = EcdsaPub;
 
     fn hash_initialize(&mut self, algs: AlgLen) -> Result<Self::Hasher<'_>, CryptoError> {
         let hasher = match algs {
@@ -176,7 +177,7 @@ impl Crypto for RustCryptoImpl {
         cdi: &Self::Cdi,
         label: &[u8],
         info: &[u8],
-    ) -> Result<(Self::PrivKey, EcdsaPub), CryptoError> {
+    ) -> Result<(Self::PrivKey, Self::PubKey), CryptoError> {
         self.derive_key_pair_inner(algs, cdi, label, info)
     }
 
@@ -187,7 +188,7 @@ impl Crypto for RustCryptoImpl {
         exported_handle: &ExportedCdiHandle,
         label: &[u8],
         info: &[u8],
-    ) -> Result<(Self::PrivKey, EcdsaPub), CryptoError> {
+    ) -> Result<(Self::PrivKey, Self::PubKey), CryptoError> {
         let cdi = {
             let mut cdi = None;
             for (stored_cdi, stored_handle) in self.export_cdi_slots.iter() {
@@ -200,39 +201,39 @@ impl Crypto for RustCryptoImpl {
         self.derive_key_pair_inner(algs, &cdi, label, info)
     }
 
-    fn ecdsa_sign_with_alias(
+    fn sign_with_alias(
         &mut self,
         algs: AlgLen,
         digest: &Digest,
-    ) -> Result<EcdsaSig, CryptoError> {
-        match algs {
-            AlgLen::Bit256 => {
-                let signing_key = p256::ecdsa::SigningKey::from_sec1_pem(include_str!(concat!(
-                    env!("OUT_DIR"),
-                    "/alias_priv_256.pem"
-                )))?;
-                let sig: p256::ecdsa::Signature = signing_key.sign_prehash(digest.bytes())?;
-                sig.try_into()
-            }
-            AlgLen::Bit384 => {
-                let signing_key = p384::ecdsa::SigningKey::from_sec1_pem(include_str!(concat!(
-                    env!("OUT_DIR"),
-                    "/alias_priv_384.pem"
-                )))?;
-                let sig: p384::ecdsa::Signature = signing_key.sign_prehash(digest.bytes())?;
-                sig.try_into()
-            }
-        }
+    ) -> Result<super::Signature, CryptoError> {
+        let sig =
+            match algs {
+                AlgLen::Bit256 => {
+                    let signing_key = p256::ecdsa::SigningKey::from_sec1_pem(include_str!(
+                        concat!(env!("OUT_DIR"), "/alias_priv_256.pem")
+                    ))?;
+                    let sig: p256::ecdsa::Signature = signing_key.sign_prehash(digest.bytes())?;
+                    sig.try_into()
+                }
+                AlgLen::Bit384 => {
+                    let signing_key = p384::ecdsa::SigningKey::from_sec1_pem(include_str!(
+                        concat!(env!("OUT_DIR"), "/alias_priv_384.pem")
+                    ))?;
+                    let sig: p384::ecdsa::Signature = signing_key.sign_prehash(digest.bytes())?;
+                    sig.try_into()
+                }
+            }?;
+        Ok(super::Signature::Ecdsa(sig))
     }
 
-    fn ecdsa_sign_with_derived(
+    fn sign_with_derived(
         &mut self,
         algs: AlgLen,
         digest: &Digest,
         priv_key: &Self::PrivKey,
-        _pub_key: &EcdsaPub,
-    ) -> Result<EcdsaSig, CryptoError> {
-        match algs {
+        _pub_key: &Self::PubKey,
+    ) -> Result<super::Signature, CryptoError> {
+        let sig = match algs {
             AlgLen::Bit256 => {
                 let sig: p256::ecdsa::Signature =
                     p256::ecdsa::SigningKey::from_slice(priv_key.bytes())?
@@ -245,6 +246,18 @@ impl Crypto for RustCryptoImpl {
                         .sign_prehash(digest.bytes())?;
                 sig.try_into()
             }
-        }
+        }?;
+        Ok(super::Signature::Ecdsa(sig))
+    }
+
+    fn export_public_key(
+        &self,
+        pub_key: &Self::PubKey,
+    ) -> Result<crate::ExportedPubKey, CryptoError> {
+        let EcdsaPub { x, y } = pub_key;
+        Ok(ExportedPubKey::Ecdsa(EcdsaPub {
+            x: CryptoBuf::new(x.bytes())?,
+            y: CryptoBuf::new(y.bytes())?,
+        }))
     }
 }

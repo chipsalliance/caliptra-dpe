@@ -101,12 +101,21 @@ pub trait Hasher: Sized {
 
 pub type Digest = CryptoBuf;
 
+pub enum ExportedPubKey {
+    Ecdsa(EcdsaPub),
+}
+
+pub enum Signature {
+    Ecdsa(EcdsaSig),
+}
+
 pub trait Crypto {
     type Cdi;
     type Hasher<'c>: Hasher
     where
         Self: 'c;
     type PrivKey;
+    type PubKey;
 
     /// Fills the buffer with random values.
     ///
@@ -140,7 +149,7 @@ pub trait Crypto {
     fn get_pubkey_serial(
         &mut self,
         algs: AlgLen,
-        pub_key: &EcdsaPub,
+        pub_key: &ExportedPubKey,
         serial: &mut [u8],
     ) -> Result<(), CryptoError> {
         if serial.len() < algs.size() * 2 {
@@ -148,9 +157,13 @@ pub trait Crypto {
         }
 
         let mut hasher = self.hash_initialize(algs)?;
-        hasher.update(&[0x4u8])?;
-        hasher.update(pub_key.x.bytes())?;
-        hasher.update(pub_key.y.bytes())?;
+        match pub_key {
+            ExportedPubKey::Ecdsa(pub_key) => {
+                hasher.update(&[0x4u8])?;
+                hasher.update(pub_key.x.bytes())?;
+                hasher.update(pub_key.y.bytes())?;
+            }
+        }
         let digest = hasher.finish()?;
 
         CryptoBuf::write_hex_str(&digest, serial)
@@ -232,7 +245,7 @@ pub trait Crypto {
         cdi: &Self::Cdi,
         label: &[u8],
         info: &[u8],
-    ) -> Result<(Self::PrivKey, EcdsaPub), CryptoError>;
+    ) -> Result<(Self::PrivKey, Self::PubKey), CryptoError>;
 
     /// Derives an exported key pair using a cryptographically secure KDF
     ///
@@ -250,7 +263,7 @@ pub trait Crypto {
         exported_handle: &ExportedCdiHandle,
         label: &[u8],
         info: &[u8],
-    ) -> Result<(Self::PrivKey, EcdsaPub), CryptoError>;
+    ) -> Result<(Self::PrivKey, Self::PubKey), CryptoError>;
 
     /// CFI wrapper around derive_key_pair
     ///
@@ -263,7 +276,7 @@ pub trait Crypto {
         cdi: &Self::Cdi,
         label: &[u8],
         info: &[u8],
-    ) -> Result<(Self::PrivKey, EcdsaPub), CryptoError>;
+    ) -> Result<(Self::PrivKey, Self::PubKey), CryptoError>;
 
     /// CFI wrapper around derive_key_pair_exported
     ///
@@ -276,7 +289,7 @@ pub trait Crypto {
         exported_handle: &ExportedCdiHandle,
         label: &[u8],
         info: &[u8],
-    ) -> Result<(Self::PrivKey, EcdsaPub), CryptoError>;
+    ) -> Result<(Self::PrivKey, Self::PubKey), CryptoError>;
 
     /// Sign `digest` with the platform Alias Key
     ///
@@ -284,11 +297,7 @@ pub trait Crypto {
     ///
     /// * `algs` - Which length of algorithms to use.
     /// * `digest` - Digest of data to be signed.
-    fn ecdsa_sign_with_alias(
-        &mut self,
-        algs: AlgLen,
-        digest: &Digest,
-    ) -> Result<EcdsaSig, CryptoError>;
+    fn sign_with_alias(&mut self, algs: AlgLen, digest: &Digest) -> Result<Signature, CryptoError>;
 
     /// Sign `digest` with a derived key-pair from the CDI and caller-supplied private key
     ///
@@ -299,13 +308,20 @@ pub trait Crypto {
     /// * `priv_key` - Caller-supplied private key to use in public key derivation
     /// * `pub_key` - The public key corresponding to `priv_key`. An implementation may
     ///    optionally use pub_key to validate any generated signatures.
-    fn ecdsa_sign_with_derived(
+    fn sign_with_derived(
         &mut self,
         algs: AlgLen,
         digest: &Digest,
         priv_key: &Self::PrivKey,
-        pub_key: &EcdsaPub,
-    ) -> Result<EcdsaSig, CryptoError>;
+        pub_key: &Self::PubKey,
+    ) -> Result<Signature, CryptoError>;
+
+    /// Converts the internel `PubKey` into a `CryptoBuf` based struct.
+    ///
+    /// # Arguments
+    ///
+    /// * `pub_key` - The public key previously created in a derivation.
+    fn export_public_key(&self, pub_key: &Self::PubKey) -> Result<ExportedPubKey, CryptoError>;
 }
 #[cfg(test)]
 mod tests {

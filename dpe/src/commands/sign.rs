@@ -13,7 +13,7 @@ use caliptra_cfi_lib_git::cfi_launder;
 #[cfg(not(feature = "no-cfi"))]
 use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq, cfi_assert_ne};
 use cfg_if::cfg_if;
-use crypto::{Crypto, Digest, EcdsaSig};
+use crypto::{Crypto, Digest, EcdsaSig, Signature};
 
 #[repr(C)]
 #[derive(
@@ -80,9 +80,9 @@ impl SignCmd {
         }
         let (priv_key, pub_key) = key_pair?;
 
-        let sig = env
+        let Signature::Ecdsa(sig) = env
             .crypto
-            .ecdsa_sign_with_derived(algs, digest, &priv_key, &pub_key)?;
+            .sign_with_derived(algs, digest, &priv_key, &pub_key)?;
 
         Ok(sig)
     }
