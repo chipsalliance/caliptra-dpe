@@ -3,7 +3,9 @@ use super::CommandExecution;
 use crate::{
     context::{ActiveContextArgs, Context, ContextHandle, ContextState, ContextType},
     dpe_instance::{DpeEnv, DpeInstance, DpeInstanceFlags, DpeTypes},
-    response::{DeriveContextExportedCdiResp, DeriveContextResp, DpeErrorCode, Response},
+    response::{
+        DeriveContextExportedCdiResp, DeriveContextResp, DpeErrorCode, Response, ResponseHdr,
+    },
     tci::TciMeasurement,
     x509::{create_exported_dpe_cert, CreateDpeCertArgs, CreateDpeCertResult},
     DPE_PROFILE, MAX_CERT_SIZE,
@@ -280,7 +282,7 @@ impl CommandExecution for DeriveContextCmd {
                         handle: dpe.contexts[parent_idx].handle,
                         // Should be ignored since retain_parent cannot be true
                         parent_handle: ContextHandle::default(),
-                        resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
+                        resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
                     }));
                 } else {
                     Err(DpeErrorCode::ArgumentNotSupported)?
@@ -336,7 +338,7 @@ impl CommandExecution for DeriveContextCmd {
                     return Ok(Response::DeriveContextExportedCdi(DeriveContextExportedCdiResp {
                         handle: ContextHandle::new_invalid(),
                         parent_handle: dpe.contexts[parent_idx].handle,
-                        resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
+                        resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
                         exported_cdi: exported_cdi_handle,
                         certificate_size: cert_size,
                         new_certificate: cert,
@@ -406,7 +408,7 @@ impl CommandExecution for DeriveContextCmd {
         Ok(Response::DeriveContext(DeriveContextResp {
             handle: child_handle,
             parent_handle: dpe.contexts[parent_idx].handle,
-            resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
+            resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
         }))
     }
 }
@@ -426,7 +428,7 @@ mod tests {
         DpeProfile, MAX_EXPORTED_CDI_SIZE, MAX_HANDLES,
     };
     use caliptra_cfi_lib_git::CfiCounter;
-    use crypto::{Crypto, Hasher, OpensslCrypto};
+    use crypto::{Crypto, Hasher, RustCryptoImpl};
     use openssl::{
         bn::BigNum,
         ecdsa::EcdsaSig,
@@ -462,7 +464,7 @@ mod tests {
     fn test_support() {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
-            crypto: OpensslCrypto::new(),
+            crypto: RustCryptoImpl::new(),
             platform: DEFAULT_PLATFORM,
         };
         let mut dpe = DpeInstance::new(
@@ -527,7 +529,7 @@ mod tests {
     fn test_initial_conditions() {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
-            crypto: OpensslCrypto::new(),
+            crypto: RustCryptoImpl::new(),
             platform: DEFAULT_PLATFORM,
         };
         let mut dpe =
@@ -555,7 +557,7 @@ mod tests {
     fn test_max_tcis() {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
-            crypto: OpensslCrypto::new(),
+            crypto: RustCryptoImpl::new(),
             platform: DEFAULT_PLATFORM,
         };
         let mut dpe =
@@ -592,7 +594,7 @@ mod tests {
     fn test_set_child_parent_relationship() {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
-            crypto: OpensslCrypto::new(),
+            crypto: RustCryptoImpl::new(),
             platform: DEFAULT_PLATFORM,
         };
         let mut dpe =
@@ -628,7 +630,7 @@ mod tests {
     fn test_set_other_values() {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
-            crypto: OpensslCrypto::new(),
+            crypto: RustCryptoImpl::new(),
             platform: DEFAULT_PLATFORM,
         };
         let mut dpe =
@@ -657,7 +659,7 @@ mod tests {
     fn test_correct_child_handle() {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
-            crypto: OpensslCrypto::new(),
+            crypto: RustCryptoImpl::new(),
             platform: DEFAULT_PLATFORM,
         };
         let mut dpe =
@@ -668,7 +670,7 @@ mod tests {
             Ok(Response::DeriveContext(DeriveContextResp {
                 handle: ContextHandle::default(),
                 parent_handle: ContextHandle([0xff; ContextHandle::SIZE]),
-                resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
+                resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
             })),
             DeriveContextCmd {
                 handle: ContextHandle::default(),
@@ -685,7 +687,7 @@ mod tests {
             Ok(Response::DeriveContext(DeriveContextResp {
                 handle: RANDOM_HANDLE,
                 parent_handle: ContextHandle([0xff; ContextHandle::SIZE]),
-                resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
+                resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
             })),
             DeriveContextCmd {
                 handle: ContextHandle::default(),
@@ -702,7 +704,7 @@ mod tests {
     fn test_full_attestation_flow() {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
-            crypto: OpensslCrypto::new(),
+            crypto: RustCryptoImpl::new(),
             platform: DEFAULT_PLATFORM,
         };
         let mut dpe = DpeInstance::new(
@@ -800,7 +802,7 @@ mod tests {
     fn test_correct_parent_handle() {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
-            crypto: OpensslCrypto::new(),
+            crypto: RustCryptoImpl::new(),
             platform: DEFAULT_PLATFORM,
         };
         let mut dpe = DpeInstance::new(
@@ -815,7 +817,7 @@ mod tests {
             Ok(Response::DeriveContext(DeriveContextResp {
                 handle: ContextHandle::default(),
                 parent_handle: ContextHandle([0xff; ContextHandle::SIZE]),
-                resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
+                resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
             })),
             DeriveContextCmd {
                 handle: ContextHandle::default(),
@@ -832,7 +834,7 @@ mod tests {
             Ok(Response::DeriveContext(DeriveContextResp {
                 handle: ContextHandle::default(),
                 parent_handle: ContextHandle::default(),
-                resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
+                resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
             })),
             DeriveContextCmd {
                 handle: ContextHandle::default(),
@@ -881,7 +883,7 @@ mod tests {
         assert_eq!(parent_handle, RANDOM_HANDLE);
         assert_eq!(handle, next_random_handle);
         assert_ne!(parent_handle, ContextHandle::default());
-        assert_eq!(resp_hdr, dpe.response_hdr(DpeErrorCode::NoError));
+        assert_eq!(resp_hdr, ResponseHdr::new(DpeErrorCode::NoError));
     }
 
     #[test]
@@ -947,7 +949,7 @@ mod tests {
     fn test_default_context_cannot_be_retained() {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
-            crypto: OpensslCrypto::new(),
+            crypto: RustCryptoImpl::new(),
             platform: DEFAULT_PLATFORM,
         };
         let mut dpe = DpeInstance::new(
@@ -974,7 +976,7 @@ mod tests {
     fn test_make_default_in_other_locality_that_has_non_default() {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
-            crypto: OpensslCrypto::new(),
+            crypto: RustCryptoImpl::new(),
             platform: DEFAULT_PLATFORM,
         };
         let mut dpe = DpeInstance::new(
@@ -1014,7 +1016,7 @@ mod tests {
     fn test_recursive() {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
-            crypto: OpensslCrypto::new(),
+            crypto: RustCryptoImpl::new(),
             platform: DEFAULT_PLATFORM,
         };
         let mut dpe = DpeInstance::new(
@@ -1031,7 +1033,7 @@ mod tests {
             Ok(Response::DeriveContext(DeriveContextResp {
                 handle: ContextHandle::default(),
                 parent_handle: ContextHandle::default(),
-                resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
+                resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
             })),
             DeriveContextCmd {
                 handle: ContextHandle::default(),
@@ -1070,11 +1072,11 @@ mod tests {
         assert!(dpe.contexts[child_idx].allow_export_cdi());
 
         // check tci_cumulative correctly computed
-        let mut hasher = env.crypto.hash_initialize(DPE_PROFILE.alg_len()).unwrap();
+        let mut hasher = env.crypto.hash_initialize().unwrap();
         hasher.update(&[0u8; DPE_PROFILE.get_hash_size()]).unwrap();
         hasher.update(&[1u8; DPE_PROFILE.get_hash_size()]).unwrap();
         let temp_digest = hasher.finish().unwrap();
-        let mut hasher_2 = env.crypto.hash_initialize(DPE_PROFILE.alg_len()).unwrap();
+        let mut hasher_2 = env.crypto.hash_initialize().unwrap();
         hasher_2.update(temp_digest.bytes()).unwrap();
         hasher_2
             .update(&[2u8; DPE_PROFILE.get_hash_size()])
@@ -1087,7 +1089,7 @@ mod tests {
     fn test_cdi_export_flags() {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
-            crypto: OpensslCrypto::new(),
+            crypto: RustCryptoImpl::new(),
             platform: DEFAULT_PLATFORM,
         };
         let mut dpe = DpeInstance::new(
@@ -1250,7 +1252,7 @@ mod tests {
 
         // New ENV so the exported-cdi slot is clear.
         let mut env = DpeEnv::<TestTypes> {
-            crypto: OpensslCrypto::new(),
+            crypto: RustCryptoImpl::new(),
             platform: DEFAULT_PLATFORM,
         };
         dpe = DpeInstance::new(
@@ -1300,7 +1302,7 @@ mod tests {
 
         // New ENV so the exported-cdi slot is clear.
         let mut env = DpeEnv::<TestTypes> {
-            crypto: OpensslCrypto::new(),
+            crypto: RustCryptoImpl::new(),
             platform: DEFAULT_PLATFORM,
         };
         dpe = DpeInstance::new(
@@ -1409,7 +1411,7 @@ mod tests {
 
         // Create a new env to clear cached exported CDIs
         let mut env = DpeEnv::<TestTypes> {
-            crypto: OpensslCrypto::new(),
+            crypto: RustCryptoImpl::new(),
             platform: DEFAULT_PLATFORM,
         };
         dpe = DpeInstance::new(
@@ -1464,7 +1466,7 @@ mod tests {
         for mark_dice_extensions_critical in [true, false] {
             CfiCounter::reset_for_test();
             let mut env = DpeEnv::<TestTypes> {
-                crypto: OpensslCrypto::new(),
+                crypto: RustCryptoImpl::new(),
                 platform: DEFAULT_PLATFORM,
             };
             let flags = {

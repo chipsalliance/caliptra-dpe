@@ -1,51 +1,31 @@
 // Licensed under the Apache-2.0 license
 
-use crate::{AlgLen, CryptoError};
+use crate::{ecdsa::curve_384::Curve384, CryptoError};
 use arrayvec::ArrayVec;
 use zeroize::ZeroizeOnDrop;
-
-/// An ECDSA signature
-pub struct EcdsaSig {
-    pub r: CryptoBuf,
-    pub s: CryptoBuf,
-}
-
-/// An ECDSA public key
-#[derive(ZeroizeOnDrop)]
-pub struct EcdsaPub {
-    pub x: CryptoBuf,
-    pub y: CryptoBuf,
-}
-
-impl EcdsaPub {
-    pub fn default(alg: AlgLen) -> EcdsaPub {
-        EcdsaPub {
-            x: CryptoBuf::default(alg),
-            y: CryptoBuf::default(alg),
-        }
-    }
-}
 
 /// A common base struct that can be used for all digests, signatures, and keys.
 #[derive(Debug, PartialEq, Eq, ZeroizeOnDrop)]
 pub struct CryptoBuf(ArrayVec<u8, { Self::MAX_SIZE }>);
 
+impl Default for CryptoBuf {
+    fn default() -> Self {
+        let mut vec = ArrayVec::new();
+        for _ in 0..Self::MAX_SIZE {
+            vec.push(0);
+        }
+        CryptoBuf(vec)
+    }
+}
+
 impl CryptoBuf {
-    pub const MAX_SIZE: usize = AlgLen::MAX_ALG_LEN_BYTES;
+    pub const MAX_SIZE: usize = (384 / 8) * 2;
 
     pub fn new(bytes: &[u8]) -> Result<CryptoBuf, CryptoError> {
         let mut vec = ArrayVec::new();
         vec.try_extend_from_slice(bytes)
             .map_err(|_| CryptoError::Size)?;
         Ok(CryptoBuf(vec))
-    }
-
-    pub fn default(algs: AlgLen) -> CryptoBuf {
-        let mut vec = ArrayVec::new();
-        for _ in 0..algs.size() {
-            vec.push(0);
-        }
-        CryptoBuf(vec)
     }
 
     pub fn bytes(&self) -> &[u8] {
@@ -90,6 +70,8 @@ impl CryptoBuf {
 
 #[cfg(test)]
 mod tests {
+    use crate::{ecdsa::EcdsaAlgorithm, Algorithm};
+
     use super::*;
 
     #[test]
@@ -99,18 +81,21 @@ mod tests {
         // array length must not exceed MAX_SIZE
         assert_eq!(CryptoBuf::new(arr), Err(CryptoError::Size));
 
-        let arr = &[1u8; AlgLen::Bit256.size()];
+        let arr = &[1u8; Algorithm::Ecdsa(EcdsaAlgorithm::Bit256).signature_size()];
         // test new
         match CryptoBuf::new(arr) {
             Ok(buf) => {
                 assert_eq!(arr, buf.bytes());
-                assert_eq!(buf.len(), AlgLen::Bit256.size());
+                assert_eq!(
+                    buf.len(),
+                    Algorithm::Ecdsa(EcdsaAlgorithm::Bit256).signature_size()
+                );
             }
             Err(_) => panic!("CryptoBuf::new failed"),
         };
 
         // test default
-        let default_buf = CryptoBuf::default(AlgLen::Bit384);
-        assert_eq!(default_buf.bytes(), [0; AlgLen::Bit384.size()]);
+        let default_buf = CryptoBuf::default();
+        assert_eq!(default_buf.bytes(), [0; CryptoBuf::MAX_SIZE]);
     }
 }

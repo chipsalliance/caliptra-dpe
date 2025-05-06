@@ -12,7 +12,7 @@ use crate::{
     response::{DpeErrorCode, GetProfileResp, Response, ResponseHdr},
     support::Support,
     tci::{TciMeasurement, TciNodeData},
-    DpeProfile, U8Bool, DPE_PROFILE, MAX_HANDLES,
+    U8Bool, DPE_PROFILE, MAX_HANDLES,
 };
 use bitflags::bitflags;
 #[cfg(not(feature = "no-cfi"))]
@@ -22,7 +22,7 @@ use caliptra_cfi_lib_git::cfi_launder;
 use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq};
 use cfg_if::cfg_if;
 use core::mem::align_of;
-use crypto::{Crypto, Digest, Hasher};
+use crypto::{Crypto, CryptoEngine, Digest, Hasher};
 use platform::Platform;
 #[cfg(not(feature = "disable_internal_dice"))]
 use platform::MAX_CHUNK_SIZE;
@@ -30,7 +30,7 @@ use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes};
 use zeroize::Zeroize;
 
 pub trait DpeTypes {
-    type Crypto<'a>: Crypto
+    type Crypto<'a>: CryptoEngine
     where
         Self: 'a;
     type Platform<'a>: Platform
@@ -69,7 +69,6 @@ pub struct DpeInstance {
     /// Layout version of this structure. If the layout of this structure changes, Self::VERSION
     /// must be updated.
     pub version: u32,
-    pub profile: DpeProfile,
     pub contexts: [Context; MAX_HANDLES],
     pub support: Support,
     pub flags: DpeInstanceFlags,
@@ -102,7 +101,6 @@ impl DpeInstance {
         const CONTEXT_INITIALIZER: Context = Context::new();
         let mut dpe = DpeInstance {
             version: Self::VERSION,
-            profile: DPE_PROFILE,
             contexts: [CONTEXT_INITIALIZER; MAX_HANDLES],
             support: updated_support,
             flags,
@@ -174,7 +172,6 @@ impl DpeInstance {
         let vendor_id = platform.get_vendor_id()?;
         let vendor_sku = platform.get_vendor_sku()?;
         Ok(GetProfileResp::new(
-            self.profile,
             self.support.bits(),
             vendor_id,
             vendor_sku,
@@ -210,12 +207,8 @@ impl DpeInstance {
 
         match resp {
             Ok(resp) => Ok(resp),
-            Err(err_code) => Ok(Response::Error(self.response_hdr(err_code))),
+            Err(err_code) => Ok(Response::Error(ResponseHdr::new(err_code))),
         }
-    }
-
-    pub fn response_hdr(&self, err_code: DpeErrorCode) -> ResponseHdr {
-        ResponseHdr::new(self.profile, err_code)
     }
 
     /// Finds the index of the context having `handle` in `locality`
@@ -412,7 +405,7 @@ impl DpeInstance {
         }
 
         // Derive the new TCI as HASH(TCI_CUMULATIVE || INPUT_DATA).
-        let mut hasher = env.crypto.hash_initialize(DPE_PROFILE.alg_len())?;
+        let mut hasher = env.crypto.hash_initialize()?;
         hasher.update(&context.tci.tci_cumulative.0)?;
         hasher.update(&measurement.0)?;
         let digest = hasher.finish()?;
@@ -470,7 +463,7 @@ impl DpeInstance {
         env: &mut DpeEnv<impl DpeTypes>,
         start_idx: usize,
     ) -> Result<Digest, DpeErrorCode> {
-        let mut hasher = env.crypto.hash_initialize(DPE_PROFILE.alg_len())?;
+        let mut hasher = env.crypto.hash_initialize()?;
 
         let mut uses_internal_input_info = false;
         let mut uses_internal_input_dice = false;
@@ -566,13 +559,24 @@ pub mod tests {
     use crate::support::test::SUPPORT;
     use crate::{commands::CommandHdr, CURRENT_PROFILE_MAJOR_VERSION};
     use caliptra_cfi_lib_git::CfiCounter;
-    use crypto::OpensslCrypto;
+    use crypto::RustCryptoImpl;
     use platform::default::{DefaultPlatform, AUTO_INIT_LOCALITY};
     use zerocopy::IntoBytes;
 
+    #[cfg(feature = "dpe_profile_p256_sha256")]
+    use crypto::Ecdsa256RustCrypto;
+
+    #[cfg(feature = "dpe_profile_p384_sha384")]
+    use crypto::Ecdsa384RustCrypto;
+
     pub struct TestTypes;
     impl DpeTypes for TestTypes {
-        type Crypto<'a> = OpensslCrypto;
+        #[cfg(feature = "dpe_profile_p256_sha256")]
+        type Crypto<'a> = Ecdsa256RustCrypto;
+
+        #[cfg(feature = "dpe_profile_p384_sha384")]
+        type Crypto<'a> = Ecdsa384RustCrypto;
+
         type Platform<'a> = DefaultPlatform;
     }
 
@@ -590,14 +594,13 @@ pub mod tests {
     fn test_execute_serialized_command() {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
-            crypto: OpensslCrypto::new(),
+            crypto: RustCryptoImpl::new(),
             platform: DEFAULT_PLATFORM,
         };
         let mut dpe = DpeInstance::new(&mut env, SUPPORT, DpeInstanceFlags::empty()).unwrap();
 
         assert_eq!(
             Response::GetProfile(GetProfileResp::new(
-                dpe.profile,
                 SUPPORT.bits(),
                 env.platform.get_vendor_id().unwrap(),
                 env.platform.get_vendor_sku().unwrap()
@@ -619,7 +622,7 @@ pub mod tests {
         assert_eq!(
             Response::InitCtx(NewHandleResp {
                 handle: RANDOM_HANDLE,
-                resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
+                resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
             }),
             dpe.execute_serialized_command(&mut env, TEST_LOCALITIES[0], &command)
                 .unwrap()
@@ -630,7 +633,7 @@ pub mod tests {
     fn test_get_profile() {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
-            crypto: OpensslCrypto::new(),
+            crypto: RustCryptoImpl::new(),
             platform: DEFAULT_PLATFORM,
         };
         let dpe = DpeInstance::new(&mut env, SUPPORT, DpeInstanceFlags::empty()).unwrap();
@@ -643,7 +646,7 @@ pub mod tests {
     fn test_get_active_context_index() {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
-            crypto: OpensslCrypto::new(),
+            crypto: RustCryptoImpl::new(),
             platform: DEFAULT_PLATFORM,
         };
         let mut dpe =
@@ -682,7 +685,7 @@ pub mod tests {
     fn test_add_tci_measurement() {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
-            crypto: OpensslCrypto::new(),
+            crypto: RustCryptoImpl::new(),
             platform: DEFAULT_PLATFORM,
         };
 
@@ -702,7 +705,7 @@ pub mod tests {
         assert_eq!(data, context.tci.tci_current.0);
 
         // Compute cumulative.
-        let mut hasher = env.crypto.hash_initialize(DPE_PROFILE.alg_len()).unwrap();
+        let mut hasher = env.crypto.hash_initialize().unwrap();
         hasher.update(&[0; DPE_PROFILE.get_hash_size()]).unwrap();
         hasher.update(&data).unwrap();
         let first_cumulative = hasher.finish().unwrap();
@@ -722,7 +725,7 @@ pub mod tests {
         dpe.contexts[0] = context;
         assert_eq!(data, context.tci.tci_current.0);
 
-        let mut hasher = env.crypto.hash_initialize(DPE_PROFILE.alg_len()).unwrap();
+        let mut hasher = env.crypto.hash_initialize().unwrap();
         hasher.update(first_cumulative.bytes()).unwrap();
         hasher.update(&data).unwrap();
         let second_cumulative = hasher.finish().unwrap();
@@ -735,7 +738,7 @@ pub mod tests {
     fn test_get_descendants() {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
-            crypto: OpensslCrypto::new(),
+            crypto: RustCryptoImpl::new(),
             platform: DEFAULT_PLATFORM,
         };
         let mut dpe =
@@ -792,7 +795,7 @@ pub mod tests {
     fn test_derive_cdi() {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
-            crypto: OpensslCrypto::new(),
+            crypto: RustCryptoImpl::new(),
             platform: DEFAULT_PLATFORM,
         };
         let mut dpe = DpeInstance::new(&mut env, SUPPORT, DpeInstanceFlags::empty()).unwrap();
@@ -817,16 +820,13 @@ pub mod tests {
             let digest = dpe
                 .compute_measurement_hash(&mut env, leaf_context_idx)
                 .unwrap();
-            let curr_cdi = env
-                .crypto
-                .derive_cdi(DPE_PROFILE.alg_len(), &digest, b"DPE")
-                .unwrap();
+            let curr_cdi = env.crypto.derive_cdi(&digest, b"DPE").unwrap();
             assert_ne!(last_cdi, curr_cdi);
 
             last_cdi = curr_cdi;
         }
 
-        let mut hasher = env.crypto.hash_initialize(DPE_PROFILE.alg_len()).unwrap();
+        let mut hasher = env.crypto.hash_initialize().unwrap();
         let leaf_idx = dpe
             .get_active_context_pos(&ContextHandle::default(), TEST_LOCALITIES[0])
             .unwrap();
@@ -840,10 +840,7 @@ pub mod tests {
         }
 
         let digest = hasher.finish().unwrap();
-        let answer = env
-            .crypto
-            .derive_cdi(DPE_PROFILE.alg_len(), &digest, b"DPE")
-            .unwrap();
+        let answer = env.crypto.derive_cdi(&digest, b"DPE").unwrap();
         assert_eq!(answer, last_cdi);
     }
 
@@ -851,7 +848,7 @@ pub mod tests {
     fn test_hash_internal_input_info() {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
-            crypto: OpensslCrypto::new(),
+            crypto: RustCryptoImpl::new(),
             platform: DEFAULT_PLATFORM,
         };
         let mut dpe = DpeInstance::new(
@@ -880,16 +877,13 @@ pub mod tests {
         let digest = dpe
             .compute_measurement_hash(&mut env, child_context_idx)
             .unwrap();
-        let cdi_with_internal_input_info = env
-            .crypto
-            .derive_cdi(DPE_PROFILE.alg_len(), &digest, b"DPE")
-            .unwrap();
+        let cdi_with_internal_input_info = env.crypto.derive_cdi(&digest, b"DPE").unwrap();
         let parent_context = &dpe.contexts[parent_context_idx];
         let child_context = &dpe.contexts[child_context_idx];
         assert!(child_context.uses_internal_input_info());
         assert!(!parent_context.uses_internal_input_info());
 
-        let mut hasher = env.crypto.hash_initialize(DPE_PROFILE.alg_len()).unwrap();
+        let mut hasher = env.crypto.hash_initialize().unwrap();
 
         hasher.update(child_context.tci.as_bytes()).unwrap();
         hasher.update(/*allow_x509=*/ false.as_bytes()).unwrap();
@@ -904,10 +898,7 @@ pub mod tests {
             .unwrap();
 
         let digest = hasher.finish().unwrap();
-        let answer = env
-            .crypto
-            .derive_cdi(DPE_PROFILE.alg_len(), &digest, b"DPE")
-            .unwrap();
+        let answer = env.crypto.derive_cdi(&digest, b"DPE").unwrap();
         assert_eq!(answer, cdi_with_internal_input_info);
     }
 
@@ -915,7 +906,7 @@ pub mod tests {
     fn test_hash_internal_input_dice() {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
-            crypto: OpensslCrypto::new(),
+            crypto: RustCryptoImpl::new(),
             platform: DEFAULT_PLATFORM,
         };
         let mut dpe = DpeInstance::new(
@@ -944,16 +935,13 @@ pub mod tests {
         let digest = dpe
             .compute_measurement_hash(&mut env, child_context_idx)
             .unwrap();
-        let cdi_with_internal_input_dice = env
-            .crypto
-            .derive_cdi(DPE_PROFILE.alg_len(), &digest, b"DPE")
-            .unwrap();
+        let cdi_with_internal_input_dice = env.crypto.derive_cdi(&digest, b"DPE").unwrap();
         let parent_context = &dpe.contexts[parent_context_idx];
         let child_context = &dpe.contexts[child_context_idx];
         assert!(child_context.uses_internal_input_dice());
         assert!(!parent_context.uses_internal_input_dice());
 
-        let mut hasher = env.crypto.hash_initialize(DPE_PROFILE.alg_len()).unwrap();
+        let mut hasher = env.crypto.hash_initialize().unwrap();
 
         hasher.update(child_context.tci.as_bytes()).unwrap();
         hasher.update(/*allow_x509=*/ false.as_bytes()).unwrap();
@@ -963,10 +951,7 @@ pub mod tests {
         hasher.update(&cert_chain).unwrap();
 
         let digest = hasher.finish().unwrap();
-        let answer = env
-            .crypto
-            .derive_cdi(DPE_PROFILE.alg_len(), &digest, b"DPE")
-            .unwrap();
+        let answer = env.crypto.derive_cdi(&digest, b"DPE").unwrap();
         assert_eq!(answer, cdi_with_internal_input_dice)
     }
 
@@ -974,7 +959,7 @@ pub mod tests {
     fn test_new_auto_init() {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
-            crypto: OpensslCrypto::new(),
+            crypto: RustCryptoImpl::new(),
             platform: DEFAULT_PLATFORM,
         };
         let tci_type = 0xdeadbeef_u32;

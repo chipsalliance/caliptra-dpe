@@ -3,7 +3,7 @@ use super::CommandExecution;
 use crate::{
     context::{ContextHandle, ContextState},
     dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
-    response::{DpeErrorCode, NewHandleResp, Response},
+    response::{DpeErrorCode, NewHandleResp, Response, ResponseHdr},
 };
 use bitflags::bitflags;
 #[cfg(not(feature = "no-cfi"))]
@@ -118,7 +118,7 @@ impl CommandExecution for RotateCtxCmd {
 
         Ok(Response::RotateCtx(NewHandleResp {
             handle: new_handle,
-            resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
+            resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
         }))
     }
 }
@@ -135,7 +135,7 @@ mod tests {
         support::Support,
     };
     use caliptra_cfi_lib_git::CfiCounter;
-    use crypto::OpensslCrypto;
+    use crypto::RustCryptoImpl;
     use zerocopy::IntoBytes;
 
     const TEST_ROTATE_CTX_CMD: RotateCtxCmd = RotateCtxCmd {
@@ -160,7 +160,7 @@ mod tests {
     fn test_rotate_context() {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
-            crypto: OpensslCrypto::new(),
+            crypto: RustCryptoImpl::new(),
             platform: DEFAULT_PLATFORM,
         };
         let mut dpe =
@@ -216,7 +216,7 @@ mod tests {
         assert_eq!(
             Ok(Response::RotateCtx(NewHandleResp {
                 handle: RANDOM_HANDLE,
-                resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
+                resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
             })),
             RotateCtxCmd {
                 handle: ContextHandle::default(),
@@ -244,7 +244,7 @@ mod tests {
         assert_eq!(
             Ok(Response::RotateCtx(NewHandleResp {
                 handle: ContextHandle::default(),
-                resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
+                resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
             })),
             RotateCtxCmd {
                 handle: RANDOM_HANDLE,

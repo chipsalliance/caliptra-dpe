@@ -3,7 +3,7 @@ use super::CommandExecution;
 use crate::{
     context::{ContextHandle, ContextType},
     dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
-    response::{DpeErrorCode, Response, SignResp},
+    response::{DpeErrorCode, Response, ResponseHdr, SignResp},
     DPE_PROFILE,
 };
 use bitflags::bitflags;
@@ -13,18 +13,11 @@ use caliptra_cfi_lib_git::cfi_launder;
 #[cfg(not(feature = "no-cfi"))]
 use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq, cfi_assert_ne};
 use cfg_if::cfg_if;
-use crypto::{Crypto, Digest, EcdsaSig};
+use crypto::{ecdsa::EcdsaSignature, Crypto, Digest, Signature};
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 #[repr(C)]
-#[derive(
-    Debug,
-    PartialEq,
-    Eq,
-    zerocopy::IntoBytes,
-    zerocopy::FromBytes,
-    zerocopy::Immutable,
-    zerocopy::KnownLayout,
-)]
+#[derive(Debug, PartialEq, Eq, IntoBytes, FromBytes, Immutable, KnownLayout)]
 pub struct SignFlags(pub u32);
 
 bitflags! {
@@ -32,15 +25,7 @@ bitflags! {
 }
 
 #[repr(C)]
-#[derive(
-    Debug,
-    PartialEq,
-    Eq,
-    zerocopy::IntoBytes,
-    zerocopy::FromBytes,
-    zerocopy::Immutable,
-    zerocopy::KnownLayout,
-)]
+#[derive(Debug, PartialEq, Eq, IntoBytes, FromBytes, Immutable, KnownLayout)]
 pub struct SignCmd {
     pub handle: ContextHandle,
     pub label: [u8; DPE_PROFILE.get_hash_size()],
@@ -58,19 +43,16 @@ impl SignCmd {
     /// * `idx` - The index of the context where the measurement hash is computed from
     /// * `digest` - The data to be signed
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
-    fn ecdsa_sign(
+    fn sign(
         &self,
         dpe: &mut DpeInstance,
         env: &mut DpeEnv<impl DpeTypes>,
         idx: usize,
         digest: &Digest,
-    ) -> Result<EcdsaSig, DpeErrorCode> {
-        let algs = DPE_PROFILE.alg_len();
+    ) -> Result<Signature, DpeErrorCode> {
         let cdi_digest = dpe.compute_measurement_hash(env, idx)?;
-        let cdi = env
-            .crypto
-            .derive_cdi(DPE_PROFILE.alg_len(), &cdi_digest, b"DPE")?;
-        let key_pair = env.crypto.derive_key_pair(algs, &cdi, &self.label, b"ECC");
+        let cdi = env.crypto.derive_cdi(&cdi_digest, b"DPE")?;
+        let key_pair = env.crypto.derive_key_pair(&cdi, &self.label, b"ECC");
         if cfi_launder(key_pair.is_ok()) {
             #[cfg(not(feature = "no-cfi"))]
             cfi_assert!(key_pair.is_ok());
@@ -80,11 +62,8 @@ impl SignCmd {
         }
         let (priv_key, pub_key) = key_pair?;
 
-        let sig = env
-            .crypto
-            .ecdsa_sign_with_derived(algs, digest, &priv_key, &pub_key)?;
-
-        Ok(sig)
+        // TODO(clundin): Remove the `?` keyword here
+        Ok(env.crypto.sign_with_derived(digest, &priv_key, &pub_key)?)
     }
 }
 
@@ -109,18 +88,27 @@ impl CommandExecution for SignCmd {
             }
         }
 
-        let digest = Digest::new(&self.digest)?;
-        let EcdsaSig { r, s } = self.ecdsa_sign(dpe, env, idx, &digest)?;
+        #[cfg(feature = "dpe_profile_p256_sha256")]
+        let digest = Digest::Sha256(
+            crypto::Sha256::read_from_bytes(&self.digest)
+                .map_err(|_| DpeErrorCode::Crypto(crypto::CryptoError::Size))?,
+        );
 
-        let sig_r: [u8; DPE_PROFILE.get_ecc_int_size()] = r
-            .bytes()
-            .try_into()
-            .map_err(|_| DpeErrorCode::InternalError)?;
+        #[cfg(feature = "dpe_profile_p384_sha384")]
+        let digest = Digest::Sha384(
+            crypto::Sha384::read_from_bytes(&self.digest)
+                .map_err(|_| DpeErrorCode::Crypto(crypto::CryptoError::Size))?,
+        );
 
-        let sig_s: [u8; DPE_PROFILE.get_ecc_int_size()] = s
-            .bytes()
-            .try_into()
-            .map_err(|_| DpeErrorCode::InternalError)?;
+        let sig = match self.sign(dpe, env, idx, &digest)? {
+            #[cfg(feature = "dpe_profile_p256_sha256")]
+            Signature::Ecdsa(EcdsaSignature::Ecdsa256(sig)) => sig,
+            #[cfg(feature = "dpe_profile_p384_sha384")]
+            Signature::Ecdsa(EcdsaSignature::Ecdsa384(sig)) => sig,
+            _ => Err(DpeErrorCode::InvalidArgument)?,
+        };
+
+        let (&sig_r, &sig_s) = sig.as_slice()?;
 
         // Rotate the handle if it isn't the default context.
         dpe.roll_onetime_use_handle(env, idx)?;
@@ -129,7 +117,7 @@ impl CommandExecution for SignCmd {
             new_context_handle: dpe.contexts[idx].handle,
             sig_r,
             sig_s,
-            resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
+            resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
         }))
     }
 }
@@ -151,7 +139,7 @@ mod tests {
         support::test::SUPPORT,
     };
     use caliptra_cfi_lib_git::CfiCounter;
-    use crypto::OpensslCrypto;
+    use crypto::RustCryptoImpl;
     use openssl::x509::X509;
     use openssl::{bn::BigNum, ecdsa::EcdsaSig};
     use zerocopy::IntoBytes;
@@ -178,7 +166,7 @@ mod tests {
     fn test_bad_command_inputs() {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
-            crypto: OpensslCrypto::new(),
+            crypto: RustCryptoImpl::new(),
             platform: DEFAULT_PLATFORM,
         };
         let mut dpe = DpeInstance::new(&mut env, SUPPORT, DpeInstanceFlags::empty()).unwrap();
@@ -233,7 +221,7 @@ mod tests {
     fn test_asymmetric() {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
-            crypto: OpensslCrypto::new(),
+            crypto: RustCryptoImpl::new(),
             platform: DEFAULT_PLATFORM,
         };
         let mut dpe = DpeInstance::new(&mut env, SUPPORT, DpeInstanceFlags::empty()).unwrap();

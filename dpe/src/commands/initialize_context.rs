@@ -3,7 +3,7 @@ use super::CommandExecution;
 use crate::{
     context::{ActiveContextArgs, Context, ContextHandle, ContextType},
     dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
-    response::{DpeErrorCode, NewHandleResp, Response},
+    response::{DpeErrorCode, NewHandleResp, Response, ResponseHdr},
 };
 use bitflags::bitflags;
 #[cfg(not(feature = "no-cfi"))]
@@ -103,7 +103,7 @@ impl CommandExecution for InitCtxCmd {
         });
         Ok(Response::InitCtx(NewHandleResp {
             handle,
-            resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
+            resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
         }))
     }
 }
@@ -121,7 +121,7 @@ mod tests {
         support::Support,
     };
     use caliptra_cfi_lib_git::CfiCounter;
-    use crypto::OpensslCrypto;
+    use crypto::RustCryptoImpl;
     use zerocopy::IntoBytes;
 
     const TEST_INIT_CTX_CMD: InitCtxCmd = InitCtxCmd(0x1234_5678);
@@ -143,7 +143,7 @@ mod tests {
     fn test_initialize_context() {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
-            crypto: OpensslCrypto::new(),
+            crypto: RustCryptoImpl::new(),
             platform: DEFAULT_PLATFORM,
         };
         let mut dpe =

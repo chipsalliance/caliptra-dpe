@@ -5,7 +5,7 @@ use platform::default::DefaultPlatformProfile;
 use std::env;
 
 use {
-    crypto::OpensslCrypto,
+    crypto::RustCryptoImpl,
     dpe::commands::{
         self, CertifyKeyCmd, CertifyKeyFlags, CommandHdr, DeriveContextCmd, DeriveContextFlags,
     },
@@ -18,10 +18,21 @@ use {
     zerocopy::IntoBytes,
 };
 
+#[cfg(feature = "dpe_profile_p256_sha256")]
+use crypto::Ecdsa256RustCrypto;
+
+#[cfg(feature = "dpe_profile_p384_sha384")]
+use crypto::Ecdsa384RustCrypto;
+
 pub struct TestTypes {}
 
 impl DpeTypes for TestTypes {
-    type Crypto<'a> = OpensslCrypto;
+    #[cfg(feature = "dpe_profile_p256_sha256")]
+    type Crypto<'a> = Ecdsa256RustCrypto;
+
+    #[cfg(feature = "dpe_profile_p384_sha384")]
+    type Crypto<'a> = Ecdsa384RustCrypto;
+
     type Platform<'a> = DefaultPlatform;
 }
 
@@ -104,7 +115,7 @@ fn main() {
     #[cfg(feature = "dpe_profile_p384_sha384")]
     let p = DefaultPlatformProfile::P384;
     let mut env = DpeEnv::<TestTypes> {
-        crypto: OpensslCrypto::new(),
+        crypto: RustCryptoImpl::new(),
         platform: DefaultPlatform(p),
     };
 

@@ -3,7 +3,7 @@ use super::CommandExecution;
 use crate::{
     context::{Context, ContextHandle, ContextState},
     dpe_instance::{flags_iter, DpeEnv, DpeInstance, DpeTypes},
-    response::{DpeErrorCode, Response},
+    response::{DpeErrorCode, Response, ResponseHdr},
     MAX_HANDLES,
 };
 #[cfg(not(feature = "no-cfi"))]
@@ -86,9 +86,9 @@ impl CommandExecution for DestroyCtxCmd {
             }
         }
 
-        Ok(Response::DestroyCtx(
-            dpe.response_hdr(DpeErrorCode::NoError),
-        ))
+        Ok(Response::DestroyCtx(ResponseHdr::new(
+            DpeErrorCode::NoError,
+        )))
     }
 }
 
@@ -109,7 +109,7 @@ mod tests {
         DPE_PROFILE,
     };
     use caliptra_cfi_lib_git::CfiCounter;
-    use crypto::OpensslCrypto;
+    use crypto::RustCryptoImpl;
     use zerocopy::IntoBytes;
 
     const TEST_DESTROY_CTX_CMD: DestroyCtxCmd = DestroyCtxCmd {
@@ -133,7 +133,7 @@ mod tests {
     fn test_destroy_context() {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
-            crypto: OpensslCrypto::new(),
+            crypto: RustCryptoImpl::new(),
             platform: DEFAULT_PLATFORM,
         };
         let mut dpe =
@@ -157,9 +157,9 @@ mod tests {
         activate_dummy_context(&mut dpe, 1, 0, &ContextHandle::default(), &[]);
         // destroy context[1]
         assert_eq!(
-            Ok(Response::DestroyCtx(
-                dpe.response_hdr(DpeErrorCode::NoError)
-            )),
+            Ok(Response::DestroyCtx(ResponseHdr::new(
+                DpeErrorCode::NoError,
+            ))),
             DestroyCtxCmd {
                 handle: ContextHandle::default(),
             }
@@ -169,9 +169,9 @@ mod tests {
         assert_eq!(dpe.contexts[0].children, 0);
         // destroy context[0]
         assert_eq!(
-            Ok(Response::DestroyCtx(
-                dpe.response_hdr(DpeErrorCode::NoError)
-            )),
+            Ok(Response::DestroyCtx(ResponseHdr::new(
+                DpeErrorCode::NoError,
+            ))),
             DestroyCtxCmd {
                 handle: TEST_HANDLE,
             }
@@ -231,9 +231,9 @@ mod tests {
 
         // destroy context[0] and all descendents
         assert_eq!(
-            Ok(Response::DestroyCtx(
-                dpe.response_hdr(DpeErrorCode::NoError)
-            )),
+            Ok(Response::DestroyCtx(ResponseHdr::new(
+                DpeErrorCode::NoError,
+            ))),
             DestroyCtxCmd {
                 handle: ContextHandle::default(),
             }
@@ -274,9 +274,9 @@ mod tests {
         );
         // destroy context[1]
         assert_eq!(
-            Ok(Response::DestroyCtx(
-                dpe.response_hdr(DpeErrorCode::NoError)
-            )),
+            Ok(Response::DestroyCtx(ResponseHdr::new(
+                DpeErrorCode::NoError,
+            ))),
             DestroyCtxCmd {
                 handle: ContextHandle([1; ContextHandle::SIZE]),
             }
@@ -291,7 +291,7 @@ mod tests {
     fn test_retired_parent_contexts_destroyed() {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
-            crypto: OpensslCrypto::new(),
+            crypto: RustCryptoImpl::new(),
             platform: DEFAULT_PLATFORM,
         };
         let mut dpe = DpeInstance::new(&mut env, SUPPORT, DpeInstanceFlags::empty()).unwrap();
@@ -360,7 +360,7 @@ mod tests {
     fn test_retired_parent_context_not_destroyed_if_it_has_other_active_children() {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
-            crypto: OpensslCrypto::new(),
+            crypto: RustCryptoImpl::new(),
             platform: DEFAULT_PLATFORM,
         };
         let mut dpe = DpeInstance::new(&mut env, SUPPORT, DpeInstanceFlags::empty()).unwrap();

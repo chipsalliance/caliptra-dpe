@@ -16,7 +16,7 @@ use log::{trace, LevelFilter};
 use simplelog::{Config, WriteLogger};
 use std::fs::OpenOptions;
 
-use crypto::OpensslCrypto;
+use crypto::Ecdsa256RustCrypto;
 use dpe::{
     commands::Command,
     dpe_instance::{DpeEnv, DpeTypes},
@@ -32,7 +32,7 @@ const SUPPORT: Support = Support::all();
 struct SimTypes {}
 
 impl DpeTypes for SimTypes {
-    type Crypto<'a> = OpensslCrypto;
+    type Crypto<'a> = Ecdsa256RustCrypto;
     type Platform<'a> = DefaultPlatform;
 }
 
@@ -62,7 +62,7 @@ fn harness(data: &[u8]) {
     }
 
     let mut env = DpeEnv::<SimTypes> {
-        crypto: OpensslCrypto::new(),
+        crypto: Ecdsa256RustCrypto::new(),
         platform: DefaultPlatform(DefaultPlatformProfile::P256),
     };
     let mut dpe = DpeInstance::new(&mut env, SUPPORT, DpeInstanceFlags::empty()).unwrap();

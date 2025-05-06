@@ -23,11 +23,11 @@ path = ".."
 
 [dependencies.crypto]
 path = "../../crypto"
-features = ["openssl"]
+features = ["rustcrypto"]
 
 [dependencies.platform]
 path = "../../platform"
-features = ["openssl"]
+features = ["rustcrypto"]
 
 # Prevent this from interfering with workspaces
 [workspace]
