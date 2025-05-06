@@ -4,8 +4,7 @@
 use std::ops::Deref;
 
 #[cfg(any(feature = "rustcrypto", feature = "openssl"))]
-use std::{fs, env, path::Path};
-
+use std::{env, fs, path::Path};
 
 fn main() {
     const ALIAS_PRIV_256: &str = "../platform/src/test_data/key_256.pem";
