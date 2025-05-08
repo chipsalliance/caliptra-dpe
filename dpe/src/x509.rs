@@ -16,7 +16,9 @@ use bitflags::bitflags;
 use caliptra_cfi_lib_git::cfi_launder;
 #[cfg(not(feature = "no-cfi"))]
 use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq};
-use crypto::{Crypto, Digest, EcdsaPub, EcdsaSig, Hasher, MAX_EXPORTED_CDI_SIZE};
+use crypto::{
+    Crypto, Digest, EcdsaPub, EcdsaSig, ExportedPubKey, Hasher, Signature, MAX_EXPORTED_CDI_SIZE,
+};
 #[cfg(not(feature = "disable_x509"))]
 use platform::CertValidity;
 #[cfg(not(feature = "disable_csr"))]
@@ -642,14 +644,19 @@ impl CertWriter<'_> {
     #[cfg(not(feature = "disable_csr"))]
     fn get_certification_request_info_size(
         subject_name: &Name,
-        pubkey: &EcdsaPub,
+        pubkey: &ExportedPubKey,
         measurements: &MeasurementData,
         tagged: bool,
     ) -> Result<usize, DpeErrorCode> {
+        let pubkey_size = match pubkey {
+            ExportedPubKey::Ecdsa(pubkey) => {
+                Self::get_ecdsa_subject_pubkey_info_size(pubkey, /*tagged=*/ true)?
+            }
+        };
         let cert_req_info_size = Self::get_integer_size(Self::CSR_V0, true)?
             + Self::get_rdn_size(subject_name, /*tagged=*/ true)?
-            + Self::get_ecdsa_subject_pubkey_info_size(pubkey, /*tagged=*/ true)?
-            + Self::get_attributes_size(measurements, /*tagged=*/ true)?;
+            + Self::get_attributes_size(measurements, /*tagged=*/ true)?
+            + pubkey_size;
 
         Self::get_structure_size(cert_req_info_size, tagged)
     }
@@ -2161,7 +2168,7 @@ impl CertWriter<'_> {
     #[cfg(not(feature = "disable_csr"))]
     pub fn encode_certification_request_info(
         &mut self,
-        pub_key: &EcdsaPub,
+        pub_key: &ExportedPubKey,
         subject_name: &Name,
         measurements: &MeasurementData,
     ) -> Result<usize, DpeErrorCode> {
@@ -2183,7 +2190,11 @@ impl CertWriter<'_> {
         bytes_written += self.encode_rdn(subject_name)?;
 
         // subjectPublicKeyInfo
-        bytes_written += self.encode_ecdsa_subject_pubkey_info(pub_key)?;
+        match pub_key {
+            ExportedPubKey::Ecdsa(pub_key) => {
+                bytes_written += self.encode_ecdsa_subject_pubkey_info(pub_key)?;
+            }
+        }
 
         // attributes
         bytes_written += self.encode_attributes(measurements)?;
@@ -2289,7 +2300,7 @@ pub(crate) struct CreateDpeCertResult {
     /// Size of certificate or CSR in bytes.
     pub cert_size: u32,
     /// Public key embedded in Cert or CSR.
-    pub pub_key: EcdsaPub,
+    pub pub_key: ExportedPubKey,
     /// If the cert_type is `CertificateType::Exported` the CDI is exchanged for a handle, and
     /// returned via `exported_cdi_handle`.
     pub exported_cdi_handle: [u8; MAX_EXPORTED_CDI_SIZE],
@@ -2308,7 +2319,7 @@ fn get_dpe_measurement_digest(
 
 fn get_subject_name<'a>(
     env: &mut DpeEnv<impl DpeTypes>,
-    pub_key: &'a EcdsaPub,
+    pub_key: &'a ExportedPubKey,
     subj_serial: &'a mut [u8],
 ) -> Result<Name<'a>, DpeErrorCode> {
     env.crypto
@@ -2340,14 +2351,19 @@ fn get_tci_nodes<'a>(
 
 fn get_subject_key_identifier(
     env: &mut DpeEnv<impl DpeTypes>,
-    pub_key: &EcdsaPub,
+    pub_key: &ExportedPubKey,
     subject_key_identifier: &mut [u8],
 ) -> Result<(), DpeErrorCode> {
     // compute key identifier as SHA hash of the DER encoded subject public key
     let mut hasher = env.crypto.hash_initialize(DPE_PROFILE.alg_len())?;
-    hasher.update(&[0x04])?;
-    hasher.update(pub_key.x.bytes())?;
-    hasher.update(pub_key.y.bytes())?;
+    match pub_key {
+        ExportedPubKey::Ecdsa(pub_key) => {
+            hasher.update(&[0x04])?;
+            hasher.update(pub_key.x.bytes())?;
+            hasher.update(pub_key.y.bytes())?;
+        }
+    }
+
     let hashed_pub_key = hasher.finish()?;
     if hashed_pub_key.len() < MAX_KEY_IDENTIFIER_SIZE {
         return Err(DpeErrorCode::InternalError);
@@ -2445,16 +2461,17 @@ fn create_dpe_cert_or_csr(
         cfi_assert!(key_pair.is_err());
     }
     let (priv_key, pub_key) = key_pair?;
+    let exported_pub_key = env.crypto.export_public_key(&pub_key)?;
 
     let mut subj_serial = [0u8; DPE_PROFILE.get_hash_size() * 2];
-    let subject_name = get_subject_name(env, &pub_key, &mut subj_serial)?;
+    let subject_name = get_subject_name(env, &exported_pub_key, &mut subj_serial)?;
 
     const INITIALIZER: TciNodeData = TciNodeData::new();
     let mut nodes = [INITIALIZER; MAX_HANDLES];
     let tci_nodes = get_tci_nodes(dpe, args.handle, args.locality, &mut nodes)?;
 
     let mut subject_key_identifier = [0u8; MAX_KEY_IDENTIFIER_SIZE];
-    get_subject_key_identifier(env, &pub_key, &mut subject_key_identifier)?;
+    get_subject_key_identifier(env, &exported_pub_key, &mut subject_key_identifier)?;
 
     let mut authority_key_identifier = [0u8; MAX_KEY_IDENTIFIER_SIZE];
     env.platform
@@ -2495,21 +2512,25 @@ fn create_dpe_cert_or_csr(
                 return Err(DpeErrorCode::InternalError);
             }
             let cert_validity = env.platform.get_cert_validity()?;
-            let mut bytes_written = scratch_writer.encode_ecdsa_tbs(
-                &subject_name.serial.bytes()[..20], // Serial number must be truncated to 20 bytes
-                &issuer_name[..issuer_len],
-                &subject_name,
-                &pub_key,
-                &measurements,
-                &cert_validity,
-            )?;
+            let mut bytes_written = match exported_pub_key {
+                ExportedPubKey::Ecdsa(ref pub_key) => {
+                    scratch_writer.encode_ecdsa_tbs(
+                        &subject_name.serial.bytes()[..20], // Serial number must be truncated to 20 bytes
+                        &issuer_name[..issuer_len],
+                        &subject_name,
+                        pub_key,
+                        &measurements,
+                        &cert_validity,
+                    )?
+                }
+            };
             if bytes_written > MAX_CERT_SIZE {
                 return Err(DpeErrorCode::InternalError);
             }
             let tbs_digest = env.crypto.hash(algs, &scratch_buf[..bytes_written])?;
-            let sig = env
+            let Signature::Ecdsa(sig) = env
                 .crypto
-                .ecdsa_sign_with_alias(DPE_PROFILE.alg_len(), &tbs_digest)?;
+                .sign_with_alias(DPE_PROFILE.alg_len(), &tbs_digest)?;
             let mut cert_writer =
                 CertWriter::new(output_cert_or_csr, args.dice_extensions_are_critical);
             bytes_written =
@@ -2518,7 +2539,7 @@ fn create_dpe_cert_or_csr(
         }
         CertificateFormat::Csr => {
             let mut bytes_written = scratch_writer.encode_certification_request_info(
-                &pub_key,
+                &exported_pub_key,
                 &subject_name,
                 &measurements,
             )?;
@@ -2528,12 +2549,9 @@ fn create_dpe_cert_or_csr(
 
             let cert_req_info_digest = env.crypto.hash(algs, &scratch_buf[..bytes_written])?;
             // The PKCS#10 CSR is self-signed so the private key signs it instead of the alias key.
-            let cert_req_info_sig = env.crypto.ecdsa_sign_with_derived(
-                algs,
-                &cert_req_info_digest,
-                &priv_key,
-                &pub_key,
-            )?;
+            let Signature::Ecdsa(cert_req_info_sig) =
+                env.crypto
+                    .sign_with_derived(algs, &cert_req_info_digest, &priv_key, &pub_key)?;
 
             let mut csr_buffer = [0u8; MAX_CERT_SIZE];
             let mut csr_writer =
@@ -2545,9 +2563,9 @@ fn create_dpe_cert_or_csr(
             }
 
             let csr_digest = env.crypto.hash(algs, &csr_buffer[..bytes_written])?;
-            let csr_sig = env
+            let Signature::Ecdsa(csr_sig) = env
                 .crypto
-                .ecdsa_sign_with_alias(DPE_PROFILE.alg_len(), &csr_digest)?;
+                .sign_with_alias(DPE_PROFILE.alg_len(), &csr_digest)?;
             let sid = env.platform.get_signer_identifier()?;
 
             let mut cms_writer =
@@ -2565,7 +2583,7 @@ fn create_dpe_cert_or_csr(
 
     Ok(CreateDpeCertResult {
         cert_size,
-        pub_key,
+        pub_key: exported_pub_key,
         exported_cdi_handle,
     })
 }

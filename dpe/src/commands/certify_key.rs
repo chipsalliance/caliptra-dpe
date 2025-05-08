@@ -13,6 +13,7 @@ use caliptra_cfi_derive_git::cfi_impl_fn;
 #[cfg(not(feature = "no-cfi"))]
 use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq};
 use cfg_if::cfg_if;
+use crypto::ExportedPubKey;
 #[cfg(not(feature = "disable_x509"))]
 #[repr(C)]
 #[derive(
@@ -129,18 +130,21 @@ impl CommandExecution for CertifyKeyCmd {
             _ => return Err(DpeErrorCode::InvalidArgument),
         }?;
 
-        let derived_pubkey_x: [u8; DPE_PROFILE.get_ecc_int_size()] =
-            pub_key
-                .x
-                .bytes()
-                .try_into()
-                .map_err(|_| DpeErrorCode::InternalError)?;
-        let derived_pubkey_y: [u8; DPE_PROFILE.get_ecc_int_size()] =
-            pub_key
-                .y
-                .bytes()
-                .try_into()
-                .map_err(|_| DpeErrorCode::InternalError)?;
+        let (derived_pubkey_x, derived_pubkey_y) = match pub_key {
+            ExportedPubKey::Ecdsa(pub_key) => {
+                let derived_pubkey_x: [u8; DPE_PROFILE.get_ecc_int_size()] = pub_key
+                    .x
+                    .bytes()
+                    .try_into()
+                    .map_err(|_| DpeErrorCode::InternalError)?;
+                let derived_pubkey_y: [u8; DPE_PROFILE.get_ecc_int_size()] = pub_key
+                    .y
+                    .bytes()
+                    .try_into()
+                    .map_err(|_| DpeErrorCode::InternalError)?;
+                (derived_pubkey_x, derived_pubkey_y)
+            }
+        };
 
         // Rotate handle if it isn't the default
         dpe.roll_onetime_use_handle(env, idx)?;
@@ -173,7 +177,7 @@ mod tests {
         content_info::{CmsVersion, ContentInfo},
         signed_data::{SignedData, SignerIdentifier},
     };
-    use crypto::{AlgLen, Crypto, CryptoBuf, EcdsaPub, OpensslCrypto};
+    use crypto::{AlgLen, Crypto, CryptoBuf, EcdsaPub, ExportedPubKey, OpensslCrypto};
     use der::{Decode, Encode};
     use openssl::{
         bn::BigNum,
@@ -448,7 +452,11 @@ mod tests {
                 y: CryptoBuf::new(&certify_resp.derived_pubkey_y).unwrap(),
             };
             env.crypto
-                .get_pubkey_serial(DPE_PROFILE.alg_len(), &pub_key, &mut subj_serial)
+                .get_pubkey_serial(
+                    DPE_PROFILE.alg_len(),
+                    &ExportedPubKey::Ecdsa(pub_key),
+                    &mut subj_serial,
+                )
                 .unwrap();
             let truncated_subj_serial = &subj_serial[..64];
             let subject_name = Name {

@@ -1,8 +1,8 @@
 // Licensed under the Apache-2.0 license
 
 use crate::{
-    hkdf::*, AlgLen, Crypto, CryptoBuf, CryptoError, Digest, EcdsaPub, ExportedCdiHandle, Hasher,
-    MAX_EXPORTED_CDI_SIZE,
+    hkdf::*, AlgLen, Crypto, CryptoBuf, CryptoError, Digest, EcdsaPub, ExportedCdiHandle,
+    ExportedPubKey, Hasher, Signature, MAX_EXPORTED_CDI_SIZE,
 };
 #[cfg(not(feature = "no-cfi"))]
 use caliptra_cfi_derive_git::cfi_impl_fn;
@@ -146,6 +146,7 @@ impl Default for OpensslCrypto {
 type OpensslCdi = Vec<u8>;
 
 type OpensslPrivKey = CryptoBuf;
+type OpensslPubKey = EcdsaPub;
 
 impl Crypto for OpensslCrypto {
     type Cdi = OpensslCdi;
@@ -154,6 +155,7 @@ impl Crypto for OpensslCrypto {
     where
         Self: 'c;
     type PrivKey = OpensslPrivKey;
+    type PubKey = OpensslPubKey;
 
     #[cfg(feature = "deterministic_rand")]
     fn rand_bytes(&mut self, dst: &mut [u8]) -> Result<(), CryptoError> {
@@ -238,11 +240,7 @@ impl Crypto for OpensslCrypto {
         self.derive_key_pair_inner(algs, &cdi, label, info)
     }
 
-    fn ecdsa_sign_with_alias(
-        &mut self,
-        algs: AlgLen,
-        digest: &Digest,
-    ) -> Result<super::EcdsaSig, CryptoError> {
+    fn sign_with_alias(&mut self, algs: AlgLen, digest: &Digest) -> Result<Signature, CryptoError> {
         let ec_priv: EcKey<Private> = match algs {
             AlgLen::Bit256 => EcKey::private_key_from_pem(include_bytes!(concat!(
                 env!("OUT_DIR"),
@@ -261,22 +259,30 @@ impl Crypto for OpensslCrypto {
         let r = CryptoBuf::new(&sig.r().to_vec_padded(algs.size() as i32).unwrap()).unwrap();
         let s = CryptoBuf::new(&sig.s().to_vec_padded(algs.size() as i32).unwrap()).unwrap();
 
-        Ok(super::EcdsaSig { r, s })
+        Ok(Signature::Ecdsa(super::EcdsaSig { r, s }))
     }
 
-    fn ecdsa_sign_with_derived(
+    fn sign_with_derived(
         &mut self,
         algs: AlgLen,
         digest: &Digest,
         priv_key: &Self::PrivKey,
         _pub_key: &EcdsaPub,
-    ) -> Result<super::EcdsaSig, CryptoError> {
+    ) -> Result<Signature, CryptoError> {
         let ec_priv_key = OpensslCrypto::ec_key_from_priv_key(algs, priv_key)?;
         let sig = EcdsaSig::sign::<Private>(digest.bytes(), &ec_priv_key).unwrap();
 
         let r = CryptoBuf::new(&sig.r().to_vec_padded(algs.size() as i32).unwrap()).unwrap();
         let s = CryptoBuf::new(&sig.s().to_vec_padded(algs.size() as i32).unwrap()).unwrap();
 
-        Ok(super::EcdsaSig { r, s })
+        Ok(Signature::Ecdsa(super::EcdsaSig { r, s }))
+    }
+
+    fn export_public_key(&self, pub_key: &Self::PubKey) -> Result<ExportedPubKey, CryptoError> {
+        let EcdsaPub { x, y } = pub_key;
+        Ok(ExportedPubKey::Ecdsa(EcdsaPub {
+            x: CryptoBuf::new(x.bytes())?,
+            y: CryptoBuf::new(y.bytes())?,
+        }))
     }
 }
