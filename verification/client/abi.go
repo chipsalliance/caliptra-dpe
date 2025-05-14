@@ -16,7 +16,7 @@ const (
 	RespMagic uint32 = 0x44504552
 
 	CurrentProfileMajorVersion uint16 = 0
-	CurrentProfileMinorVersion uint16 = 12
+	CurrentProfileMinorVersion uint16 = 13
 )
 
 // CommandCode is a DPE command code
@@ -236,6 +236,7 @@ type DeriveContextReq[Digest DigestAlgorithm] struct {
 	Flags          DeriveContextFlags
 	TciType        uint32
 	TargetLocality uint32
+	Svn            uint32
 }
 
 // DeriveContextResp is the output response from DeriveContext
@@ -669,6 +670,7 @@ func (c *DPEABI[_, Digest, _]) DeriveContext(handle *ContextHandle, inputData []
 		Flags:          flags,
 		TciType:        tciType,
 		TargetLocality: targetLocality,
+		Svn:            0,
 	}
 	resp, err := c.DeriveContextABI(&cmd)
 	if err != nil {

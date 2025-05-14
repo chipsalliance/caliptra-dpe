@@ -30,6 +30,7 @@ fn add_tcb_info(
     env: &mut DpeEnv<TestTypes>,
     data: &[u8; DPE_PROFILE.get_hash_size()],
     tci_type: u32,
+    svn: u32,
 ) {
     let cmd = DeriveContextCmd {
         handle: ContextHandle::default(),
@@ -37,6 +38,7 @@ fn add_tcb_info(
         flags: DeriveContextFlags::INPUT_ALLOW_X509 | DeriveContextFlags::MAKE_DEFAULT,
         tci_type,
         target_locality: 0, // Unused since flag isn't set
+        svn,
     };
     let cmd_body = cmd.as_bytes().to_vec();
     let cmd_hdr = dpe
@@ -115,6 +117,7 @@ fn main() {
         &mut env,
         &[0; DPE_PROFILE.get_hash_size()],
         u32::from_be_bytes(*b"TEST"),
+        0,
     );
     let cert = certify_key(&mut dpe, &mut env, format);
 
