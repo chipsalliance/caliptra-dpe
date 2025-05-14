@@ -236,6 +236,7 @@ type DeriveContextReq[Digest DigestAlgorithm] struct {
 	Flags          DeriveContextFlags
 	TciType        uint32
 	TargetLocality uint32
+	Svn            uint32
 }
 
 // DeriveContextResp is the output response from DeriveContext
@@ -669,6 +670,7 @@ func (c *DPEABI[_, Digest, _]) DeriveContext(handle *ContextHandle, inputData []
 		Flags:          flags,
 		TciType:        tciType,
 		TargetLocality: targetLocality,
+		Svn:            0,
 	}
 	resp, err := c.DeriveContextABI(&cmd)
 	if err != nil {
