@@ -53,7 +53,8 @@ impl TryFrom<Signature<NistP384>> for EcdsaSig {
 pub struct RustCryptoHasher(Box<dyn DynDigest>);
 impl Hasher for RustCryptoHasher {
     fn update(&mut self, bytes: &[u8]) -> Result<(), CryptoError> {
-        Ok(self.0.update(bytes))
+        self.0.update(bytes);
+        Ok(())
     }
     fn finish(self) -> Result<Digest, CryptoError> {
         Digest::new(&self.0.finalize())
@@ -66,6 +67,12 @@ const MAX_CDI_HANDLES: usize = 1;
 pub struct RustCryptoImpl {
     rng: StdRng,
     export_cdi_slots: Vec<(<RustCryptoImpl as Crypto>::Cdi, ExportedCdiHandle)>,
+}
+
+impl Default for RustCryptoImpl {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl RustCryptoImpl {
@@ -97,7 +104,7 @@ impl RustCryptoImpl {
         let secret = hkdf_get_priv_key(algs, cdi, label, info)?;
         match algs {
             AlgLen::Bit256 => {
-                let signing = p256::ecdsa::SigningKey::from_slice(&secret.bytes())?;
+                let signing = p256::ecdsa::SigningKey::from_slice(secret.bytes())?;
                 let verifying = p256::ecdsa::VerifyingKey::from(&signing);
                 let point = verifying.to_encoded_point(false);
                 let x = CryptoBuf::new(point.x().ok_or(RUSTCRYPTO_ECDSA_ERROR)?.as_slice())?;
@@ -105,7 +112,7 @@ impl RustCryptoImpl {
                 Ok((secret, EcdsaPub { x, y }))
             }
             AlgLen::Bit384 => {
-                let signing = p384::ecdsa::SigningKey::from_slice(&secret.bytes())?;
+                let signing = p384::ecdsa::SigningKey::from_slice(secret.bytes())?;
                 let verifying = p384::ecdsa::VerifyingKey::from(&signing);
                 let point = verifying.to_encoded_point(false);
                 let x = CryptoBuf::new(point.x().ok_or(RUSTCRYPTO_ECDSA_ERROR)?.as_slice())?;

@@ -173,7 +173,7 @@ mod tests {
         content_info::{CmsVersion, ContentInfo},
         signed_data::{SignedData, SignerIdentifier},
     };
-    use crypto::{AlgLen, Crypto, CryptoBuf, EcdsaPub, OpensslCrypto};
+    use crypto::{AlgLen, Crypto, CryptoBuf, EcdsaPub, RustCryptoImpl};
     use der::{Decode, Encode};
     use openssl::{
         bn::BigNum,
@@ -217,7 +217,7 @@ mod tests {
         for mark_dice_extensions_critical in [true, false] {
             CfiCounter::reset_for_test();
             let mut env = DpeEnv::<TestTypes> {
-                crypto: OpensslCrypto::new(),
+                crypto: RustCryptoImpl::new(),
                 platform: DEFAULT_PLATFORM,
             };
             let flags = {
@@ -274,7 +274,7 @@ mod tests {
         for mark_dice_extensions_critical in [true, false] {
             CfiCounter::reset_for_test();
             let mut env = DpeEnv::<TestTypes> {
-                crypto: OpensslCrypto::new(),
+                crypto: RustCryptoImpl::new(),
                 platform: DEFAULT_PLATFORM,
             };
             let flags = {
@@ -508,7 +508,7 @@ mod tests {
     fn test_certify_key_order() {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
-            crypto: OpensslCrypto::new(),
+            crypto: RustCryptoImpl::new(),
             platform: DEFAULT_PLATFORM,
         };
         let mut dpe = DpeInstance::new(

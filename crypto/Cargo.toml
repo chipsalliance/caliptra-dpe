@@ -6,7 +6,6 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-openssl = ["dep:openssl", "dep:hkdf", "dep:sha2"]
 rustcrypto = ["dep:hkdf", "dep:p256", "dep:p384", "dep:rand", "dep:sha2", "dep:base64ct", "dep:ecdsa", "dep:sec1"]
 deterministic_rand = ["dep:rand"]
 no-cfi = []
@@ -17,7 +16,6 @@ caliptra-cfi-lib-git = { workspace = true, default-features = false, features = 
 caliptra-cfi-derive-git.workspace = true
 ecdsa = { version = "0.16.9", optional = true, features = ["pem"]}
 hkdf = { version = "0.12.3", optional = true }
-openssl = {workspace = true, optional = true}
 p256 = {version= "0.13.2", optional = true}
 p384 = {version= "0.13.0", optional = true}
 rand = { version = "0.8.5", optional = true }
@@ -30,7 +28,6 @@ strum = "0.24"
 strum_macros = "0.24"
 
 [build-dependencies]
-openssl = {workspace = true, optional = true}
 rand = {version = "0.8.5", optional = true}
 p256 = {version= "0.13.2", optional = true}
 p384 = {version= "0.13.0", optional = true}
