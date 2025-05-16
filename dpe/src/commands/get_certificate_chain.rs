@@ -60,7 +60,7 @@ mod tests {
         support::test::SUPPORT,
     };
     use caliptra_cfi_lib_git::CfiCounter;
-    use crypto::OpensslCrypto;
+    use crypto::RustCryptoImpl;
     use zerocopy::IntoBytes;
 
     const TEST_GET_CERTIFICATE_CHAIN_CMD: GetCertificateChainCmd = GetCertificateChainCmd {
@@ -87,7 +87,7 @@ mod tests {
     fn test_fails_if_size_greater_than_max_chunk_size() {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
-            crypto: OpensslCrypto::new(),
+            crypto: RustCryptoImpl::new(),
             platform: DEFAULT_PLATFORM,
         };
         let mut dpe = DpeInstance::new(&mut env, SUPPORT, DpeInstanceFlags::empty()).unwrap();

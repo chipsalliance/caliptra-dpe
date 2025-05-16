@@ -450,7 +450,7 @@ impl DpeValidator<'_> {
 #[cfg(test)]
 pub mod tests {
     use caliptra_cfi_lib_git::CfiCounter;
-    use crypto::OpensslCrypto;
+    use crypto::RustCryptoImpl;
 
     use crate::{
         commands::tests::DEFAULT_PLATFORM,
@@ -466,7 +466,7 @@ pub mod tests {
     fn test_validate_context_forest() {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
-            crypto: OpensslCrypto::new(),
+            crypto: RustCryptoImpl::new(),
             platform: DEFAULT_PLATFORM,
         };
         let dpe_validator = DpeValidator {
@@ -529,7 +529,7 @@ pub mod tests {
     fn test_support_validation() {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
-            crypto: OpensslCrypto::new(),
+            crypto: RustCryptoImpl::new(),
             platform: DEFAULT_PLATFORM,
         };
         let dpe_validator = DpeValidator {
@@ -574,7 +574,7 @@ pub mod tests {
     fn test_context_specific_validation() {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
-            crypto: OpensslCrypto::new(),
+            crypto: RustCryptoImpl::new(),
             platform: DEFAULT_PLATFORM,
         };
         let dpe_validator = DpeValidator {
@@ -689,7 +689,7 @@ pub mod tests {
     fn test_contexts_within_same_locality_validation() {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
-            crypto: OpensslCrypto::new(),
+            crypto: RustCryptoImpl::new(),
             platform: DEFAULT_PLATFORM,
         };
         let dpe_validator = DpeValidator {
@@ -722,7 +722,7 @@ pub mod tests {
     fn test_version_mismatch() {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
-            crypto: OpensslCrypto::new(),
+            crypto: RustCryptoImpl::new(),
             platform: DEFAULT_PLATFORM,
         };
         let dpe_validator = DpeValidator {

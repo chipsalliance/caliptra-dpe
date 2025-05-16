@@ -5,7 +5,6 @@ use crate::{
     MAX_ISSUER_NAME_SIZE, MAX_KEY_IDENTIFIER_SIZE,
 };
 use arrayvec::ArrayVec;
-use cfg_if::cfg_if;
 use core::cmp::min;
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -40,74 +39,40 @@ pub const NOT_BEFORE: &str = "20230227000000Z";
 pub const NOT_AFTER: &str = "99991231235959Z";
 pub const TEST_UEID: [u8; 17] = [0xA; 17];
 
-cfg_if! {
-    if #[cfg(feature = "openssl")] {
-        mod parse {
-            use super::*;
-            use openssl::x509::X509;
-            pub struct DefaultPlatform;
-            impl DefaultPlatform {
-                pub fn parse_issuer_name(p: DefaultPlatformProfile) -> Vec<u8> {
-                    X509::from_pem(p.pem())
-                        .unwrap()
-                        .issuer_name()
-                        .to_der()
-                        .unwrap()
-                }
-                pub fn parse_issuer_sn(p: DefaultPlatformProfile) -> Vec<u8> {
-                    X509::from_pem(p.pem())
-                        .unwrap()
-                        .serial_number()
-                        .to_bn()
-                        .unwrap()
-                        .to_vec()
-                }
-                pub fn parse_key_identifier(p: DefaultPlatformProfile) -> Vec<u8> {
-                    X509::from_pem(p.pem())
-                        .unwrap()
-                        .subject_key_id()
-                        .unwrap()
-                        .as_slice()
-                        .to_vec()
-                }
-            }
+#[cfg(feature = "rustcrypto")]
+mod parse {
+    use super::*;
+    use x509_cert::{
+        certificate::Certificate,
+        der::{DecodePem, Encode},
+        ext::pkix::SubjectKeyIdentifier,
+    };
+    pub struct DefaultPlatform;
+    impl DefaultPlatform {
+        pub fn parse_issuer_name(p: DefaultPlatformProfile) -> Vec<u8> {
+            Certificate::from_pem(p.pem())
+                .unwrap()
+                .tbs_certificate
+                .issuer
+                .to_der()
+                .unwrap()
         }
-    } else if #[cfg(feature = "rustcrypto")] {
-        mod parse {
-            use super::*;
-            use x509_cert::{
-                certificate::Certificate,
-                der::{DecodePem, Encode},
-                ext::pkix::SubjectKeyIdentifier,
-            };
-            pub struct DefaultPlatform;
-            impl DefaultPlatform {
-                pub fn parse_issuer_name(p: DefaultPlatformProfile) -> Vec<u8> {
-                    Certificate::from_pem(p.pem())
-                        .unwrap()
-                        .tbs_certificate
-                        .issuer
-                        .to_der()
-                        .unwrap()
-                }
-                pub fn parse_issuer_sn(p: DefaultPlatformProfile) -> Vec<u8> {
-                    Certificate::from_pem(p.pem())
-                        .unwrap()
-                        .tbs_certificate
-                        .serial_number
-                        .as_bytes()
-                        .to_vec()
-                }
-                pub fn parse_key_identifier(p: DefaultPlatformProfile) -> Vec<u8> {
-                    let (_, ski): (bool, SubjectKeyIdentifier) = Certificate::from_pem(p.pem())
-                        .unwrap()
-                        .tbs_certificate
-                        .get()
-                        .unwrap()
-                        .unwrap();
-                    ski.0.as_bytes().to_vec()
-                }
-            }
+        pub fn parse_issuer_sn(p: DefaultPlatformProfile) -> Vec<u8> {
+            Certificate::from_pem(p.pem())
+                .unwrap()
+                .tbs_certificate
+                .serial_number
+                .as_bytes()
+                .to_vec()
+        }
+        pub fn parse_key_identifier(p: DefaultPlatformProfile) -> Vec<u8> {
+            let (_, ski): (bool, SubjectKeyIdentifier) = Certificate::from_pem(p.pem())
+                .unwrap()
+                .tbs_certificate
+                .get()
+                .unwrap()
+                .unwrap();
+            ski.0.as_bytes().to_vec()
         }
     }
 }

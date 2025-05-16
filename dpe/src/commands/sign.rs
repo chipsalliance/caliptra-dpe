@@ -151,7 +151,7 @@ mod tests {
         support::test::SUPPORT,
     };
     use caliptra_cfi_lib_git::CfiCounter;
-    use crypto::OpensslCrypto;
+    use crypto::RustCryptoImpl;
     use openssl::x509::X509;
     use openssl::{bn::BigNum, ecdsa::EcdsaSig};
     use zerocopy::IntoBytes;
@@ -178,7 +178,7 @@ mod tests {
     fn test_bad_command_inputs() {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
-            crypto: OpensslCrypto::new(),
+            crypto: RustCryptoImpl::new(),
             platform: DEFAULT_PLATFORM,
         };
         let mut dpe = DpeInstance::new(&mut env, SUPPORT, DpeInstanceFlags::empty()).unwrap();
@@ -233,7 +233,7 @@ mod tests {
     fn test_asymmetric() {
         CfiCounter::reset_for_test();
         let mut env = DpeEnv::<TestTypes> {
-            crypto: OpensslCrypto::new(),
+            crypto: RustCryptoImpl::new(),
             platform: DEFAULT_PLATFORM,
         };
         let mut dpe = DpeInstance::new(&mut env, SUPPORT, DpeInstanceFlags::empty()).unwrap();
