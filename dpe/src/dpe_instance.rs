@@ -806,6 +806,7 @@ pub mod tests {
                 flags: DeriveContextFlags::MAKE_DEFAULT,
                 tci_type: i as u32,
                 target_locality: 0,
+                svn: 0,
             }
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
             .unwrap();
@@ -870,6 +871,7 @@ pub mod tests {
             flags: DeriveContextFlags::MAKE_DEFAULT | DeriveContextFlags::INTERNAL_INPUT_INFO,
             tci_type: 0u32,
             target_locality: 0,
+            svn: 0,
         }
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         .unwrap();
@@ -934,6 +936,7 @@ pub mod tests {
             flags: DeriveContextFlags::MAKE_DEFAULT | DeriveContextFlags::INTERNAL_INPUT_DICE,
             tci_type: 0u32,
             target_locality: 0,
+            svn: 0,
         }
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         .unwrap();

@@ -303,6 +303,7 @@ mod tests {
             flags: DeriveContextFlags::RETAIN_PARENT_CONTEXT | DeriveContextFlags::CHANGE_LOCALITY,
             tci_type: 0,
             target_locality: TEST_LOCALITIES[1],
+            svn: 0,
         })
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         {
@@ -318,6 +319,7 @@ mod tests {
             flags: DeriveContextFlags::empty(),
             tci_type: 0,
             target_locality: TEST_LOCALITIES[1],
+            svn: 0,
         })
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[1])
         {
@@ -333,6 +335,7 @@ mod tests {
             flags: DeriveContextFlags::empty(),
             tci_type: 0,
             target_locality: TEST_LOCALITIES[1],
+            svn: 0,
         })
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[1])
         {
@@ -372,6 +375,7 @@ mod tests {
             flags: DeriveContextFlags::RETAIN_PARENT_CONTEXT | DeriveContextFlags::CHANGE_LOCALITY,
             tci_type: 0,
             target_locality: TEST_LOCALITIES[1],
+            svn: 0,
         })
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         {
@@ -387,6 +391,7 @@ mod tests {
             flags: DeriveContextFlags::RETAIN_PARENT_CONTEXT,
             tci_type: 0,
             target_locality: TEST_LOCALITIES[1],
+            svn: 0,
         })
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[1])
         {
@@ -402,6 +407,7 @@ mod tests {
             flags: DeriveContextFlags::empty(),
             tci_type: 0,
             target_locality: TEST_LOCALITIES[1],
+            svn: 0,
         })
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[1])
         {
