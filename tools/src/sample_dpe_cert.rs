@@ -106,9 +106,10 @@ fn main() {
     let mut env = DpeEnv::<TestTypes> {
         crypto: RustCryptoImpl::new(),
         platform: DefaultPlatform(p),
+        state: &mut dpe::State::new(support, DpeInstanceFlags::empty()),
     };
 
-    let mut dpe = DpeInstance::new(&mut env, support, DpeInstanceFlags::empty()).unwrap();
+    let mut dpe = DpeInstance::new(&mut env).unwrap();
 
     add_tcb_info(
         &mut dpe,

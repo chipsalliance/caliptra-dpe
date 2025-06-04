@@ -160,6 +160,12 @@ fn main() -> std::io::Result<()> {
     );
     support.set(Support::CDI_EXPORT, args.supports_cdi_export);
 
+    let mut flags = DpeInstanceFlags::empty();
+    flags.set(
+        DpeInstanceFlags::MARK_DICE_EXTENSIONS_CRITICAL,
+        args.mark_dice_extensions_critical,
+    );
+
     #[cfg(feature = "dpe_profile_p256_sha256")]
     let p = DefaultPlatformProfile::P256;
     #[cfg(feature = "dpe_profile_p384_sha384")]
@@ -167,14 +173,9 @@ fn main() -> std::io::Result<()> {
     let mut env = DpeEnv::<SimTypes> {
         crypto: <SimTypes as DpeTypes>::Crypto::new(),
         platform: DefaultPlatform(p),
+        state: &mut dpe::State::new(support, flags),
     };
-
-    let mut flags = DpeInstanceFlags::empty();
-    flags.set(
-        DpeInstanceFlags::MARK_DICE_EXTENSIONS_CRITICAL,
-        args.mark_dice_extensions_critical,
-    );
-    let mut dpe = DpeInstance::new(&mut env, support, flags).map_err(|err| {
+    let mut dpe = DpeInstance::new(&mut env).map_err(|err| {
         Error::new(
             ErrorKind::Other,
             format!("{err:?} while creating new DPE instance"),

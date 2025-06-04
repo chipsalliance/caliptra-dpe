@@ -53,8 +53,9 @@ fn harness(data: &[u8]) {
     let mut env = DpeEnv::<SimTypes> {
         crypto: RustCryptoImpl::new(),
         platform: DefaultPlatform(DefaultPlatformProfile::P256),
+        state: &mut dpe::State::new(SUPPORT, DpeInstanceFlags::empty()),
     };
-    let mut dpe = DpeInstance::new(&mut env, SUPPORT, DpeInstanceFlags::empty()).unwrap();
+    let mut dpe = DpeInstance::new(&mut env).unwrap();
     trace!("----------------------------------");
     if let Ok(command) = dpe.deserialize_command(data) {
         trace!("| Fuzzer's locality requested {command:x?}");
@@ -65,7 +66,7 @@ fn harness(data: &[u8]) {
         return;
     }
 
-    let prev_contexts = dpe.contexts;
+    let prev_contexts = env.state.contexts;
 
     // Hard-code working locality
     let response = dpe
@@ -86,7 +87,7 @@ fn harness(data: &[u8]) {
     };
     // There are a few vendor error codes starting at 0x1000, so this can be a 2 bytes.
     trace!("| Response Code {response_code:#06x}");
-    if dpe.contexts != prev_contexts && response_code != 0 {
+    if env.state.contexts != prev_contexts && response_code != 0 {
         panic!("Error: DPE state changes upon a failed DPE command.");
     }
     if response_code == DpeErrorCode::InternalError.discriminant() {

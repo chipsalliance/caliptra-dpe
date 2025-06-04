@@ -4,6 +4,7 @@ use crate::{
     context::{ContextHandle, ContextState},
     dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
     response::{DpeErrorCode, NewHandleResp, Response},
+    State,
 };
 use bitflags::bitflags;
 #[cfg(not(feature = "no-cfi"))]
@@ -63,11 +64,11 @@ impl RotateCtxCmd {
     /// * `target_idx` - The index of the context that is not considered
     fn non_default_valid_handles_exist(
         &self,
-        dpe: &mut DpeInstance,
+        state: &State,
         locality: u32,
         target_idx: usize,
     ) -> bool {
-        dpe.contexts.iter().enumerate().any(|(idx, context)| {
+        state.contexts.iter().enumerate().any(|(idx, context)| {
             context.state == ContextState::Active
                 && context.locality == locality
                 && !context.handle.is_default()
@@ -84,20 +85,21 @@ impl CommandExecution for RotateCtxCmd {
         env: &mut DpeEnv<impl DpeTypes>,
         locality: u32,
     ) -> Result<Response, DpeErrorCode> {
-        if !dpe.support.rotate_context() {
+        if !env.state.support.rotate_context() {
             return Err(DpeErrorCode::InvalidCommand);
         } else {
             #[cfg(not(feature = "no-cfi"))]
-            cfi_assert!(dpe.support.rotate_context());
+            cfi_assert!(env.state.support.rotate_context());
         }
-        let idx = dpe.get_active_context_pos(&self.handle, locality)?;
+        let idx = env.state.get_active_context_pos(&self.handle, locality)?;
 
         // Make sure caller's locality does not already have a default context.
         if self.uses_target_is_default() {
-            let default_context_idx =
-                dpe.get_active_context_pos(&ContextHandle::default(), locality);
+            let default_context_idx = env
+                .state
+                .get_active_context_pos(&ContextHandle::default(), locality);
             let non_default_valid_handles_exist =
-                self.non_default_valid_handles_exist(dpe, locality, idx);
+                self.non_default_valid_handles_exist(env.state, locality, idx);
             if default_context_idx.is_ok() || cfi_launder(non_default_valid_handles_exist) {
                 return Err(DpeErrorCode::InvalidArgument);
             } else {
@@ -114,7 +116,7 @@ impl CommandExecution for RotateCtxCmd {
         } else {
             dpe.generate_new_handle(env)?
         };
-        dpe.contexts[idx].handle = new_handle;
+        env.state.contexts[idx].handle = new_handle;
 
         Ok(Response::RotateCtx(NewHandleResp {
             handle: new_handle,
@@ -127,18 +129,14 @@ impl CommandExecution for RotateCtxCmd {
 mod tests {
     use super::*;
     use crate::{
-        commands::{
-            tests::{DEFAULT_PLATFORM, PROFILES},
-            Command, CommandHdr, InitCtxCmd,
-        },
+        commands::{tests::PROFILES, Command, CommandHdr, InitCtxCmd},
         dpe_instance::{
-            tests::{TestTypes, RANDOM_HANDLE, SIMULATION_HANDLE, TEST_HANDLE, TEST_LOCALITIES},
+            tests::{test_env, RANDOM_HANDLE, SIMULATION_HANDLE, TEST_HANDLE, TEST_LOCALITIES},
             DpeInstanceFlags,
         },
         support::Support,
     };
     use caliptra_cfi_lib_git::CfiCounter;
-    use crypto::RustCryptoImpl;
     use zerocopy::IntoBytes;
 
     const TEST_ROTATE_CTX_CMD: RotateCtxCmd = RotateCtxCmd {
@@ -164,12 +162,9 @@ mod tests {
     #[test]
     fn test_rotate_context() {
         CfiCounter::reset_for_test();
-        let mut env = DpeEnv::<TestTypes> {
-            crypto: RustCryptoImpl::new(),
-            platform: DEFAULT_PLATFORM,
-        };
-        let mut dpe =
-            DpeInstance::new(&mut env, Support::default(), DpeInstanceFlags::empty()).unwrap();
+        let mut state = State::default();
+        let mut env = test_env(&mut state);
+        let mut dpe = DpeInstance::new(&mut env).unwrap();
         // Make sure it returns an error if the command is marked unsupported.
         assert_eq!(
             Err(DpeErrorCode::InvalidCommand),
@@ -181,8 +176,8 @@ mod tests {
         );
 
         // Make a new instance that supports RotateContext.
-        let mut dpe =
-            DpeInstance::new(&mut env, Support::ROTATE_CONTEXT, DpeInstanceFlags::empty()).unwrap();
+        *env.state = State::new(Support::ROTATE_CONTEXT, DpeInstanceFlags::empty());
+        let mut dpe = DpeInstance::new(&mut env).unwrap();
         InitCtxCmd::new_use_default()
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
             .unwrap();
@@ -230,9 +225,9 @@ mod tests {
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         );
 
-        dpe.contexts[1].state = ContextState::Active;
-        dpe.contexts[1].locality = TEST_LOCALITIES[0];
-        dpe.contexts[1].handle = SIMULATION_HANDLE;
+        env.state.contexts[1].state = ContextState::Active;
+        env.state.contexts[1].locality = TEST_LOCALITIES[0];
+        env.state.contexts[1].handle = SIMULATION_HANDLE;
         // Check that it returns an error if we try to rotate to a default context
         // when we have other non-default contexts in the same locality.
         assert_eq!(
@@ -243,7 +238,7 @@ mod tests {
             }
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         );
-        dpe.contexts[1].state = ContextState::Inactive;
+        env.state.contexts[1].state = ContextState::Inactive;
 
         // New handle is all 0s if caller requests default handle
         assert_eq!(

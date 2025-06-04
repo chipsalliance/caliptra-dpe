@@ -52,18 +52,10 @@ impl CommandExecution for GetCertificateChainCmd {
 mod tests {
     use super::*;
     use crate::{
-        commands::{
-            tests::{DEFAULT_PLATFORM, PROFILES},
-            Command, CommandHdr,
-        },
-        dpe_instance::{
-            tests::{TestTypes, TEST_LOCALITIES},
-            DpeInstanceFlags,
-        },
-        support::test::SUPPORT,
+        commands::{tests::PROFILES, Command, CommandHdr},
+        dpe_instance::tests::{test_env, test_state, TEST_LOCALITIES},
     };
     use caliptra_cfi_lib_git::CfiCounter;
-    use crypto::RustCryptoImpl;
     use zerocopy::IntoBytes;
 
     const TEST_GET_CERTIFICATE_CHAIN_CMD: GetCertificateChainCmd = GetCertificateChainCmd {
@@ -91,11 +83,9 @@ mod tests {
     #[test]
     fn test_fails_if_size_greater_than_max_chunk_size() {
         CfiCounter::reset_for_test();
-        let mut env = DpeEnv::<TestTypes> {
-            crypto: RustCryptoImpl::new(),
-            platform: DEFAULT_PLATFORM,
-        };
-        let mut dpe = DpeInstance::new(&mut env, SUPPORT, DpeInstanceFlags::empty()).unwrap();
+        let mut state = test_state();
+        let mut env = test_env(&mut state);
+        let mut dpe = DpeInstance::new(&mut env).unwrap();
 
         assert_eq!(
             Err(DpeErrorCode::InvalidArgument),
