@@ -427,7 +427,7 @@ mod tests {
     use crate::{
         commands::{
             rotate_context::{RotateCtxCmd, RotateCtxFlags},
-            tests::{DEFAULT_PLATFORM, TEST_DIGEST, TEST_LABEL},
+            tests::{DEFAULT_PLATFORM, PROFILES, TEST_DIGEST, TEST_LABEL},
             CertifyKeyCmd, CertifyKeyFlags, Command, CommandHdr, InitCtxCmd, SignCmd, SignFlags,
         },
         context::ContextType,
@@ -460,14 +460,16 @@ mod tests {
     #[test]
     fn test_deserialize_derive_context() {
         CfiCounter::reset_for_test();
-        let mut command = CommandHdr::new_for_test(Command::DERIVE_CONTEXT)
-            .as_bytes()
-            .to_vec();
-        command.extend(TEST_DERIVE_CONTEXT_CMD.as_bytes());
-        assert_eq!(
-            Ok(Command::DeriveContext(&TEST_DERIVE_CONTEXT_CMD)),
-            Command::deserialize(&command)
-        );
+        for p in PROFILES {
+            let mut command = CommandHdr::new(p, Command::DERIVE_CONTEXT)
+                .as_bytes()
+                .to_vec();
+            command.extend(TEST_DERIVE_CONTEXT_CMD.as_bytes());
+            assert_eq!(
+                Ok(Command::DeriveContext(&TEST_DERIVE_CONTEXT_CMD)),
+                Command::deserialize(p, &command)
+            );
+        }
     }
 
     #[test]

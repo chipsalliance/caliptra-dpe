@@ -101,8 +101,8 @@ mod tests {
     use super::*;
     use crate::{
         commands::{
-            tests::DEFAULT_PLATFORM, Command, CommandHdr, DeriveContextCmd, DeriveContextFlags,
-            InitCtxCmd,
+            tests::{DEFAULT_PLATFORM, PROFILES},
+            Command, CommandHdr, DeriveContextCmd, DeriveContextFlags, InitCtxCmd,
         },
         context::{Context, ContextState},
         dpe_instance::{
@@ -123,14 +123,16 @@ mod tests {
     #[test]
     fn test_deserialize_destroy_context() {
         CfiCounter::reset_for_test();
-        let mut command = CommandHdr::new_for_test(Command::DESTROY_CONTEXT)
-            .as_bytes()
-            .to_vec();
-        command.extend(TEST_DESTROY_CTX_CMD.as_bytes());
-        assert_eq!(
-            Ok(Command::DestroyCtx(&TEST_DESTROY_CTX_CMD)),
-            Command::deserialize(&command)
-        );
+        for p in PROFILES {
+            let mut command = CommandHdr::new(p, Command::DESTROY_CONTEXT)
+                .as_bytes()
+                .to_vec();
+            command.extend(TEST_DESTROY_CTX_CMD.as_bytes());
+            assert_eq!(
+                Ok(Command::DestroyCtx(&TEST_DESTROY_CTX_CMD)),
+                Command::deserialize(p, &command)
+            );
+        }
     }
 
     #[test]

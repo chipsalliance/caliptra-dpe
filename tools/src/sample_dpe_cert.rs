@@ -6,9 +6,7 @@ use std::env;
 
 use {
     crypto::RustCryptoImpl,
-    dpe::commands::{
-        self, CertifyKeyCmd, CertifyKeyFlags, CommandHdr, DeriveContextCmd, DeriveContextFlags,
-    },
+    dpe::commands::{self, CertifyKeyCmd, CertifyKeyFlags, DeriveContextCmd, DeriveContextFlags},
     dpe::context::ContextHandle,
     dpe::dpe_instance::{DpeEnv, DpeTypes},
     dpe::response::Response,
@@ -41,7 +39,8 @@ fn add_tcb_info(
         target_locality: 0, // Unused since flag isn't set
     };
     let cmd_body = cmd.as_bytes().to_vec();
-    let cmd_hdr = CommandHdr::new_for_test(dpe::commands::Command::DERIVE_CONTEXT)
+    let cmd_hdr = dpe
+        .command_hdr(dpe::commands::Command::DERIVE_CONTEXT)
         .as_bytes()
         .to_vec();
     let mut command = cmd_hdr;
@@ -65,7 +64,8 @@ fn certify_key(dpe: &mut DpeInstance, env: &mut DpeEnv<TestTypes>, format: u32) 
         format,
     };
     let cmd_body = certify_key_cmd.as_bytes().to_vec();
-    let cmd_hdr = CommandHdr::new_for_test(dpe::commands::Command::CERTIFY_KEY)
+    let cmd_hdr = dpe
+        .command_hdr(dpe::commands::Command::CERTIFY_KEY)
         .as_bytes()
         .to_vec();
     let mut command = cmd_hdr;

@@ -141,7 +141,7 @@ mod tests {
         commands::{
             certify_key::{CertifyKeyCmd, CertifyKeyFlags},
             derive_context::DeriveContextFlags,
-            tests::{DEFAULT_PLATFORM, TEST_DIGEST, TEST_LABEL},
+            tests::{DEFAULT_PLATFORM, PROFILES, TEST_DIGEST, TEST_LABEL},
             Command, CommandHdr, DeriveContextCmd, InitCtxCmd,
         },
         dpe_instance::{
@@ -166,12 +166,14 @@ mod tests {
     #[test]
     fn test_deserialize_sign() {
         CfiCounter::reset_for_test();
-        let mut command = CommandHdr::new_for_test(Command::SIGN).as_bytes().to_vec();
-        command.extend(TEST_SIGN_CMD.as_bytes());
-        assert_eq!(
-            Ok(Command::Sign(&TEST_SIGN_CMD)),
-            Command::deserialize(&command)
-        );
+        for p in PROFILES {
+            let mut command = CommandHdr::new(p, Command::SIGN).as_bytes().to_vec();
+            command.extend(TEST_SIGN_CMD.as_bytes());
+            assert_eq!(
+                Ok(Command::Sign(&TEST_SIGN_CMD)),
+                Command::deserialize(p, &command)
+            );
+        }
     }
 
     #[test]
