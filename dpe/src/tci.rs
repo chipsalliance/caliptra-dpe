@@ -12,6 +12,7 @@ pub struct TciNodeData {
     pub tci_cumulative: TciMeasurement,
     pub tci_current: TciMeasurement,
     pub locality: u32,
+    pub svn: u32,
 }
 
 impl TciNodeData {
@@ -21,6 +22,7 @@ impl TciNodeData {
             tci_cumulative: TciMeasurement([0; DPE_PROFILE.tci_size()]),
             tci_current: TciMeasurement([0; DPE_PROFILE.tci_size()]),
             locality: 0,
+            svn: 0,
         }
     }
 }

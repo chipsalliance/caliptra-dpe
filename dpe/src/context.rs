@@ -97,6 +97,7 @@ impl Context {
         self.tci = TciNodeData::new();
         self.tci.tci_type = args.tci_type;
         self.tci.locality = args.locality;
+        self.tci.svn = args.svn;
         self.children = 0;
         self.parent_idx = args.parent_idx;
         self.context_type = args.context_type;
@@ -205,6 +206,7 @@ pub struct ActiveContextArgs<'a> {
     pub uses_internal_input_info: bool,
     pub uses_internal_input_dice: bool,
     pub allow_export_cdi: bool,
+    pub svn: u32,
 }
 
 pub(crate) struct ChildToRootIter<'a> {
