@@ -14,7 +14,6 @@ use crate::{
     tci::TciMeasurement,
     DpeProfile, State, DPE_PROFILE, MAX_HANDLES,
 };
-use bitflags::bitflags;
 #[cfg(not(feature = "no-cfi"))]
 use caliptra_cfi_derive_git::cfi_impl_fn;
 use caliptra_cfi_lib_git::cfi_launder;
@@ -26,7 +25,6 @@ use platform::Platform;
 #[cfg(not(feature = "disable_internal_dice"))]
 use platform::MAX_CHUNK_SIZE;
 use zerocopy::IntoBytes;
-use zeroize::Zeroize;
 
 pub trait DpeTypes {
     type Crypto<'a>: Crypto
@@ -41,26 +39,6 @@ pub struct DpeEnv<'a, T: DpeTypes + 'a> {
     pub crypto: T::Crypto<'a>,
     pub platform: T::Platform<'a>,
     pub state: &'a mut State,
-}
-
-#[repr(C)]
-#[derive(
-    Debug,
-    PartialEq,
-    Eq,
-    zerocopy::FromBytes,
-    zerocopy::IntoBytes,
-    zerocopy::Immutable,
-    zerocopy::KnownLayout,
-    Zeroize,
-)]
-pub struct DpeInstanceFlags(pub u16);
-
-bitflags! {
-    impl DpeInstanceFlags: u16 {
-        /// Mark DICE extensions as "Critical" in certificates created by `DpeInstance`.
-        const MARK_DICE_EXTENSIONS_CRITICAL = 1u16 << 15;
-    }
 }
 
 pub struct DpeInstance {
@@ -419,7 +397,7 @@ pub mod tests {
     use crate::commands::{DeriveContextCmd, DeriveContextFlags};
     use crate::response::NewHandleResp;
     use crate::support::test::SUPPORT;
-    use crate::CURRENT_PROFILE_MAJOR_VERSION;
+    use crate::{DpeFlags, CURRENT_PROFILE_MAJOR_VERSION};
     use caliptra_cfi_lib_git::CfiCounter;
     use crypto::RustCryptoImpl;
     use platform::default::{DefaultPlatform, AUTO_INIT_LOCALITY};
@@ -450,7 +428,7 @@ pub mod tests {
     }
 
     pub fn test_state() -> State {
-        State::new(SUPPORT, DpeInstanceFlags::empty())
+        State::new(SUPPORT, DpeFlags::empty())
     }
 
     #[test]
@@ -508,7 +486,7 @@ pub mod tests {
     #[test]
     fn test_add_tci_measurement() {
         CfiCounter::reset_for_test();
-        let mut state = State::new(Support::AUTO_INIT, DpeInstanceFlags::empty());
+        let mut state = State::new(Support::AUTO_INIT, DpeFlags::empty());
         let mut env = test_env(&mut state);
         let dpe = DpeInstance::new(&mut env).unwrap();
 
@@ -616,7 +594,7 @@ pub mod tests {
     #[test]
     fn test_hash_internal_input_info() {
         CfiCounter::reset_for_test();
-        let mut state = State::new(SUPPORT | Support::INTERNAL_INFO, DpeInstanceFlags::empty());
+        let mut state = State::new(SUPPORT | Support::INTERNAL_INFO, DpeFlags::empty());
         let mut env = test_env(&mut state);
         let mut dpe = DpeInstance::new(&mut env).unwrap();
 
@@ -679,7 +657,7 @@ pub mod tests {
     #[test]
     fn test_hash_internal_input_dice() {
         CfiCounter::reset_for_test();
-        let mut state = State::new(SUPPORT | Support::INTERNAL_DICE, DpeInstanceFlags::empty());
+        let mut state = State::new(SUPPORT | Support::INTERNAL_DICE, DpeFlags::empty());
         let mut env = test_env(&mut state);
         let mut dpe = DpeInstance::new(&mut env).unwrap();
 

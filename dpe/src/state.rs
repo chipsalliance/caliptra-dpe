@@ -1,18 +1,30 @@
 // Licensed under the Apache-2.0 license.
 use crate::{
     context::{ChildToRootIter, Context, ContextHandle, ContextState},
-    dpe_instance::{flags_iter, DpeInstanceFlags},
+    dpe_instance::flags_iter,
     response::DpeErrorCode,
     support::Support,
     tci::TciNodeData,
     U8Bool, MAX_HANDLES,
 };
+use bitflags::bitflags;
 use caliptra_cfi_lib_git::cfi_launder;
-use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes};
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes};
 use zeroize::Zeroize;
 
 #[cfg(not(feature = "no-cfi"))]
 use caliptra_cfi_derive_git::cfi_impl_fn;
+
+#[repr(C)]
+#[derive(Debug, PartialEq, Eq, FromBytes, IntoBytes, Immutable, KnownLayout, Zeroize)]
+pub struct DpeFlags(pub u16);
+
+bitflags! {
+    impl DpeFlags: u16 {
+        /// Mark DICE extensions as "Critical" in certificates.
+        const MARK_DICE_EXTENSIONS_CRITICAL = 1u16 << 15;
+    }
+}
 
 #[repr(C, align(4))]
 #[derive(IntoBytes, TryFromBytes, KnownLayout, Immutable, Zeroize)]
@@ -22,11 +34,11 @@ pub struct State {
     pub version: u32,
     pub contexts: [Context; MAX_HANDLES],
     pub support: Support,
-    pub flags: DpeInstanceFlags,
+    pub flags: DpeFlags,
     /// Can only successfully execute the initialize context command for non-simulation (i.e.
     /// `InitializeContext(simulation=false)`) once per reset cycle.
     pub has_initialized: U8Bool,
-    // unused buffer added to make DpeInstance word aligned and remove padding
+    // unused buffer added to be word aligned and remove padding
     pub reserved: [u8; 1],
 }
 const _: () = assert!(align_of::<State>() == 4);
@@ -38,7 +50,7 @@ impl Default for State {
             version: Self::VERSION,
             contexts: [CONTEXT_INITIALIZER; MAX_HANDLES],
             support: Support::default(),
-            flags: DpeInstanceFlags::empty(),
+            flags: DpeFlags::empty(),
             has_initialized: false.into(),
             reserved: [0; 1],
         }
@@ -48,7 +60,7 @@ impl Default for State {
 impl State {
     pub const VERSION: u32 = 1;
 
-    pub fn new(support: Support, flags: DpeInstanceFlags) -> Self {
+    pub fn new(support: Support, flags: DpeFlags) -> Self {
         let updated_support = support.preprocess_support();
         const CONTEXT_INITIALIZER: Context = Context::new();
         State {

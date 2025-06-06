@@ -2,10 +2,10 @@
 use super::CommandExecution;
 use crate::{
     context::ContextHandle,
-    dpe_instance::{DpeEnv, DpeInstance, DpeInstanceFlags, DpeTypes},
+    dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
     response::{CertifyKeyResp, DpeErrorCode, Response},
     x509::{create_dpe_cert, create_dpe_csr, CreateDpeCertArgs, CreateDpeCertResult},
-    DPE_PROFILE, MAX_CERT_SIZE,
+    DpeFlags, DPE_PROFILE, MAX_CERT_SIZE,
 };
 use bitflags::bitflags;
 #[cfg(not(feature = "no-cfi"))]
@@ -98,7 +98,7 @@ impl CommandExecution for CertifyKeyCmd {
             dice_extensions_are_critical: env
                 .state
                 .flags
-                .contains(DpeInstanceFlags::MARK_DICE_EXTENSIONS_CRITICAL),
+                .contains(DpeFlags::MARK_DICE_EXTENSIONS_CRITICAL),
         };
         let mut cert = [0; MAX_CERT_SIZE];
 
@@ -216,9 +216,9 @@ mod tests {
         for mark_dice_extensions_critical in [true, false] {
             CfiCounter::reset_for_test();
             let flags = {
-                let mut flags = DpeInstanceFlags::empty();
+                let mut flags = DpeFlags::empty();
                 flags.set(
-                    DpeInstanceFlags::MARK_DICE_EXTENSIONS_CRITICAL,
+                    DpeFlags::MARK_DICE_EXTENSIONS_CRITICAL,
                     mark_dice_extensions_critical,
                 );
                 flags
@@ -271,9 +271,9 @@ mod tests {
         for mark_dice_extensions_critical in [true, false] {
             CfiCounter::reset_for_test();
             let flags = {
-                let mut flags = DpeInstanceFlags::empty();
+                let mut flags = DpeFlags::empty();
                 flags.set(
-                    DpeInstanceFlags::MARK_DICE_EXTENSIONS_CRITICAL,
+                    DpeFlags::MARK_DICE_EXTENSIONS_CRITICAL,
                     mark_dice_extensions_critical,
                 );
                 flags
@@ -501,10 +501,7 @@ mod tests {
     #[test]
     fn test_certify_key_order() {
         CfiCounter::reset_for_test();
-        let mut state = State::new(
-            Support::X509 | Support::AUTO_INIT,
-            DpeInstanceFlags::empty(),
-        );
+        let mut state = State::new(Support::X509 | Support::AUTO_INIT, DpeFlags::empty());
         let mut env = test_env(&mut state);
         let mut dpe = DpeInstance::new(&mut env).unwrap();
 

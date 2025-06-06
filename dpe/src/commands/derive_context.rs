@@ -3,11 +3,11 @@ use super::CommandExecution;
 use crate::{
     commands::destroy_context,
     context::{ActiveContextArgs, Context, ContextHandle, ContextState, ContextType},
-    dpe_instance::{DpeEnv, DpeInstance, DpeInstanceFlags, DpeTypes},
+    dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
     response::{DeriveContextExportedCdiResp, DeriveContextResp, DpeErrorCode, Response},
     tci::TciMeasurement,
     x509::{create_exported_dpe_cert, CreateDpeCertArgs, CreateDpeCertResult},
-    State, DPE_PROFILE, MAX_CERT_SIZE,
+    DpeFlags, State, DPE_PROFILE, MAX_CERT_SIZE,
 };
 use bitflags::bitflags;
 #[cfg(not(feature = "no-cfi"))]
@@ -322,7 +322,7 @@ impl CommandExecution for DeriveContextCmd {
                         key_label: b"Exported ECC",
                         context: b"Exported ECC",
                         ueid,
-                        dice_extensions_are_critical: env.state.flags.contains(DpeInstanceFlags::MARK_DICE_EXTENSIONS_CRITICAL),
+                        dice_extensions_are_critical: env.state.flags.contains(DpeFlags::MARK_DICE_EXTENSIONS_CRITICAL),
                     };
                     let mut cert = [0; MAX_CERT_SIZE];
                     let CreateDpeCertResult { cert_size, exported_cdi_handle, .. } = create_exported_dpe_cert(
@@ -481,7 +481,7 @@ mod tests {
         CfiCounter::reset_for_test();
         let mut state = State::new(
             Support::AUTO_INIT | Support::INTERNAL_INFO | Support::RETAIN_PARENT_CONTEXT,
-            DpeInstanceFlags::empty(),
+            DpeFlags::empty(),
         );
         let mut env = test_env(&mut state);
         let mut dpe = DpeInstance::new(&mut env).unwrap();
@@ -500,7 +500,7 @@ mod tests {
 
         *env.state = State::new(
             Support::AUTO_INIT | Support::INTERNAL_DICE | Support::RETAIN_PARENT_CONTEXT,
-            DpeInstanceFlags::empty(),
+            DpeFlags::empty(),
         );
         dpe = DpeInstance::new(&mut env).unwrap();
 
@@ -518,7 +518,7 @@ mod tests {
 
         *env.state = State::new(
             Support::AUTO_INIT | Support::INTERNAL_INFO | Support::INTERNAL_DICE,
-            DpeInstanceFlags::empty(),
+            DpeFlags::empty(),
         );
         dpe = DpeInstance::new(&mut env).unwrap();
 
@@ -563,7 +563,7 @@ mod tests {
     #[test]
     fn test_max_tcis() {
         CfiCounter::reset_for_test();
-        let mut state = State::new(Support::AUTO_INIT, DpeInstanceFlags::empty());
+        let mut state = State::new(Support::AUTO_INIT, DpeFlags::empty());
         let mut env = test_env(&mut state);
         let mut dpe = DpeInstance::new(&mut env).unwrap();
 
@@ -597,7 +597,7 @@ mod tests {
     #[test]
     fn test_set_child_parent_relationship() {
         CfiCounter::reset_for_test();
-        let mut state = State::new(Support::AUTO_INIT, DpeInstanceFlags::empty());
+        let mut state = State::new(Support::AUTO_INIT, DpeFlags::empty());
         let mut env = test_env(&mut state);
         let mut dpe = DpeInstance::new(&mut env).unwrap();
 
@@ -632,7 +632,7 @@ mod tests {
     #[test]
     fn test_set_other_values() {
         CfiCounter::reset_for_test();
-        let mut state = State::new(Support::AUTO_INIT, DpeInstanceFlags::empty());
+        let mut state = State::new(Support::AUTO_INIT, DpeFlags::empty());
         let mut env = test_env(&mut state);
         let mut dpe = DpeInstance::new(&mut env).unwrap();
 
@@ -659,7 +659,7 @@ mod tests {
     #[test]
     fn test_correct_child_handle() {
         CfiCounter::reset_for_test();
-        let mut state = State::new(Support::AUTO_INIT, DpeInstanceFlags::empty());
+        let mut state = State::new(Support::AUTO_INIT, DpeFlags::empty());
         let mut env = test_env(&mut state);
         let mut dpe = DpeInstance::new(&mut env).unwrap();
 
@@ -707,7 +707,7 @@ mod tests {
                 | Support::AUTO_INIT
                 | Support::ROTATE_CONTEXT
                 | Support::RETAIN_PARENT_CONTEXT,
-            DpeInstanceFlags::empty(),
+            DpeFlags::empty(),
         );
         let mut env = test_env(&mut state);
         let mut dpe = DpeInstance::new(&mut env).unwrap();
@@ -797,7 +797,7 @@ mod tests {
         CfiCounter::reset_for_test();
         let mut state = State::new(
             Support::AUTO_INIT | Support::RETAIN_PARENT_CONTEXT,
-            DpeInstanceFlags::empty(),
+            DpeFlags::empty(),
         );
         let mut env = test_env(&mut state);
         let mut dpe = DpeInstance::new(&mut env).unwrap();
@@ -941,7 +941,7 @@ mod tests {
         CfiCounter::reset_for_test();
         let mut state = State::new(
             Support::AUTO_INIT | Support::RETAIN_PARENT_CONTEXT,
-            DpeInstanceFlags::empty(),
+            DpeFlags::empty(),
         );
         let mut env = test_env(&mut state);
         let mut dpe = DpeInstance::new(&mut env).unwrap();
@@ -964,7 +964,7 @@ mod tests {
         CfiCounter::reset_for_test();
         let mut state = State::new(
             Support::AUTO_INIT | Support::RETAIN_PARENT_CONTEXT,
-            DpeInstanceFlags::empty(),
+            DpeFlags::empty(),
         );
         let mut env = test_env(&mut state);
         let mut dpe = DpeInstance::new(&mut env).unwrap();
@@ -1003,7 +1003,7 @@ mod tests {
                 | Support::RECURSIVE
                 | Support::INTERNAL_DICE
                 | Support::INTERNAL_INFO,
-            DpeInstanceFlags::empty(),
+            DpeFlags::empty(),
         );
         let mut env = test_env(&mut state);
         let mut dpe = DpeInstance::new(&mut env).unwrap();
@@ -1076,7 +1076,7 @@ mod tests {
                 | Support::RECURSIVE
                 | Support::SIMULATION
                 | Support::RETAIN_PARENT_CONTEXT,
-            DpeInstanceFlags::empty(),
+            DpeFlags::empty(),
         );
         let mut env = test_env(&mut state);
         let mut dpe = DpeInstance::new(&mut env).unwrap();
@@ -1156,7 +1156,7 @@ mod tests {
 
         *env.state = State::new(
             Support::AUTO_INIT | Support::CDI_EXPORT | Support::X509,
-            DpeInstanceFlags::empty(),
+            DpeFlags::empty(),
         );
         dpe = DpeInstance::new(&mut env).unwrap();
 
@@ -1182,7 +1182,7 @@ mod tests {
 
         *env.state = State::new(
             Support::AUTO_INIT | Support::INTERNAL_INFO | Support::INTERNAL_DICE | Support::X509,
-            DpeInstanceFlags::empty(),
+            DpeFlags::empty(),
         );
         dpe = DpeInstance::new(&mut env).unwrap();
 
@@ -1231,7 +1231,7 @@ mod tests {
                 | Support::CDI_EXPORT
                 | Support::X509
                 | Support::RETAIN_PARENT_CONTEXT,
-            DpeInstanceFlags::empty(),
+            DpeFlags::empty(),
         );
         let mut env = test_env(&mut state);
         let mut dpe = DpeInstance::new(&mut env).unwrap();
@@ -1277,7 +1277,7 @@ mod tests {
                 | Support::CDI_EXPORT
                 | Support::X509
                 | Support::RETAIN_PARENT_CONTEXT,
-            DpeInstanceFlags::empty(),
+            DpeFlags::empty(),
         );
         let mut env = test_env(&mut state);
         let mut dpe = DpeInstance::new(&mut env).unwrap();
@@ -1309,7 +1309,7 @@ mod tests {
         // be able to use `DeriveContextFlags::EXPORT_CDI`.
         *env.state = State::new(
             Support::AUTO_INIT | Support::CDI_EXPORT | Support::X509,
-            DpeInstanceFlags::empty(),
+            DpeFlags::empty(),
         );
         dpe = DpeInstance::new(&mut env).unwrap();
 
@@ -1342,7 +1342,7 @@ mod tests {
         // was included.
         *env.state = State::new(
             Support::AUTO_INIT | Support::CDI_EXPORT | Support::X509,
-            DpeInstanceFlags::empty(),
+            DpeFlags::empty(),
         );
         dpe = DpeInstance::new(&mut env).unwrap();
 
@@ -1377,7 +1377,7 @@ mod tests {
         // Create a new env to clear cached exported CDIs
         let mut state = State::new(
             Support::AUTO_INIT | Support::CDI_EXPORT | Support::X509,
-            DpeInstanceFlags::empty(),
+            DpeFlags::empty(),
         );
         let mut env = test_env(&mut state);
         let mut dpe = DpeInstance::new(&mut env).unwrap();
@@ -1428,7 +1428,7 @@ mod tests {
         CfiCounter::reset_for_test();
         let mut state = State::new(
             Support::AUTO_INIT | Support::CDI_EXPORT | Support::X509,
-            DpeInstanceFlags::empty(),
+            DpeFlags::empty(),
         );
         let mut env = test_env(&mut state);
         let mut dpe = DpeInstance::new(&mut env).unwrap();
@@ -1469,7 +1469,7 @@ mod tests {
                 | Support::CDI_EXPORT
                 | Support::X509
                 | Support::RETAIN_PARENT_CONTEXT,
-            DpeInstanceFlags::empty(),
+            DpeFlags::empty(),
         );
         let mut env = test_env(&mut state);
         let mut dpe = DpeInstance::new(&mut env).unwrap();
@@ -1520,7 +1520,7 @@ mod tests {
                 | Support::X509
                 | Support::RETAIN_PARENT_CONTEXT
                 | Support::ROTATE_CONTEXT,
-            DpeInstanceFlags::empty(),
+            DpeFlags::empty(),
         );
         let mut env = test_env(&mut state);
         let mut dpe = DpeInstance::new(&mut env).unwrap();
@@ -1621,7 +1621,7 @@ mod tests {
                 | Support::X509
                 | Support::RETAIN_PARENT_CONTEXT
                 | Support::ROTATE_CONTEXT,
-            DpeInstanceFlags::empty(),
+            DpeFlags::empty(),
         );
         let mut env = test_env(&mut state);
         let mut dpe = DpeInstance::new(&mut env).unwrap();
@@ -1698,9 +1698,9 @@ mod tests {
         for mark_dice_extensions_critical in [true, false] {
             CfiCounter::reset_for_test();
             let flags = {
-                let mut flags = DpeInstanceFlags::empty();
+                let mut flags = DpeFlags::empty();
                 flags.set(
-                    DpeInstanceFlags::MARK_DICE_EXTENSIONS_CRITICAL,
+                    DpeFlags::MARK_DICE_EXTENSIONS_CRITICAL,
                     mark_dice_extensions_critical,
                 );
                 flags

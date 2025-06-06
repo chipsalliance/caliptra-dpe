@@ -130,11 +130,11 @@ mod tests {
     use super::*;
     use crate::{
         commands::{tests::PROFILES, Command, CommandHdr, InitCtxCmd},
-        dpe_instance::{
-            tests::{test_env, RANDOM_HANDLE, SIMULATION_HANDLE, TEST_HANDLE, TEST_LOCALITIES},
-            DpeInstanceFlags,
+        dpe_instance::tests::{
+            test_env, RANDOM_HANDLE, SIMULATION_HANDLE, TEST_HANDLE, TEST_LOCALITIES,
         },
         support::Support,
+        DpeFlags,
     };
     use caliptra_cfi_lib_git::CfiCounter;
     use zerocopy::IntoBytes;
@@ -176,7 +176,7 @@ mod tests {
         );
 
         // Make a new instance that supports RotateContext.
-        *env.state = State::new(Support::ROTATE_CONTEXT, DpeInstanceFlags::empty());
+        *env.state = State::new(Support::ROTATE_CONTEXT, DpeFlags::empty());
         let mut dpe = DpeInstance::new(&mut env).unwrap();
         InitCtxCmd::new_use_default()
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])

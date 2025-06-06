@@ -5,7 +5,7 @@
 #[cfg(all(not(feature = "libfuzzer-sys"), not(feature = "afl")))]
 compile_error!("Either feature \"libfuzzer-sys\" or \"afl\" must be enabled!");
 
-use dpe::{dpe_instance::DpeInstanceFlags, response::DpeErrorCode};
+use dpe::{response::DpeErrorCode, DpeFlags};
 #[cfg(feature = "libfuzzer-sys")]
 use libfuzzer_sys::fuzz_target;
 
@@ -53,7 +53,7 @@ fn harness(data: &[u8]) {
     let mut env = DpeEnv::<SimTypes> {
         crypto: RustCryptoImpl::new(),
         platform: DefaultPlatform(DefaultPlatformProfile::P256),
-        state: &mut dpe::State::new(SUPPORT, DpeInstanceFlags::empty()),
+        state: &mut dpe::State::new(SUPPORT, DpeFlags::empty()),
     };
     let mut dpe = DpeInstance::new(&mut env).unwrap();
     trace!("----------------------------------");

@@ -7,7 +7,7 @@ Abstract:
 #![cfg_attr(not(test), no_std)]
 
 pub use dpe_instance::DpeInstance;
-pub use state::State;
+pub use state::{DpeFlags, State};
 
 use zeroize::Zeroize;
 

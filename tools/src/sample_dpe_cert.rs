@@ -1,6 +1,6 @@
 // Licensed under the Apache-2.0 license
 
-use dpe::dpe_instance::DpeInstanceFlags;
+use dpe::DpeFlags;
 use platform::default::DefaultPlatformProfile;
 use std::env;
 
@@ -106,7 +106,7 @@ fn main() {
     let mut env = DpeEnv::<TestTypes> {
         crypto: RustCryptoImpl::new(),
         platform: DefaultPlatform(p),
-        state: &mut dpe::State::new(support, DpeInstanceFlags::empty()),
+        state: &mut dpe::State::new(support, DpeFlags::empty()),
     };
 
     let mut dpe = DpeInstance::new(&mut env).unwrap();

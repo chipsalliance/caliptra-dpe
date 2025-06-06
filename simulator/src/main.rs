@@ -4,7 +4,7 @@
 compile_error!("must provide a crypto implementation");
 
 use clap::Parser;
-use dpe::dpe_instance::DpeInstanceFlags;
+use dpe::DpeFlags;
 use log::{error, info, trace, warn};
 use platform::default::{DefaultPlatform, DefaultPlatformProfile};
 use std::fs;
@@ -160,9 +160,9 @@ fn main() -> std::io::Result<()> {
     );
     support.set(Support::CDI_EXPORT, args.supports_cdi_export);
 
-    let mut flags = DpeInstanceFlags::empty();
+    let mut flags = DpeFlags::empty();
     flags.set(
-        DpeInstanceFlags::MARK_DICE_EXTENSIONS_CRITICAL,
+        DpeFlags::MARK_DICE_EXTENSIONS_CRITICAL,
         args.mark_dice_extensions_critical,
     );
 

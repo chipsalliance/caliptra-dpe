@@ -451,11 +451,11 @@ impl DpeValidator<'_> {
 pub mod tests {
     use crate::{
         context::{Context, ContextHandle, ContextState, ContextType},
-        dpe_instance::{tests::test_state, DpeInstanceFlags},
+        dpe_instance::tests::test_state,
         support::Support,
         tci::TciMeasurement,
         validation::{DpeValidator, ValidationError},
-        State, U8Bool, DPE_PROFILE,
+        DpeFlags, State, U8Bool, DPE_PROFILE,
     };
     use caliptra_cfi_lib_git::CfiCounter;
 
@@ -564,7 +564,7 @@ pub mod tests {
         let dpe_validator = DpeValidator {
             dpe: &mut State::new(
                 Support::all().difference(Support::AUTO_INIT),
-                DpeInstanceFlags::empty(),
+                DpeFlags::empty(),
             ),
         };
 

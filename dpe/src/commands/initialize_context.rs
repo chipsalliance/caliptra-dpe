@@ -115,12 +115,9 @@ mod tests {
     use crate::{
         commands::{tests::PROFILES, Command, CommandHdr},
         context::ContextState,
-        dpe_instance::{
-            tests::{test_env, TEST_LOCALITIES},
-            DpeInstanceFlags,
-        },
+        dpe_instance::tests::{test_env, TEST_LOCALITIES},
         support::Support,
-        State,
+        DpeFlags, State,
     };
     use caliptra_cfi_lib_git::CfiCounter;
     use zerocopy::IntoBytes;
@@ -178,7 +175,7 @@ mod tests {
         );
 
         // Change to support simulation.
-        *env.state = State::new(Support::SIMULATION, DpeInstanceFlags::empty());
+        *env.state = State::new(Support::SIMULATION, DpeFlags::empty());
         let mut dpe = DpeInstance::new(&mut env).unwrap();
 
         // Try setting both flags.

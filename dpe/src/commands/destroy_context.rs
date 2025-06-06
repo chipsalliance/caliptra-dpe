@@ -104,11 +104,9 @@ mod tests {
             tests::PROFILES, Command, CommandHdr, DeriveContextCmd, DeriveContextFlags, InitCtxCmd,
         },
         context::{Context, ContextState},
-        dpe_instance::{
-            tests::{test_env, test_state, SIMULATION_HANDLE, TEST_HANDLE, TEST_LOCALITIES},
-            DpeInstanceFlags,
+        dpe_instance::tests::{
+            test_env, test_state, SIMULATION_HANDLE, TEST_HANDLE, TEST_LOCALITIES,
         },
-        support::Support,
         DPE_PROFILE,
     };
     use caliptra_cfi_lib_git::CfiCounter;
