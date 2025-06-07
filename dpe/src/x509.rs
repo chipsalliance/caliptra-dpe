@@ -10,7 +10,7 @@ use crate::{
     dpe_instance::{DpeEnv, DpeTypes},
     response::DpeErrorCode,
     tci::{TciMeasurement, TciNodeData},
-    DpeInstance, DpeProfile, DPE_PROFILE, MAX_CERT_SIZE, MAX_HANDLES,
+    DpeInstance, DpeProfile, State, DPE_PROFILE, MAX_CERT_SIZE, MAX_HANDLES,
 };
 use bitflags::bitflags;
 use caliptra_cfi_lib_git::cfi_launder;
@@ -2316,7 +2316,7 @@ fn get_dpe_measurement_digest(
     handle: &ContextHandle,
     locality: u32,
 ) -> Result<Digest, DpeErrorCode> {
-    let parent_idx = dpe.get_active_context_pos(handle, locality)?;
+    let parent_idx = env.state.get_active_context_pos(handle, locality)?;
     let digest = dpe.compute_measurement_hash(env, parent_idx)?;
     Ok(digest)
 }
@@ -2340,13 +2340,13 @@ fn get_subject_name<'a>(
 }
 
 fn get_tci_nodes<'a>(
-    dpe: &mut DpeInstance,
+    state: &State,
     handle: &ContextHandle,
     locality: u32,
     nodes: &'a mut [TciNodeData],
 ) -> Result<&'a mut [TciNodeData], DpeErrorCode> {
-    let parent_idx = dpe.get_active_context_pos(handle, locality)?;
-    let tcb_count = dpe.get_tcb_nodes(parent_idx, nodes)?;
+    let parent_idx = state.get_active_context_pos(handle, locality)?;
+    let tcb_count = state.get_tcb_nodes(parent_idx, nodes)?;
     if tcb_count > MAX_HANDLES {
         return Err(DpeErrorCode::InternalError);
     }
@@ -2466,7 +2466,7 @@ fn create_dpe_cert_or_csr(
 
     const INITIALIZER: TciNodeData = TciNodeData::new();
     let mut nodes = [INITIALIZER; MAX_HANDLES];
-    let tci_nodes = get_tci_nodes(dpe, args.handle, args.locality, &mut nodes)?;
+    let tci_nodes = get_tci_nodes(env.state, args.handle, args.locality, &mut nodes)?;
 
     let mut subject_key_identifier = [0u8; MAX_KEY_IDENTIFIER_SIZE];
     get_subject_key_identifier(env, &pub_key, &mut subject_key_identifier)?;
@@ -2487,7 +2487,7 @@ fn create_dpe_cert_or_csr(
     };
 
     let supports_recursive = match cert_type {
-        CertificateType::Leaf => dpe.support.recursive(),
+        CertificateType::Leaf => env.state.support.recursive(),
         CertificateType::Exported => false,
     };
 

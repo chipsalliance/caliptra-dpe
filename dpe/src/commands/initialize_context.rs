@@ -58,8 +58,8 @@ impl CommandExecution for InitCtxCmd {
         locality: u32,
     ) -> Result<Response, DpeErrorCode> {
         // This function can only be called once for non-simulation contexts.
-        if (self.flag_is_default() && dpe.has_initialized())
-            || (self.flag_is_simulation() && !dpe.support.simulation())
+        if (self.flag_is_default() && env.state.has_initialized())
+            || (self.flag_is_simulation() && !env.state.support.simulation())
         {
             return Err(DpeErrorCode::ArgumentNotSupported);
         }
@@ -73,24 +73,25 @@ impl CommandExecution for InitCtxCmd {
 
         cfg_if! {
             if #[cfg(not(feature = "no-cfi"))] {
-                cfi_assert!(!self.flag_is_default() || !dpe.has_initialized());
-                cfi_assert!(!self.flag_is_simulation() || dpe.support.simulation());
+                cfi_assert!(!self.flag_is_default() || !env.state.has_initialized());
+                cfi_assert!(!self.flag_is_simulation() || env.state.support.simulation());
                 cfi_assert!(self.flag_is_default() ^ self.flag_is_simulation());
             }
         }
 
-        let idx = dpe
+        let idx = env
+            .state
             .get_next_inactive_context_pos()
             .ok_or(DpeErrorCode::MaxTcis)?;
         let (context_type, handle) = if self.flag_is_default() {
-            dpe.has_initialized = true.into();
+            env.state.has_initialized = true.into();
             (ContextType::Normal, ContextHandle::default())
         } else {
             // Simulation.
             (ContextType::Simulation, dpe.generate_new_handle(env)?)
         };
 
-        dpe.contexts[idx].activate(&ActiveContextArgs {
+        env.state.contexts[idx].activate(&ActiveContextArgs {
             context_type,
             locality,
             handle: &handle,
@@ -113,19 +114,13 @@ impl CommandExecution for InitCtxCmd {
 mod tests {
     use super::*;
     use crate::{
-        commands::{
-            tests::{DEFAULT_PLATFORM, PROFILES},
-            Command, CommandHdr,
-        },
+        commands::{tests::PROFILES, Command, CommandHdr},
         context::ContextState,
-        dpe_instance::{
-            tests::{TestTypes, TEST_LOCALITIES},
-            DpeInstanceFlags,
-        },
+        dpe_instance::tests::{test_env, TEST_LOCALITIES},
         support::Support,
+        DpeFlags, State,
     };
     use caliptra_cfi_lib_git::CfiCounter;
-    use crypto::RustCryptoImpl;
     use zerocopy::IntoBytes;
 
     const TEST_INIT_CTX_CMD: InitCtxCmd = InitCtxCmd(0x1234_5678);
@@ -148,12 +143,9 @@ mod tests {
     #[test]
     fn test_initialize_context() {
         CfiCounter::reset_for_test();
-        let mut env = DpeEnv::<TestTypes> {
-            crypto: RustCryptoImpl::new(),
-            platform: DEFAULT_PLATFORM,
-        };
-        let mut dpe =
-            DpeInstance::new(&mut env, Support::default(), DpeInstanceFlags::empty()).unwrap();
+        let mut state = State::default();
+        let mut env = test_env(&mut state);
+        let mut dpe = DpeInstance::new(&mut env).unwrap();
 
         let handle = match InitCtxCmd::new_use_default()
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
@@ -184,8 +176,8 @@ mod tests {
         );
 
         // Change to support simulation.
-        let mut dpe =
-            DpeInstance::new(&mut env, Support::SIMULATION, DpeInstanceFlags::empty()).unwrap();
+        *env.state = State::new(Support::SIMULATION, DpeFlags::empty());
+        let mut dpe = DpeInstance::new(&mut env).unwrap();
 
         // Try setting both flags.
         assert_eq!(
@@ -198,7 +190,7 @@ mod tests {
         );
 
         // Set all handles as active.
-        for context in dpe.contexts.iter_mut() {
+        for context in env.state.contexts.iter_mut() {
             context.state = ContextState::Active;
         }
 

@@ -4,7 +4,7 @@ use crate::{
     context::{Context, ContextHandle, ContextState},
     dpe_instance::{flags_iter, DpeEnv, DpeInstance, DpeTypes},
     response::{DpeErrorCode, Response},
-    MAX_HANDLES,
+    State, MAX_HANDLES,
 };
 #[cfg(not(feature = "no-cfi"))]
 use caliptra_cfi_derive_git::cfi_impl_fn;
@@ -28,11 +28,11 @@ pub struct DestroyCtxCmd {
 
 pub(crate) fn destroy_context(
     context_handle: &ContextHandle,
-    dpe: &mut DpeInstance,
+    state: &mut State,
     locality: u32,
 ) -> Result<(), DpeErrorCode> {
-    let idx = dpe.get_active_context_pos(context_handle, locality)?;
-    let context = &dpe.contexts[idx];
+    let idx = state.get_active_context_pos(context_handle, locality)?;
+    let context = &state.contexts[idx];
     // Make sure the command is coming from the right locality.
     if context.locality != locality {
         return Err(DpeErrorCode::InvalidLocality);
@@ -47,10 +47,10 @@ pub(crate) fn destroy_context(
     loop {
         if parent_idx == Context::ROOT_INDEX as usize {
             break;
-        } else if parent_idx >= dpe.contexts.len() {
+        } else if parent_idx >= state.contexts.len() {
             return Err(DpeErrorCode::InternalError);
         }
-        let parent_context = &dpe.contexts[parent_idx];
+        let parent_context = &state.contexts[parent_idx];
         // make sure the retired context does not have other active child contexts
         let child_context_count = flags_iter(parent_context.children, MAX_HANDLES).count();
         if parent_context.state == ContextState::Retired && cfi_launder(child_context_count) == 1 {
@@ -66,9 +66,9 @@ pub(crate) fn destroy_context(
 
     // create a bitmask indicating that the current context, all its descendants, and its consecutive
     // retired parent contexts should be destroyed
-    let to_destroy = (1 << idx) | dpe.get_descendants(context)? | retired_contexts;
+    let to_destroy = (1 << idx) | state.get_descendants(context)? | retired_contexts;
 
-    for (idx, c) in dpe.contexts.iter_mut().enumerate() {
+    for (idx, c) in state.contexts.iter_mut().enumerate() {
         // Clears all the to_destroy bits in the children of every context
         c.children &= !cfi_launder(to_destroy);
         if to_destroy & (1 << idx) != 0 {
@@ -86,10 +86,10 @@ impl CommandExecution for DestroyCtxCmd {
     fn execute(
         &self,
         dpe: &mut DpeInstance,
-        _env: &mut DpeEnv<impl DpeTypes>,
+        env: &mut DpeEnv<impl DpeTypes>,
         locality: u32,
     ) -> Result<Response, DpeErrorCode> {
-        destroy_context(&self.handle, dpe, locality)?;
+        destroy_context(&self.handle, env.state, locality)?;
         Ok(Response::DestroyCtx(
             dpe.response_hdr(DpeErrorCode::NoError),
         ))
@@ -101,19 +101,15 @@ mod tests {
     use super::*;
     use crate::{
         commands::{
-            tests::{DEFAULT_PLATFORM, PROFILES},
-            Command, CommandHdr, DeriveContextCmd, DeriveContextFlags, InitCtxCmd,
+            tests::PROFILES, Command, CommandHdr, DeriveContextCmd, DeriveContextFlags, InitCtxCmd,
         },
         context::{Context, ContextState},
-        dpe_instance::{
-            tests::{TestTypes, SIMULATION_HANDLE, TEST_HANDLE, TEST_LOCALITIES},
-            DpeInstanceFlags,
+        dpe_instance::tests::{
+            test_env, test_state, SIMULATION_HANDLE, TEST_HANDLE, TEST_LOCALITIES,
         },
-        support::{test::SUPPORT, Support},
         DPE_PROFILE,
     };
     use caliptra_cfi_lib_git::CfiCounter;
-    use crypto::RustCryptoImpl;
     use zerocopy::IntoBytes;
 
     const TEST_DESTROY_CTX_CMD: DestroyCtxCmd = DestroyCtxCmd {
@@ -138,12 +134,9 @@ mod tests {
     #[test]
     fn test_destroy_context() {
         CfiCounter::reset_for_test();
-        let mut env = DpeEnv::<TestTypes> {
-            crypto: RustCryptoImpl::new(),
-            platform: DEFAULT_PLATFORM,
-        };
-        let mut dpe =
-            DpeInstance::new(&mut env, Support::default(), DpeInstanceFlags::empty()).unwrap();
+        let mut state = State::default();
+        let mut env = test_env(&mut state);
+        let mut dpe = DpeInstance::new(&mut env).unwrap();
 
         InitCtxCmd::new_use_default()
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
@@ -159,8 +152,8 @@ mod tests {
         );
 
         // create two dummy contexts at indices 0 and 1, with 1 being the child of 0
-        activate_dummy_context(&mut dpe, 0, Context::ROOT_INDEX, &TEST_HANDLE, &[1]);
-        activate_dummy_context(&mut dpe, 1, 0, &ContextHandle::default(), &[]);
+        activate_dummy_context(&mut env.state, 0, Context::ROOT_INDEX, &TEST_HANDLE, &[1]);
+        activate_dummy_context(&mut env.state, 1, 0, &ContextHandle::default(), &[]);
         // destroy context[1]
         assert_eq!(
             Ok(Response::DestroyCtx(
@@ -171,8 +164,8 @@ mod tests {
             }
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         );
-        assert_eq!(dpe.contexts[1].state, ContextState::Inactive);
-        assert_eq!(dpe.contexts[0].children, 0);
+        assert_eq!(env.state.contexts[1].state, ContextState::Inactive);
+        assert_eq!(env.state.contexts[0].children, 0);
         // destroy context[0]
         assert_eq!(
             Ok(Response::DestroyCtx(
@@ -183,52 +176,52 @@ mod tests {
             }
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         );
-        assert_eq!(dpe.contexts[0].state, ContextState::Inactive);
+        assert_eq!(env.state.contexts[0].state, ContextState::Inactive);
 
         activate_dummy_context(
-            &mut dpe,
+            &mut env.state,
             0,
             Context::ROOT_INDEX,
             &ContextHandle::default(),
             &[1, 2],
         );
         activate_dummy_context(
-            &mut dpe,
+            &mut env.state,
             1,
             0,
             &ContextHandle([1; ContextHandle::SIZE]),
             &[3, 4],
         );
         activate_dummy_context(
-            &mut dpe,
+            &mut env.state,
             2,
             0,
             &ContextHandle([2; ContextHandle::SIZE]),
             &[5, 6],
         );
         activate_dummy_context(
-            &mut dpe,
+            &mut env.state,
             3,
             1,
             &ContextHandle([3; ContextHandle::SIZE]),
             &[],
         );
         activate_dummy_context(
-            &mut dpe,
+            &mut env.state,
             4,
             1,
             &ContextHandle([4; ContextHandle::SIZE]),
             &[],
         );
         activate_dummy_context(
-            &mut dpe,
+            &mut env.state,
             5,
             2,
             &ContextHandle([5; ContextHandle::SIZE]),
             &[],
         );
         activate_dummy_context(
-            &mut dpe,
+            &mut env.state,
             6,
             2,
             &ContextHandle([6; ContextHandle::SIZE]),
@@ -245,34 +238,34 @@ mod tests {
             }
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         );
-        assert_eq!(dpe.contexts[0].state, ContextState::Inactive);
-        assert_eq!(dpe.contexts[1].state, ContextState::Inactive);
-        assert_eq!(dpe.contexts[2].state, ContextState::Inactive);
-        assert_eq!(dpe.contexts[3].state, ContextState::Inactive);
-        assert_eq!(dpe.contexts[4].state, ContextState::Inactive);
-        assert_eq!(dpe.contexts[5].state, ContextState::Inactive);
-        assert_eq!(dpe.contexts[6].state, ContextState::Inactive);
-        assert_eq!(dpe.contexts[0].children, 0);
-        assert_eq!(dpe.contexts[1].children, 0);
-        assert_eq!(dpe.contexts[2].children, 0);
-        assert_eq!(dpe.contexts[3].children, 0);
+        assert_eq!(env.state.contexts[0].state, ContextState::Inactive);
+        assert_eq!(env.state.contexts[1].state, ContextState::Inactive);
+        assert_eq!(env.state.contexts[2].state, ContextState::Inactive);
+        assert_eq!(env.state.contexts[3].state, ContextState::Inactive);
+        assert_eq!(env.state.contexts[4].state, ContextState::Inactive);
+        assert_eq!(env.state.contexts[5].state, ContextState::Inactive);
+        assert_eq!(env.state.contexts[6].state, ContextState::Inactive);
+        assert_eq!(env.state.contexts[0].children, 0);
+        assert_eq!(env.state.contexts[1].children, 0);
+        assert_eq!(env.state.contexts[2].children, 0);
+        assert_eq!(env.state.contexts[3].children, 0);
 
         activate_dummy_context(
-            &mut dpe,
+            &mut env.state,
             0,
             Context::ROOT_INDEX,
             &ContextHandle::default(),
             &[1, 2],
         );
         activate_dummy_context(
-            &mut dpe,
+            &mut env.state,
             1,
             0,
             &ContextHandle([1; ContextHandle::SIZE]),
             &[],
         );
         activate_dummy_context(
-            &mut dpe,
+            &mut env.state,
             2,
             0,
             &ContextHandle([2; ContextHandle::SIZE]),
@@ -288,19 +281,17 @@ mod tests {
             }
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         );
-        assert_eq!(dpe.contexts[1].state, ContextState::Inactive);
+        assert_eq!(env.state.contexts[1].state, ContextState::Inactive);
         // check that context[2] is still a child of context[0]
-        assert_eq!(dpe.contexts[0].children, 1 << 2);
+        assert_eq!(env.state.contexts[0].children, 1 << 2);
     }
 
     #[test]
     fn test_retired_parent_contexts_destroyed() {
         CfiCounter::reset_for_test();
-        let mut env = DpeEnv::<TestTypes> {
-            crypto: RustCryptoImpl::new(),
-            platform: DEFAULT_PLATFORM,
-        };
-        let mut dpe = DpeInstance::new(&mut env, SUPPORT, DpeInstanceFlags::empty()).unwrap();
+        let mut state = test_state();
+        let mut env = test_env(&mut state);
+        let mut dpe = DpeInstance::new(&mut env).unwrap();
 
         // create new context while preserving auto-initialized context
         let handle_1 = match (DeriveContextCmd {
@@ -358,21 +349,20 @@ mod tests {
         // destroyed since they are in the chain of consecutive retired parents of the destroyed
         // context.
         assert_eq!(
-            dpe.count_contexts(|ctx| ctx.state != ContextState::Inactive)
+            env.state
+                .count_contexts(|ctx| ctx.state != ContextState::Inactive)
                 .unwrap(),
             1
         );
-        assert_eq!(dpe.contexts[2].state, ContextState::Inactive);
+        assert_eq!(env.state.contexts[2].state, ContextState::Inactive);
     }
 
     #[test]
     fn test_retired_parent_context_not_destroyed_if_it_has_other_active_children() {
         CfiCounter::reset_for_test();
-        let mut env = DpeEnv::<TestTypes> {
-            crypto: RustCryptoImpl::new(),
-            platform: DEFAULT_PLATFORM,
-        };
-        let mut dpe = DpeInstance::new(&mut env, SUPPORT, DpeInstanceFlags::empty()).unwrap();
+        let mut state = test_state();
+        let mut env = test_env(&mut state);
+        let mut dpe = DpeInstance::new(&mut env).unwrap();
 
         // create new context while preserving auto-initialized context
         let parent_handle = match (DeriveContextCmd {
@@ -429,26 +419,27 @@ mod tests {
         // Since the retired handle has another active context apart from handle_b, it
         // shouldn't be destroyed.
         assert_eq!(
-            dpe.count_contexts(|ctx| ctx.state != ContextState::Inactive)
+            env.state
+                .count_contexts(|ctx| ctx.state != ContextState::Inactive)
                 .unwrap(),
             3
         );
-        assert_eq!(dpe.contexts[1].state, ContextState::Retired);
+        assert_eq!(env.state.contexts[1].state, ContextState::Retired);
     }
 
     fn activate_dummy_context(
-        dpe: &mut DpeInstance,
+        state: &mut State,
         idx: usize,
         parent_idx: u8,
         handle: &ContextHandle,
         children: &[u8],
     ) {
-        dpe.contexts[idx].state = ContextState::Active;
-        dpe.contexts[idx].handle = *handle;
-        dpe.contexts[idx].parent_idx = parent_idx;
+        state.contexts[idx].state = ContextState::Active;
+        state.contexts[idx].handle = *handle;
+        state.contexts[idx].parent_idx = parent_idx;
         for i in children {
-            let children = dpe.contexts[idx].add_child(*i as usize).unwrap();
-            dpe.contexts[idx].children = children;
+            let children = state.contexts[idx].add_child(*i as usize).unwrap();
+            state.contexts[idx].children = children;
         }
     }
 }

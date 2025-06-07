@@ -7,12 +7,15 @@ Abstract:
 #![cfg_attr(not(test), no_std)]
 
 pub use dpe_instance::DpeInstance;
+pub use state::{DpeFlags, State};
+
 use zeroize::Zeroize;
 
 pub mod commands;
 pub mod context;
 pub mod dpe_instance;
 pub mod response;
+mod state;
 pub mod support;
 pub mod validation;
 

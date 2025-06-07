@@ -96,8 +96,8 @@ impl CommandExecution for SignCmd {
         env: &mut DpeEnv<impl DpeTypes>,
         locality: u32,
     ) -> Result<Response, DpeErrorCode> {
-        let idx = dpe.get_active_context_pos(&self.handle, locality)?;
-        let context = &dpe.contexts[idx];
+        let idx = env.state.get_active_context_pos(&self.handle, locality)?;
+        let context = &env.state.contexts[idx];
 
         if context.context_type == ContextType::Simulation {
             return Err(DpeErrorCode::InvalidArgument);
@@ -126,7 +126,7 @@ impl CommandExecution for SignCmd {
         dpe.roll_onetime_use_handle(env, idx)?;
 
         Ok(Response::Sign(SignResp {
-            new_context_handle: dpe.contexts[idx].handle,
+            new_context_handle: env.state.contexts[idx].handle,
             sig_r,
             sig_s,
             resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
@@ -141,17 +141,14 @@ mod tests {
         commands::{
             certify_key::{CertifyKeyCmd, CertifyKeyFlags},
             derive_context::DeriveContextFlags,
-            tests::{DEFAULT_PLATFORM, PROFILES, TEST_DIGEST, TEST_LABEL},
+            tests::{PROFILES, TEST_DIGEST, TEST_LABEL},
             Command, CommandHdr, DeriveContextCmd, InitCtxCmd,
         },
-        dpe_instance::{
-            tests::{TestTypes, RANDOM_HANDLE, SIMULATION_HANDLE, TEST_LOCALITIES},
-            DpeInstanceFlags,
+        dpe_instance::tests::{
+            test_env, test_state, RANDOM_HANDLE, SIMULATION_HANDLE, TEST_LOCALITIES,
         },
-        support::test::SUPPORT,
     };
     use caliptra_cfi_lib_git::CfiCounter;
-    use crypto::RustCryptoImpl;
     use openssl::x509::X509;
     use openssl::{bn::BigNum, ecdsa::EcdsaSig};
     use zerocopy::IntoBytes;
@@ -179,11 +176,9 @@ mod tests {
     #[test]
     fn test_bad_command_inputs() {
         CfiCounter::reset_for_test();
-        let mut env = DpeEnv::<TestTypes> {
-            crypto: RustCryptoImpl::new(),
-            platform: DEFAULT_PLATFORM,
-        };
-        let mut dpe = DpeInstance::new(&mut env, SUPPORT, DpeInstanceFlags::empty()).unwrap();
+        let mut state = test_state();
+        let mut env = test_env(&mut state);
+        let mut dpe = DpeInstance::new(&mut env).unwrap();
 
         // Bad handle.
         assert_eq!(
@@ -198,7 +193,8 @@ mod tests {
         );
 
         // Wrong locality.
-        assert!(dpe
+        assert!(env
+            .state
             .get_active_context_pos(&ContextHandle::default(), TEST_LOCALITIES[0])
             .is_ok());
         assert_eq!(
@@ -216,7 +212,8 @@ mod tests {
         InitCtxCmd::new_simulation()
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
             .unwrap();
-        assert!(dpe
+        assert!(env
+            .state
             .get_active_context_pos(&RANDOM_HANDLE, TEST_LOCALITIES[0])
             .is_ok());
         assert_eq!(
@@ -234,11 +231,9 @@ mod tests {
     #[test]
     fn test_asymmetric() {
         CfiCounter::reset_for_test();
-        let mut env = DpeEnv::<TestTypes> {
-            crypto: RustCryptoImpl::new(),
-            platform: DEFAULT_PLATFORM,
-        };
-        let mut dpe = DpeInstance::new(&mut env, SUPPORT, DpeInstanceFlags::empty()).unwrap();
+        let mut state = test_state();
+        let mut env = test_env(&mut state);
+        let mut dpe = DpeInstance::new(&mut env).unwrap();
 
         for i in 0..3 {
             DeriveContextCmd {

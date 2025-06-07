@@ -2,10 +2,10 @@
 use super::CommandExecution;
 use crate::{
     context::ContextHandle,
-    dpe_instance::{DpeEnv, DpeInstance, DpeInstanceFlags, DpeTypes},
+    dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
     response::{CertifyKeyResp, DpeErrorCode, Response},
     x509::{create_dpe_cert, create_dpe_csr, CreateDpeCertArgs, CreateDpeCertResult},
-    DPE_PROFILE, MAX_CERT_SIZE,
+    DpeFlags, DPE_PROFILE, MAX_CERT_SIZE,
 };
 use bitflags::bitflags;
 #[cfg(not(feature = "no-cfi"))]
@@ -60,17 +60,17 @@ impl CommandExecution for CertifyKeyCmd {
         env: &mut DpeEnv<impl DpeTypes>,
         locality: u32,
     ) -> Result<Response, DpeErrorCode> {
-        let idx = dpe.get_active_context_pos(&self.handle, locality)?;
-        let context = &dpe.contexts[idx];
+        let idx = env.state.get_active_context_pos(&self.handle, locality)?;
+        let context = &env.state.contexts[idx];
 
         if self.format == Self::FORMAT_X509 {
-            if !dpe.support.x509() {
+            if !env.state.support.x509() {
                 return Err(DpeErrorCode::ArgumentNotSupported);
             }
             if !context.allow_x509() {
                 return Err(DpeErrorCode::InvalidArgument);
             }
-        } else if self.format == Self::FORMAT_CSR && !dpe.support.csr() {
+        } else if self.format == Self::FORMAT_CSR && !env.state.support.csr() {
             return Err(DpeErrorCode::ArgumentNotSupported);
         }
 
@@ -81,9 +81,9 @@ impl CommandExecution for CertifyKeyCmd {
 
         cfg_if! {
             if #[cfg(not(feature = "no-cfi"))] {
-                cfi_assert!(self.format != Self::FORMAT_X509 || dpe.support.x509());
+                cfi_assert!(self.format != Self::FORMAT_X509 || env.state.support.x509());
                 cfi_assert!(self.format != Self::FORMAT_X509 || context.allow_x509());
-                cfi_assert!(self.format != Self::FORMAT_CSR || dpe.support.csr());
+                cfi_assert!(self.format != Self::FORMAT_CSR || env.state.support.csr());
                 cfi_assert_eq(context.locality, locality);
             }
         }
@@ -95,9 +95,10 @@ impl CommandExecution for CertifyKeyCmd {
             key_label: &self.label,
             context: b"ECC",
             ueid: &self.label,
-            dice_extensions_are_critical: dpe
+            dice_extensions_are_critical: env
+                .state
                 .flags
-                .contains(DpeInstanceFlags::MARK_DICE_EXTENSIONS_CRITICAL),
+                .contains(DpeFlags::MARK_DICE_EXTENSIONS_CRITICAL),
         };
         let mut cert = [0; MAX_CERT_SIZE];
 
@@ -144,7 +145,7 @@ impl CommandExecution for CertifyKeyCmd {
         dpe.roll_onetime_use_handle(env, idx)?;
 
         Ok(Response::CertifyKey(CertifyKeyResp {
-            new_context_handle: dpe.contexts[idx].handle,
+            new_context_handle: env.state.contexts[idx].handle,
             derived_pubkey_x,
             derived_pubkey_y,
             cert_size,
@@ -159,19 +160,19 @@ mod tests {
     use super::*;
     use crate::{
         commands::{
-            tests::{DEFAULT_PLATFORM, PROFILES},
-            Command, CommandHdr, DeriveContextCmd, DeriveContextFlags, InitCtxCmd,
+            tests::PROFILES, Command, CommandHdr, DeriveContextCmd, DeriveContextFlags, InitCtxCmd,
         },
-        dpe_instance::tests::{TestTypes, SIMULATION_HANDLE, TEST_LOCALITIES},
+        dpe_instance::tests::{test_env, SIMULATION_HANDLE, TEST_LOCALITIES},
         support::Support,
         x509::{tests::TcbInfo, DirectoryString, Name},
+        State,
     };
     use caliptra_cfi_lib_git::CfiCounter;
     use cms::{
         content_info::{CmsVersion, ContentInfo},
         signed_data::{SignedData, SignerIdentifier},
     };
-    use crypto::{AlgLen, Crypto, CryptoBuf, EcdsaPub, RustCryptoImpl};
+    use crypto::{AlgLen, Crypto, CryptoBuf, EcdsaPub};
     use der::{Decode, Encode};
     use openssl::{
         bn::BigNum,
@@ -214,19 +215,17 @@ mod tests {
     fn test_certify_key_x509() {
         for mark_dice_extensions_critical in [true, false] {
             CfiCounter::reset_for_test();
-            let mut env = DpeEnv::<TestTypes> {
-                crypto: RustCryptoImpl::new(),
-                platform: DEFAULT_PLATFORM,
-            };
             let flags = {
-                let mut flags = DpeInstanceFlags::empty();
+                let mut flags = DpeFlags::empty();
                 flags.set(
-                    DpeInstanceFlags::MARK_DICE_EXTENSIONS_CRITICAL,
+                    DpeFlags::MARK_DICE_EXTENSIONS_CRITICAL,
                     mark_dice_extensions_critical,
                 );
                 flags
             };
-            let mut dpe = DpeInstance::new(&mut env, Support::X509, flags).unwrap();
+            let mut state = State::new(Support::X509, flags);
+            let mut env = test_env(&mut state);
+            let mut dpe = DpeInstance::new(&mut env).unwrap();
 
             let init_resp = match InitCtxCmd::new_use_default()
                 .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
@@ -271,19 +270,17 @@ mod tests {
         // Verify that certify_key csr DICE extensions criticality matches the dpe_instance.
         for mark_dice_extensions_critical in [true, false] {
             CfiCounter::reset_for_test();
-            let mut env = DpeEnv::<TestTypes> {
-                crypto: RustCryptoImpl::new(),
-                platform: DEFAULT_PLATFORM,
-            };
             let flags = {
-                let mut flags = DpeInstanceFlags::empty();
+                let mut flags = DpeFlags::empty();
                 flags.set(
-                    DpeInstanceFlags::MARK_DICE_EXTENSIONS_CRITICAL,
+                    DpeFlags::MARK_DICE_EXTENSIONS_CRITICAL,
                     mark_dice_extensions_critical,
                 );
                 flags
             };
-            let mut dpe = DpeInstance::new(&mut env, Support::CSR, flags).unwrap();
+            let mut state = State::new(Support::CSR, flags);
+            let mut env = test_env(&mut state);
+            let mut dpe = DpeInstance::new(&mut env).unwrap();
 
             let init_resp = match InitCtxCmd::new_use_default()
                 .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
@@ -504,16 +501,9 @@ mod tests {
     #[test]
     fn test_certify_key_order() {
         CfiCounter::reset_for_test();
-        let mut env = DpeEnv::<TestTypes> {
-            crypto: RustCryptoImpl::new(),
-            platform: DEFAULT_PLATFORM,
-        };
-        let mut dpe = DpeInstance::new(
-            &mut env,
-            Support::X509 | Support::AUTO_INIT,
-            DpeInstanceFlags::empty(),
-        )
-        .unwrap();
+        let mut state = State::new(Support::X509 | Support::AUTO_INIT, DpeFlags::empty());
+        let mut env = test_env(&mut state);
+        let mut dpe = DpeInstance::new(&mut env).unwrap();
 
         // Derive context twice with different types
         let derive_cmd = DeriveContextCmd {

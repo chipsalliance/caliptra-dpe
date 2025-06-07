@@ -5,7 +5,7 @@ use crate::{
     dpe_instance::flags_iter,
     response::DpeErrorCode,
     tci::TciNodeData,
-    DpeInstance, MAX_HANDLES,
+    State, MAX_HANDLES,
 };
 
 #[cfg(not(feature = "no-cfi"))]
@@ -57,7 +57,7 @@ impl ValidationError {
 }
 
 pub struct DpeValidator<'a> {
-    pub dpe: &'a mut DpeInstance,
+    pub dpe: &'a mut State,
 }
 
 impl DpeValidator<'_> {
@@ -92,12 +92,12 @@ impl DpeValidator<'_> {
     /// present within the DPE instance.
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     fn validate_dpe_state(&self) -> Result<(), ValidationError> {
-        if cfi_launder(self.dpe.version == DpeInstance::VERSION) {
+        if cfi_launder(self.dpe.version == State::VERSION) {
             #[cfg(not(feature = "no-cfi"))]
-            cfi_assert!(self.dpe.version == DpeInstance::VERSION);
+            cfi_assert!(self.dpe.version == State::VERSION);
         } else {
             #[cfg(not(feature = "no-cfi"))]
-            cfi_assert!(self.dpe.version != DpeInstance::VERSION);
+            cfi_assert!(self.dpe.version != State::VERSION);
             return Err(ValidationError::VersionMismatch);
         }
         for i in 0..MAX_HANDLES {
@@ -449,28 +449,21 @@ impl DpeValidator<'_> {
 
 #[cfg(test)]
 pub mod tests {
-    use caliptra_cfi_lib_git::CfiCounter;
-    use crypto::RustCryptoImpl;
-
     use crate::{
-        commands::tests::DEFAULT_PLATFORM,
         context::{Context, ContextHandle, ContextState, ContextType},
-        dpe_instance::{tests::TestTypes, DpeEnv, DpeInstanceFlags},
-        support::{test::SUPPORT, Support},
+        dpe_instance::tests::test_state,
+        support::Support,
         tci::TciMeasurement,
         validation::{DpeValidator, ValidationError},
-        DpeInstance, U8Bool, DPE_PROFILE,
+        DpeFlags, State, U8Bool, DPE_PROFILE,
     };
+    use caliptra_cfi_lib_git::CfiCounter;
 
     #[test]
     fn test_validate_context_forest() {
         CfiCounter::reset_for_test();
-        let mut env = DpeEnv::<TestTypes> {
-            crypto: RustCryptoImpl::new(),
-            platform: DEFAULT_PLATFORM,
-        };
         let dpe_validator = DpeValidator {
-            dpe: &mut DpeInstance::new(&mut env, SUPPORT, DpeInstanceFlags::empty()).unwrap(),
+            dpe: &mut test_state(),
         };
 
         // validation fails on graph where child has multiple parents
@@ -528,13 +521,8 @@ pub mod tests {
     #[test]
     fn test_support_validation() {
         CfiCounter::reset_for_test();
-        let mut env = DpeEnv::<TestTypes> {
-            crypto: RustCryptoImpl::new(),
-            platform: DEFAULT_PLATFORM,
-        };
         let dpe_validator = DpeValidator {
-            dpe: &mut DpeInstance::new(&mut env, Support::empty(), DpeInstanceFlags::empty())
-                .unwrap(),
+            dpe: &mut State::default(),
         };
 
         // test simulation support
@@ -573,17 +561,11 @@ pub mod tests {
     #[test]
     fn test_context_specific_validation() {
         CfiCounter::reset_for_test();
-        let mut env = DpeEnv::<TestTypes> {
-            crypto: RustCryptoImpl::new(),
-            platform: DEFAULT_PLATFORM,
-        };
         let dpe_validator = DpeValidator {
-            dpe: &mut DpeInstance::new(
-                &mut env,
+            dpe: &mut State::new(
                 Support::all().difference(Support::AUTO_INIT),
-                DpeInstanceFlags::empty(),
-            )
-            .unwrap(),
+                DpeFlags::empty(),
+            ),
         };
 
         // inactive context validation
@@ -687,13 +669,8 @@ pub mod tests {
     #[test]
     fn test_contexts_within_same_locality_validation() {
         CfiCounter::reset_for_test();
-        let mut env = DpeEnv::<TestTypes> {
-            crypto: RustCryptoImpl::new(),
-            platform: DEFAULT_PLATFORM,
-        };
         let dpe_validator = DpeValidator {
-            dpe: &mut DpeInstance::new(&mut env, Support::empty(), DpeInstanceFlags::empty())
-                .unwrap(),
+            dpe: &mut State::default(),
         };
         dpe_validator.dpe.has_initialized = U8Bool::new(true);
 
@@ -720,13 +697,8 @@ pub mod tests {
     #[test]
     fn test_version_mismatch() {
         CfiCounter::reset_for_test();
-        let mut env = DpeEnv::<TestTypes> {
-            crypto: RustCryptoImpl::new(),
-            platform: DEFAULT_PLATFORM,
-        };
         let dpe_validator = DpeValidator {
-            dpe: &mut DpeInstance::new(&mut env, Support::empty(), DpeInstanceFlags::empty())
-                .unwrap(),
+            dpe: &mut State::default(),
         };
         assert_eq!(Ok(()), dpe_validator.validate_dpe_state());
 
