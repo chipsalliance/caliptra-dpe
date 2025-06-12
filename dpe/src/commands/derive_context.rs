@@ -1077,16 +1077,16 @@ mod tests {
         assert!(env.state.contexts[child_idx].allow_export_cdi());
 
         // check tci_cumulative correctly computed
-        let mut hasher = env.crypto.hash_initialize(DPE_PROFILE.alg_len()).unwrap();
+        let mut hasher = env.crypto.hash_initialize().unwrap();
         hasher.update(&[0u8; DPE_PROFILE.hash_size()]).unwrap();
         hasher.update(&[1u8; DPE_PROFILE.hash_size()]).unwrap();
         let temp_digest = hasher.finish().unwrap();
-        let mut hasher_2 = env.crypto.hash_initialize(DPE_PROFILE.alg_len()).unwrap();
-        hasher_2.update(temp_digest.bytes()).unwrap();
+        let mut hasher_2 = env.crypto.hash_initialize().unwrap();
+        hasher_2.update(temp_digest.as_slice()).unwrap();
         hasher_2.update(&[2u8; DPE_PROFILE.hash_size()]).unwrap();
         let digest = hasher_2.finish().unwrap();
         assert_eq!(
-            digest.bytes(),
+            digest.as_slice(),
             env.state.contexts[child_idx].tci.tci_cumulative.0
         );
     }

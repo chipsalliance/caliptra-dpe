@@ -16,10 +16,21 @@ use {
     zerocopy::IntoBytes,
 };
 
+#[cfg(feature = "dpe_profile_p256_sha256")]
+use crypto::Ecdsa256RustCrypto;
+
+#[cfg(feature = "dpe_profile_p384_sha384")]
+use crypto::Ecdsa384RustCrypto;
+
 pub struct TestTypes {}
 
 impl DpeTypes for TestTypes {
-    type Crypto<'a> = RustCryptoImpl;
+    #[cfg(feature = "dpe_profile_p256_sha256")]
+    type Crypto<'a> = Ecdsa256RustCrypto;
+
+    #[cfg(feature = "dpe_profile_p384_sha384")]
+    type Crypto<'a> = Ecdsa384RustCrypto;
+
     type Platform<'a> = DefaultPlatform;
 }
 

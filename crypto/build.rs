@@ -15,6 +15,8 @@ fn main() {
         println!("cargo:rerun-if-changed={ALIAS_PRIV_384}");
         println!("cargo:rerun-if-changed={ALIAS_PRIV_MLDSA_87}");
 
+        let out_dir = env::var_os("OUT_DIR").unwrap();
+
         let (pem_256, pem_384) = {
             use {
                 base64ct::LineEnding,
@@ -96,8 +98,6 @@ fn main() {
 
             (pem_256, pem_384)
         };
-
-        let out_dir = env::var_os("OUT_DIR").unwrap();
 
         // write 256 bit private key to file
         let path_256 = Path::new(&out_dir).join("alias_priv_256.pem");

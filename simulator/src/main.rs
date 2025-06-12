@@ -20,8 +20,11 @@ use dpe::{
     DpeInstance,
 };
 
-#[cfg(feature = "rustcrypto")]
-use crypto::RustCryptoImpl;
+#[cfg(feature = "dpe_profile_p256_sha256")]
+use crypto::Ecdsa256RustCrypto;
+
+#[cfg(feature = "dpe_profile_p384_sha384")]
+use crypto::Ecdsa384RustCrypto;
 
 const SOCKET_PATH: &str = "/tmp/dpe-sim.socket";
 
@@ -122,8 +125,12 @@ struct Args {
 struct SimTypes {}
 
 impl DpeTypes for SimTypes {
-    #[cfg(feature = "rustcrypto")]
-    type Crypto<'a> = RustCryptoImpl;
+    #[cfg(feature = "dpe_profile_p256_sha256")]
+    type Crypto<'a> = Ecdsa256RustCrypto;
+
+    #[cfg(feature = "dpe_profile_p384_sha384")]
+    type Crypto<'a> = Ecdsa384RustCrypto;
+
     type Platform<'a> = DefaultPlatform;
 }
 
