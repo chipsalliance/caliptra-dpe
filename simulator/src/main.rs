@@ -36,7 +36,7 @@ fn handle_request(dpe: &mut DpeInstance, env: &mut DpeEnv<impl DpeTypes>, stream
     };
 
     trace!("----------------------------------");
-    if let Ok(command) = dpe.deserialize_command(cmd) {
+    if let Ok(command) = dpe.deserialize_command::<SimTypes>(cmd) {
         trace!("| Locality `{locality:#x}` requested {command:x?}",);
     } else {
         trace!("| Locality `{locality:#010x}` requested invalid command. {cmd:02x?}")

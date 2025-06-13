@@ -81,12 +81,12 @@ pub(crate) fn destroy_context(
     Ok(())
 }
 
-impl CommandExecution for DestroyCtxCmd {
+impl<T: DpeTypes> CommandExecution<T> for DestroyCtxCmd {
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     fn execute(
         &self,
         dpe: &mut DpeInstance,
-        env: &mut DpeEnv<impl DpeTypes>,
+        env: &mut DpeEnv<T>,
         locality: u32,
     ) -> Result<Response, DpeErrorCode> {
         destroy_context(&self.handle, env.state, locality)?;
@@ -101,11 +101,11 @@ mod tests {
     use super::*;
     use crate::{
         commands::{
-            tests::PROFILES, Command, CommandHdr, DeriveContextCmd, DeriveContextFlags, InitCtxCmd,
+            self, tests::PROFILES, CommandHdr, DeriveContextCmd, DeriveContextFlags, InitCtxCmd,
         },
         context::{Context, ContextState},
         dpe_instance::tests::{
-            test_env, test_state, SIMULATION_HANDLE, TEST_HANDLE, TEST_LOCALITIES,
+            test_env, test_state, TestTypes, SIMULATION_HANDLE, TEST_HANDLE, TEST_LOCALITIES,
         },
         DPE_PROFILE,
     };
@@ -120,14 +120,11 @@ mod tests {
     fn test_deserialize_destroy_context() {
         CfiCounter::reset_for_test();
         for p in PROFILES {
-            let mut command = CommandHdr::new(p, Command::DESTROY_CONTEXT)
+            let mut command = CommandHdr::new(p, commands::DESTROY_CONTEXT)
                 .as_bytes()
                 .to_vec();
             command.extend(TEST_DESTROY_CTX_CMD.as_bytes());
-            assert_eq!(
-                Ok(Command::DestroyCtx(&TEST_DESTROY_CTX_CMD)),
-                Command::deserialize(p, &command)
-            );
+            assert!(commands::deserialize::<TestTypes>(p, &command).is_ok());
         }
     }
 

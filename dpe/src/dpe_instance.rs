@@ -7,7 +7,7 @@ Abstract:
 #[cfg(not(feature = "disable_internal_info"))]
 use crate::INTERNAL_INPUT_INFO_SIZE;
 use crate::{
-    commands::{Command, CommandExecution, CommandHdr, InitCtxCmd},
+    commands::{self, CommandExecution, CommandHdr, InitCtxCmd},
     context::{ChildToRootIter, Context, ContextHandle, ContextState},
     response::{DpeErrorCode, GetProfileResp, Response, ResponseHdr},
     support::Support,
@@ -143,19 +143,7 @@ impl DpeInstance {
         cmd: &[u8],
     ) -> Result<Response, DpeErrorCode> {
         let command = self.deserialize_command(cmd)?;
-        let resp = match cfi_launder(command) {
-            Command::GetProfile => Ok(Response::GetProfile(
-                self.get_profile(&mut env.platform, env.state.support)?,
-            )),
-            Command::InitCtx(cmd) => cmd.execute(self, env, locality),
-            Command::DeriveContext(cmd) => cmd.execute(self, env, locality),
-            Command::CertifyKey(cmd) => cmd.execute(self, env, locality),
-            Command::Sign(cmd) => cmd.execute(self, env, locality),
-            #[cfg(not(feature = "disable_rotate_context"))]
-            Command::RotateCtx(cmd) => cmd.execute(self, env, locality),
-            Command::DestroyCtx(cmd) => cmd.execute(self, env, locality),
-            Command::GetCertificateChain(cmd) => cmd.execute(self, env, locality),
-        };
+        let resp = command.execute(self, env, locality);
 
         match resp {
             Ok(resp) => Ok(resp),
@@ -171,8 +159,11 @@ impl DpeInstance {
         CommandHdr::new(self.profile, cmd_id)
     }
 
-    pub fn deserialize_command<'a>(&self, cmd: &'a [u8]) -> Result<Command<'a>, DpeErrorCode> {
-        Command::deserialize(self.profile, cmd)
+    pub fn deserialize_command<'a, T: DpeTypes>(
+        &self,
+        cmd: &'a [u8],
+    ) -> Result<&'a dyn CommandExecution<T>, DpeErrorCode> {
+        commands::deserialize(self.profile, cmd)
     }
 
     /// Generates a random context handle that is unique from all other context handles
@@ -448,7 +439,7 @@ pub mod tests {
             dpe.execute_serialized_command(
                 &mut env,
                 TEST_LOCALITIES[0],
-                dpe.command_hdr(Command::GET_PROFILE).as_bytes(),
+                dpe.command_hdr(commands::GET_PROFILE).as_bytes(),
             )
             .unwrap()
         );
@@ -456,7 +447,7 @@ pub mod tests {
         // The default context was initialized while creating the instance. Now lets create a
         // simulation context.
         let mut command = dpe
-            .command_hdr(Command::INITIALIZE_CONTEXT)
+            .command_hdr(commands::INITIALIZE_CONTEXT)
             .as_bytes()
             .to_vec();
         command.extend(InitCtxCmd::new_simulation().as_bytes());
