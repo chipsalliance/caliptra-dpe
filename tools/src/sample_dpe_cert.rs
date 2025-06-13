@@ -42,7 +42,7 @@ fn add_tcb_info(
     };
     let cmd_body = cmd.as_bytes().to_vec();
     let cmd_hdr = dpe
-        .command_hdr(dpe::commands::Command::DERIVE_CONTEXT)
+        .command_hdr(dpe::commands::DERIVE_CONTEXT)
         .as_bytes()
         .to_vec();
     let mut command = cmd_hdr;
@@ -67,7 +67,7 @@ fn certify_key(dpe: &mut DpeInstance, env: &mut DpeEnv<TestTypes>, format: u32) 
     };
     let cmd_body = certify_key_cmd.as_bytes().to_vec();
     let cmd_hdr = dpe
-        .command_hdr(dpe::commands::Command::CERTIFY_KEY)
+        .command_hdr(dpe::commands::CERTIFY_KEY)
         .as_bytes()
         .to_vec();
     let mut command = cmd_hdr;

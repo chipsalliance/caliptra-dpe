@@ -88,12 +88,12 @@ impl SignCmd {
     }
 }
 
-impl CommandExecution for SignCmd {
+impl<T: DpeTypes> CommandExecution<T> for SignCmd {
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     fn execute(
         &self,
         dpe: &mut DpeInstance,
-        env: &mut DpeEnv<impl DpeTypes>,
+        env: &mut DpeEnv<T>,
         locality: u32,
     ) -> Result<Response, DpeErrorCode> {
         let idx = env.state.get_active_context_pos(&self.handle, locality)?;
@@ -139,13 +139,14 @@ mod tests {
     use super::*;
     use crate::{
         commands::{
+            self,
             certify_key::{CertifyKeyCmd, CertifyKeyFlags},
             derive_context::DeriveContextFlags,
             tests::{PROFILES, TEST_DIGEST, TEST_LABEL},
-            Command, CommandHdr, DeriveContextCmd, InitCtxCmd,
+            CommandHdr, DeriveContextCmd, InitCtxCmd,
         },
         dpe_instance::tests::{
-            test_env, test_state, RANDOM_HANDLE, SIMULATION_HANDLE, TEST_LOCALITIES,
+            test_env, test_state, TestTypes, RANDOM_HANDLE, SIMULATION_HANDLE, TEST_LOCALITIES,
         },
     };
     use caliptra_cfi_lib_git::CfiCounter;
@@ -164,12 +165,9 @@ mod tests {
     fn test_deserialize_sign() {
         CfiCounter::reset_for_test();
         for p in PROFILES {
-            let mut command = CommandHdr::new(p, Command::SIGN).as_bytes().to_vec();
+            let mut command = CommandHdr::new(p, commands::SIGN).as_bytes().to_vec();
             command.extend(TEST_SIGN_CMD.as_bytes());
-            assert_eq!(
-                Ok(Command::Sign(&TEST_SIGN_CMD)),
-                Command::deserialize(p, &command)
-            );
+            assert!(commands::deserialize::<TestTypes>(p, &command).is_ok());
         }
     }
 

@@ -52,12 +52,12 @@ impl CertifyKeyCmd {
     pub const FORMAT_CSR: u32 = 1;
 }
 
-impl CommandExecution for CertifyKeyCmd {
+impl<T: DpeTypes> CommandExecution<T> for CertifyKeyCmd {
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     fn execute(
         &self,
         dpe: &mut DpeInstance,
-        env: &mut DpeEnv<impl DpeTypes>,
+        env: &mut DpeEnv<T>,
         locality: u32,
     ) -> Result<Response, DpeErrorCode> {
         let idx = env.state.get_active_context_pos(&self.handle, locality)?;
@@ -160,9 +160,9 @@ mod tests {
     use super::*;
     use crate::{
         commands::{
-            tests::PROFILES, Command, CommandHdr, DeriveContextCmd, DeriveContextFlags, InitCtxCmd,
+            self, tests::PROFILES, CommandHdr, DeriveContextCmd, DeriveContextFlags, InitCtxCmd,
         },
-        dpe_instance::tests::{test_env, SIMULATION_HANDLE, TEST_LOCALITIES},
+        dpe_instance::tests::{test_env, TestTypes, SIMULATION_HANDLE, TEST_LOCALITIES},
         support::Support,
         x509::{tests::TcbInfo, DirectoryString, Name},
         State,
@@ -202,12 +202,11 @@ mod tests {
     fn test_deserialize_certify_key() {
         for p in PROFILES {
             CfiCounter::reset_for_test();
-            let mut command = CommandHdr::new(p, Command::CERTIFY_KEY).as_bytes().to_vec();
+            let mut command = CommandHdr::new(p, commands::CERTIFY_KEY)
+                .as_bytes()
+                .to_vec();
             command.extend(TEST_CERTIFY_KEY_CMD.as_bytes());
-            assert_eq!(
-                Ok(Command::CertifyKey(&TEST_CERTIFY_KEY_CMD)),
-                Command::deserialize(p, &command)
-            );
+            assert!(commands::deserialize::<TestTypes>(p, &command).is_ok());
         }
     }
 

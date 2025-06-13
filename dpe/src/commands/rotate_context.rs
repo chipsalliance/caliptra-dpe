@@ -77,12 +77,12 @@ impl RotateCtxCmd {
     }
 }
 
-impl CommandExecution for RotateCtxCmd {
+impl<T: DpeTypes> CommandExecution<T> for RotateCtxCmd {
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     fn execute(
         &self,
         dpe: &mut DpeInstance,
-        env: &mut DpeEnv<impl DpeTypes>,
+        env: &mut DpeEnv<T>,
         locality: u32,
     ) -> Result<Response, DpeErrorCode> {
         if !env.state.support.rotate_context() {
@@ -129,9 +129,9 @@ impl CommandExecution for RotateCtxCmd {
 mod tests {
     use super::*;
     use crate::{
-        commands::{tests::PROFILES, Command, CommandHdr, InitCtxCmd},
+        commands::{self, tests::PROFILES, CommandHdr, InitCtxCmd},
         dpe_instance::tests::{
-            test_env, RANDOM_HANDLE, SIMULATION_HANDLE, TEST_HANDLE, TEST_LOCALITIES,
+            test_env, TestTypes, RANDOM_HANDLE, SIMULATION_HANDLE, TEST_HANDLE, TEST_LOCALITIES,
         },
         support::Support,
         DpeFlags,
@@ -148,14 +148,11 @@ mod tests {
     fn test_deserialize_rotate_context() {
         CfiCounter::reset_for_test();
         for p in PROFILES {
-            let mut command = CommandHdr::new(p, Command::ROTATE_CONTEXT_HANDLE)
+            let mut command = CommandHdr::new(p, commands::ROTATE_CONTEXT_HANDLE)
                 .as_bytes()
                 .to_vec();
             command.extend(TEST_ROTATE_CTX_CMD.as_bytes());
-            assert_eq!(
-                Ok(Command::RotateCtx(&TEST_ROTATE_CTX_CMD)),
-                Command::deserialize(p, &command)
-            );
+            assert!(commands::deserialize::<TestTypes>(p, &command).is_ok());
         }
     }
 

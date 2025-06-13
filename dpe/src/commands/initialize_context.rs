@@ -49,12 +49,12 @@ impl InitCtxCmd {
     }
 }
 
-impl CommandExecution for InitCtxCmd {
+impl<T: DpeTypes> CommandExecution<T> for InitCtxCmd {
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     fn execute(
         &self,
         dpe: &mut DpeInstance,
-        env: &mut DpeEnv<impl DpeTypes>,
+        env: &mut DpeEnv<T>,
         locality: u32,
     ) -> Result<Response, DpeErrorCode> {
         // This function can only be called once for non-simulation contexts.
@@ -114,9 +114,9 @@ impl CommandExecution for InitCtxCmd {
 mod tests {
     use super::*;
     use crate::{
-        commands::{tests::PROFILES, Command, CommandHdr},
+        commands::{self, tests::PROFILES, CommandHdr},
         context::ContextState,
-        dpe_instance::tests::{test_env, TEST_LOCALITIES},
+        dpe_instance::tests::{test_env, TestTypes, TEST_LOCALITIES},
         support::Support,
         DpeFlags, State,
     };
@@ -129,14 +129,11 @@ mod tests {
     fn test_deserialize_init_ctx() {
         CfiCounter::reset_for_test();
         for p in PROFILES {
-            let mut command = CommandHdr::new(p, Command::INITIALIZE_CONTEXT)
+            let mut command = CommandHdr::new(p, commands::INITIALIZE_CONTEXT)
                 .as_bytes()
                 .to_vec();
             command.extend(TEST_INIT_CTX_CMD.as_bytes());
-            assert_eq!(
-                Ok(Command::InitCtx(&TEST_INIT_CTX_CMD)),
-                Command::deserialize(p, &command)
-            );
+            assert!(commands::deserialize::<TestTypes>(p, &command).is_ok());
         }
     }
 

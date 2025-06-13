@@ -23,12 +23,12 @@ pub struct GetCertificateChainCmd {
     pub size: u32,
 }
 
-impl CommandExecution for GetCertificateChainCmd {
+impl<T: DpeTypes> CommandExecution<T> for GetCertificateChainCmd {
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     fn execute(
         &self,
         dpe: &mut DpeInstance,
-        env: &mut DpeEnv<impl DpeTypes>,
+        env: &mut DpeEnv<T>,
         _locality: u32,
     ) -> Result<Response, DpeErrorCode> {
         // Make sure the operation is supported.
@@ -52,8 +52,8 @@ impl CommandExecution for GetCertificateChainCmd {
 mod tests {
     use super::*;
     use crate::{
-        commands::{tests::PROFILES, Command, CommandHdr},
-        dpe_instance::tests::{test_env, test_state, TEST_LOCALITIES},
+        commands::{self, tests::PROFILES, CommandHdr},
+        dpe_instance::tests::{test_env, test_state, TestTypes, TEST_LOCALITIES},
     };
     use caliptra_cfi_lib_git::CfiCounter;
     use zerocopy::IntoBytes;
@@ -67,16 +67,11 @@ mod tests {
     fn test_deserialize_get_certificate_chain() {
         CfiCounter::reset_for_test();
         for p in PROFILES {
-            let mut command = CommandHdr::new(p, Command::GET_CERTIFICATE_CHAIN)
+            let mut command = CommandHdr::new(p, commands::GET_CERTIFICATE_CHAIN)
                 .as_bytes()
                 .to_vec();
             command.extend(TEST_GET_CERTIFICATE_CHAIN_CMD.as_bytes());
-            assert_eq!(
-                Ok(Command::GetCertificateChain(
-                    &TEST_GET_CERTIFICATE_CHAIN_CMD
-                )),
-                Command::deserialize(p, &command)
-            );
+            assert!(commands::deserialize::<TestTypes>(p, &command).is_ok());
         }
     }
 

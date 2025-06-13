@@ -57,7 +57,7 @@ fn harness(data: &[u8]) {
     };
     let mut dpe = DpeInstance::new(&mut env).unwrap();
     trace!("----------------------------------");
-    if let Ok(command) = dpe.deserialize_command(data) {
+    if let Ok(command) = dpe.deserialize_command::<SimTypes>(data) {
         trace!("| Fuzzer's locality requested {command:x?}");
         trace!("|");
     } else {

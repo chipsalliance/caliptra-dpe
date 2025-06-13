@@ -199,12 +199,12 @@ impl DeriveContextCmd {
     }
 }
 
-impl CommandExecution for DeriveContextCmd {
+impl<T: DpeTypes> CommandExecution<T> for DeriveContextCmd {
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     fn execute(
         &self,
         dpe: &mut DpeInstance,
-        env: &mut DpeEnv<impl DpeTypes>,
+        env: &mut DpeEnv<T>,
         locality: u32,
     ) -> Result<Response, DpeErrorCode> {
         let support = env.state.support;
@@ -430,9 +430,10 @@ mod tests {
     use super::*;
     use crate::{
         commands::{
+            self,
             rotate_context::{RotateCtxCmd, RotateCtxFlags},
             tests::{PROFILES, TEST_DIGEST, TEST_LABEL},
-            CertifyKeyCmd, CertifyKeyFlags, Command, CommandHdr, InitCtxCmd, SignCmd, SignFlags,
+            CertifyKeyCmd, CertifyKeyFlags, CommandHdr, InitCtxCmd, SignCmd, SignFlags,
         },
         context::ContextType,
         dpe_instance::tests::{
@@ -468,14 +469,11 @@ mod tests {
     fn test_deserialize_derive_context() {
         CfiCounter::reset_for_test();
         for p in PROFILES {
-            let mut command = CommandHdr::new(p, Command::DERIVE_CONTEXT)
+            let mut command = CommandHdr::new(p, commands::DERIVE_CONTEXT)
                 .as_bytes()
                 .to_vec();
             command.extend(TEST_DERIVE_CONTEXT_CMD.as_bytes());
-            assert_eq!(
-                Ok(Command::DeriveContext(&TEST_DERIVE_CONTEXT_CMD)),
-                Command::deserialize(p, &command)
-            );
+            assert!(commands::deserialize::<TestTypes>(p, &command).is_ok());
         }
     }
 
