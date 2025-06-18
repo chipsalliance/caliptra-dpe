@@ -1,10 +1,13 @@
 // Licensed under the Apache-2.0 license
+extern crate cbindgen;
 
 use std::env;
 use std::path::PathBuf;
 
 fn main() {
     let default_value: usize = 24;
+
+    let crate_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
 
     let arbitrary_max_handles = env::var("ARBITRARY_MAX_HANDLES")
         .ok()
@@ -26,4 +29,13 @@ fn main() {
         _ => std::fs::write(&dest_path, max_handles_str).unwrap(),
     }
     println!("cargo:rerun-if-changed={}", dest_path.display());
+
+    let header_out_file = PathBuf::from(&crate_dir)
+        .join("include")
+        .join("caliptra_dpe.h");
+    cbindgen::generate(crate_dir)
+        .expect("Unable to generate bindings")
+        .write_to_file(header_out_file);
+
+    println!("cargo:rerun-if-changed=cbindgen.toml");
 }
