@@ -15,6 +15,7 @@ include = [
   "CertifyKeyResp",
   "SignResp",
   "GetCertificateChainResp",
+  "DpeErrorCode",
 ]
 exclude = [
   "State",

@@ -48,6 +48,46 @@ enum DpeProfile
 typedef uint32_t DpeProfile;
 #endif // __cplusplus
 
+/**
+ * It is possible that there are multiple issues with the DPE state. At most one will be found.
+ * There is no priority on which error will be found first if there are multiple.
+ */
+enum ValidationError
+#ifdef __cplusplus
+  : uint16_t
+#endif // __cplusplus
+ {
+  MultipleNormalConnectedComponents = 0,
+  CyclesInTree = 1,
+  InactiveContextInvalidParent = 2,
+  InactiveContextWithChildren = 3,
+  BadContextState = 4,
+  BadContextType = 5,
+  InactiveContextWithMeasurement = 6,
+  MixedContextLocality = 7,
+  MultipleDefaultContexts = 8,
+  SimulationNotSupported = 9,
+  ParentDoesNotExist = 10,
+  InternalDiceNotSupported = 11,
+  InternalInfoNotSupported = 12,
+  ChildDoesNotExist = 13,
+  InactiveContextWithFlagSet = 14,
+  LocalityMismatch = 15,
+  DanglingRetiredContext = 16,
+  MixedContextTypeConnectedComponents = 17,
+  ChildWithMultipleParents = 18,
+  ParentChildLinksCorrupted = 19,
+  AllowCaNotSupported = 20,
+  AllowX509NotSupported = 21,
+  InactiveParent = 22,
+  InactiveChild = 23,
+  DpeNotMarkedInitialized = 24,
+  VersionMismatch = 25,
+};
+#ifndef __cplusplus
+typedef uint16_t ValidationError;
+#endif // __cplusplus
+
 typedef struct CertifyKeyResp CertifyKeyResp;
 
 typedef struct SignResp SignResp;
@@ -104,6 +144,43 @@ typedef struct GetCertificateChainResp {
   uint32_t certificate_size;
   uint8_t certificate_chain[MAX_CHUNK_SIZE];
 } GetCertificateChainResp;
+
+enum DpeErrorCode_Tag
+#ifdef __cplusplus
+  : uint32_t
+#endif // __cplusplus
+ {
+  NoError = 0,
+  InternalError = 1,
+  InvalidCommand = 2,
+  InvalidArgument = 3,
+  ArgumentNotSupported = 4,
+  InvalidHandle = 4096,
+  InvalidLocality = 4097,
+  MaxTcis = 4099,
+  Platform = 16777216,
+  Crypto = 33554432,
+  Validation = 50331648,
+};
+#ifndef __cplusplus
+typedef uint32_t DpeErrorCode_Tag;
+#endif // __cplusplus
+
+typedef union DpeErrorCode {
+  DpeErrorCode_Tag tag;
+  struct {
+    DpeErrorCode_Tag platform_tag;
+    PlatformError platform;
+  };
+  struct {
+    DpeErrorCode_Tag crypto_tag;
+    CryptoError crypto;
+  };
+  struct {
+    DpeErrorCode_Tag validation_tag;
+    ValidationError validation;
+  };
+} DpeErrorCode;
 
 
 
