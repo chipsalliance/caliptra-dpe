@@ -48,6 +48,13 @@ pub struct DpeInstance {
 impl DpeInstance {
     const MAX_NEW_HANDLE_ATTEMPTS: usize = 8;
 
+    /// Create a new DPE instance without initializing.
+    pub const fn initialized() -> Self {
+        Self {
+            profile: DPE_PROFILE,
+        }
+    }
+
     /// Create a new DPE instance.
     ///
     /// # Arguments
@@ -57,9 +64,7 @@ impl DpeInstance {
     /// * `flags` - configures `Self` behaviors.
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     pub fn new(env: &mut DpeEnv<impl DpeTypes>) -> Result<Self, DpeErrorCode> {
-        let mut dpe = Self {
-            profile: DPE_PROFILE,
-        };
+        let mut dpe = Self::initialized();
 
         if env.state.support.auto_init() {
             let locality = env.platform.get_auto_init_locality()?;
