@@ -9,6 +9,7 @@ use crate::{
 };
 use bitflags::bitflags;
 use caliptra_cfi_lib_git::cfi_launder;
+use core::mem::align_of;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes};
 use zeroize::Zeroize;
 
