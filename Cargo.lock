@@ -305,6 +305,7 @@ dependencies = [
  "sha2",
  "strum",
  "strum_macros",
+ "zerocopy",
  "zeroize",
 ]
 

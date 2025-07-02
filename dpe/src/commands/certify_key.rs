@@ -13,6 +13,8 @@ use caliptra_cfi_derive_git::cfi_impl_fn;
 #[cfg(not(feature = "no-cfi"))]
 use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq};
 use cfg_if::cfg_if;
+use crypto::PubKey;
+
 #[cfg(not(feature = "disable_x509"))]
 #[repr(C)]
 #[derive(
@@ -130,16 +132,18 @@ impl CommandExecution for CertifyKeyCmd {
             _ => return Err(DpeErrorCode::InvalidArgument),
         }?;
 
-        let derived_pubkey_x: [u8; DPE_PROFILE.ecc_int_size()] = pub_key
-            .x
-            .bytes()
-            .try_into()
-            .map_err(|_| DpeErrorCode::InternalError)?;
-        let derived_pubkey_y: [u8; DPE_PROFILE.ecc_int_size()] = pub_key
-            .y
-            .bytes()
-            .try_into()
-            .map_err(|_| DpeErrorCode::InternalError)?;
+        let (derived_pubkey_x, derived_pubkey_y) = match pub_key {
+            PubKey::Ecdsa(pub_key) => {
+                let (x, y) = pub_key
+                    .as_slice()
+                    .map_err(|_| DpeErrorCode::InternalError)?;
+                let derived_pubkey_x: [u8; DPE_PROFILE.ecc_int_size()] =
+                    x.try_into().map_err(|_| DpeErrorCode::InternalError)?;
+                let derived_pubkey_y: [u8; DPE_PROFILE.ecc_int_size()] =
+                    y.try_into().map_err(|_| DpeErrorCode::InternalError)?;
+                (derived_pubkey_x, derived_pubkey_y)
+            }
+        };
 
         // Rotate handle if it isn't the default
         dpe.roll_onetime_use_handle(env, idx)?;
@@ -172,7 +176,10 @@ mod tests {
         content_info::{CmsVersion, ContentInfo},
         signed_data::{SignedData, SignerIdentifier},
     };
-    use crypto::{AlgLen, Crypto, CryptoBuf, EcdsaPub};
+    use crypto::{
+        ecdsa::{EcdsaAlgorithm, EcdsaPub, EcdsaPubKey},
+        Crypto, CryptoSuite, PubKey, SignatureAlgorithm, SignatureType,
+    };
     use der::{Decode, Encode};
     use openssl::{
         bn::BigNum,
@@ -323,9 +330,9 @@ mod tests {
             // validate hash algorithm OID
             assert_eq!(signed_data.digest_algorithms.len(), 1);
             let digest_alg = &signed_data.digest_algorithms.get(0).unwrap();
-            let hash_alg_oid = match DPE_PROFILE.alg_len() {
-                AlgLen::Bit256 => "2.16.840.1.101.3.4.2.1",
-                AlgLen::Bit384 => "2.16.840.1.101.3.4.2.2",
+            let hash_alg_oid = match DPE_PROFILE.alg() {
+                SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit256) => "2.16.840.1.101.3.4.2.1",
+                SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384) => "2.16.840.1.101.3.4.2.2",
             };
             assert!(digest_alg
                 .assert_algorithm_oid(ObjectIdentifier::new_unwrap(hash_alg_oid))
@@ -351,9 +358,9 @@ mod tests {
                 .is_ok());
 
             // validate signature algorithm OID
-            let sig_alg_oid = match DPE_PROFILE.alg_len() {
-                AlgLen::Bit256 => "1.2.840.10045.4.3.2",
-                AlgLen::Bit384 => "1.2.840.10045.4.3.3",
+            let sig_alg_oid = match DPE_PROFILE.alg() {
+                SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit256) => "1.2.840.10045.4.3.2",
+                SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384) => "1.2.840.10045.4.3.3",
             };
             assert!(signer_info
                 .signature_algorithm
@@ -391,24 +398,24 @@ mod tests {
             let econtent = &econtent_info.econtent.as_mut().unwrap().to_der().unwrap()[4..];
 
             // validate csr signature with the alias key
-            let csr_digest = env.crypto.hash(DPE_PROFILE.alg_len(), econtent).unwrap();
-            let priv_key = match DPE_PROFILE.alg_len() {
-                AlgLen::Bit256 => EcKey::private_key_from_der(include_bytes!(
-                    "../../../platform/src/test_data/key_256.der"
-                )),
-                AlgLen::Bit384 => EcKey::private_key_from_der(include_bytes!(
-                    "../../../platform/src/test_data/key_384.der"
-                )),
+            let csr_digest = env.crypto.hash(econtent).unwrap();
+            let priv_key = match DPE_PROFILE.alg() {
+                SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit256) => EcKey::private_key_from_der(
+                    include_bytes!("../../../platform/src/test_data/key_256.der"),
+                ),
+                SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384) => EcKey::private_key_from_der(
+                    include_bytes!("../../../platform/src/test_data/key_384.der"),
+                ),
             }
             .unwrap();
-            let curve = match DPE_PROFILE.alg_len() {
-                AlgLen::Bit256 => Nid::X9_62_PRIME256V1,
-                AlgLen::Bit384 => Nid::SECP384R1,
+            let curve = match DPE_PROFILE.alg() {
+                SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit256) => Nid::X9_62_PRIME256V1,
+                SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384) => Nid::SECP384R1,
             };
             let group = &EcGroup::from_curve_name(curve).unwrap();
             let alias_key = EcKey::from_public_key(group, priv_key.public_key()).unwrap();
             let csr_sig = EcdsaSig::from_der(signer_info.signature.as_bytes()).unwrap();
-            assert!(csr_sig.verify(csr_digest.bytes(), &alias_key).unwrap());
+            assert!(csr_sig.verify(csr_digest.as_slice(), &alias_key).unwrap());
 
             // validate csr
             let (_, csr) = X509CertificationRequest::from_der(econtent).unwrap();
@@ -432,17 +439,25 @@ mod tests {
             let y = BigNum::from_slice(&pub_key_der[DPE_PROFILE.ecc_int_size() + 1..]).unwrap();
             let pub_key = EcKey::from_public_key_affine_coordinates(group, &x, &y).unwrap();
 
-            let cri_digest = env.crypto.hash(DPE_PROFILE.alg_len(), cri.raw).unwrap();
-            assert!(cri_sig.verify(cri_digest.bytes(), &pub_key).unwrap());
+            let cri_digest = env.crypto.hash(cri.raw).unwrap();
+            assert!(cri_sig.verify(cri_digest.as_slice(), &pub_key).unwrap());
 
             // validate subject_name
             let mut subj_serial = [0u8; DPE_PROFILE.hash_size() * 2];
-            let pub_key = EcdsaPub {
-                x: CryptoBuf::new(&certify_resp.derived_pubkey_x).unwrap(),
-                y: CryptoBuf::new(&certify_resp.derived_pubkey_y).unwrap(),
-            };
+            let pub_key = EcdsaPub::from_slice(
+                &certify_resp.derived_pubkey_x,
+                &certify_resp.derived_pubkey_y,
+            )
+            .unwrap();
+            let pub_key = PubKey::Ecdsa(match env.crypto.signature_algorithm() {
+                #[cfg(feature = "dpe_profile_p256_sha256")]
+                SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit256) => EcdsaPubKey::Ecdsa256(pub_key),
+                #[cfg(feature = "dpe_profile_p384_sha384")]
+                SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384) => EcdsaPubKey::Ecdsa384(pub_key),
+                _ => panic!("Missing pub_key"),
+            });
             env.crypto
-                .get_pubkey_serial(DPE_PROFILE.alg_len(), &pub_key, &mut subj_serial)
+                .get_pubkey_serial(&pub_key, &mut subj_serial)
                 .unwrap();
             let truncated_subj_serial = &subj_serial[..64];
             let subject_name = Name {

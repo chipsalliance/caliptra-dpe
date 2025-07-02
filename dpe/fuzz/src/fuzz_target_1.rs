@@ -16,7 +16,6 @@ use log::{trace, LevelFilter};
 use simplelog::{Config, WriteLogger};
 use std::fs::OpenOptions;
 
-use crypto::RustCryptoImpl;
 use dpe::{
     dpe_instance::{DpeEnv, DpeTypes},
     response::Response,
@@ -25,13 +24,15 @@ use dpe::{
 };
 use platform::default::{DefaultPlatform, DefaultPlatformProfile, AUTO_INIT_LOCALITY};
 
+use crypto::Ecdsa256RustCrypto;
+
 // https://github.com/chipsalliance/caliptra-sw/issues/624 will consider matrix fuzzing.
 const SUPPORT: Support = Support::all();
 
 struct SimTypes {}
 
 impl DpeTypes for SimTypes {
-    type Crypto<'a> = RustCryptoImpl;
+    type Crypto<'a> = Ecdsa256RustCrypto;
     type Platform<'a> = DefaultPlatform;
 }
 
@@ -51,7 +52,7 @@ fn harness(data: &[u8]) {
     );
 
     let mut env = DpeEnv::<SimTypes> {
-        crypto: RustCryptoImpl::new(),
+        crypto: Ecdsa256RustCrypto::new(),
         platform: DefaultPlatform(DefaultPlatformProfile::P256),
         state: &mut dpe::State::new(SUPPORT, DpeFlags::empty()),
     };

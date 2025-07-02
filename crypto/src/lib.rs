@@ -5,7 +5,8 @@ Abstract:
 --*/
 #![cfg_attr(not(any(feature = "rustcrypto", test)), no_std)]
 
-pub use signer::*;
+use ecdsa::EcdsaSignature;
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 #[cfg(feature = "rustcrypto")]
 pub use crate::rustcrypto::*;
@@ -19,28 +20,50 @@ pub use rand::*;
 #[cfg(feature = "rustcrypto")]
 mod hkdf;
 
-mod signer;
+pub mod ecdsa;
+
+#[cfg(feature = "ml-dsa")]
+pub mod ml_dsa;
 
 pub const MAX_EXPORTED_CDI_SIZE: usize = 32;
 pub type ExportedCdiHandle = [u8; MAX_EXPORTED_CDI_SIZE];
 
-#[derive(Debug, Clone, Copy)]
-#[cfg_attr(test, derive(strum_macros::EnumIter))]
-pub enum AlgLen {
-    Bit256,
-    Bit384,
-    // NOTE: If a larger length is added, MUST update AlgLen::MAX_ALG_LEN
+pub trait SignatureType {
+    const SIGNATURE_ALGORITHM: SignatureAlgorithm;
+
+    fn signature_algorithm(&self) -> SignatureAlgorithm {
+        Self::SIGNATURE_ALGORITHM
+    }
 }
 
-impl AlgLen {
-    const MAX_ALG_LEN: Self = Self::Bit384;
-    pub(crate) const MAX_ALG_LEN_BYTES: usize = Self::MAX_ALG_LEN.size();
-    pub const fn size(self) -> usize {
+pub trait DigestType {
+    const DIGEST_ALGORITHM: DigestAlgorithm;
+
+    fn digest_algorithm(&self) -> DigestAlgorithm {
+        Self::DIGEST_ALGORITHM
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum DigestAlgorithm {
+    Sha256,
+    Sha384,
+}
+
+impl DigestAlgorithm {
+    pub const fn size(&self) -> usize {
         match self {
-            AlgLen::Bit256 => 256 / 8,
-            AlgLen::Bit384 => 384 / 8,
+            Self::Sha256 => 32,
+            Self::Sha384 => 48,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum SignatureAlgorithm {
+    Ecdsa(ecdsa::EcdsaAlgorithm),
+    #[cfg(feature = "ml-dsa")]
+    MlDsa(ml_dsa::MldsaAlgorithm),
 }
 
 // For errors which come from lower layers, include the error code returned
@@ -56,6 +79,7 @@ pub enum CryptoError {
     InvalidExportedCdiHandle = 0x6,
     ExportedCdiHandleDuplicateCdi = 0x7,
     ExportedCdiHandleLimitExceeded = 0x8,
+    MismatchedAlgorithm = 0x9,
 }
 
 impl CryptoError {
@@ -75,6 +99,7 @@ impl CryptoError {
             | CryptoError::InvalidExportedCdiHandle
             | CryptoError::ExportedCdiHandleLimitExceeded
             | CryptoError::ExportedCdiHandleDuplicateCdi
+            | CryptoError::MismatchedAlgorithm
             | CryptoError::NotImplemented => None,
         }
     }
@@ -95,7 +120,114 @@ pub trait Hasher: Sized {
     fn finish(self) -> Result<Digest, CryptoError>;
 }
 
-pub type Digest = CryptoBuf;
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable)]
+#[repr(C)]
+pub struct Sha256(pub [u8; DigestAlgorithm::Sha256.size()]);
+
+impl DigestType for Sha256 {
+    const DIGEST_ALGORITHM: DigestAlgorithm = DigestAlgorithm::Sha256;
+}
+
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable)]
+#[repr(C)]
+pub struct Sha384(pub [u8; DigestAlgorithm::Sha384.size()]);
+
+impl DigestType for Sha384 {
+    const DIGEST_ALGORITHM: DigestAlgorithm = DigestAlgorithm::Sha384;
+}
+
+pub enum Digest {
+    Sha256(Sha256),
+    Sha384(Sha384),
+}
+
+impl Digest {
+    pub fn size(&self) -> usize {
+        match self {
+            Self::Sha256(dig) => dig.0.len(),
+            Self::Sha384(dig) => dig.0.len(),
+        }
+    }
+    pub fn as_slice(&self) -> &[u8] {
+        match self {
+            Self::Sha256(dig) => dig.0.as_slice(),
+            Self::Sha384(dig) => dig.0.as_slice(),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub enum PubKey {
+    Ecdsa(ecdsa::EcdsaPubKey),
+    #[cfg(feature = "ml-dsa")]
+    MlDsa(ml_dsa::MldsaPublicKey),
+}
+
+pub enum Signature {
+    Ecdsa(EcdsaSignature),
+    #[cfg(feature = "ml-dsa")]
+    MlDsa(ml_dsa::MldsaSignature),
+}
+
+pub trait CryptoSuite: Crypto + SignatureType + DigestType {
+    /// Compute the serial number of an ECDSA public key by computing the hash
+    /// over the point in uncompressed format.
+    ///
+    /// This function outputs the serial number as a hex string
+    ///
+    /// # Arguments
+    ///
+    /// * `algs` - Length of algorithm to use.
+    /// * `pub_key` - EC public key
+    /// * `serial` - Output buffer to write serial number
+    fn get_pubkey_serial(
+        &mut self,
+        pub_key: &PubKey,
+        serial: &mut [u8],
+    ) -> Result<(), CryptoError> {
+        if serial.len() < self.digest_algorithm().size() * 2 {
+            return Err(CryptoError::Size);
+        }
+
+        let signature_alg = self.signature_algorithm();
+        let mut hasher = self.hash_initialize()?;
+        match (signature_alg, pub_key) {
+            (SignatureAlgorithm::Ecdsa(_), PubKey::Ecdsa(pub_key)) => {
+                let (x, y) = pub_key.as_slice()?;
+                hasher.update(&[0x4u8])?;
+                hasher.update(x)?;
+                hasher.update(y)?;
+            }
+            #[cfg(feature = "ml-dsa")]
+            (SignatureAlgorithm::MlDsa(_), PubKey::MlDsa(pub_key)) => {
+                hasher.update(pub_key.as_bytes())?;
+            }
+            // This can be reached when the "ml-dsa" feature is enabled.
+            #[allow(unreachable_patterns)]
+            _ => Err(CryptoError::MismatchedAlgorithm)?,
+        }
+
+        let digest = hasher.finish()?;
+        let src = digest.as_slice();
+        if serial.len() != src.len() * 2 {
+            return Err(CryptoError::Size);
+        }
+
+        let mut curr_idx = 0;
+        const HEX_CHARS: &[u8; 16] = b"0123456789ABCDEF";
+        for &b in src {
+            let h1 = (b >> 4) as usize;
+            let h2 = (b & 0xF) as usize;
+            if h1 >= HEX_CHARS.len() || h2 >= HEX_CHARS.len() || curr_idx + 1 >= serial.len() {
+                return Err(CryptoError::CryptoLibError(0));
+            }
+            serial[curr_idx] = HEX_CHARS[h1];
+            serial[curr_idx + 1] = HEX_CHARS[h2];
+            curr_idx += 2;
+        }
+        Ok(())
+    }
+}
 
 pub trait Crypto {
     type Cdi;
@@ -117,39 +249,10 @@ pub trait Crypto {
     ///
     /// * `algs` - Which length of algorithm to use.
     /// * `bytes` - Value to be hashed.
-    fn hash(&mut self, algs: AlgLen, bytes: &[u8]) -> Result<Digest, CryptoError> {
-        let mut hasher = self.hash_initialize(algs)?;
+    fn hash(&mut self, bytes: &[u8]) -> Result<Digest, CryptoError> {
+        let mut hasher = self.hash_initialize()?;
         hasher.update(bytes)?;
         hasher.finish()
-    }
-
-    /// Compute the serial number of an ECDSA public key by computing the hash
-    /// over the point in uncompressed format.
-    ///
-    /// This function outputs the serial number as a hex string
-    ///
-    /// # Arguments
-    ///
-    /// * `algs` - Length of algorithm to use.
-    /// * `pub_key` - EC public key
-    /// * `serial` - Output buffer to write serial number
-    fn get_pubkey_serial(
-        &mut self,
-        algs: AlgLen,
-        pub_key: &EcdsaPub,
-        serial: &mut [u8],
-    ) -> Result<(), CryptoError> {
-        if serial.len() < algs.size() * 2 {
-            return Err(CryptoError::Size);
-        }
-
-        let mut hasher = self.hash_initialize(algs)?;
-        hasher.update(&[0x4u8])?;
-        hasher.update(pub_key.x.bytes())?;
-        hasher.update(pub_key.y.bytes())?;
-        let digest = hasher.finish()?;
-
-        CryptoBuf::write_hex_str(&digest, serial)
     }
 
     /// Initialize a running hash. Returns an object that will be able to complete the rest.
@@ -159,7 +262,7 @@ pub trait Crypto {
     /// # Arguments
     ///
     /// * `algs` - Which length of algorithm to use.
-    fn hash_initialize(&mut self, algs: AlgLen) -> Result<Self::Hasher<'_>, CryptoError>;
+    fn hash_initialize(&mut self) -> Result<Self::Hasher<'_>, CryptoError>;
 
     /// Derive a CDI based on the current base CDI and measurements
     ///
@@ -168,12 +271,7 @@ pub trait Crypto {
     /// * `algs` - Which length of algorithms to use.
     /// * `measurement` - A digest of the measurements which should be used for CDI derivation
     /// * `info` - Caller-supplied info string to use in CDI derivation
-    fn derive_cdi(
-        &mut self,
-        algs: AlgLen,
-        measurement: &Digest,
-        info: &[u8],
-    ) -> Result<Self::Cdi, CryptoError>;
+    fn derive_cdi(&mut self, measurement: &Digest, info: &[u8]) -> Result<Self::Cdi, CryptoError>;
 
     /// Derive a CDI for an exported private key based on the current base CDI and measurements
     ///
@@ -184,7 +282,6 @@ pub trait Crypto {
     /// * `info` - Caller-supplied info string to use in CDI derivation
     fn derive_exported_cdi(
         &mut self,
-        algs: AlgLen,
         measurement: &Digest,
         info: &[u8],
     ) -> Result<ExportedCdiHandle, CryptoError>;
@@ -196,7 +293,6 @@ pub trait Crypto {
     #[cfg(not(feature = "no-cfi"))]
     fn __cfi_derive_cdi(
         &mut self,
-        algs: AlgLen,
         measurement: &Digest,
         info: &[u8],
     ) -> Result<Self::Cdi, CryptoError>;
@@ -208,7 +304,6 @@ pub trait Crypto {
     #[cfg(not(feature = "no-cfi"))]
     fn __cfi_derive_exported_cdi(
         &mut self,
-        algs: AlgLen,
         measurement: &Digest,
         info: &[u8],
     ) -> Result<ExportedCdiHandle, CryptoError>;
@@ -224,11 +319,10 @@ pub trait Crypto {
     ///
     fn derive_key_pair(
         &mut self,
-        algs: AlgLen,
         cdi: &Self::Cdi,
         label: &[u8],
         info: &[u8],
-    ) -> Result<(Self::PrivKey, EcdsaPub), CryptoError>;
+    ) -> Result<(Self::PrivKey, PubKey), CryptoError>;
 
     /// Derives an exported key pair using a cryptographically secure KDF
     ///
@@ -242,11 +336,10 @@ pub trait Crypto {
     ///
     fn derive_key_pair_exported(
         &mut self,
-        algs: AlgLen,
         exported_handle: &ExportedCdiHandle,
         label: &[u8],
         info: &[u8],
-    ) -> Result<(Self::PrivKey, EcdsaPub), CryptoError>;
+    ) -> Result<(Self::PrivKey, PubKey), CryptoError>;
 
     /// CFI wrapper around derive_key_pair
     ///
@@ -255,11 +348,10 @@ pub trait Crypto {
     #[cfg(not(feature = "no-cfi"))]
     fn __cfi_derive_key_pair(
         &mut self,
-        algs: AlgLen,
         cdi: &Self::Cdi,
         label: &[u8],
         info: &[u8],
-    ) -> Result<(Self::PrivKey, EcdsaPub), CryptoError>;
+    ) -> Result<(Self::PrivKey, PubKey), CryptoError>;
 
     /// CFI wrapper around derive_key_pair_exported
     ///
@@ -268,11 +360,10 @@ pub trait Crypto {
     #[cfg(not(feature = "no-cfi"))]
     fn __cfi_derive_key_pair_exported(
         &mut self,
-        algs: AlgLen,
         exported_handle: &ExportedCdiHandle,
         label: &[u8],
         info: &[u8],
-    ) -> Result<(Self::PrivKey, EcdsaPub), CryptoError>;
+    ) -> Result<(Self::PrivKey, PubKey), CryptoError>;
 
     /// Sign `digest` with the platform Alias Key
     ///
@@ -280,11 +371,7 @@ pub trait Crypto {
     ///
     /// * `algs` - Which length of algorithms to use.
     /// * `digest` - Digest of data to be signed.
-    fn ecdsa_sign_with_alias(
-        &mut self,
-        algs: AlgLen,
-        digest: &Digest,
-    ) -> Result<EcdsaSig, CryptoError>;
+    fn sign_with_alias(&mut self, digest: &Digest) -> Result<Signature, CryptoError>;
 
     /// Sign `digest` with a derived key-pair from the CDI and caller-supplied private key
     ///
@@ -295,22 +382,10 @@ pub trait Crypto {
     /// * `priv_key` - Caller-supplied private key to use in public key derivation
     /// * `pub_key` - The public key corresponding to `priv_key`. An implementation may
     ///    optionally use pub_key to validate any generated signatures.
-    fn ecdsa_sign_with_derived(
+    fn sign_with_derived(
         &mut self,
-        algs: AlgLen,
         digest: &Digest,
         priv_key: &Self::PrivKey,
-        pub_key: &EcdsaPub,
-    ) -> Result<EcdsaSig, CryptoError>;
-}
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use strum::IntoEnumIterator;
-
-    #[test]
-    fn test_max_alg_len_size() {
-        let max_len = AlgLen::iter().map(|x| x.size()).max().unwrap();
-        assert_eq!(AlgLen::MAX_ALG_LEN_BYTES, max_len);
-    }
+        pub_key: &PubKey,
+    ) -> Result<Signature, CryptoError>;
 }
