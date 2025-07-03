@@ -12,7 +12,7 @@ pub use self::initialize_context::InitCtxCmd;
 pub use self::certify_key::{CertifyKeyCmd, CertifyKeyFlags};
 #[cfg(not(feature = "disable_rotate_context"))]
 pub use self::rotate_context::{RotateCtxCmd, RotateCtxFlags};
-pub use self::sign::{SignCmd, SignFlags};
+pub use self::sign::{SignCommand, SignFlags};
 
 use crate::{
     dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
@@ -37,7 +37,7 @@ pub enum Command<'a> {
     InitCtx(&'a InitCtxCmd),
     DeriveContext(&'a DeriveContextCmd),
     CertifyKey(&'a CertifyKeyCmd),
-    Sign(&'a SignCmd),
+    Sign(SignCommand<'a>),
     #[cfg(not(feature = "disable_rotate_context"))]
     RotateCtx(&'a RotateCtxCmd),
     DestroyCtx(&'a DestroyCtxCmd),
@@ -69,7 +69,7 @@ impl Command<'_> {
             Command::INITIALIZE_CONTEXT => Self::parse_command(Command::InitCtx, bytes),
             Command::DERIVE_CONTEXT => Self::parse_command(Command::DeriveContext, bytes),
             Command::CERTIFY_KEY => Self::parse_command(Command::CertifyKey, bytes),
-            Command::SIGN => Self::parse_command(Command::Sign, bytes),
+            Command::SIGN => Ok(Command::Sign(SignCommand::deserialize(profile, bytes)?)),
             #[cfg(not(feature = "disable_rotate_context"))]
             Command::ROTATE_CONTEXT_HANDLE => Self::parse_command(Command::RotateCtx, bytes),
             Command::DESTROY_CONTEXT => Self::parse_command(Command::DestroyCtx, bytes),
