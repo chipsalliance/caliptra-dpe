@@ -80,16 +80,13 @@ func TestDeriveContextCdiExport(d client.TestDPEInstance, c client.DPEClient, t 
 
 	simulation := false
 	handle := getInitialContextHandle(d, c, t, simulation)
-	defer func() {
-		c.DestroyContext(handle)
-	}()
 
 	profile, err := client.GetTransportProfile(d)
 	if err != nil {
 		t.Fatalf("Could not get profile: %v", err)
 	}
 	digestLen := profile.GetDigestSize()
-	resp, err = c.DeriveContext(handle, make([]byte, digestLen), client.CdiExport|client.CreateCertificate, 0, 0)
+	resp, err = c.DeriveContext(handle, make([]byte, digestLen), client.CdiExport|client.CreateCertificate|client.RetainParentContext, 0, 0)
 	if err != nil {
 		t.Fatalf("[ERROR]: Error while exporting CdiExport: %s", err)
 	}
@@ -100,8 +97,8 @@ func TestDeriveContextCdiExport(d client.TestDPEInstance, c client.DPEClient, t 
 	if resp.NewContextHandle != client.ContextHandle(bytes.Repeat([]byte{0xFF}, 16)) {
 		t.Fatalf("[FATAL]: Expected invalid NewContextHandle field but it was set to %v", resp.NewContextHandle)
 	}
-	if resp.ParentContextHandle != client.ContextHandle(bytes.Repeat([]byte{0xFF}, 16)) {
-		t.Fatalf("[FATAL]: Expected invalid ParentContextHandle field but it was set to %v", resp.ParentContextHandle)
+	if resp.ParentContextHandle == client.ContextHandle(bytes.Repeat([]byte{0xFF}, 16)) {
+		t.Fatalf("[FATAL]: Expected valid ParentContextHandle field but it was set to %v", resp.ParentContextHandle)
 	}
 	if resp.CertificateSize == 0 {
 		t.Fatalf("[FATAL]: Expected CertificateSize to be set but was set to %v", resp.CertificateSize)
@@ -158,9 +155,6 @@ func TestDeriveContextDisallowedChildCdiExport(d client.TestDPEInstance, c clien
 func TestDeriveContextAllowedChildCdiExport(d client.TestDPEInstance, c client.DPEClient, t *testing.T) {
 	simulation := false
 	handle := getInitialContextHandle(d, c, t, simulation)
-	defer func() {
-		c.DestroyContext(handle)
-	}()
 
 	profile, err := client.GetTransportProfile(d)
 	if err != nil {
