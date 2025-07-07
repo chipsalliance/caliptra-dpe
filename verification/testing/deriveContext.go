@@ -308,8 +308,7 @@ func TestPrivilegesEscalation(d client.TestDPEInstance, c client.DPEClient, t *t
 	// Create a child TCI node with no special privileges
 	resp, err := c.DeriveContext(handle,
 		make([]byte, digestLen),
-		client.DeriveContextFlags(0),
-		0, 0)
+		0, 0, 0)
 	if err != nil {
 		t.Fatalf("[FATAL]: Error encountered in getting child context: %v", err)
 	}
@@ -318,17 +317,9 @@ func TestPrivilegesEscalation(d client.TestDPEInstance, c client.DPEClient, t *t
 	// Adding new privileges to child that parent does NOT possess will cause failure
 	_, err = c.DeriveContext(handle,
 		make([]byte, digestLen),
-		client.DeriveContextFlags(client.InputAllowX509),
+		client.DeriveContextFlags(client.AllowNewContextToExport|client.CdiExport|client.CreateCertificate),
 		0, 0)
 	if err == nil {
-		t.Errorf("[ERROR]: Should return %q, but returned no error", client.StatusInvalidArgument)
-	} else if !errors.Is(err, client.StatusInvalidArgument) {
-		t.Errorf("[ERROR]: Incorrect error type. Should return %q, but returned %q", client.StatusInvalidArgument, err)
-	}
-
-	// Similarly, when commands like CertifyKey try to make use of features/flags that are unsupported
-	// by child context, it will fail.
-	if _, err = c.CertifyKey(handle, make([]byte, digestLen), client.CertifyKeyX509, 0); err == nil {
 		t.Errorf("[ERROR]: Should return %q, but returned no error", client.StatusInvalidArgument)
 	} else if !errors.Is(err, client.StatusInvalidArgument) {
 		t.Errorf("[ERROR]: Incorrect error type. Should return %q, but returned %q", client.StatusInvalidArgument, err)
@@ -354,7 +345,7 @@ func TestMaxTCIs(d client.TestDPEInstance, c client.DPEClient, t *testing.T) {
 	maxTciCount := int(d.GetMaxTciNodes())
 	allowedTciCount := maxTciCount - 1 // since, a TCI node is already auto-initialized
 	for i := 0; i < allowedTciCount; i++ {
-		resp, err = c.DeriveContext(handle, make([]byte, digestSize), client.InputAllowX509, 0, 0)
+		resp, err = c.DeriveContext(handle, make([]byte, digestSize), 0, 0, 0)
 		if err != nil {
 			t.Fatalf("[FATAL]: Error encountered in executing derive child: %v", err)
 		}
@@ -550,7 +541,7 @@ func TestDeriveContextRecursiveOnDerivedContexts(d client.TestDPEInstance, c cli
 	}()
 
 	// DeriveContext with input data, tag it and check TCI_CUMULATIVE
-	childCtx, err := c.DeriveContext(parentHandle, tciValue, client.DeriveContextFlags(client.RetainParentContext|client.InputAllowX509), 0, 0)
+	childCtx, err := c.DeriveContext(parentHandle, tciValue, client.DeriveContextFlags(client.RetainParentContext), 0, 0)
 	if err != nil {
 		t.Fatalf("[FATAL]: Error while creating default child handle in default context: %s", err)
 	}

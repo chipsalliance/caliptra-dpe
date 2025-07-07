@@ -122,7 +122,7 @@ func GetSimulatorTargets() []TestTarget {
 		},
 		{
 			"DeriveContext",
-			getTestTarget([]string{"AutoInit", "X509", "RetainParentContext"}),
+			getTestTarget([]string{"AutoInit", "RetainParentContext"}),
 			[]TestCase{DeriveContextTestCase},
 		},
 		{
@@ -147,12 +147,12 @@ func GetSimulatorTargets() []TestTarget {
 		},
 		{
 			"DeriveContext_Simulation",
-			getTestTarget([]string{"AutoInit", "Simulation", "X509", "RetainParentContext"}),
+			getTestTarget([]string{"AutoInit", "Simulation", "RetainParentContext"}),
 			[]TestCase{DeriveContextSimulationTestCase},
 		},
 		{
 			"DeriveContext_PrivilegeEscalation",
-			getTestTarget([]string{"AutoInit", "X509"}),
+			getTestTarget([]string{"AutoInit", "CdiExport"}),
 			[]TestCase{DeriveContextPrivilegeEscalationTestCase},
 		},
 		{
