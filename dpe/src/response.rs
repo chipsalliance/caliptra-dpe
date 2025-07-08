@@ -10,7 +10,7 @@ use crate::{
 };
 use crypto::CryptoError;
 use platform::{PlatformError, MAX_CHUNK_SIZE};
-use zerocopy::IntoBytes;
+use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes};
 
 #[cfg_attr(test, derive(PartialEq, Debug, Eq))]
 #[allow(clippy::large_enum_variant)]
@@ -186,21 +186,59 @@ pub struct CertifyKeyResp {
     pub cert: [u8; MAX_CERT_SIZE],
 }
 
+#[derive(PartialEq, Debug, Eq)]
+pub enum SignResp {
+    #[cfg(feature = "dpe_profile_p256_sha256")]
+    P256(SignP256Resp),
+    #[cfg(feature = "dpe_profile_p384_sha384")]
+    P384(SignP384Resp),
+}
+
+impl SignResp {
+    pub fn set_handle(&mut self, handle: &ContextHandle) {
+        match self {
+            #[cfg(feature = "dpe_profile_p256_sha256")]
+            SignResp::P256(resp) => resp.new_context_handle = *handle,
+            #[cfg(feature = "dpe_profile_p384_sha384")]
+            SignResp::P384(resp) => resp.new_context_handle = *handle,
+        }
+    }
+
+    pub fn resp_hdr(&self) -> &ResponseHdr {
+        match self {
+            #[cfg(feature = "dpe_profile_p256_sha256")]
+            SignResp::P256(resp) => &resp.resp_hdr,
+            #[cfg(feature = "dpe_profile_p384_sha384")]
+            SignResp::P384(resp) => &resp.resp_hdr,
+        }
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        match self {
+            #[cfg(feature = "dpe_profile_p256_sha256")]
+            SignResp::P256(resp) => resp.as_bytes(),
+            #[cfg(feature = "dpe_profile_p384_sha384")]
+            SignResp::P384(resp) => resp.as_bytes(),
+        }
+    }
+}
+
 #[repr(C)]
-#[derive(
-    Debug,
-    PartialEq,
-    Eq,
-    zerocopy::IntoBytes,
-    zerocopy::TryFromBytes,
-    zerocopy::Immutable,
-    zerocopy::KnownLayout,
-)]
-pub struct SignResp {
+#[derive(Debug, PartialEq, Eq, IntoBytes, TryFromBytes, Immutable, KnownLayout)]
+pub struct SignP256Resp {
     pub resp_hdr: ResponseHdr,
     pub new_context_handle: ContextHandle,
-    pub sig_r: [u8; DPE_PROFILE.ecc_int_size()],
-    pub sig_s: [u8; DPE_PROFILE.ecc_int_size()],
+    pub sig_r: [u8; 32],
+    pub sig_s: [u8; 32],
+}
+
+#[repr(C)]
+#[derive(Debug, PartialEq, Eq, IntoBytes, TryFromBytes, Immutable, KnownLayout)]
+pub struct SignP384Resp {
+    pub resp_hdr: ResponseHdr,
+    pub new_context_handle: ContextHandle,
+    pub sig_r: [u8; 48],
+    pub sig_s: [u8; 48],
 }
 
 #[repr(C)]

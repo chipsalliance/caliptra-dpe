@@ -417,17 +417,21 @@ impl CommandExecution for DeriveContextCmd {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "dpe_profile_p256_sha256")]
+    use crate::commands::sign::SignP256Cmd as SignCmd;
+    #[cfg(feature = "dpe_profile_p384_sha384")]
+    use crate::commands::sign::SignP384Cmd as SignCmd;
     use crate::{
         commands::{
             rotate_context::{RotateCtxCmd, RotateCtxFlags},
             tests::{PROFILES, TEST_DIGEST, TEST_LABEL},
-            CertifyKeyCmd, CertifyKeyFlags, Command, CommandHdr, InitCtxCmd, SignCmd, SignFlags,
+            CertifyKeyCmd, CertifyKeyFlags, Command, CommandHdr, InitCtxCmd, SignFlags,
         },
         context::ContextType,
         dpe_instance::tests::{
             test_env, TestTypes, RANDOM_HANDLE, SIMULATION_HANDLE, TEST_LOCALITIES,
         },
-        response::NewHandleResp,
+        response::{NewHandleResp, SignResp},
         support::Support,
         validation::DpeValidator,
         DpeProfile, MAX_EXPORTED_CDI_SIZE, MAX_HANDLES,
@@ -748,7 +752,17 @@ mod tests {
         })
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         {
-            Ok(Response::Sign(resp)) => (
+            #[cfg(feature = "dpe_profile_p256_sha256")]
+            Ok(Response::Sign(SignResp::P256(resp))) => (
+                resp.new_context_handle,
+                EcdsaSig::from_private_components(
+                    BigNum::from_slice(&resp.sig_r).unwrap(),
+                    BigNum::from_slice(&resp.sig_s).unwrap(),
+                )
+                .unwrap(),
+            ),
+            #[cfg(feature = "dpe_profile_p384_sha384")]
+            Ok(Response::Sign(SignResp::P384(resp))) => (
                 resp.new_context_handle,
                 EcdsaSig::from_private_components(
                     BigNum::from_slice(&resp.sig_r).unwrap(),
