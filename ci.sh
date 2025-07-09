@@ -80,13 +80,13 @@ run_verification_tests dpe_profile_p384_sha384 rustcrypto
 
 # Build fuzz target
 ( cd dpe/fuzz
-  rustup toolchain install nightly-2024-12-20
-  cargo +nightly-2024-12-20 install cargo-fuzz cargo-afl --locked
+  rustup toolchain install nightly-2025-07-08
+  cargo +nightly-2025-07-08 install cargo-fuzz cargo-afl --locked
   cargo fmt --check
   cargo clippy --features libfuzzer-sys
   cargo clippy --features afl
-  cargo +nightly-2024-12-20 fuzz build --features libfuzzer-sys
-  cargo +nightly-2024-12-20 afl build --features afl
+  cargo +nightly-2025-07-08 fuzz build --features libfuzzer-sys
+  cargo +nightly-2025-07-08 afl build --features afl
 )
 
 # Fix license headers
