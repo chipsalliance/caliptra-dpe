@@ -322,7 +322,7 @@ impl CertWriter<'_> {
         sig: &EcdsaSignature,
         tagged: bool,
     ) -> Result<usize, DpeErrorCode> {
-        let (r, s) = sig.as_slice()?;
+        let (r, s) = sig.as_slice();
         let seq_size = Self::get_structure_size(
             Self::get_integer_bytes_size(r, /*tagged=*/ true)?
                 + Self::get_integer_bytes_size(s, /*tagged=*/ true)?,
@@ -339,7 +339,7 @@ impl CertWriter<'_> {
         sig: &EcdsaSignature,
         tagged: bool,
     ) -> Result<usize, DpeErrorCode> {
-        let (r, s) = sig.as_slice()?;
+        let (r, s) = sig.as_slice();
         let seq_size = Self::get_structure_size(
             Self::get_integer_bytes_size(r, /*tagged=*/ true)?
                 + Self::get_integer_bytes_size(s, /*tagged=*/ true)?,
@@ -1135,7 +1135,7 @@ impl CertWriter<'_> {
         bytes_written += self.encode_byte(0)?;
 
         bytes_written += self.encode_byte(0x4)?;
-        let (x, y) = pub_key.as_slice()?;
+        let (x, y) = pub_key.as_slice();
         bytes_written += self.encode_bytes(x)?;
         bytes_written += self.encode_bytes(y)?;
 
@@ -1152,7 +1152,7 @@ impl CertWriter<'_> {
         &mut self,
         sig: &EcdsaSignature,
     ) -> Result<usize, DpeErrorCode> {
-        let (r, s) = sig.as_slice()?;
+        let (r, s) = sig.as_slice();
         let seq_size = Self::get_integer_bytes_size(r, /*tagged=*/ true)?
             + Self::get_integer_bytes_size(s, /*tagged=*/ true)?;
 
@@ -1185,7 +1185,7 @@ impl CertWriter<'_> {
         &mut self,
         sig: &EcdsaSignature,
     ) -> Result<usize, DpeErrorCode> {
-        let (r, s) = sig.as_slice()?;
+        let (r, s) = sig.as_slice();
         let seq_size = Self::get_integer_bytes_size(r, /*tagged=*/ true)?
             + Self::get_integer_bytes_size(s, /*tagged=*/ true)?;
 
@@ -2381,9 +2381,7 @@ fn get_subject_key_identifier(
     let mut hasher = env.crypto.hash_initialize()?;
     match pub_key {
         PubKey::Ecdsa(pub_key) => {
-            let (x, y) = pub_key
-                .as_slice()
-                .map_err(|_| DpeErrorCode::InternalError)?;
+            let (x, y) = pub_key.as_slice();
             hasher.update(&[0x04])?;
             hasher.update(x)?;
             hasher.update(y)?;
@@ -2623,7 +2621,7 @@ pub(crate) mod tests {
     use crate::x509::{CertWriter, DirectoryString, MeasurementData, Name};
     use crate::{DpeProfile, DPE_PROFILE};
     use crypto::ecdsa::EcdsaAlgorithm;
-    use crypto::ecdsa::{EcdsaPub, EcdsaPubKey, EcdsaSignature};
+    use crypto::ecdsa::{EcdsaPub, EcdsaPubKey, EcdsaSig};
     use crypto::SignatureAlgorithm;
     use openssl::hash::{Hasher, MessageDigest};
     use platform::{ArrayVec, CertValidity, OtherName, SubjectAltName, MAX_KEY_IDENTIFIER_SIZE};
@@ -2633,12 +2631,6 @@ pub(crate) mod tests {
     use x509_parser::oid_registry::asn1_rs::oid;
     use x509_parser::prelude::*;
     use zerocopy::IntoBytes;
-
-    #[cfg(feature = "dpe_profile_p256_sha256")]
-    use crypto::ecdsa::curve_256::EcdsaSignature256;
-
-    #[cfg(feature = "dpe_profile_p384_sha384")]
-    use crypto::ecdsa::curve_384::EcdsaSignature384;
 
     #[derive(asn1::Asn1Read)]
     pub struct Fwid<'a> {
@@ -2880,7 +2872,7 @@ pub(crate) mod tests {
         };
 
         const ECC_INT_SIZE: usize = DPE_PROFILE.ecc_int_size();
-        let test_pub = EcdsaPub::from_slice(&[0xAA; ECC_INT_SIZE], &[0xBB; ECC_INT_SIZE]).unwrap();
+        let test_pub = EcdsaPub::from_slice(&[0xAA; ECC_INT_SIZE], &[0xBB; ECC_INT_SIZE]);
         let node = TciNodeData::new();
 
         let measurements = MeasurementData {
@@ -2964,7 +2956,7 @@ pub(crate) mod tests {
         let mut issuer_writer = CertWriter::new(&mut issuer_der, true);
         let issuer_len = issuer_writer.encode_rdn(&TEST_ISSUER_NAME).unwrap();
 
-        let test_pub = EcdsaPub::from_slice(&[0xAA; ECC_INT_SIZE], &[0xBB; ECC_INT_SIZE]).unwrap();
+        let test_pub = EcdsaPub::from_slice(&[0xAA; ECC_INT_SIZE], &[0xBB; ECC_INT_SIZE]);
 
         let node = TciNodeData::new();
 
@@ -2972,7 +2964,7 @@ pub(crate) mod tests {
             DpeProfile::P256Sha256 => Hasher::new(MessageDigest::sha256()).unwrap(),
             DpeProfile::P384Sha384 => Hasher::new(MessageDigest::sha384()).unwrap(),
         };
-        let (x, y) = test_pub.as_slice().unwrap();
+        let (x, y) = test_pub.as_slice();
         hasher.update(&[0x04]).unwrap();
         hasher.update(x).unwrap();
         hasher.update(y).unwrap();
@@ -3043,15 +3035,13 @@ pub(crate) mod tests {
 
         let test_sig = match DPE_PROFILE.alg() {
             #[cfg(feature = "dpe_profile_p256_sha256")]
-            SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit256) => EcdsaSignature::Ecdsa256(
-                EcdsaSignature256::from_slice(&[0xCC; ECC_INT_SIZE], &[0xDD; ECC_INT_SIZE])
-                    .unwrap(),
-            ),
+            SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit256) => {
+                EcdsaSig::from_slice(&[0xCC; ECC_INT_SIZE], &[0xDD; ECC_INT_SIZE]).into()
+            }
             #[cfg(feature = "dpe_profile_p384_sha384")]
-            SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384) => EcdsaSignature::Ecdsa384(
-                EcdsaSignature384::from_slice(&[0xCC; ECC_INT_SIZE], &[0xDD; ECC_INT_SIZE])
-                    .unwrap(),
-            ),
+            SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384) => {
+                EcdsaSig::from_slice(&[0xCC; ECC_INT_SIZE], &[0xDD; ECC_INT_SIZE]).into()
+            }
             _ => panic!("Missing signature"),
         };
 

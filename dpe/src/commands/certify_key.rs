@@ -130,9 +130,7 @@ impl CommandExecution for CertifyKeyCmd {
 
         let (derived_pubkey_x, derived_pubkey_y) = match pub_key {
             PubKey::Ecdsa(pub_key) => {
-                let (x, y) = pub_key
-                    .as_slice()
-                    .map_err(|_| DpeErrorCode::InternalError)?;
+                let (x, y) = pub_key.as_slice();
                 let derived_pubkey_x: [u8; DPE_PROFILE.ecc_int_size()] =
                     x.try_into().map_err(|_| DpeErrorCode::InternalError)?;
                 let derived_pubkey_y: [u8; DPE_PROFILE.ecc_int_size()] =
@@ -443,8 +441,7 @@ mod tests {
             let pub_key = EcdsaPub::from_slice(
                 &certify_resp.derived_pubkey_x,
                 &certify_resp.derived_pubkey_y,
-            )
-            .unwrap();
+            );
             let pub_key = PubKey::Ecdsa(match env.crypto.signature_algorithm() {
                 #[cfg(feature = "dpe_profile_p256_sha256")]
                 SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit256) => EcdsaPubKey::Ecdsa256(pub_key),
