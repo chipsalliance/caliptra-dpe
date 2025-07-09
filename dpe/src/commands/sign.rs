@@ -139,7 +139,7 @@ fn execute(
         #[cfg(feature = "dpe_profile_p256_sha256")]
         Signature::Ecdsa(EcdsaSignature::Ecdsa256(sig)) => {
             use crate::response::SignP256Resp;
-            let (&sig_r, &sig_s) = sig.as_slice()?;
+            let (&sig_r, &sig_s) = sig.as_slice();
             SignResp::P256(SignP256Resp {
                 new_context_handle: ContextHandle::new_invalid(),
                 sig_r,
@@ -150,7 +150,7 @@ fn execute(
         #[cfg(feature = "dpe_profile_p384_sha384")]
         Signature::Ecdsa(EcdsaSignature::Ecdsa384(sig)) => {
             use crate::response::SignP384Resp;
-            let (&sig_r, &sig_s) = sig.as_slice()?;
+            let (&sig_r, &sig_s) = sig.as_slice();
             SignResp::P384(SignP384Resp {
                 new_context_handle: ContextHandle::new_invalid(),
                 sig_r,

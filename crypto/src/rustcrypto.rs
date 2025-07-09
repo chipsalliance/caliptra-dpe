@@ -2,9 +2,9 @@
 
 use crate::{
     ecdsa::{
-        curve_256::{Curve256, EcdsaPub256, EcdsaSignature256},
-        curve_384::{Curve384, EcdsaPub384, EcdsaSignature384},
-        EcdsaAlgorithm, EcdsaPubKey, EcdsaSignature,
+        curve_256::{Curve256, EcdsaSignature256},
+        curve_384::{Curve384, EcdsaSignature384},
+        EcdsaAlgorithm, EcdsaPub, EcdsaSig,
     },
     hkdf::*,
     Crypto, CryptoError, CryptoSuite, Digest, DigestAlgorithm, DigestType, ExportedCdiHandle,
@@ -65,10 +65,8 @@ impl From<SizeError<&[u8], MldsaSignature>> for CryptoError {
     }
 }
 
-impl TryFrom<Signature<NistP256>> for EcdsaSignature256 {
-    type Error = CryptoError;
-
-    fn try_from(value: Signature<NistP256>) -> Result<Self, Self::Error> {
+impl From<Signature<NistP256>> for EcdsaSignature256 {
+    fn from(value: Signature<NistP256>) -> Self {
         let mut r = [0; EcdsaAlgorithm::Bit256.curve_size()];
         let mut s = [0; EcdsaAlgorithm::Bit256.curve_size()];
         r.clone_from_slice(value.r().deref().to_bytes().as_slice());
@@ -77,10 +75,8 @@ impl TryFrom<Signature<NistP256>> for EcdsaSignature256 {
         EcdsaSignature256::from_slice(&r, &s)
     }
 }
-impl TryFrom<Signature<NistP384>> for EcdsaSignature384 {
-    type Error = CryptoError;
-
-    fn try_from(value: Signature<NistP384>) -> Result<Self, Self::Error> {
+impl From<Signature<NistP384>> for EcdsaSignature384 {
+    fn from(value: Signature<NistP384>) -> Self {
         let mut r = [0; EcdsaAlgorithm::Bit384.curve_size()];
         let mut s = [0; EcdsaAlgorithm::Bit384.curve_size()];
         r.clone_from_slice(value.r().deref().to_bytes().as_slice());
@@ -197,7 +193,7 @@ impl<S: SignatureType, D: DigestType> RustCryptoImpl<S, D> {
 
                 Ok((
                     RustCryptoPrivKey(secret),
-                    PubKey::Ecdsa(EcdsaPubKey::Ecdsa256(EcdsaPub256::from_slice(&x, &y)?)),
+                    EcdsaPub::from_slice(&x, &y).into(),
                 ))
             }
             alg @ SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384) => {
@@ -213,7 +209,7 @@ impl<S: SignatureType, D: DigestType> RustCryptoImpl<S, D> {
 
                 Ok((
                     RustCryptoPrivKey(secret),
-                    PubKey::Ecdsa(EcdsaPubKey::Ecdsa384(EcdsaPub384::from_slice(&x, &y)?)),
+                    EcdsaPub::from_slice(&x, &y).into(),
                 ))
             }
             #[cfg(feature = "ml-dsa")]
@@ -336,9 +332,7 @@ impl<S: SignatureType, D: DigestType> Crypto for RustCryptoImpl<S, D> {
                     "/alias_priv_256.pem"
                 )))?;
                 let sig: p256::ecdsa::Signature = signing_key.sign_prehash(digest.as_slice())?;
-                Ok(super::Signature::Ecdsa(EcdsaSignature::Ecdsa256(
-                    sig.try_into()?,
-                )))
+                Ok(EcdsaSig::from(sig).into())
             }
             SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384) => {
                 let signing_key = p384::ecdsa::SigningKey::from_sec1_pem(include_str!(concat!(
@@ -346,9 +340,7 @@ impl<S: SignatureType, D: DigestType> Crypto for RustCryptoImpl<S, D> {
                     "/alias_priv_384.pem"
                 )))?;
                 let sig: p384::ecdsa::Signature = signing_key.sign_prehash(digest.as_slice())?;
-                Ok(super::Signature::Ecdsa(EcdsaSignature::Ecdsa384(
-                    sig.try_into()?,
-                )))
+                Ok(EcdsaSig::from(sig).into())
             }
             #[cfg(feature = "ml-dsa")]
             SignatureAlgorithm::MlDsa(MldsaAlgorithm::ExternalMu87) => {
@@ -376,17 +368,13 @@ impl<S: SignatureType, D: DigestType> Crypto for RustCryptoImpl<S, D> {
                 let sig: p256::ecdsa::Signature =
                     p256::ecdsa::SigningKey::from_slice(priv_key.0.as_slice())?
                         .sign_prehash(digest.as_slice())?;
-                Ok(super::Signature::Ecdsa(EcdsaSignature::Ecdsa256(
-                    sig.try_into()?,
-                )))
+                Ok(EcdsaSig::from(sig).into())
             }
             SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384) => {
                 let sig: p384::ecdsa::Signature =
                     p384::ecdsa::SigningKey::from_slice(priv_key.0.as_slice())?
                         .sign_prehash(digest.as_slice())?;
-                Ok(super::Signature::Ecdsa(EcdsaSignature::Ecdsa384(
-                    sig.try_into()?,
-                )))
+                Ok(EcdsaSig::from(sig).into())
             }
             #[cfg(feature = "ml-dsa")]
             SignatureAlgorithm::MlDsa(MldsaAlgorithm::ExternalMu87) => {

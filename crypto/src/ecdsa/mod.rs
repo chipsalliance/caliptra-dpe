@@ -4,7 +4,7 @@ Abstract:
     Generic trait definition of Cryptographic functions.
 --*/
 
-use crate::{CryptoError, DigestAlgorithm, DigestType, SignatureAlgorithm, SignatureType};
+use crate::{DigestAlgorithm, DigestType, SignatureAlgorithm, SignatureType};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 use zeroize::ZeroizeOnDrop;
 
@@ -16,15 +16,15 @@ pub struct EcdsaBuf<const K: usize> {
 }
 
 impl<const K: usize> EcdsaBuf<K> {
-    pub fn from_slice(r: &[u8; K], s: &[u8; K]) -> Result<Self, CryptoError> {
+    pub fn from_slice(r: &[u8; K], s: &[u8; K]) -> Self {
         let mut key = Self::default();
         key.r.clone_from_slice(r);
         key.s.clone_from_slice(s);
-        Ok(key)
+        key
     }
 
-    pub fn as_slice(&self) -> Result<(&[u8; K], &[u8; K]), CryptoError> {
-        Ok((&self.r, &self.s))
+    pub fn as_slice(&self) -> (&[u8; K], &[u8; K]) {
+        (&self.r, &self.s)
     }
 
     pub const fn curve_size(&self) -> usize {
@@ -108,16 +108,28 @@ pub enum EcdsaPubKey {
     Ecdsa384(curve_384::EcdsaPub384),
 }
 
+impl From<curve_256::EcdsaPub256> for EcdsaPubKey {
+    fn from(key: curve_256::EcdsaPub256) -> Self {
+        Self::Ecdsa256(key)
+    }
+}
+
+impl From<curve_384::EcdsaPub384> for EcdsaPubKey {
+    fn from(key: curve_384::EcdsaPub384) -> Self {
+        Self::Ecdsa384(key)
+    }
+}
+
 impl EcdsaPubKey {
-    pub fn as_slice(&self) -> Result<(&[u8], &[u8]), CryptoError> {
+    pub fn as_slice(&self) -> (&[u8], &[u8]) {
         match self {
             Self::Ecdsa256(key) => {
-                let (x, y) = key.as_slice()?;
-                Ok((x.as_slice(), y.as_slice()))
+                let (x, y) = key.as_slice();
+                (x.as_slice(), y.as_slice())
             }
             Self::Ecdsa384(key) => {
-                let (x, y) = key.as_slice()?;
-                Ok((x.as_slice(), y.as_slice()))
+                let (x, y) = key.as_slice();
+                (x.as_slice(), y.as_slice())
             }
         }
     }
@@ -137,15 +149,15 @@ pub enum EcdsaSignature {
 }
 
 impl EcdsaSignature {
-    pub fn as_slice(&self) -> Result<(&[u8], &[u8]), CryptoError> {
+    pub fn as_slice(&self) -> (&[u8], &[u8]) {
         match self {
             Self::Ecdsa256(sig) => {
-                let (r, s) = sig.as_slice()?;
-                Ok((r.as_slice(), s.as_slice()))
+                let (r, s) = sig.as_slice();
+                (r.as_slice(), s.as_slice())
             }
             Self::Ecdsa384(sig) => {
-                let (r, s) = sig.as_slice()?;
-                Ok((r.as_slice(), s.as_slice()))
+                let (r, s) = sig.as_slice();
+                (r.as_slice(), s.as_slice())
             }
         }
     }
@@ -155,5 +167,17 @@ impl EcdsaSignature {
             Self::Ecdsa256(key) => key.curve_size(),
             Self::Ecdsa384(key) => key.curve_size(),
         }
+    }
+}
+
+impl From<curve_256::EcdsaSignature256> for EcdsaSignature {
+    fn from(sig: curve_256::EcdsaSignature256) -> Self {
+        Self::Ecdsa256(sig)
+    }
+}
+
+impl From<curve_384::EcdsaSignature384> for EcdsaSignature {
+    fn from(sig: curve_384::EcdsaSignature384) -> Self {
+        Self::Ecdsa384(sig)
     }
 }

@@ -163,10 +163,60 @@ pub enum PubKey {
     MlDsa(ml_dsa::MldsaPublicKey),
 }
 
+impl From<ecdsa::EcdsaPubKey> for PubKey {
+    fn from(pub_key: ecdsa::EcdsaPubKey) -> Self {
+        PubKey::Ecdsa(pub_key)
+    }
+}
+
+impl From<ecdsa::curve_256::EcdsaPub256> for PubKey {
+    fn from(pub_key: ecdsa::curve_256::EcdsaPub256) -> Self {
+        PubKey::Ecdsa(pub_key.into())
+    }
+}
+
+impl From<ecdsa::curve_384::EcdsaPub384> for PubKey {
+    fn from(pub_key: ecdsa::curve_384::EcdsaPub384) -> Self {
+        PubKey::Ecdsa(pub_key.into())
+    }
+}
+
+#[cfg(feature = "ml-dsa")]
+impl From<ml_dsa::MldsaPublicKey> for PubKey {
+    fn from(pub_key: ml_dsa::MldsaPublicKey) -> Self {
+        PubKey::MlDsa(pub_key)
+    }
+}
+
 pub enum Signature {
     Ecdsa(EcdsaSignature),
     #[cfg(feature = "ml-dsa")]
     MlDsa(ml_dsa::MldsaSignature),
+}
+
+impl From<ecdsa::EcdsaSignature> for Signature {
+    fn from(sig: ecdsa::EcdsaSignature) -> Self {
+        Signature::Ecdsa(sig)
+    }
+}
+
+impl From<ecdsa::curve_256::EcdsaSignature256> for Signature {
+    fn from(sig: ecdsa::curve_256::EcdsaSignature256) -> Self {
+        Signature::Ecdsa(sig.into())
+    }
+}
+
+impl From<ecdsa::curve_384::EcdsaSignature384> for Signature {
+    fn from(sig: ecdsa::curve_384::EcdsaSignature384) -> Self {
+        Signature::Ecdsa(sig.into())
+    }
+}
+
+#[cfg(feature = "ml-dsa")]
+impl From<ml_dsa::MldsaSignature> for Signature {
+    fn from(sig: ml_dsa::MldsaSignature) -> Self {
+        Signature::MlDsa(sig)
+    }
 }
 
 pub trait CryptoSuite: Crypto + SignatureType + DigestType {
@@ -193,7 +243,7 @@ pub trait CryptoSuite: Crypto + SignatureType + DigestType {
         let mut hasher = self.hash_initialize()?;
         match (signature_alg, pub_key) {
             (SignatureAlgorithm::Ecdsa(_), PubKey::Ecdsa(pub_key)) => {
-                let (x, y) = pub_key.as_slice()?;
+                let (x, y) = pub_key.as_slice();
                 hasher.update(&[0x4u8])?;
                 hasher.update(x)?;
                 hasher.update(y)?;
