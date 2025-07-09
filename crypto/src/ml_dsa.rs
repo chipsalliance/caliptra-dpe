@@ -1,5 +1,7 @@
 // Licensed under the Apache-2.0 license
 
+use crate::{DigestAlgorithm, DigestType, SignatureAlgorithm, SignatureType};
+
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 #[derive(Debug, Clone, Copy)]
@@ -35,20 +37,45 @@ impl MldsaAlgorithm {
             Self::ExternalMu87 => 4896,
         }
     }
+    pub const fn external_mu_size(self) -> usize {
+        match self {
+            Self::ExternalMu87 => 64,
+        }
+    }
 }
 
 #[derive(FromBytes, IntoBytes, KnownLayout, Immutable)]
 #[repr(C)]
-pub struct ExternalMu(pub [u8; Self::SIZE]);
+pub struct ExternalMu(pub [u8; MldsaAlgorithm::ExternalMu87.external_mu_size()]);
 
-impl ExternalMu {
-    const SIZE: usize = 64;
+impl SignatureType for ExternalMu {
+    const SIGNATURE_ALGORITHM: SignatureAlgorithm =
+        SignatureAlgorithm::MlDsa(MldsaAlgorithm::ExternalMu87);
+}
+
+impl DigestType for ExternalMu {
+    const DIGEST_ALGORITHM: DigestAlgorithm = DigestAlgorithm::Sha384;
 }
 
 #[derive(Clone, FromBytes, IntoBytes, KnownLayout, Immutable)]
 #[repr(C)]
 pub struct MldsaPublicKey(pub [u8; MldsaAlgorithm::ExternalMu87.public_key_size()]);
 
+impl MldsaPublicKey {
+    pub fn from_slice(pub_key: &[u8; MldsaAlgorithm::ExternalMu87.public_key_size()]) -> Self {
+        Self(*pub_key)
+    }
+    pub fn as_slice(&self) -> &[u8] {
+        &self.0
+    }
+}
+
 #[derive(Clone, FromBytes, IntoBytes, KnownLayout, Immutable)]
 #[repr(C)]
 pub struct MldsaSignature(pub [u8; MldsaAlgorithm::ExternalMu87.signature_size()]);
+
+impl MldsaSignature {
+    pub fn as_slice(&self) -> &[u8] {
+        &self.0
+    }
+}
