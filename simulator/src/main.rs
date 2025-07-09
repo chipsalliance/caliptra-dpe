@@ -26,6 +26,9 @@ use crypto::Ecdsa256RustCrypto;
 #[cfg(feature = "dpe_profile_p384_sha384")]
 use crypto::Ecdsa384RustCrypto;
 
+#[cfg(feature = "dpe_mldsa")]
+use crypto::MldsaRustCrypto;
+
 const SOCKET_PATH: &str = "/tmp/dpe-sim.socket";
 
 fn handle_request(dpe: &mut DpeInstance, env: &mut DpeEnv<impl DpeTypes>, stream: &mut UnixStream) {
@@ -131,6 +134,9 @@ impl DpeTypes for SimTypes {
     #[cfg(feature = "dpe_profile_p384_sha384")]
     type Crypto<'a> = Ecdsa384RustCrypto;
 
+    #[cfg(feature = "dpe_mldsa")]
+    type Crypto<'a> = MldsaRustCrypto;
+
     type Platform<'a> = DefaultPlatform;
 }
 
@@ -177,6 +183,9 @@ fn main() -> std::io::Result<()> {
     let p = DefaultPlatformProfile::P256;
     #[cfg(feature = "dpe_profile_p384_sha384")]
     let p = DefaultPlatformProfile::P384;
+    #[cfg(feature = "dpe_mldsa")]
+    let p = DefaultPlatformProfile::Mldsa87ExternalMu;
+
     let mut env = DpeEnv::<SimTypes> {
         crypto: <SimTypes as DpeTypes>::Crypto::new(),
         platform: DefaultPlatform(p),
