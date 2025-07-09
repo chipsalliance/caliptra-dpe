@@ -8,7 +8,7 @@ use crate::{
     context::ContextHandle, validation::ValidationError, DpeProfile, CURRENT_PROFILE_MAJOR_VERSION,
     CURRENT_PROFILE_MINOR_VERSION, MAX_CERT_SIZE, MAX_EXPORTED_CDI_SIZE, MAX_HANDLES,
 };
-use crypto::CryptoError;
+use crypto::{ecdsa::EcdsaAlgorithm, CryptoError};
 use platform::{PlatformError, MAX_CHUNK_SIZE};
 use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes};
 
@@ -219,8 +219,8 @@ impl CertifyKeyResp {
 pub struct CertifyKeyP256Resp {
     pub resp_hdr: ResponseHdr,
     pub new_context_handle: ContextHandle,
-    pub derived_pubkey_x: [u8; 32],
-    pub derived_pubkey_y: [u8; 32],
+    pub derived_pubkey_x: [u8; EcdsaAlgorithm::Bit256.curve_size()],
+    pub derived_pubkey_y: [u8; EcdsaAlgorithm::Bit256.curve_size()],
     pub cert_size: u32,
     pub cert: [u8; MAX_CERT_SIZE],
 }
@@ -230,8 +230,8 @@ pub struct CertifyKeyP256Resp {
 pub struct CertifyKeyP384Resp {
     pub resp_hdr: ResponseHdr,
     pub new_context_handle: ContextHandle,
-    pub derived_pubkey_x: [u8; 48],
-    pub derived_pubkey_y: [u8; 48],
+    pub derived_pubkey_x: [u8; EcdsaAlgorithm::Bit384.curve_size()],
+    pub derived_pubkey_y: [u8; EcdsaAlgorithm::Bit384.curve_size()],
     pub cert_size: u32,
     pub cert: [u8; MAX_CERT_SIZE],
 }
