@@ -214,12 +214,12 @@ impl CommandExecution for SignP384Cmd {
 mod tests {
     use super::*;
     #[cfg(feature = "dpe_profile_p256_sha256")]
-    use crate::commands::sign::SignP256Cmd as SignCmd;
+    use crate::commands::{sign::SignP256Cmd as SignCmd, CertifyKeyP256Cmd as CertifyKeyCmd};
     #[cfg(feature = "dpe_profile_p384_sha384")]
-    use crate::commands::sign::SignP384Cmd as SignCmd;
+    use crate::commands::{sign::SignP384Cmd as SignCmd, CertifyKeyP384Cmd as CertifyKeyCmd};
     use crate::{
         commands::{
-            certify_key::{CertifyKeyCmd, CertifyKeyFlags},
+            certify_key::{CertifyKeyCommand, CertifyKeyFlags},
             derive_context::DeriveContextFlags,
             tests::{TEST_DIGEST, TEST_LABEL},
             Command, CommandHdr, DeriveContextCmd, InitCtxCmd,
@@ -362,15 +362,16 @@ mod tests {
                 handle: ContextHandle::default(),
                 flags: CertifyKeyFlags::empty(),
                 label: TEST_LABEL,
-                format: CertifyKeyCmd::FORMAT_X509,
+                format: CertifyKeyCommand::FORMAT_X509,
             };
-            let certify_resp = match cmd.execute(&mut dpe, &mut env, TEST_LOCALITIES[0]).unwrap() {
+            let certify_resp = match CertifyKeyCommand::from(&cmd)
+                .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
+                .unwrap()
+            {
                 Response::CertifyKey(resp) => resp,
                 _ => panic!("Incorrect response type"),
             };
-            let x509 =
-                X509::from_der(&certify_resp.cert[..certify_resp.cert_size.try_into().unwrap()])
-                    .unwrap();
+            let x509 = X509::from_der(&certify_resp.cert().unwrap()).unwrap();
             x509.public_key().unwrap().ec_key().unwrap()
         };
 

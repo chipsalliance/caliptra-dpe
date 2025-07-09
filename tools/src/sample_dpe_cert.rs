@@ -6,7 +6,7 @@ use std::env;
 
 use {
     crypto::RustCryptoImpl,
-    dpe::commands::{self, CertifyKeyCmd, CertifyKeyFlags, DeriveContextCmd, DeriveContextFlags},
+    dpe::commands::{self, CertifyKeyFlags, DeriveContextCmd, DeriveContextFlags},
     dpe::context::ContextHandle,
     dpe::dpe_instance::{DpeEnv, DpeTypes},
     dpe::response::Response,
@@ -17,19 +17,15 @@ use {
 };
 
 #[cfg(feature = "dpe_profile_p256_sha256")]
-use crypto::Ecdsa256RustCrypto;
+use {commands::CertifyKeyP256Cmd as CertifyKeyCmd, crypto::Ecdsa256RustCrypto as RustCrypto};
 
 #[cfg(feature = "dpe_profile_p384_sha384")]
-use crypto::Ecdsa384RustCrypto;
+use {commands::CertifyKeyP384Cmd as CertifyKeyCmd, crypto::Ecdsa384RustCrypto as RustCrypto};
 
 pub struct TestTypes {}
 
 impl DpeTypes for TestTypes {
-    #[cfg(feature = "dpe_profile_p256_sha256")]
-    type Crypto<'a> = Ecdsa256RustCrypto;
-
-    #[cfg(feature = "dpe_profile_p384_sha384")]
-    type Crypto<'a> = Ecdsa384RustCrypto;
+    type Crypto<'a> = RustCrypto;
 
     type Platform<'a> = DefaultPlatform;
 }
@@ -70,7 +66,7 @@ fn add_tcb_info(
 }
 
 fn certify_key(dpe: &mut DpeInstance, env: &mut DpeEnv<TestTypes>, format: u32) -> Vec<u8> {
-    let certify_key_cmd: CertifyKeyCmd = commands::CertifyKeyCmd {
+    let certify_key_cmd = CertifyKeyCmd {
         handle: ContextHandle::default(),
         flags: CertifyKeyFlags::empty(),
         label: [0; DPE_PROFILE.hash_size()],
@@ -93,7 +89,7 @@ fn certify_key(dpe: &mut DpeInstance, env: &mut DpeEnv<TestTypes>, format: u32) 
         _ => panic!("Unexpected Response"),
     };
 
-    certify_key_response.cert[..certify_key_response.cert_size as usize].to_vec()
+    certify_key_response.cert().unwrap().to_vec()
 }
 
 fn main() {
@@ -101,14 +97,14 @@ fn main() {
     let (format, format_str) = if args.len() > 1 {
         let arg = &args[1];
         if arg == "csr" {
-            (commands::CertifyKeyCmd::FORMAT_CSR, "PKCS7")
+            (commands::CertifyKeyCommand::FORMAT_CSR, "PKCS7")
         } else if arg == "x509" {
-            (commands::CertifyKeyCmd::FORMAT_X509, "CERTIFICATE")
+            (commands::CertifyKeyCommand::FORMAT_X509, "CERTIFICATE")
         } else {
             panic!("Unsupported format {}", arg)
         }
     } else {
-        (commands::CertifyKeyCmd::FORMAT_X509, "CERTIFICATE")
+        (commands::CertifyKeyCommand::FORMAT_X509, "CERTIFICATE")
     };
     let support = Support::AUTO_INIT | Support::X509 | Support::CSR;
 

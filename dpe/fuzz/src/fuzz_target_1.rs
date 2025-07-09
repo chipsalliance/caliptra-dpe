@@ -80,7 +80,7 @@ fn harness(data: &[u8]) {
         Response::DeriveContext(ref res) => res.resp_hdr.status,
         Response::DeriveContextExportedCdi(ref res) => res.resp_hdr.status,
         Response::RotateCtx(ref res) => res.resp_hdr.status,
-        Response::CertifyKey(ref res) => res.resp_hdr.status,
+        Response::CertifyKey(ref res) => res.resp_hdr().status,
         Response::Sign(ref res) => res.resp_hdr().status,
         Response::DestroyCtx(ref resp_hdr) => resp_hdr.status,
         Response::GetCertificateChain(ref res) => res.resp_hdr.status,
