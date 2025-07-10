@@ -9,7 +9,9 @@ pub use self::destroy_context::DestroyCtxCmd;
 pub use self::get_certificate_chain::GetCertificateChainCmd;
 pub use self::initialize_context::InitCtxCmd;
 
-pub use self::certify_key::{CertifyKeyCmd, CertifyKeyFlags};
+pub use self::certify_key::{
+    CertifyKeyCommand, CertifyKeyFlags, CertifyKeyP256Cmd, CertifyKeyP384Cmd,
+};
 #[cfg(not(feature = "disable_rotate_context"))]
 pub use self::rotate_context::{RotateCtxCmd, RotateCtxFlags};
 pub use self::sign::{SignCommand, SignFlags};
@@ -36,7 +38,7 @@ pub enum Command<'a> {
     GetProfile,
     InitCtx(&'a InitCtxCmd),
     DeriveContext(&'a DeriveContextCmd),
-    CertifyKey(&'a CertifyKeyCmd),
+    CertifyKey(CertifyKeyCommand<'a>),
     Sign(SignCommand<'a>),
     #[cfg(not(feature = "disable_rotate_context"))]
     RotateCtx(&'a RotateCtxCmd),
@@ -68,7 +70,7 @@ impl Command<'_> {
             Command::GET_PROFILE => Ok(Command::GetProfile),
             Command::INITIALIZE_CONTEXT => Self::parse_command(Command::InitCtx, bytes),
             Command::DERIVE_CONTEXT => Self::parse_command(Command::DeriveContext, bytes),
-            Command::CERTIFY_KEY => Self::parse_command(Command::CertifyKey, bytes),
+            Command::CERTIFY_KEY => Ok(CertifyKeyCommand::deserialize(profile, bytes)?.into()),
             Command::SIGN => Ok(Command::Sign(SignCommand::deserialize(profile, bytes)?)),
             #[cfg(not(feature = "disable_rotate_context"))]
             Command::ROTATE_CONTEXT_HANDLE => Self::parse_command(Command::RotateCtx, bytes),
@@ -103,6 +105,12 @@ impl From<Command<'_>> for u32 {
             Command::DestroyCtx(_) => Command::DESTROY_CONTEXT,
             Command::GetCertificateChain(_) => Command::GET_CERTIFICATE_CHAIN,
         }
+    }
+}
+
+impl<'a> From<CertifyKeyCommand<'a>> for Command<'a> {
+    fn from(cmd: CertifyKeyCommand<'a>) -> Command<'a> {
+        Command::CertifyKey(cmd)
     }
 }
 

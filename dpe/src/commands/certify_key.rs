@@ -5,7 +5,7 @@ use crate::{
     dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
     response::{CertifyKeyResp, DpeErrorCode, Response},
     x509::{create_dpe_cert, create_dpe_csr, CreateDpeCertArgs, CreateDpeCertResult},
-    DpeFlags, DPE_PROFILE, MAX_CERT_SIZE,
+    DpeFlags, DpeProfile, MAX_CERT_SIZE,
 };
 use bitflags::bitflags;
 #[cfg(not(feature = "no-cfi"))]
@@ -13,48 +13,81 @@ use caliptra_cfi_derive_git::cfi_impl_fn;
 #[cfg(not(feature = "no-cfi"))]
 use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq};
 use cfg_if::cfg_if;
-use crypto::PubKey;
+use crypto::{ecdsa::EcdsaPubKey, PubKey};
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 #[cfg(not(feature = "disable_x509"))]
 #[repr(C)]
-#[derive(
-    Debug,
-    PartialEq,
-    Eq,
-    zerocopy::FromBytes,
-    zerocopy::IntoBytes,
-    zerocopy::Immutable,
-    zerocopy::KnownLayout,
-)]
+#[derive(Debug, PartialEq, Eq, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct CertifyKeyFlags(pub u32);
 
 bitflags! {
     impl CertifyKeyFlags: u32 {}
 }
 
-#[repr(C)]
-#[derive(
-    Debug,
-    PartialEq,
-    Eq,
-    zerocopy::FromBytes,
-    zerocopy::IntoBytes,
-    zerocopy::Immutable,
-    zerocopy::KnownLayout,
-)]
-pub struct CertifyKeyCmd {
-    pub handle: ContextHandle,
-    pub flags: CertifyKeyFlags,
-    pub format: u32,
-    pub label: [u8; DPE_PROFILE.hash_size()],
+#[derive(Debug, PartialEq, Eq)]
+pub enum CertifyKeyCommand<'a> {
+    #[cfg(feature = "dpe_profile_p256_sha256")]
+    P256(&'a CertifyKeyP256Cmd),
+    #[cfg(feature = "dpe_profile_p384_sha384")]
+    P384(&'a CertifyKeyP384Cmd),
 }
 
-impl CertifyKeyCmd {
+impl CertifyKeyCommand<'_> {
     pub const FORMAT_X509: u32 = 0;
     pub const FORMAT_CSR: u32 = 1;
+
+    pub fn deserialize(
+        profile: DpeProfile,
+        bytes: &[u8],
+    ) -> Result<CertifyKeyCommand, DpeErrorCode> {
+        match profile {
+            #[cfg(feature = "dpe_profile_p256_sha256")]
+            DpeProfile::P256Sha256 => {
+                CertifyKeyCommand::parse_command(CertifyKeyCommand::P256, bytes)
+            }
+            #[cfg(feature = "dpe_profile_p384_sha384")]
+            DpeProfile::P384Sha384 => {
+                CertifyKeyCommand::parse_command(CertifyKeyCommand::P384, bytes)
+            }
+            _ => Err(DpeErrorCode::InvalidArgument)?,
+        }
+    }
+
+    pub fn parse_command<'a, T: FromBytes + KnownLayout + Immutable + 'a>(
+        build: impl FnOnce(&'a T) -> CertifyKeyCommand<'a>,
+        bytes: &'a [u8],
+    ) -> Result<CertifyKeyCommand<'a>, DpeErrorCode> {
+        let (prefix, _remaining_bytes) =
+            T::ref_from_prefix(bytes).map_err(|_| DpeErrorCode::InvalidArgument)?;
+        Ok(build(prefix))
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        match self {
+            #[cfg(feature = "dpe_profile_p256_sha256")]
+            CertifyKeyCommand::P256(cmd) => cmd.as_bytes(),
+            #[cfg(feature = "dpe_profile_p384_sha384")]
+            CertifyKeyCommand::P384(cmd) => cmd.as_bytes(),
+        }
+    }
 }
 
-impl CommandExecution for CertifyKeyCmd {
+#[cfg(feature = "dpe_profile_p256_sha256")]
+impl<'a> From<&'a CertifyKeyP256Cmd> for CertifyKeyCommand<'a> {
+    fn from(value: &'a CertifyKeyP256Cmd) -> Self {
+        CertifyKeyCommand::P256(value)
+    }
+}
+
+#[cfg(feature = "dpe_profile_p384_sha384")]
+impl<'a> From<&'a CertifyKeyP384Cmd> for CertifyKeyCommand<'a> {
+    fn from(value: &'a CertifyKeyP384Cmd) -> Self {
+        CertifyKeyCommand::P384(value)
+    }
+}
+
+impl CommandExecution for CertifyKeyCommand<'_> {
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     fn execute(
         &self,
@@ -62,14 +95,20 @@ impl CommandExecution for CertifyKeyCmd {
         env: &mut DpeEnv<impl DpeTypes>,
         locality: u32,
     ) -> Result<Response, DpeErrorCode> {
-        let idx = env.state.get_active_context_pos(&self.handle, locality)?;
+        let (handle, format, label) = match *self {
+            #[cfg(feature = "dpe_profile_p256_sha256")]
+            CertifyKeyCommand::P256(cmd) => (&cmd.handle, cmd.format, &cmd.label),
+            #[cfg(feature = "dpe_profile_p384_sha384")]
+            CertifyKeyCommand::P384(cmd) => (&cmd.handle, cmd.format, &cmd.label),
+        };
+        let idx = env.state.get_active_context_pos(handle, locality)?;
         let context = &env.state.contexts[idx];
 
-        if self.format == Self::FORMAT_X509 {
+        if format == Self::FORMAT_X509 {
             if !env.state.support.x509() {
                 return Err(DpeErrorCode::ArgumentNotSupported);
             }
-        } else if self.format == Self::FORMAT_CSR && !env.state.support.csr() {
+        } else if format == Self::FORMAT_CSR && !env.state.support.csr() {
             return Err(DpeErrorCode::ArgumentNotSupported);
         }
 
@@ -80,19 +119,19 @@ impl CommandExecution for CertifyKeyCmd {
 
         cfg_if! {
             if #[cfg(not(feature = "no-cfi"))] {
-                cfi_assert!(self.format != Self::FORMAT_X509 || env.state.support.x509());
-                cfi_assert!(self.format != Self::FORMAT_CSR || env.state.support.csr());
+                cfi_assert!(format != Self::FORMAT_X509 || env.state.support.x509());
+                cfi_assert!(format != Self::FORMAT_CSR || env.state.support.csr());
                 cfi_assert_eq(context.locality, locality);
             }
         }
 
         let args = CreateDpeCertArgs {
-            handle: &self.handle,
+            handle,
             locality,
             cdi_label: b"DPE",
-            key_label: &self.label,
+            key_label: label,
             context: b"ECC",
-            ueid: &self.label,
+            ueid: label,
             dice_extensions_are_critical: env
                 .state
                 .flags
@@ -102,12 +141,12 @@ impl CommandExecution for CertifyKeyCmd {
 
         let CreateDpeCertResult {
             cert_size, pub_key, ..
-        } = match self.format {
+        } = match format {
             Self::FORMAT_X509 => {
                 cfg_if! {
                     if #[cfg(not(feature = "disable_x509"))] {
                         #[cfg(not(feature = "no-cfi"))]
-                        cfi_assert_eq(self.format, Self::FORMAT_X509);
+                        cfi_assert_eq(format, Self::FORMAT_X509);
                         create_dpe_cert(&args, dpe, env, &mut cert)
                     } else {
                         Err(DpeErrorCode::ArgumentNotSupported)
@@ -118,7 +157,7 @@ impl CommandExecution for CertifyKeyCmd {
                 cfg_if! {
                     if #[cfg(not(feature = "disable_csr"))] {
                         #[cfg(not(feature = "no-cfi"))]
-                        cfi_assert_eq(self.format, Self::FORMAT_CSR);
+                        cfi_assert_eq(format, Self::FORMAT_CSR);
                         create_dpe_csr(&args, dpe, env, &mut cert)
                     } else {
                         Err(DpeErrorCode::ArgumentNotSupported)
@@ -128,42 +167,73 @@ impl CommandExecution for CertifyKeyCmd {
             _ => return Err(DpeErrorCode::InvalidArgument),
         }?;
 
-        let (derived_pubkey_x, derived_pubkey_y) = match pub_key {
-            PubKey::Ecdsa(pub_key) => {
+        let mut response = match pub_key {
+            #[cfg(feature = "dpe_profile_p256_sha256")]
+            PubKey::Ecdsa(EcdsaPubKey::Ecdsa256(pub_key)) => {
                 let (x, y) = pub_key.as_slice();
-                let derived_pubkey_x: [u8; DPE_PROFILE.ecc_int_size()] =
-                    x.try_into().map_err(|_| DpeErrorCode::InternalError)?;
-                let derived_pubkey_y: [u8; DPE_PROFILE.ecc_int_size()] =
-                    y.try_into().map_err(|_| DpeErrorCode::InternalError)?;
-                (derived_pubkey_x, derived_pubkey_y)
+                CertifyKeyResp::P256(crate::response::CertifyKeyP256Resp {
+                    new_context_handle: ContextHandle::new_invalid(),
+                    derived_pubkey_x: *x,
+                    derived_pubkey_y: *y,
+                    cert_size,
+                    cert,
+                    resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
+                })
             }
+            #[cfg(feature = "dpe_profile_p384_sha384")]
+            PubKey::Ecdsa(EcdsaPubKey::Ecdsa384(pub_key)) => {
+                let (x, y) = pub_key.as_slice();
+                CertifyKeyResp::P384(crate::response::CertifyKeyP384Resp {
+                    new_context_handle: ContextHandle::new_invalid(),
+                    derived_pubkey_x: *x,
+                    derived_pubkey_y: *y,
+                    cert_size,
+                    cert,
+                    resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
+                })
+            }
+            _ => Err(DpeErrorCode::InvalidArgument)?,
         };
 
         // Rotate handle if it isn't the default
         dpe.roll_onetime_use_handle(env, idx)?;
+        response.set_handle(&env.state.contexts[idx].handle);
 
-        Ok(Response::CertifyKey(CertifyKeyResp {
-            new_context_handle: env.state.contexts[idx].handle,
-            derived_pubkey_x,
-            derived_pubkey_y,
-            cert_size,
-            cert,
-            resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
-        }))
+        Ok(Response::CertifyKey(response))
     }
+}
+
+#[repr(C)]
+#[derive(Debug, PartialEq, Eq, FromBytes, IntoBytes, Immutable, KnownLayout)]
+pub struct CertifyKeyP256Cmd {
+    pub handle: ContextHandle,
+    pub flags: CertifyKeyFlags,
+    pub format: u32,
+    pub label: [u8; 32],
+}
+
+#[repr(C)]
+#[derive(Debug, PartialEq, Eq, FromBytes, IntoBytes, Immutable, KnownLayout)]
+pub struct CertifyKeyP384Cmd {
+    pub handle: ContextHandle,
+    pub flags: CertifyKeyFlags,
+    pub format: u32,
+    pub label: [u8; 48],
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "dpe_profile_p256_sha256")]
+    use crate::commands::CertifyKeyP256Cmd as CertifyKeyCmd;
+    #[cfg(feature = "dpe_profile_p384_sha384")]
+    use crate::commands::CertifyKeyP384Cmd as CertifyKeyCmd;
     use crate::{
-        commands::{
-            tests::PROFILES, Command, CommandHdr, DeriveContextCmd, DeriveContextFlags, InitCtxCmd,
-        },
+        commands::{Command, CommandHdr, DeriveContextCmd, DeriveContextFlags, InitCtxCmd},
         dpe_instance::tests::{test_env, SIMULATION_HANDLE, TEST_LOCALITIES},
         support::Support,
         x509::{tests::TcbInfo, DirectoryString, Name},
-        State,
+        State, DPE_PROFILE,
     };
     use caliptra_cfi_lib_git::CfiCounter;
     use cms::{
@@ -196,20 +266,22 @@ mod tests {
         handle: SIMULATION_HANDLE,
         flags: CertifyKeyFlags(0x1234_5678),
         label: [0xaa; DPE_PROFILE.hash_size()],
-        format: CertifyKeyCmd::FORMAT_X509,
+        format: CertifyKeyCommand::FORMAT_X509,
     };
 
     #[test]
     fn test_deserialize_certify_key() {
-        for p in PROFILES {
-            CfiCounter::reset_for_test();
-            let mut command = CommandHdr::new(p, Command::CERTIFY_KEY).as_bytes().to_vec();
-            command.extend(TEST_CERTIFY_KEY_CMD.as_bytes());
-            assert_eq!(
-                Ok(Command::CertifyKey(&TEST_CERTIFY_KEY_CMD)),
-                Command::deserialize(p, &command)
-            );
-        }
+        CfiCounter::reset_for_test();
+        let mut command = CommandHdr::new(DPE_PROFILE, Command::CERTIFY_KEY)
+            .as_bytes()
+            .to_vec();
+        command.extend(TEST_CERTIFY_KEY_CMD.as_bytes());
+        assert_eq!(
+            Ok(Command::CertifyKey(CertifyKeyCommand::from(
+                &TEST_CERTIFY_KEY_CMD
+            ))),
+            Command::deserialize(DPE_PROFILE, &command)
+        );
     }
 
     #[test]
@@ -239,20 +311,21 @@ mod tests {
                 handle: init_resp.handle,
                 flags: CertifyKeyFlags::empty(),
                 label: [0; DPE_PROFILE.hash_size()],
-                format: CertifyKeyCmd::FORMAT_X509,
+                format: CertifyKeyCommand::FORMAT_X509,
             };
 
-            let certify_resp = match certify_cmd
+            let certify_resp = match CertifyKeyCommand::from(&certify_cmd)
                 .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
                 .unwrap()
             {
                 Response::CertifyKey(resp) => resp,
                 _ => panic!("Wrong response type."),
             };
-            assert_ne!(certify_resp.cert_size, 0);
+            let cert = certify_resp.cert().unwrap();
+            assert_ne!(cert.len(), 0);
 
             let mut parser = X509CertificateParser::new().with_deep_parse_extensions(true);
-            match parser.parse(&certify_resp.cert[..certify_resp.cert_size.try_into().unwrap()]) {
+            match parser.parse(cert) {
                 Ok((_, cert)) => {
                     assert_eq!(cert.version(), X509Version::V3);
                     for ext in cert.iter_extensions() {
@@ -294,23 +367,21 @@ mod tests {
                 handle: init_resp.handle,
                 flags: CertifyKeyFlags::empty(),
                 label: [0; DPE_PROFILE.hash_size()],
-                format: CertifyKeyCmd::FORMAT_CSR,
+                format: CertifyKeyCommand::FORMAT_CSR,
             };
 
-            let certify_resp = match certify_cmd
+            let certify_resp = match CertifyKeyCommand::from(&certify_cmd)
                 .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
                 .unwrap()
             {
                 Response::CertifyKey(resp) => resp,
                 _ => panic!("Wrong response type."),
             };
-            assert_ne!(certify_resp.cert_size, 0);
+            let cert = certify_resp.cert().unwrap();
+            assert_ne!(cert.len(), 0);
 
             // parse CMS ContentInfo
-            let content_info = ContentInfo::from_der(
-                &certify_resp.cert[..certify_resp.cert_size.try_into().unwrap()],
-            )
-            .unwrap();
+            let content_info = ContentInfo::from_der(cert).unwrap();
             // parse SignedData
             let mut signed_data =
                 SignedData::from_der(&content_info.content.to_der().unwrap()).unwrap();
@@ -438,10 +509,16 @@ mod tests {
 
             // validate subject_name
             let mut subj_serial = [0u8; DPE_PROFILE.hash_size() * 2];
-            let pub_key = EcdsaPub::from_slice(
-                &certify_resp.derived_pubkey_x,
-                &certify_resp.derived_pubkey_y,
-            );
+            let pub_key = match certify_resp {
+                #[cfg(feature = "dpe_profile_p256_sha256")]
+                CertifyKeyResp::P256(r) => {
+                    EcdsaPub::from_slice(&r.derived_pubkey_x, &r.derived_pubkey_y)
+                }
+                #[cfg(feature = "dpe_profile_p384_sha384")]
+                CertifyKeyResp::P384(r) => {
+                    EcdsaPub::from_slice(&r.derived_pubkey_x, &r.derived_pubkey_y)
+                }
+            };
             let pub_key = PubKey::Ecdsa(match env.crypto.signature_algorithm() {
                 #[cfg(feature = "dpe_profile_p256_sha256")]
                 SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit256) => EcdsaPubKey::Ecdsa256(pub_key),
@@ -531,10 +608,10 @@ mod tests {
             handle: ContextHandle::default(),
             flags: CertifyKeyFlags(0),
             label: [0; DPE_PROFILE.hash_size()],
-            format: CertifyKeyCmd::FORMAT_X509,
+            format: CertifyKeyCommand::FORMAT_X509,
         };
 
-        let certify_resp = match certify_cmd
+        let certify_resp = match CertifyKeyCommand::from(&certify_cmd)
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
             .unwrap()
         {
@@ -543,9 +620,7 @@ mod tests {
         };
 
         let mut parser = X509CertificateParser::new().with_deep_parse_extensions(true);
-        let (_, cert) = parser
-            .parse(&certify_resp.cert[..certify_resp.cert_size.try_into().unwrap()])
-            .unwrap();
+        let (_, cert) = parser.parse(certify_resp.cert().unwrap()).unwrap();
 
         let multi_tcb_info = cert
             .get_extension_unique(&oid!(2.23.133 .5 .4 .5))

@@ -6,9 +6,9 @@ Abstract:
 --*/
 use crate::{
     context::ContextHandle, validation::ValidationError, DpeProfile, CURRENT_PROFILE_MAJOR_VERSION,
-    CURRENT_PROFILE_MINOR_VERSION, DPE_PROFILE, MAX_CERT_SIZE, MAX_EXPORTED_CDI_SIZE, MAX_HANDLES,
+    CURRENT_PROFILE_MINOR_VERSION, MAX_CERT_SIZE, MAX_EXPORTED_CDI_SIZE, MAX_HANDLES,
 };
-use crypto::CryptoError;
+use crypto::{ecdsa::EcdsaAlgorithm, CryptoError};
 use platform::{PlatformError, MAX_CHUNK_SIZE};
 use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes};
 
@@ -167,21 +167,71 @@ pub struct DeriveContextExportedCdiResp {
     pub new_certificate: [u8; MAX_CERT_SIZE],
 }
 
+#[derive(PartialEq, Debug, Eq)]
+pub enum CertifyKeyResp {
+    #[cfg(feature = "dpe_profile_p256_sha256")]
+    P256(CertifyKeyP256Resp),
+    #[cfg(feature = "dpe_profile_p384_sha384")]
+    P384(CertifyKeyP384Resp),
+}
+
+impl CertifyKeyResp {
+    pub fn set_handle(&mut self, handle: &ContextHandle) {
+        match self {
+            #[cfg(feature = "dpe_profile_p256_sha256")]
+            CertifyKeyResp::P256(resp) => resp.new_context_handle = *handle,
+            #[cfg(feature = "dpe_profile_p384_sha384")]
+            CertifyKeyResp::P384(resp) => resp.new_context_handle = *handle,
+        }
+    }
+
+    pub fn resp_hdr(&self) -> &ResponseHdr {
+        match self {
+            #[cfg(feature = "dpe_profile_p256_sha256")]
+            CertifyKeyResp::P256(resp) => &resp.resp_hdr,
+            #[cfg(feature = "dpe_profile_p384_sha384")]
+            CertifyKeyResp::P384(resp) => &resp.resp_hdr,
+        }
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        match self {
+            #[cfg(feature = "dpe_profile_p256_sha256")]
+            CertifyKeyResp::P256(resp) => resp.as_bytes(),
+            #[cfg(feature = "dpe_profile_p384_sha384")]
+            CertifyKeyResp::P384(resp) => resp.as_bytes(),
+        }
+    }
+
+    pub fn cert(&self) -> Result<&[u8], DpeErrorCode> {
+        let (buf, size) = match self {
+            #[cfg(feature = "dpe_profile_p256_sha256")]
+            CertifyKeyResp::P256(r) => (&r.cert, r.cert_size),
+            #[cfg(feature = "dpe_profile_p384_sha384")]
+            CertifyKeyResp::P384(r) => (&r.cert, r.cert_size),
+        };
+        buf.get(..size as usize).ok_or(DpeErrorCode::InternalError)
+    }
+}
+
 #[repr(C)]
-#[derive(
-    Debug,
-    PartialEq,
-    Eq,
-    zerocopy::IntoBytes,
-    zerocopy::TryFromBytes,
-    zerocopy::Immutable,
-    zerocopy::KnownLayout,
-)]
-pub struct CertifyKeyResp {
+#[derive(Debug, PartialEq, Eq, IntoBytes, TryFromBytes, Immutable, KnownLayout)]
+pub struct CertifyKeyP256Resp {
     pub resp_hdr: ResponseHdr,
     pub new_context_handle: ContextHandle,
-    pub derived_pubkey_x: [u8; DPE_PROFILE.ecc_int_size()],
-    pub derived_pubkey_y: [u8; DPE_PROFILE.ecc_int_size()],
+    pub derived_pubkey_x: [u8; EcdsaAlgorithm::Bit256.curve_size()],
+    pub derived_pubkey_y: [u8; EcdsaAlgorithm::Bit256.curve_size()],
+    pub cert_size: u32,
+    pub cert: [u8; MAX_CERT_SIZE],
+}
+
+#[repr(C)]
+#[derive(Debug, PartialEq, Eq, IntoBytes, TryFromBytes, Immutable, KnownLayout)]
+pub struct CertifyKeyP384Resp {
+    pub resp_hdr: ResponseHdr,
+    pub new_context_handle: ContextHandle,
+    pub derived_pubkey_x: [u8; EcdsaAlgorithm::Bit384.curve_size()],
+    pub derived_pubkey_y: [u8; EcdsaAlgorithm::Bit384.curve_size()],
     pub cert_size: u32,
     pub cert: [u8; MAX_CERT_SIZE],
 }
