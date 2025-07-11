@@ -156,6 +156,30 @@ impl Digest {
     }
 }
 
+impl From<Sha256> for Digest {
+    fn from(digest: Sha256) -> Self {
+        Digest::Sha256(digest)
+    }
+}
+
+impl From<Sha384> for Digest {
+    fn from(digest: Sha384) -> Self {
+        Digest::Sha384(digest)
+    }
+}
+
+impl From<[u8; 32]> for Digest {
+    fn from(digest: [u8; 32]) -> Self {
+        Digest::Sha256(Sha256(digest))
+    }
+}
+
+impl From<[u8; 48]> for Digest {
+    fn from(digest: [u8; 48]) -> Self {
+        Digest::Sha384(Sha384(digest))
+    }
+}
+
 #[derive(Clone)]
 pub enum PubKey {
     Ecdsa(ecdsa::EcdsaPubKey),
