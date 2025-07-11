@@ -31,6 +31,8 @@ pub enum CertifyKeyCommand<'a> {
     P256(&'a CertifyKeyP256Cmd),
     #[cfg(feature = "dpe_profile_p384_sha384")]
     P384(&'a CertifyKeyP384Cmd),
+    #[cfg(feature = "ml-dsa")]
+    ExternalMu87(&'a CertifyKeyMldsaExternalMu87Cmd),
 }
 
 impl CertifyKeyCommand<'_> {
@@ -49,6 +51,10 @@ impl CertifyKeyCommand<'_> {
             #[cfg(feature = "dpe_profile_p384_sha384")]
             DpeProfile::P384Sha384 => {
                 CertifyKeyCommand::parse_command(CertifyKeyCommand::P384, bytes)
+            }
+            #[cfg(feature = "ml-dsa")]
+            DpeProfile::Mldsa87ExternalMu => {
+                CertifyKeyCommand::parse_command(CertifyKeyCommand::ExternalMu87, bytes)
             }
             _ => Err(DpeErrorCode::InvalidArgument)?,
         }
@@ -69,6 +75,8 @@ impl CertifyKeyCommand<'_> {
             CertifyKeyCommand::P256(cmd) => cmd.as_bytes(),
             #[cfg(feature = "dpe_profile_p384_sha384")]
             CertifyKeyCommand::P384(cmd) => cmd.as_bytes(),
+            #[cfg(feature = "ml-dsa")]
+            CertifyKeyCommand::ExternalMu87(cmd) => cmd.as_bytes(),
         }
     }
 }
@@ -87,6 +95,13 @@ impl<'a> From<&'a CertifyKeyP384Cmd> for CertifyKeyCommand<'a> {
     }
 }
 
+#[cfg(feature = "ml-dsa")]
+impl<'a> From<&'a CertifyKeyMldsaExternalMu87Cmd> for CertifyKeyCommand<'a> {
+    fn from(value: &'a CertifyKeyMldsaExternalMu87Cmd) -> Self {
+        CertifyKeyCommand::ExternalMu87(value)
+    }
+}
+
 impl CommandExecution for CertifyKeyCommand<'_> {
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     fn execute(
@@ -97,9 +112,11 @@ impl CommandExecution for CertifyKeyCommand<'_> {
     ) -> Result<Response, DpeErrorCode> {
         let (handle, format, label) = match *self {
             #[cfg(feature = "dpe_profile_p256_sha256")]
-            CertifyKeyCommand::P256(cmd) => (&cmd.handle, cmd.format, &cmd.label),
+            CertifyKeyCommand::P256(cmd) => (&cmd.handle, cmd.format, cmd.label.as_slice()),
             #[cfg(feature = "dpe_profile_p384_sha384")]
-            CertifyKeyCommand::P384(cmd) => (&cmd.handle, cmd.format, &cmd.label),
+            CertifyKeyCommand::P384(cmd) => (&cmd.handle, cmd.format, cmd.label.as_slice()),
+            #[cfg(feature = "ml-dsa")]
+            CertifyKeyCommand::ExternalMu87(cmd) => (&cmd.handle, cmd.format, cmd.label.as_slice()),
         };
         let idx = env.state.get_active_context_pos(handle, locality)?;
         let context = &env.state.contexts[idx];
@@ -192,6 +209,18 @@ impl CommandExecution for CertifyKeyCommand<'_> {
                     resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
                 })
             }
+            #[cfg(feature = "ml-dsa")]
+            PubKey::MlDsa(crypto::ml_dsa::MldsaPublicKey(pubkey)) => {
+                CertifyKeyResp::MldsaExternalMu87(
+                    crate::response::CertifyKeyMldsaExternalMu87Resp {
+                        new_context_handle: ContextHandle::new_invalid(),
+                        pubkey,
+                        cert_size,
+                        cert,
+                        resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
+                    },
+                )
+            }
             _ => Err(DpeErrorCode::InvalidArgument)?,
         };
 
@@ -221,6 +250,15 @@ pub struct CertifyKeyP384Cmd {
     pub label: [u8; 48],
 }
 
+#[repr(C)]
+#[derive(Debug, PartialEq, Eq, FromBytes, IntoBytes, Immutable, KnownLayout)]
+pub struct CertifyKeyMldsaExternalMu87Cmd {
+    pub handle: ContextHandle,
+    pub flags: CertifyKeyFlags,
+    pub format: u32,
+    pub label: [u8; 48],
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -240,6 +278,8 @@ mod tests {
         content_info::{CmsVersion, ContentInfo},
         signed_data::{SignedData, SignerIdentifier},
     };
+    #[cfg(feature = "ml-dsa")]
+    use crypto::ml_dsa::{MldsaAlgorithm, MldsaPublicKey};
     use crypto::{
         ecdsa::{EcdsaAlgorithm, EcdsaPub, EcdsaPubKey},
         Crypto, CryptoSuite, PubKey, SignatureAlgorithm, SignatureType,
@@ -398,6 +438,10 @@ mod tests {
             let hash_alg_oid = match DPE_PROFILE.alg() {
                 SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit256) => "2.16.840.1.101.3.4.2.1",
                 SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384) => "2.16.840.1.101.3.4.2.2",
+                #[cfg(feature = "ml-dsa")]
+                SignatureAlgorithm::MlDsa(MldsaAlgorithm::ExternalMu87) => {
+                    "2.16.840.1.101.3.4.3.19"
+                }
             };
             assert!(digest_alg
                 .assert_algorithm_oid(ObjectIdentifier::new_unwrap(hash_alg_oid))
@@ -426,6 +470,10 @@ mod tests {
             let sig_alg_oid = match DPE_PROFILE.alg() {
                 SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit256) => "1.2.840.10045.4.3.2",
                 SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384) => "1.2.840.10045.4.3.3",
+                #[cfg(feature = "ml-dsa")]
+                SignatureAlgorithm::MlDsa(MldsaAlgorithm::ExternalMu87) => {
+                    "2.16.840.1.101.3.4.3.19"
+                }
             };
             assert!(signer_info
                 .signature_algorithm
@@ -471,11 +519,19 @@ mod tests {
                 SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384) => EcKey::private_key_from_der(
                     include_bytes!("../../../platform/src/test_data/key_384.der"),
                 ),
+                #[cfg(feature = "ml-dsa")]
+                SignatureAlgorithm::MlDsa(MldsaAlgorithm::ExternalMu87) => {
+                    todo!("Add MLDSA for OpenSSL?")
+                }
             }
             .unwrap();
             let curve = match DPE_PROFILE.alg() {
                 SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit256) => Nid::X9_62_PRIME256V1,
                 SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384) => Nid::SECP384R1,
+                #[cfg(feature = "ml-dsa")]
+                SignatureAlgorithm::MlDsa(MldsaAlgorithm::ExternalMu87) => {
+                    todo!("Add MLDSA for OpenSSL?")
+                }
             };
             let group = &EcGroup::from_curve_name(curve).unwrap();
             let alias_key = EcKey::from_public_key(group, priv_key.public_key()).unwrap();
@@ -511,21 +567,18 @@ mod tests {
             let mut subj_serial = [0u8; DPE_PROFILE.hash_size() * 2];
             let pub_key = match certify_resp {
                 #[cfg(feature = "dpe_profile_p256_sha256")]
-                CertifyKeyResp::P256(r) => {
-                    EcdsaPub::from_slice(&r.derived_pubkey_x, &r.derived_pubkey_y)
-                }
+                CertifyKeyResp::P256(r) => PubKey::Ecdsa(
+                    EcdsaPub::from_slice(&r.derived_pubkey_x, &r.derived_pubkey_y).into(),
+                ),
                 #[cfg(feature = "dpe_profile_p384_sha384")]
-                CertifyKeyResp::P384(r) => {
-                    EcdsaPub::from_slice(&r.derived_pubkey_x, &r.derived_pubkey_y)
+                CertifyKeyResp::P384(r) => PubKey::Ecdsa(
+                    EcdsaPub::from_slice(&r.derived_pubkey_x, &r.derived_pubkey_y).into(),
+                ),
+                #[cfg(feature = "ml-dsa")]
+                CertifyKeyResp::MldsaExternalMu87(r) => {
+                    PubKey::MlDsa(MldsaPublicKey::from_slice(&r.pubkey))
                 }
             };
-            let pub_key = PubKey::Ecdsa(match env.crypto.signature_algorithm() {
-                #[cfg(feature = "dpe_profile_p256_sha256")]
-                SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit256) => EcdsaPubKey::Ecdsa256(pub_key),
-                #[cfg(feature = "dpe_profile_p384_sha384")]
-                SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384) => EcdsaPubKey::Ecdsa384(pub_key),
-                _ => panic!("Missing pub_key"),
-            });
             env.crypto
                 .get_pubkey_serial(&pub_key, &mut subj_serial)
                 .unwrap();

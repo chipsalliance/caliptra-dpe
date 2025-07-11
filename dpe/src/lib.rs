@@ -31,7 +31,7 @@ use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes};
 pub use crypto::{ecdsa::EcdsaAlgorithm, ExportedCdiHandle, MAX_EXPORTED_CDI_SIZE};
 
 // Max cert size returned by CertifyKey
-const MAX_CERT_SIZE: usize = 6144;
+const MAX_CERT_SIZE: usize = 7872;
 #[cfg(not(feature = "arbitrary_max_handles"))]
 pub const MAX_HANDLES: usize = 24;
 #[cfg(feature = "arbitrary_max_handles")]
@@ -78,6 +78,9 @@ pub enum DpeProfile {
     // Note: Min profiles (1 & 2) are not supported by this implementation
     P256Sha256 = 3,
     P384Sha384 = 4,
+    #[cfg(feature = "ml-dsa")]
+    Mldsa87ExternalMu = 5, // TODO(clundin): Added this to get past compiler / feature flags. We
+                           // will want a real solution here.
 }
 
 impl DpeProfile {
@@ -85,6 +88,8 @@ impl DpeProfile {
         match self {
             DpeProfile::P256Sha256 => 32,
             DpeProfile::P384Sha384 => 48,
+            #[cfg(feature = "ml-dsa")]
+            DpeProfile::Mldsa87ExternalMu => 48,
         }
     }
     pub const fn ecc_int_size(&self) -> usize {
@@ -94,10 +99,13 @@ impl DpeProfile {
         self.tci_size()
     }
     pub const fn alg(&self) -> crypto::SignatureAlgorithm {
-        //TODO(clundin): add a Dpe profile for ml-dsa
         match self {
             DpeProfile::P256Sha256 => crypto::SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit256),
             DpeProfile::P384Sha384 => crypto::SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384),
+            #[cfg(feature = "ml-dsa")]
+            DpeProfile::Mldsa87ExternalMu => {
+                crypto::SignatureAlgorithm::MlDsa(crypto::ml_dsa::MldsaAlgorithm::ExternalMu87)
+            }
         }
     }
 }
@@ -107,6 +115,9 @@ pub const DPE_PROFILE: DpeProfile = DpeProfile::P256Sha256;
 
 #[cfg(feature = "dpe_profile_p384_sha384")]
 pub const DPE_PROFILE: DpeProfile = DpeProfile::P384Sha384;
+
+#[cfg(feature = "ml-dsa")]
+pub const DPE_PROFILE: DpeProfile = DpeProfile::Mldsa87ExternalMu;
 
 // Recursive macro that does a union of all the flags passed to it. This is
 // const and looks about as nice as using the | operator.

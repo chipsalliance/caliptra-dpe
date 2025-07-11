@@ -12,6 +12,9 @@ use crypto::{ecdsa::EcdsaAlgorithm, CryptoError};
 use platform::{PlatformError, MAX_CHUNK_SIZE};
 use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes};
 
+#[cfg(feature = "ml-dsa")]
+use crypto::ml_dsa::MldsaAlgorithm;
+
 #[cfg_attr(test, derive(PartialEq, Debug, Eq))]
 #[allow(clippy::large_enum_variant)]
 pub enum Response {
@@ -173,6 +176,8 @@ pub enum CertifyKeyResp {
     P256(CertifyKeyP256Resp),
     #[cfg(feature = "dpe_profile_p384_sha384")]
     P384(CertifyKeyP384Resp),
+    #[cfg(feature = "ml-dsa")]
+    MldsaExternalMu87(CertifyKeyMldsaExternalMu87Resp),
 }
 
 impl CertifyKeyResp {
@@ -182,6 +187,8 @@ impl CertifyKeyResp {
             CertifyKeyResp::P256(resp) => resp.new_context_handle = *handle,
             #[cfg(feature = "dpe_profile_p384_sha384")]
             CertifyKeyResp::P384(resp) => resp.new_context_handle = *handle,
+            #[cfg(feature = "ml-dsa")]
+            CertifyKeyResp::MldsaExternalMu87(resp) => resp.new_context_handle = *handle,
         }
     }
 
@@ -191,6 +198,8 @@ impl CertifyKeyResp {
             CertifyKeyResp::P256(resp) => &resp.resp_hdr,
             #[cfg(feature = "dpe_profile_p384_sha384")]
             CertifyKeyResp::P384(resp) => &resp.resp_hdr,
+            #[cfg(feature = "ml-dsa")]
+            CertifyKeyResp::MldsaExternalMu87(resp) => &resp.resp_hdr,
         }
     }
 
@@ -200,6 +209,8 @@ impl CertifyKeyResp {
             CertifyKeyResp::P256(resp) => resp.as_bytes(),
             #[cfg(feature = "dpe_profile_p384_sha384")]
             CertifyKeyResp::P384(resp) => resp.as_bytes(),
+            #[cfg(feature = "ml-dsa")]
+            CertifyKeyResp::MldsaExternalMu87(resp) => resp.as_bytes(),
         }
     }
 
@@ -209,6 +220,8 @@ impl CertifyKeyResp {
             CertifyKeyResp::P256(r) => (&r.cert, r.cert_size),
             #[cfg(feature = "dpe_profile_p384_sha384")]
             CertifyKeyResp::P384(r) => (&r.cert, r.cert_size),
+            #[cfg(feature = "ml-dsa")]
+            CertifyKeyResp::MldsaExternalMu87(r) => (&r.cert, r.cert_size),
         };
         buf.get(..size as usize).ok_or(DpeErrorCode::InternalError)
     }
@@ -236,6 +249,17 @@ pub struct CertifyKeyP384Resp {
     pub cert: [u8; MAX_CERT_SIZE],
 }
 
+#[repr(C)]
+#[derive(Debug, PartialEq, Eq, IntoBytes, TryFromBytes, Immutable, KnownLayout)]
+#[cfg(feature = "ml-dsa")]
+pub struct CertifyKeyMldsaExternalMu87Resp {
+    pub resp_hdr: ResponseHdr,
+    pub new_context_handle: ContextHandle,
+    pub pubkey: [u8; MldsaAlgorithm::ExternalMu87.public_key_size()],
+    pub cert_size: u32,
+    pub cert: [u8; MAX_CERT_SIZE],
+}
+
 #[derive(PartialEq, Debug, Eq)]
 pub enum SignResp {
     #[cfg(feature = "dpe_profile_p256_sha256")]
@@ -251,6 +275,8 @@ impl SignResp {
             SignResp::P256(resp) => resp.new_context_handle = *handle,
             #[cfg(feature = "dpe_profile_p384_sha384")]
             SignResp::P384(resp) => resp.new_context_handle = *handle,
+            #[cfg(feature = "ml-dsa")]
+            _ => todo!("clundin: Add ML-DSA variant"),
         }
     }
 
@@ -260,6 +286,8 @@ impl SignResp {
             SignResp::P256(resp) => &resp.resp_hdr,
             #[cfg(feature = "dpe_profile_p384_sha384")]
             SignResp::P384(resp) => &resp.resp_hdr,
+            #[cfg(feature = "ml-dsa")]
+            _ => todo!("clundin: Add ML-DSA variant"),
         }
     }
 
@@ -269,6 +297,8 @@ impl SignResp {
             SignResp::P256(resp) => resp.as_bytes(),
             #[cfg(feature = "dpe_profile_p384_sha384")]
             SignResp::P384(resp) => resp.as_bytes(),
+            #[cfg(feature = "ml-dsa")]
+            _ => todo!("clundin: Add ML-DSA variant"),
         }
     }
 }
