@@ -14,19 +14,12 @@ use caliptra_cfi_derive_git::cfi_impl_fn;
 #[cfg(not(feature = "no-cfi"))]
 use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq};
 use cfg_if::cfg_if;
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 use platform::Platform;
 
 #[repr(C)]
-#[derive(
-    Debug,
-    PartialEq,
-    Eq,
-    zerocopy::FromBytes,
-    zerocopy::IntoBytes,
-    zerocopy::Immutable,
-    zerocopy::KnownLayout,
-)]
+#[derive(Debug, PartialEq, Eq, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct DeriveContextFlags(pub u32);
 
 bitflags! {
@@ -43,16 +36,46 @@ bitflags! {
     }
 }
 
+impl DeriveContextFlags {
+    const fn uses_internal_info_input(&self) -> bool {
+        self.contains(DeriveContextFlags::INTERNAL_INPUT_INFO)
+    }
+
+    const fn uses_internal_dice_input(&self) -> bool {
+        self.contains(DeriveContextFlags::INTERNAL_INPUT_DICE)
+    }
+
+    pub const fn retains_parent(&self) -> bool {
+        self.contains(DeriveContextFlags::RETAIN_PARENT_CONTEXT)
+    }
+
+    const fn makes_default(&self) -> bool {
+        self.contains(DeriveContextFlags::MAKE_DEFAULT)
+    }
+
+    pub const fn changes_locality(&self) -> bool {
+        self.contains(DeriveContextFlags::CHANGE_LOCALITY)
+    }
+
+    pub const fn is_recursive(&self) -> bool {
+        self.contains(DeriveContextFlags::RECURSIVE)
+    }
+
+    pub const fn exports_cdi(&self) -> bool {
+        self.contains(DeriveContextFlags::EXPORT_CDI)
+    }
+
+    pub const fn creates_certificate(&self) -> bool {
+        self.contains(DeriveContextFlags::CREATE_CERTIFICATE)
+    }
+
+    pub const fn allows_new_context_to_export(&self) -> bool {
+        self.contains(DeriveContextFlags::ALLOW_NEW_CONTEXT_TO_EXPORT)
+    }
+}
+
 #[repr(C)]
-#[derive(
-    Debug,
-    PartialEq,
-    Eq,
-    zerocopy::FromBytes,
-    zerocopy::IntoBytes,
-    zerocopy::Immutable,
-    zerocopy::KnownLayout,
-)]
+#[derive(Debug, PartialEq, Eq, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct DeriveContextCmd {
     pub handle: ContextHandle,
     pub data: [u8; DPE_PROFILE.hash_size()],
@@ -63,44 +86,6 @@ pub struct DeriveContextCmd {
 }
 
 impl DeriveContextCmd {
-    const fn uses_internal_info_input(&self) -> bool {
-        self.flags.contains(DeriveContextFlags::INTERNAL_INPUT_INFO)
-    }
-
-    const fn uses_internal_dice_input(&self) -> bool {
-        self.flags.contains(DeriveContextFlags::INTERNAL_INPUT_DICE)
-    }
-
-    pub const fn retains_parent(&self) -> bool {
-        self.flags
-            .contains(DeriveContextFlags::RETAIN_PARENT_CONTEXT)
-    }
-
-    const fn makes_default(&self) -> bool {
-        self.flags.contains(DeriveContextFlags::MAKE_DEFAULT)
-    }
-
-    pub const fn changes_locality(&self) -> bool {
-        self.flags.contains(DeriveContextFlags::CHANGE_LOCALITY)
-    }
-
-    pub const fn is_recursive(&self) -> bool {
-        self.flags.contains(DeriveContextFlags::RECURSIVE)
-    }
-
-    pub const fn exports_cdi(&self) -> bool {
-        self.flags.contains(DeriveContextFlags::EXPORT_CDI)
-    }
-
-    pub const fn creates_certificate(&self) -> bool {
-        self.flags.contains(DeriveContextFlags::CREATE_CERTIFICATE)
-    }
-
-    pub const fn allows_new_context_to_export(&self) -> bool {
-        self.flags
-            .contains(DeriveContextFlags::ALLOW_NEW_CONTEXT_TO_EXPORT)
-    }
-
     /// Whether it is okay to make a default context.
     ///
     /// When a default context is in a locality, it MUST be the only context in the locality. This
@@ -126,7 +111,7 @@ impl DeriveContextCmd {
                 // It is okay if the parent is about to be retired. The Child can be the default
                 // because the parent is the only other context in the locality and it is about to
                 // be retired.
-                !self.retains_parent()
+                !self.flags.retains_parent()
             }
             // In all other scenarios, there will be a combination of default and non-default
             // contexts
@@ -153,7 +138,7 @@ impl DeriveContextCmd {
             // If the default context is the parent.
             Some(default_idx) if default_idx == parent_idx => {
                 // It is okay if the parent is about to be retired.
-                !self.retains_parent()
+                !self.flags.retains_parent()
             }
             _ => false,
         }
@@ -185,7 +170,7 @@ impl DeriveContextCmd {
             c.state == ContextState::Active && c.locality == target_locality
         })?;
 
-        Ok(if self.makes_default() {
+        Ok(if self.flags.makes_default() {
             self.safe_to_make_default(parent_idx, default_context_idx, num_contexts_in_locality)
         } else {
             self.safe_to_make_non_default(parent_idx, default_context_idx)
@@ -203,47 +188,48 @@ impl CommandExecution for DeriveContextCmd {
     ) -> Result<Response, DpeErrorCode> {
         let support = env.state.support;
         // Make sure the operation is supported.
-        if (!support.internal_info() && self.uses_internal_info_input())
-            || (!support.internal_dice() && self.uses_internal_dice_input())
-            || (!support.retain_parent_context() && self.retains_parent())
-            || (!support.cdi_export() && (self.creates_certificate() || self.exports_cdi()))
-            || (!support.recursive() && self.is_recursive())
+        if (!support.internal_info() && self.flags.uses_internal_info_input())
+            || (!support.internal_dice() && self.flags.uses_internal_dice_input())
+            || (!support.retain_parent_context() && self.flags.retains_parent())
+            || (!support.cdi_export()
+                && (self.flags.creates_certificate() || self.flags.exports_cdi()))
+            || (!support.recursive() && self.flags.is_recursive())
         {
             return Err(DpeErrorCode::ArgumentNotSupported);
         }
 
         let parent_idx = env.state.get_active_context_pos(&self.handle, locality)?;
-        if (self.exports_cdi() && !self.creates_certificate())
-            || (self.exports_cdi() && self.is_recursive())
-            || (self.exports_cdi() && self.changes_locality())
-            || (self.exports_cdi()
+        if (self.flags.exports_cdi() && !self.flags.creates_certificate())
+            || (self.flags.exports_cdi() && self.flags.is_recursive())
+            || (self.flags.exports_cdi() && self.flags.changes_locality())
+            || (self.flags.exports_cdi()
                 && env.state.contexts[parent_idx].context_type == ContextType::Simulation)
-            || (self.exports_cdi() && !env.state.contexts[parent_idx].allow_export_cdi())
-            || (self.is_recursive() && self.retains_parent())
+            || (self.flags.exports_cdi() && !env.state.contexts[parent_idx].allow_export_cdi())
+            || (self.flags.is_recursive() && self.flags.retains_parent())
         {
             return Err(DpeErrorCode::InvalidArgument);
         }
 
-        let target_locality = if !self.changes_locality() {
+        let target_locality = if !self.flags.changes_locality() {
             #[cfg(not(feature = "no-cfi"))]
-            cfi_assert!(!self.changes_locality());
+            cfi_assert!(!self.flags.changes_locality());
             locality
         } else {
             #[cfg(not(feature = "no-cfi"))]
-            cfi_assert!(self.changes_locality());
+            cfi_assert!(self.flags.changes_locality());
             self.target_locality
         };
 
         cfg_if! {
             if #[cfg(not(feature = "no-cfi"))] {
-                cfi_assert!(support.internal_info() || !self.uses_internal_info_input());
-                cfi_assert!(support.internal_dice() || !self.uses_internal_dice_input());
-                cfi_assert!(support.retain_parent_context() || !self.retains_parent());
-                cfi_assert!(!self.is_recursive() || !self.retains_parent());
+                cfi_assert!(support.internal_info() || !self.flags.uses_internal_info_input());
+                cfi_assert!(support.internal_dice() || !self.flags.uses_internal_dice_input());
+                cfi_assert!(support.retain_parent_context() || !self.flags.retains_parent());
+                cfi_assert!(!self.flags.is_recursive() || !self.flags.retains_parent());
             }
         }
 
-        if self.is_recursive() {
+        if self.flags.is_recursive() {
             cfg_if! {
                 if #[cfg(not(feature = "disable_recursive"))] {
                     let mut tmp_context = env.state.contexts[parent_idx];
@@ -283,25 +269,25 @@ impl CommandExecution for DeriveContextCmd {
 
         // Copy the parent context to mutate so that we avoid mutating internal state upon an error.
         let mut tmp_parent_context = env.state.contexts[parent_idx];
-        if self.retains_parent() {
+        if self.flags.retains_parent() {
             if !tmp_parent_context.handle.is_default() {
                 tmp_parent_context.handle = dpe.generate_new_handle(env)?;
             } else {
                 cfg_if! {
                     if #[cfg(not(feature = "no-cfi"))] {
-                        cfi_assert!(self.retains_parent());
+                        cfi_assert!(self.flags.retains_parent());
                         cfi_assert!(tmp_parent_context.handle.is_default());
                     }
                 }
             }
         } else {
             #[cfg(not(feature = "no-cfi"))]
-            cfi_assert!(!self.retains_parent());
+            cfi_assert!(!self.flags.retains_parent());
             tmp_parent_context.state = ContextState::Retired;
             tmp_parent_context.handle = ContextHandle::new_invalid();
         }
 
-        if self.creates_certificate() && self.exports_cdi() {
+        if self.flags.creates_certificate() && self.flags.exports_cdi() {
             cfg_if! {
                 if #[cfg(not(feature = "disable_export_cdi"))] {
                     let ueid = &env.platform.get_ueid()?;
@@ -323,7 +309,7 @@ impl CommandExecution for DeriveContextCmd {
                         &mut cert,
                     )?;
 
-                    if !self.retains_parent() && !env.state.contexts[parent_idx].has_children() {
+                    if !self.flags.retains_parent() && !env.state.contexts[parent_idx].has_children() {
                         // When the parent is not retained and there are no other children,
                         // destroy it.
                         destroy_context::destroy_context(&self.handle, env.state, locality)?;
@@ -362,18 +348,18 @@ impl CommandExecution for DeriveContextCmd {
             cfi_assert!(safe_to_make_child);
         }
 
-        let child_handle = if self.makes_default() {
+        let child_handle = if self.flags.makes_default() {
             #[cfg(not(feature = "no-cfi"))]
-            cfi_assert!(self.makes_default());
+            cfi_assert!(self.flags.makes_default());
             ContextHandle::default()
         } else {
             #[cfg(not(feature = "no-cfi"))]
-            cfi_assert!(!self.makes_default());
+            cfi_assert!(!self.flags.makes_default());
             dpe.generate_new_handle(env)?
         };
 
-        let uses_internal_input_info = self.uses_internal_info_input();
-        let uses_internal_input_dice = self.uses_internal_dice_input();
+        let uses_internal_input_info = self.flags.uses_internal_info_input();
+        let uses_internal_input_dice = self.flags.uses_internal_dice_input();
 
         // Create a temporary context to mutate so that we avoid mutating internal state upon an error.
         let mut tmp_child_context = Context::new();
@@ -385,7 +371,7 @@ impl CommandExecution for DeriveContextCmd {
             parent_idx: parent_idx as u8,
             uses_internal_input_info,
             uses_internal_input_dice,
-            allow_export_cdi: self.allows_new_context_to_export()
+            allow_export_cdi: self.flags.allows_new_context_to_export()
                 & tmp_parent_context.allow_export_cdi(),
             svn: self.svn,
         });
