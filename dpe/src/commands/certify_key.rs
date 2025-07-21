@@ -4,7 +4,7 @@ use crate::{
     context::ContextHandle,
     dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
     response::{CertifyKeyResp, DpeErrorCode, Response},
-    x509::{create_dpe_cert, create_dpe_csr, CreateDpeCertArgs, CreateDpeCertResult},
+    x509::{create_dpe_cert, CreateDpeCertArgs, CreateDpeCertResult},
     DpeFlags, DpeProfile, MAX_CERT_SIZE,
 };
 use bitflags::bitflags;
@@ -175,7 +175,7 @@ impl CommandExecution for CertifyKeyCommand<'_> {
                     if #[cfg(not(feature = "disable_csr"))] {
                         #[cfg(not(feature = "no-cfi"))]
                         cfi_assert_eq(format, Self::FORMAT_CSR);
-                        create_dpe_csr(&args, dpe, env, &mut cert)
+                        crate::x509::create_dpe_csr(&args, dpe, env, &mut cert)
                     } else {
                         Err(DpeErrorCode::ArgumentNotSupported)
                     }
