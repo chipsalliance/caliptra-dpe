@@ -263,11 +263,15 @@ pub struct CertifyKeyMldsaExternalMu87Cmd {
 mod tests {
     use super::*;
     #[cfg(feature = "dpe_profile_p256_sha256")]
-    use crate::commands::CertifyKeyP256Cmd as CertifyKeyCmd;
+    use crate::commands::{
+        CertifyKeyP256Cmd as CertifyKeyCmd, DeriveContextP256Cmd as DeriveContextCmd,
+    };
     #[cfg(feature = "dpe_profile_p384_sha384")]
-    use crate::commands::CertifyKeyP384Cmd as CertifyKeyCmd;
+    use crate::commands::{
+        CertifyKeyP384Cmd as CertifyKeyCmd, DeriveContextP384Cmd as DeriveContextCmd,
+    };
     use crate::{
-        commands::{Command, CommandHdr, DeriveContextCmd, DeriveContextFlags, InitCtxCmd},
+        commands::{Command, CommandHdr, DeriveContextCommand, DeriveContextFlags, InitCtxCmd},
         dpe_instance::tests::{test_env, SIMULATION_HANDLE, TEST_LOCALITIES},
         support::Support,
         x509::{tests::TcbInfo, DirectoryString, Name},
@@ -653,7 +657,7 @@ mod tests {
             svn: 0,
         };
 
-        derive_cmd
+        DeriveContextCommand::from(&derive_cmd)
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
             .unwrap();
 

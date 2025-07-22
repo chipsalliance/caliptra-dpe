@@ -227,15 +227,21 @@ impl CommandExecution for SignP384Cmd {
 mod tests {
     use super::*;
     #[cfg(feature = "dpe_profile_p256_sha256")]
-    use crate::commands::{sign::SignP256Cmd as SignCmd, CertifyKeyP256Cmd as CertifyKeyCmd};
+    use crate::commands::{
+        sign::SignP256Cmd as SignCmd, CertifyKeyP256Cmd as CertifyKeyCmd,
+        DeriveContextP256Cmd as DeriveContextCmd,
+    };
     #[cfg(feature = "dpe_profile_p384_sha384")]
-    use crate::commands::{sign::SignP384Cmd as SignCmd, CertifyKeyP384Cmd as CertifyKeyCmd};
+    use crate::commands::{
+        sign::SignP384Cmd as SignCmd, CertifyKeyP384Cmd as CertifyKeyCmd,
+        DeriveContextP384Cmd as DeriveContextCmd,
+    };
     use crate::{
         commands::{
             certify_key::{CertifyKeyCommand, CertifyKeyFlags},
             derive_context::DeriveContextFlags,
             tests::{TEST_DIGEST, TEST_LABEL},
-            Command, CommandHdr, DeriveContextCmd, InitCtxCmd,
+            Command, CommandHdr, InitCtxCmd,
         },
         dpe_instance::tests::{
             test_env, test_state, RANDOM_HANDLE, SIMULATION_HANDLE, TEST_LOCALITIES,

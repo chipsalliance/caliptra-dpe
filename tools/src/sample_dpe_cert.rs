@@ -6,7 +6,7 @@ use std::env;
 
 use {
     crypto::RustCryptoImpl,
-    dpe::commands::{self, CertifyKeyFlags, DeriveContextCmd, DeriveContextFlags},
+    dpe::commands::{self, CertifyKeyFlags, DeriveContextFlags},
     dpe::context::ContextHandle,
     dpe::dpe_instance::{DpeEnv, DpeTypes},
     dpe::response::Response,
@@ -17,10 +17,16 @@ use {
 };
 
 #[cfg(feature = "dpe_profile_p256_sha256")]
-use {commands::CertifyKeyP256Cmd as CertifyKeyCmd, crypto::Ecdsa256RustCrypto as RustCrypto};
+use {
+    commands::CertifyKeyP256Cmd as CertifyKeyCmd,
+    commands::DeriveContextP256Cmd as DeriveContextCmd, crypto::Ecdsa256RustCrypto as RustCrypto,
+};
 
 #[cfg(feature = "dpe_profile_p384_sha384")]
-use {commands::CertifyKeyP384Cmd as CertifyKeyCmd, crypto::Ecdsa384RustCrypto as RustCrypto};
+use {
+    commands::CertifyKeyP384Cmd as CertifyKeyCmd,
+    commands::DeriveContextP384Cmd as DeriveContextCmd, crypto::Ecdsa384RustCrypto as RustCrypto,
+};
 
 #[cfg(feature = "dpe_mldsa")]
 use {
