@@ -211,7 +211,8 @@ func TestCertifyKeyCsr(d client.TestDPEInstance, c client.DPEClient, t *testing.
 	}
 
 	// Check fields and extensions in the CSR
-	checkCertificateExtension(t, csr.Extensions, &label, &certifyKeyResp.Pub, false, certChain[len(certChain)-1].SubjectKeyId, false)
+	isCritical := d.GetSupport().DpeInstanceMarkDiceExtensionsCritical
+	checkCertificateExtension(t, csr.Extensions, &label, &certifyKeyResp.Pub, false, certChain[len(certChain)-1].SubjectKeyId, false, isCritical)
 	checkPubKey(t, profile, csr.PublicKey, *certifyKeyResp)
 
 	// Check that CSR is self-signed
@@ -290,11 +291,10 @@ func removeTcgDiceExtendedKeyUsages(t *testing.T, certs []*x509.Certificate) {
 // A tcg-dice-Ueid extension MUST be added
 // This SHALL be populated by the LABEL input parameter to CertifyKey or retrieved from DPE Platform
 // by DeriveContext.
-// The extension SHOULD be marked as critical
-func checkTcgUeidExtension(t *testing.T, extensions []pkix.Extension, label []byte) {
+func checkTcgUeidExtension(t *testing.T, extensions []pkix.Extension, label []byte, isCritical bool) {
 	t.Helper()
 
-	ueid, err := getUeid(extensions)
+	ueid, err := getUeid(extensions, isCritical)
 	if err != nil {
 		t.Errorf("[ERROR]: tcg-dice-Ueid extension is missing: %v", err)
 	}
@@ -349,7 +349,7 @@ func checkExtendedKeyUsages(t *testing.T, extensions []pkix.Extension, ca bool) 
 // If IsCA = true, KeyUsage extension MUST contain DigitalSignature and KeyCertSign. BasicConstraints will also be checked that it matches the `IsCA` bool.
 // If IsCA = false, KeyUsage extension MUST contain  only DigitalSignature
 // If `label` is nil then the Ueid extension check is omitted.
-func checkCertificateExtension(t *testing.T, extensions []pkix.Extension, label *[]byte, pubkey *client.DPEPubKey, isX509 bool, IssuerSki []byte, isCA bool) {
+func checkCertificateExtension(t *testing.T, extensions []pkix.Extension, label *[]byte, pubkey *client.DPEPubKey, isX509 bool, IssuerSki []byte, isCA bool, isCritical bool) {
 	t.Helper()
 
 	bc, err := getBasicConstraints(extensions)
@@ -360,7 +360,7 @@ func checkCertificateExtension(t *testing.T, extensions []pkix.Extension, label 
 	checkBasicConstraints(t, extensions, isCA)
 	checkExtendedKeyUsages(t, extensions, bc.IsCA)
 	if label != nil {
-		checkTcgUeidExtension(t, extensions, *label)
+		checkTcgUeidExtension(t, extensions, *label, isCritical)
 	}
 	if isX509 {
 		checkSubjectKeyIdentifierExtension(t, extensions, bc.IsCA, pubkey)
@@ -368,7 +368,7 @@ func checkCertificateExtension(t *testing.T, extensions []pkix.Extension, label 
 	}
 
 	// Check MultiTcbInfo Extension structure
-	_, err = getMultiTcbInfo(extensions)
+	_, err = getMultiTcbInfo(extensions, isCritical)
 	if err != nil {
 		t.Error(err)
 	}
@@ -595,7 +595,8 @@ func testCertifyKey(d client.TestDPEInstance, c client.DPEClient, t *testing.T, 
 		checkPubKey(t, profile, leafCert.PublicKey, *certifyKeyResp)
 
 		// Check all extensions
-		checkCertificateExtension(t, leafCert.Extensions, &params.Label, &certifyKeyResp.Pub, true, certChain[len(certChain)-1].SubjectKeyId, false)
+		isCritical := d.GetSupport().DpeInstanceMarkDiceExtensionsCritical
+		checkCertificateExtension(t, leafCert.Extensions, &params.Label, &certifyKeyResp.Pub, true, certChain[len(certChain)-1].SubjectKeyId, false, isCritical)
 
 		// Ensure full certificate chain has valid signatures
 		// This also checks certificate lifetime, signatures as part of cert chain validation

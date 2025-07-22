@@ -3,7 +3,7 @@ use super::CommandExecution;
 use crate::{
     context::{ActiveContextArgs, Context, ContextHandle, ContextType},
     dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
-    response::{DpeErrorCode, NewHandleResp, Response, ResponseHdr},
+    response::{DpeErrorCode, NewHandleResp, Response},
 };
 use bitflags::bitflags;
 #[cfg(not(feature = "no-cfi"))]
@@ -58,8 +58,8 @@ impl CommandExecution for InitCtxCmd {
         locality: u32,
     ) -> Result<Response, DpeErrorCode> {
         // This function can only be called once for non-simulation contexts.
-        if (self.flag_is_default() && dpe.has_initialized())
-            || (self.flag_is_simulation() && !dpe.support.simulation())
+        if (self.flag_is_default() && env.state.has_initialized())
+            || (self.flag_is_simulation() && !env.state.support.simulation())
         {
             return Err(DpeErrorCode::ArgumentNotSupported);
         }
@@ -73,36 +73,38 @@ impl CommandExecution for InitCtxCmd {
 
         cfg_if! {
             if #[cfg(not(feature = "no-cfi"))] {
-                cfi_assert!(!self.flag_is_default() || !dpe.has_initialized());
-                cfi_assert!(!self.flag_is_simulation() || dpe.support.simulation());
+                cfi_assert!(!self.flag_is_default() || !env.state.has_initialized());
+                cfi_assert!(!self.flag_is_simulation() || env.state.support.simulation());
                 cfi_assert!(self.flag_is_default() ^ self.flag_is_simulation());
             }
         }
 
-        let idx = dpe
+        let idx = env
+            .state
             .get_next_inactive_context_pos()
             .ok_or(DpeErrorCode::MaxTcis)?;
         let (context_type, handle) = if self.flag_is_default() {
-            dpe.has_initialized = true.into();
+            env.state.has_initialized = true.into();
             (ContextType::Normal, ContextHandle::default())
         } else {
             // Simulation.
             (ContextType::Simulation, dpe.generate_new_handle(env)?)
         };
 
-        dpe.contexts[idx].activate(&ActiveContextArgs {
+        env.state.contexts[idx].activate(&ActiveContextArgs {
             context_type,
             locality,
             handle: &handle,
             tci_type: 0,
             parent_idx: Context::ROOT_INDEX,
-            allow_x509: true,
             uses_internal_input_info: false,
             uses_internal_input_dice: false,
+            allow_export_cdi: true,
+            svn: 0,
         });
         Ok(Response::InitCtx(NewHandleResp {
             handle,
-            resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
+            resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
         }))
     }
 }
@@ -111,14 +113,13 @@ impl CommandExecution for InitCtxCmd {
 mod tests {
     use super::*;
     use crate::{
-        commands::{Command, CommandHdr},
+        commands::{tests::PROFILES, Command, CommandHdr},
         context::ContextState,
-        dpe_instance::tests::{TestTypes, TEST_LOCALITIES},
+        dpe_instance::tests::{test_env, TEST_LOCALITIES},
         support::Support,
+        DpeFlags, State,
     };
     use caliptra_cfi_lib_git::CfiCounter;
-    use crypto::OpensslCrypto;
-    use platform::default::DefaultPlatform;
     use zerocopy::IntoBytes;
 
     const TEST_INIT_CTX_CMD: InitCtxCmd = InitCtxCmd(0x1234_5678);
@@ -126,24 +127,24 @@ mod tests {
     #[test]
     fn test_deserialize_init_ctx() {
         CfiCounter::reset_for_test();
-        let mut command = CommandHdr::new_for_test(Command::INITIALIZE_CONTEXT)
-            .as_bytes()
-            .to_vec();
-        command.extend(TEST_INIT_CTX_CMD.as_bytes());
-        assert_eq!(
-            Ok(Command::InitCtx(&TEST_INIT_CTX_CMD)),
-            Command::deserialize(&command)
-        );
+        for p in PROFILES {
+            let mut command = CommandHdr::new(p, Command::INITIALIZE_CONTEXT)
+                .as_bytes()
+                .to_vec();
+            command.extend(TEST_INIT_CTX_CMD.as_bytes());
+            assert_eq!(
+                Ok(Command::InitCtx(&TEST_INIT_CTX_CMD)),
+                Command::deserialize(p, &command)
+            );
+        }
     }
 
     #[test]
     fn test_initialize_context() {
         CfiCounter::reset_for_test();
-        let mut env = DpeEnv::<TestTypes> {
-            crypto: OpensslCrypto::new(),
-            platform: DefaultPlatform,
-        };
-        let mut dpe = DpeInstance::new(&mut env, Support::default()).unwrap();
+        let mut state = State::default();
+        let mut env = test_env(&mut state);
+        let mut dpe = DpeInstance::new(&mut env).unwrap();
 
         let handle = match InitCtxCmd::new_use_default()
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
@@ -174,7 +175,8 @@ mod tests {
         );
 
         // Change to support simulation.
-        let mut dpe = DpeInstance::new(&mut env, Support::SIMULATION).unwrap();
+        *env.state = State::new(Support::SIMULATION, DpeFlags::empty());
+        let mut dpe = DpeInstance::new(&mut env).unwrap();
 
         // Try setting both flags.
         assert_eq!(
@@ -187,7 +189,7 @@ mod tests {
         );
 
         // Set all handles as active.
-        for context in dpe.contexts.iter_mut() {
+        for context in env.state.contexts.iter_mut() {
             context.state = ContextState::Active;
         }
 

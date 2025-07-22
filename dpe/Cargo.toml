@@ -7,8 +7,8 @@ edition = "2021"
 
 [features]
 default = ["dpe_profile_p256_sha256", "no-cfi"]
-dpe_profile_p256_sha256 = ["platform/dpe_profile_p256_sha256"]
-dpe_profile_p384_sha384 = ["platform/dpe_profile_p384_sha384"]
+dpe_profile_p256_sha256 = []
+dpe_profile_p384_sha384 = []
 # Run ARBITRARY_MAX_HANDLES=n cargo build --features arbitrary_max_handles to use this feature
 arbitrary_max_handles = []
 disable_simulation = []
@@ -38,11 +38,11 @@ cfg-if = "1.0.0"
 [dev-dependencies]
 asn1 = "0.13.0"
 caliptra-cfi-lib-git = { workspace = true, features = ["cfi-test"] }
-openssl.workspace = true
 x509-parser = "0.15.1"
-crypto = {path = "../crypto", features = ["deterministic_rand", "openssl"]}
-platform = {path = "../platform", default-features = false, features = ["openssl"]}
+crypto = {path = "../crypto", features = ["deterministic_rand", "rustcrypto"]}
+platform = {path = "../platform", default-features = false, features = ["rustcrypto"]}
 cms = "0.2.2"
 der = "0.7.8"
 spki = "0.7.2"
 rand = "0.8.5"
+openssl = "0.10.64"

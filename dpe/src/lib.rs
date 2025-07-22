@@ -7,12 +7,15 @@ Abstract:
 #![cfg_attr(not(test), no_std)]
 
 pub use dpe_instance::DpeInstance;
+pub use state::{DpeFlags, State};
+
 use zeroize::Zeroize;
 
 pub mod commands;
 pub mod context;
 pub mod dpe_instance;
 pub mod response;
+mod state;
 pub mod support;
 pub mod validation;
 
@@ -23,9 +26,9 @@ use response::GetProfileResp;
 pub mod tci;
 pub mod x509;
 
-use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes};
 
-pub use crypto::{ExportedCdiHandle, MAX_EXPORTED_CDI_SIZE};
+pub use crypto::{ecdsa::EcdsaAlgorithm, ExportedCdiHandle, MAX_EXPORTED_CDI_SIZE};
 
 // Max cert size returned by CertifyKey
 const MAX_CERT_SIZE: usize = 6144;
@@ -35,7 +38,7 @@ pub const MAX_HANDLES: usize = 24;
 include!(concat!(env!("OUT_DIR"), "/arbitrary_max_handles.rs"));
 
 const CURRENT_PROFILE_MAJOR_VERSION: u16 = 0;
-const CURRENT_PROFILE_MINOR_VERSION: u16 = 12;
+const CURRENT_PROFILE_MINOR_VERSION: u16 = 13;
 
 #[cfg(not(feature = "disable_internal_info"))]
 const INTERNAL_INPUT_INFO_SIZE: usize = size_of::<GetProfileResp>() + size_of::<u32>();
@@ -67,6 +70,10 @@ impl From<bool> for U8Bool {
     }
 }
 
+#[derive(
+    Copy, Clone, Debug, PartialEq, Eq, IntoBytes, TryFromBytes, KnownLayout, Immutable, Zeroize,
+)]
+#[repr(u32)]
 pub enum DpeProfile {
     // Note: Min profiles (1 & 2) are not supported by this implementation
     P256Sha256 = 3,
@@ -74,22 +81,23 @@ pub enum DpeProfile {
 }
 
 impl DpeProfile {
-    pub const fn get_tci_size(&self) -> usize {
+    pub const fn tci_size(&self) -> usize {
         match self {
             DpeProfile::P256Sha256 => 32,
             DpeProfile::P384Sha384 => 48,
         }
     }
-    pub const fn get_ecc_int_size(&self) -> usize {
-        self.get_tci_size()
+    pub const fn ecc_int_size(&self) -> usize {
+        self.tci_size()
     }
-    pub const fn get_hash_size(&self) -> usize {
-        self.get_tci_size()
+    pub const fn hash_size(&self) -> usize {
+        self.tci_size()
     }
-    pub const fn alg_len(&self) -> crypto::AlgLen {
+    pub const fn alg(&self) -> crypto::SignatureAlgorithm {
+        //TODO(clundin): add a Dpe profile for ml-dsa
         match self {
-            DpeProfile::P256Sha256 => crypto::AlgLen::Bit256,
-            DpeProfile::P384Sha384 => crypto::AlgLen::Bit384,
+            DpeProfile::P256Sha256 => crypto::SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit256),
+            DpeProfile::P384Sha384 => crypto::SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384),
         }
     }
 }

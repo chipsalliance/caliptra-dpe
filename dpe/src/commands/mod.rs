@@ -9,15 +9,17 @@ pub use self::destroy_context::DestroyCtxCmd;
 pub use self::get_certificate_chain::GetCertificateChainCmd;
 pub use self::initialize_context::InitCtxCmd;
 
-pub use self::certify_key::{CertifyKeyCmd, CertifyKeyFlags};
+pub use self::certify_key::{
+    CertifyKeyCommand, CertifyKeyFlags, CertifyKeyP256Cmd, CertifyKeyP384Cmd,
+};
 #[cfg(not(feature = "disable_rotate_context"))]
 pub use self::rotate_context::{RotateCtxCmd, RotateCtxFlags};
-pub use self::sign::{SignCmd, SignFlags};
+pub use self::sign::{SignCommand, SignFlags};
 
 use crate::{
     dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
     response::{DpeErrorCode, Response},
-    DPE_PROFILE,
+    DpeProfile,
 };
 use core::mem::size_of;
 use zerocopy::{FromBytes, Immutable, KnownLayout};
@@ -36,8 +38,8 @@ pub enum Command<'a> {
     GetProfile,
     InitCtx(&'a InitCtxCmd),
     DeriveContext(&'a DeriveContextCmd),
-    CertifyKey(&'a CertifyKeyCmd),
-    Sign(&'a SignCmd),
+    CertifyKey(CertifyKeyCommand<'a>),
+    Sign(SignCommand<'a>),
     #[cfg(not(feature = "disable_rotate_context"))]
     RotateCtx(&'a RotateCtxCmd),
     DestroyCtx(&'a DestroyCtxCmd),
@@ -60,16 +62,16 @@ impl Command<'_> {
     /// # Arguments
     ///
     /// * `bytes` - serialized command
-    pub fn deserialize(bytes: &[u8]) -> Result<Command, DpeErrorCode> {
-        let header = CommandHdr::try_from(bytes)?;
+    pub fn deserialize(profile: DpeProfile, bytes: &[u8]) -> Result<Command, DpeErrorCode> {
+        let header = CommandHdr::try_from_with_profile(profile, bytes)?;
         let bytes = &bytes[size_of::<CommandHdr>()..];
 
         match header.cmd_id {
             Command::GET_PROFILE => Ok(Command::GetProfile),
             Command::INITIALIZE_CONTEXT => Self::parse_command(Command::InitCtx, bytes),
             Command::DERIVE_CONTEXT => Self::parse_command(Command::DeriveContext, bytes),
-            Command::CERTIFY_KEY => Self::parse_command(Command::CertifyKey, bytes),
-            Command::SIGN => Self::parse_command(Command::Sign, bytes),
+            Command::CERTIFY_KEY => Ok(CertifyKeyCommand::deserialize(profile, bytes)?.into()),
+            Command::SIGN => Ok(Command::Sign(SignCommand::deserialize(profile, bytes)?)),
             #[cfg(not(feature = "disable_rotate_context"))]
             Command::ROTATE_CONTEXT_HANDLE => Self::parse_command(Command::RotateCtx, bytes),
             Command::DESTROY_CONTEXT => Self::parse_command(Command::DestroyCtx, bytes),
@@ -103,6 +105,12 @@ impl From<Command<'_>> for u32 {
             Command::DestroyCtx(_) => Command::DESTROY_CONTEXT,
             Command::GetCertificateChain(_) => Command::GET_CERTIFICATE_CHAIN,
         }
+    }
+}
+
+impl<'a> From<CertifyKeyCommand<'a>> for Command<'a> {
+    fn from(cmd: CertifyKeyCommand<'a>) -> Command<'a> {
+        Command::CertifyKey(cmd)
     }
 }
 
@@ -148,12 +156,22 @@ pub struct CommandHdr {
 impl CommandHdr {
     const DPE_COMMAND_MAGIC: u32 = u32::from_be_bytes(*b"DPEC");
 
-    pub fn new_for_test(cmd_id: u32) -> CommandHdr {
+    pub fn new(profile: DpeProfile, cmd_id: u32) -> CommandHdr {
         CommandHdr {
             magic: Self::DPE_COMMAND_MAGIC,
             cmd_id,
-            profile: DPE_PROFILE as u32,
+            profile: profile as u32,
         }
+    }
+
+    fn try_from_with_profile(profile: DpeProfile, raw: &[u8]) -> Result<Self, DpeErrorCode> {
+        let header = CommandHdr::try_from(raw)?;
+        // The client doesn't know what profile is implemented when calling the `GetProfile`
+        // command. But, all other commands should be directed towards the correct profile.
+        if header.cmd_id != Command::GET_PROFILE && header.profile != profile as u32 {
+            return Err(DpeErrorCode::InvalidCommand);
+        }
+        Ok(header)
     }
 }
 
@@ -166,11 +184,6 @@ impl TryFrom<&[u8]> for CommandHdr {
         if header.magic != Self::DPE_COMMAND_MAGIC {
             return Err(DpeErrorCode::InvalidCommand);
         }
-        // The client doesn't know what profile is implemented when calling the `GetProfile`
-        // command. But, all other commands should be directed towards the correct profile.
-        if header.cmd_id != Command::GET_PROFILE && header.profile != DPE_PROFILE as u32 {
-            return Err(DpeErrorCode::InvalidCommand);
-        }
         Ok(header)
     }
 }
@@ -180,29 +193,37 @@ pub mod tests {
     use super::*;
     use crate::{DpeProfile, DPE_PROFILE};
     use caliptra_cfi_lib_git::CfiCounter;
+    use platform::default::{DefaultPlatform, DefaultPlatformProfile};
     use zerocopy::IntoBytes;
 
     #[cfg(feature = "dpe_profile_p256_sha256")]
-    pub const TEST_DIGEST: [u8; DPE_PROFILE.get_hash_size()] = [
+    pub const TEST_DIGEST: [u8; DPE_PROFILE.hash_size()] = [
         1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
         26, 27, 28, 29, 30, 31, 32,
     ];
     #[cfg(feature = "dpe_profile_p384_sha384")]
-    pub const TEST_DIGEST: [u8; DPE_PROFILE.get_hash_size()] = [
+    pub const TEST_DIGEST: [u8; DPE_PROFILE.hash_size()] = [
         1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
         26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48,
     ];
 
     #[cfg(feature = "dpe_profile_p256_sha256")]
-    pub const TEST_LABEL: [u8; DPE_PROFILE.get_hash_size()] = [
+    pub const TEST_LABEL: [u8; DPE_PROFILE.hash_size()] = [
         32, 31, 30, 29, 28, 27, 26, 25, 24, 23, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10,
         9, 8, 7, 6, 5, 4, 3, 2, 1,
     ];
     #[cfg(feature = "dpe_profile_p384_sha384")]
-    pub const TEST_LABEL: [u8; DPE_PROFILE.get_hash_size()] = [
+    pub const TEST_LABEL: [u8; DPE_PROFILE.hash_size()] = [
         48, 47, 46, 45, 44, 43, 42, 41, 40, 39, 38, 37, 36, 35, 34, 33, 32, 31, 30, 29, 28, 27, 26,
         25, 24, 23, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1,
     ];
+
+    #[cfg(feature = "dpe_profile_p256_sha256")]
+    pub const DEFAULT_PLATFORM: DefaultPlatform = DefaultPlatform(DefaultPlatformProfile::P256);
+    #[cfg(feature = "dpe_profile_p384_sha384")]
+    pub const DEFAULT_PLATFORM: DefaultPlatform = DefaultPlatform(DefaultPlatformProfile::P384);
+
+    pub const PROFILES: [DpeProfile; 2] = [DpeProfile::P256Sha256, DpeProfile::P384Sha384];
 
     const DEFAULT_COMMAND: CommandHdr = CommandHdr {
         magic: CommandHdr::DPE_COMMAND_MAGIC,
@@ -213,11 +234,12 @@ pub mod tests {
     #[test]
     fn test_deserialize_get_profile() {
         CfiCounter::reset_for_test();
-        // Commands that can be deserialized.
-        assert_eq!(
-            Ok(Command::GetProfile),
-            Command::deserialize(CommandHdr::new_for_test(Command::GET_PROFILE).as_bytes())
-        );
+        for p in [DpeProfile::P256Sha256, DpeProfile::P384Sha384] {
+            assert_eq!(
+                Ok(Command::GetProfile),
+                Command::deserialize(p, CommandHdr::new(p, Command::GET_PROFILE).as_bytes())
+            );
+        }
     }
 
     #[test]
@@ -244,6 +266,7 @@ pub mod tests {
         );
 
         // Test wrong profile.
+        let profile = DPE_PROFILE;
         #[cfg(feature = "dpe_profile_p256_sha256")]
         let wrong_profile = DpeProfile::P384Sha384 as u32;
         #[cfg(feature = "dpe_profile_p384_sha384")]
@@ -251,8 +274,9 @@ pub mod tests {
 
         // All commands should check the profile except GetProfile.
         assert_eq!(
-            invalid_command,
-            CommandHdr::try_from(
+            Err(DpeErrorCode::InvalidCommand),
+            Command::deserialize(
+                profile,
                 CommandHdr {
                     profile: wrong_profile,
                     cmd_id: Command::INITIALIZE_CONTEXT,
@@ -263,7 +287,8 @@ pub mod tests {
         );
 
         // Make sure GetProfile doesn't care.
-        assert!(CommandHdr::try_from(
+        assert!(Command::deserialize(
+            profile,
             CommandHdr {
                 profile: wrong_profile,
                 ..DEFAULT_COMMAND

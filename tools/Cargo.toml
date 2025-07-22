@@ -8,19 +8,17 @@ edition = "2021"
 [features]
 default = ["dpe_profile_p256_sha256"]
 dpe_profile_p256_sha256 = [
-  "dpe/dpe_profile_p256_sha256",
-  "platform/dpe_profile_p256_sha256"
+  "dpe/dpe_profile_p256_sha256"
 ]
 dpe_profile_p384_sha384 = [
-  "dpe/dpe_profile_p384_sha384",
-  "platform/dpe_profile_p384_sha384"
+  "dpe/dpe_profile_p384_sha384"
 ]
 
 [dependencies]
 dpe = {path = "../dpe", default-features = false, features = ["no-cfi"]}
-crypto = {path = "../crypto", default-features = false, features = ["deterministic_rand", "openssl"]}
+crypto = {path = "../crypto", default-features = false, features = ["deterministic_rand", "rustcrypto"]}
 pem = "2"
-platform = {path = "../platform", default-features = false, features = ["openssl"]}
+platform = {path = "../platform", default-features = false, features = ["rustcrypto"]}
 zerocopy.workspace = true
 
 [[bin]]

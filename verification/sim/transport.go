@@ -86,6 +86,9 @@ func (s *DpeSimulator) PowerOn() error {
 	if s.supports.CdiExport {
 		args = append(args, "--supports-cdi-export")
 	}
+	if s.supports.DpeInstanceMarkDiceExtensionsCritical {
+		args = append(args, "--mark-dice-extensions-critical")
+	}
 
 	s.cmd = exec.Command(s.exePath, args...)
 	s.cmd.Stdout = os.Stdout

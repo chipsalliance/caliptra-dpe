@@ -6,8 +6,8 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-openssl = ["dep:openssl", "dep:hkdf", "dep:sha2"]
 rustcrypto = ["dep:hkdf", "dep:p256", "dep:p384", "dep:rand", "dep:sha2", "dep:base64ct", "dep:ecdsa", "dep:sec1"]
+ml-dsa = ["dep:ml-dsa", "dep:pkcs8"]
 deterministic_rand = ["dep:rand"]
 no-cfi = []
 
@@ -17,20 +17,23 @@ caliptra-cfi-lib-git = { workspace = true, default-features = false, features = 
 caliptra-cfi-derive-git.workspace = true
 ecdsa = { version = "0.16.9", optional = true, features = ["pem"]}
 hkdf = { version = "0.12.3", optional = true }
-openssl = {workspace = true, optional = true}
 p256 = {version= "0.13.2", optional = true}
 p384 = {version= "0.13.0", optional = true}
 rand = { version = "0.8.5", optional = true }
 sec1 = {version="0.7.3", optional = true}
 sha2 = { version = "0.10.6", optional = true }
 zeroize = { version = "1.6.0", default-features = false, features = ["zeroize_derive"] }
+ml-dsa = { version = "0.0.4", optional = true, features = ["pkcs8", "alloc"]}
+pkcs8 = { version = "0.10.2", optional = true, features = ["pem", "alloc"] }
+zerocopy.workspace = true
 
 [dev-dependencies]
 strum = "0.24"
 strum_macros = "0.24"
 
 [build-dependencies]
-openssl = {workspace = true, optional = true}
+ml-dsa = { version = "0.0.4", optional = true, features = ["pkcs8", "alloc"]}
+pkcs8 = { version = "0.10.2", optional = true, features = ["pem", "alloc"] }
 rand = {version = "0.8.5", optional = true}
 p256 = {version= "0.13.2", optional = true}
 p384 = {version= "0.13.0", optional = true}

@@ -5,7 +5,7 @@
 #[cfg(all(not(feature = "libfuzzer-sys"), not(feature = "afl")))]
 compile_error!("Either feature \"libfuzzer-sys\" or \"afl\" must be enabled!");
 
-use dpe::response::DpeErrorCode;
+use dpe::{response::DpeErrorCode, DpeFlags};
 #[cfg(feature = "libfuzzer-sys")]
 use libfuzzer_sys::fuzz_target;
 
@@ -16,15 +16,15 @@ use log::{trace, LevelFilter};
 use simplelog::{Config, WriteLogger};
 use std::fs::OpenOptions;
 
-use crypto::OpensslCrypto;
 use dpe::{
-    commands::Command,
     dpe_instance::{DpeEnv, DpeTypes},
     response::Response,
     support::Support,
     DpeInstance,
 };
-use platform::default::{DefaultPlatform, AUTO_INIT_LOCALITY};
+use platform::default::{DefaultPlatform, DefaultPlatformProfile, AUTO_INIT_LOCALITY};
+
+use crypto::Ecdsa256RustCrypto;
 
 // https://github.com/chipsalliance/caliptra-sw/issues/624 will consider matrix fuzzing.
 const SUPPORT: Support = Support::all();
@@ -32,7 +32,7 @@ const SUPPORT: Support = Support::all();
 struct SimTypes {}
 
 impl DpeTypes for SimTypes {
-    type Crypto<'a> = OpensslCrypto;
+    type Crypto<'a> = Ecdsa256RustCrypto;
     type Platform<'a> = DefaultPlatform;
 }
 
@@ -51,8 +51,14 @@ fn harness(data: &[u8]) {
             .unwrap(),
     );
 
+    let mut env = DpeEnv::<SimTypes> {
+        crypto: Ecdsa256RustCrypto::new(),
+        platform: DefaultPlatform(DefaultPlatformProfile::P256),
+        state: &mut dpe::State::new(SUPPORT, DpeFlags::empty()),
+    };
+    let mut dpe = DpeInstance::new(&mut env).unwrap();
     trace!("----------------------------------");
-    if let Ok(command) = Command::deserialize(data) {
+    if let Ok(command) = dpe.deserialize_command(data) {
         trace!("| Fuzzer's locality requested {command:x?}");
         trace!("|");
     } else {
@@ -61,12 +67,7 @@ fn harness(data: &[u8]) {
         return;
     }
 
-    let mut env = DpeEnv::<SimTypes> {
-        crypto: OpensslCrypto::new(),
-        platform: DefaultPlatform,
-    };
-    let mut dpe = DpeInstance::new(&mut env, SUPPORT).unwrap();
-    let prev_contexts = dpe.contexts;
+    let prev_contexts = env.state.contexts;
 
     // Hard-code working locality
     let response = dpe
@@ -79,15 +80,15 @@ fn harness(data: &[u8]) {
         Response::DeriveContext(ref res) => res.resp_hdr.status,
         Response::DeriveContextExportedCdi(ref res) => res.resp_hdr.status,
         Response::RotateCtx(ref res) => res.resp_hdr.status,
-        Response::CertifyKey(ref res) => res.resp_hdr.status,
-        Response::Sign(ref res) => res.resp_hdr.status,
+        Response::CertifyKey(ref res) => res.resp_hdr().status,
+        Response::Sign(ref res) => res.resp_hdr().status,
         Response::DestroyCtx(ref resp_hdr) => resp_hdr.status,
         Response::GetCertificateChain(ref res) => res.resp_hdr.status,
         Response::Error(ref resp_hdr) => resp_hdr.status,
     };
     // There are a few vendor error codes starting at 0x1000, so this can be a 2 bytes.
     trace!("| Response Code {response_code:#06x}");
-    if dpe.contexts != prev_contexts && response_code != 0 {
+    if env.state.contexts != prev_contexts && response_code != 0 {
         panic!("Error: DPE state changes upon a failed DPE command.");
     }
     if response_code == DpeErrorCode::InternalError.discriminant() {

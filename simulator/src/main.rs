@@ -1,11 +1,12 @@
 // Licensed under the Apache-2.0 license
 
-#[cfg(not(any(feature = "openssl", feature = "rustcrypto")))]
+#[cfg(not(feature = "rustcrypto"))]
 compile_error!("must provide a crypto implementation");
 
 use clap::Parser;
+use dpe::DpeFlags;
 use log::{error, info, trace, warn};
-use platform::default::DefaultPlatform;
+use platform::default::{DefaultPlatform, DefaultPlatformProfile};
 use std::fs;
 use std::io::{Error, ErrorKind, Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -13,18 +14,17 @@ use std::path::Path;
 use std::process;
 
 use dpe::{
-    commands::Command,
     dpe_instance::{DpeEnv, DpeTypes},
     response::Response,
     support::Support,
     DpeInstance,
 };
 
-#[cfg(feature = "rustcrypto")]
-use crypto::RustCryptoImpl;
+#[cfg(feature = "dpe_profile_p256_sha256")]
+use crypto::Ecdsa256RustCrypto;
 
-#[cfg(feature = "openssl")]
-use crypto::OpensslCrypto;
+#[cfg(feature = "dpe_profile_p384_sha384")]
+use crypto::Ecdsa384RustCrypto;
 
 const SOCKET_PATH: &str = "/tmp/dpe-sim.socket";
 
@@ -39,7 +39,7 @@ fn handle_request(dpe: &mut DpeInstance, env: &mut DpeEnv<impl DpeTypes>, stream
     };
 
     trace!("----------------------------------");
-    if let Ok(command) = Command::deserialize(cmd) {
+    if let Ok(command) = dpe.deserialize_command(cmd) {
         trace!("| Locality `{locality:#x}` requested {command:x?}",);
     } else {
         trace!("| Locality `{locality:#010x}` requested invalid command. {cmd:02x?}")
@@ -54,8 +54,8 @@ fn handle_request(dpe: &mut DpeInstance, env: &mut DpeEnv<impl DpeTypes>, stream
         Response::DeriveContext(ref res) => res.resp_hdr.status,
         Response::DeriveContextExportedCdi(ref res) => res.resp_hdr.status,
         Response::RotateCtx(ref res) => res.resp_hdr.status,
-        Response::CertifyKey(ref res) => res.resp_hdr.status,
-        Response::Sign(ref res) => res.resp_hdr.status,
+        Response::CertifyKey(ref res) => res.resp_hdr().status,
+        Response::Sign(ref res) => res.resp_hdr().status,
         Response::DestroyCtx(ref resp_hdr) => resp_hdr.status,
         Response::GetCertificateChain(ref res) => res.resp_hdr.status,
         Response::Error(ref resp_hdr) => resp_hdr.status,
@@ -116,15 +116,20 @@ struct Args {
     /// Supports the CDI_EXPORT extension to DeriveContext
     #[arg(long)]
     supports_cdi_export: bool,
+
+    /// Mark DICE extensions as critical
+    #[arg(long)]
+    mark_dice_extensions_critical: bool,
 }
 
 struct SimTypes {}
 
 impl DpeTypes for SimTypes {
-    #[cfg(feature = "rustcrypto")]
-    type Crypto<'a> = RustCryptoImpl;
-    #[cfg(feature = "openssl")]
-    type Crypto<'a> = OpensslCrypto;
+    #[cfg(feature = "dpe_profile_p256_sha256")]
+    type Crypto<'a> = Ecdsa256RustCrypto;
+
+    #[cfg(feature = "dpe_profile_p384_sha384")]
+    type Crypto<'a> = Ecdsa384RustCrypto;
 
     type Platform<'a> = DefaultPlatform;
 }
@@ -162,12 +167,22 @@ fn main() -> std::io::Result<()> {
     );
     support.set(Support::CDI_EXPORT, args.supports_cdi_export);
 
+    let mut flags = DpeFlags::empty();
+    flags.set(
+        DpeFlags::MARK_DICE_EXTENSIONS_CRITICAL,
+        args.mark_dice_extensions_critical,
+    );
+
+    #[cfg(feature = "dpe_profile_p256_sha256")]
+    let p = DefaultPlatformProfile::P256;
+    #[cfg(feature = "dpe_profile_p384_sha384")]
+    let p = DefaultPlatformProfile::P384;
     let mut env = DpeEnv::<SimTypes> {
         crypto: <SimTypes as DpeTypes>::Crypto::new(),
-        platform: DefaultPlatform,
+        platform: DefaultPlatform(p),
+        state: &mut dpe::State::new(support, flags),
     };
-
-    let mut dpe = DpeInstance::new(&mut env, support).map_err(|err| {
+    let mut dpe = DpeInstance::new(&mut env).map_err(|err| {
         Error::new(
             ErrorKind::Other,
             format!("{err:?} while creating new DPE instance"),

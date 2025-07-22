@@ -2,7 +2,7 @@
 use super::CommandExecution;
 use crate::{
     dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
-    response::{DpeErrorCode, GetCertificateChainResp, Response, ResponseHdr},
+    response::{DpeErrorCode, GetCertificateChainResp, Response},
 };
 #[cfg(not(feature = "no-cfi"))]
 use caliptra_cfi_derive_git::cfi_impl_fn;
@@ -27,7 +27,7 @@ impl CommandExecution for GetCertificateChainCmd {
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     fn execute(
         &self,
-        _dpe: &mut DpeInstance,
+        dpe: &mut DpeInstance,
         env: &mut DpeEnv<impl DpeTypes>,
         _locality: u32,
     ) -> Result<Response, DpeErrorCode> {
@@ -43,7 +43,7 @@ impl CommandExecution for GetCertificateChainCmd {
         Ok(Response::GetCertificateChain(GetCertificateChainResp {
             certificate_chain: cert_chunk,
             certificate_size: len,
-            resp_hdr: ResponseHdr::new(DpeErrorCode::NoError),
+            resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
         }))
     }
 }
@@ -52,13 +52,10 @@ impl CommandExecution for GetCertificateChainCmd {
 mod tests {
     use super::*;
     use crate::{
-        commands::{Command, CommandHdr},
-        dpe_instance::tests::{TestTypes, TEST_LOCALITIES},
-        support::test::SUPPORT,
+        commands::{tests::PROFILES, Command, CommandHdr},
+        dpe_instance::tests::{test_env, test_state, TEST_LOCALITIES},
     };
     use caliptra_cfi_lib_git::CfiCounter;
-    use crypto::OpensslCrypto;
-    use platform::default::DefaultPlatform;
     use zerocopy::IntoBytes;
 
     const TEST_GET_CERTIFICATE_CHAIN_CMD: GetCertificateChainCmd = GetCertificateChainCmd {
@@ -69,26 +66,26 @@ mod tests {
     #[test]
     fn test_deserialize_get_certificate_chain() {
         CfiCounter::reset_for_test();
-        let mut command = CommandHdr::new_for_test(Command::GET_CERTIFICATE_CHAIN)
-            .as_bytes()
-            .to_vec();
-        command.extend(TEST_GET_CERTIFICATE_CHAIN_CMD.as_bytes());
-        assert_eq!(
-            Ok(Command::GetCertificateChain(
-                &TEST_GET_CERTIFICATE_CHAIN_CMD
-            )),
-            Command::deserialize(&command)
-        );
+        for p in PROFILES {
+            let mut command = CommandHdr::new(p, Command::GET_CERTIFICATE_CHAIN)
+                .as_bytes()
+                .to_vec();
+            command.extend(TEST_GET_CERTIFICATE_CHAIN_CMD.as_bytes());
+            assert_eq!(
+                Ok(Command::GetCertificateChain(
+                    &TEST_GET_CERTIFICATE_CHAIN_CMD
+                )),
+                Command::deserialize(p, &command)
+            );
+        }
     }
 
     #[test]
     fn test_fails_if_size_greater_than_max_chunk_size() {
         CfiCounter::reset_for_test();
-        let mut env = DpeEnv::<TestTypes> {
-            crypto: OpensslCrypto::new(),
-            platform: DefaultPlatform,
-        };
-        let mut dpe = DpeInstance::new(&mut env, SUPPORT).unwrap();
+        let mut state = test_state();
+        let mut env = test_env(&mut state);
+        let mut dpe = DpeInstance::new(&mut env).unwrap();
 
         assert_eq!(
             Err(DpeErrorCode::InvalidArgument),

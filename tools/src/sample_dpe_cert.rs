@@ -1,11 +1,12 @@
 // Licensed under the Apache-2.0 license
 
+use dpe::DpeFlags;
+use platform::default::DefaultPlatformProfile;
 use std::env;
+
 use {
-    crypto::OpensslCrypto,
-    dpe::commands::{
-        self, CertifyKeyCmd, CertifyKeyFlags, CommandHdr, DeriveContextCmd, DeriveContextFlags,
-    },
+    crypto::RustCryptoImpl,
+    dpe::commands::{self, CertifyKeyFlags, DeriveContextCmd, DeriveContextFlags},
     dpe::context::ContextHandle,
     dpe::dpe_instance::{DpeEnv, DpeTypes},
     dpe::response::Response,
@@ -15,10 +16,17 @@ use {
     zerocopy::IntoBytes,
 };
 
+#[cfg(feature = "dpe_profile_p256_sha256")]
+use {commands::CertifyKeyP256Cmd as CertifyKeyCmd, crypto::Ecdsa256RustCrypto as RustCrypto};
+
+#[cfg(feature = "dpe_profile_p384_sha384")]
+use {commands::CertifyKeyP384Cmd as CertifyKeyCmd, crypto::Ecdsa384RustCrypto as RustCrypto};
+
 pub struct TestTypes {}
 
 impl DpeTypes for TestTypes {
-    type Crypto<'a> = OpensslCrypto;
+    type Crypto<'a> = RustCrypto;
+
     type Platform<'a> = DefaultPlatform;
 }
 
@@ -27,18 +35,21 @@ impl DpeTypes for TestTypes {
 fn add_tcb_info(
     dpe: &mut DpeInstance,
     env: &mut DpeEnv<TestTypes>,
-    data: &[u8; DPE_PROFILE.get_hash_size()],
+    data: &[u8; DPE_PROFILE.hash_size()],
     tci_type: u32,
+    svn: u32,
 ) {
     let cmd = DeriveContextCmd {
         handle: ContextHandle::default(),
         data: *data,
-        flags: DeriveContextFlags::INPUT_ALLOW_X509 | DeriveContextFlags::MAKE_DEFAULT,
+        flags: DeriveContextFlags::MAKE_DEFAULT,
         tci_type,
         target_locality: 0, // Unused since flag isn't set
+        svn,
     };
     let cmd_body = cmd.as_bytes().to_vec();
-    let cmd_hdr = CommandHdr::new_for_test(dpe::commands::Command::DERIVE_CONTEXT)
+    let cmd_hdr = dpe
+        .command_hdr(dpe::commands::Command::DERIVE_CONTEXT)
         .as_bytes()
         .to_vec();
     let mut command = cmd_hdr;
@@ -55,14 +66,15 @@ fn add_tcb_info(
 }
 
 fn certify_key(dpe: &mut DpeInstance, env: &mut DpeEnv<TestTypes>, format: u32) -> Vec<u8> {
-    let certify_key_cmd: CertifyKeyCmd = commands::CertifyKeyCmd {
+    let certify_key_cmd = CertifyKeyCmd {
         handle: ContextHandle::default(),
         flags: CertifyKeyFlags::empty(),
-        label: [0; DPE_PROFILE.get_hash_size()],
+        label: [0; DPE_PROFILE.hash_size()],
         format,
     };
     let cmd_body = certify_key_cmd.as_bytes().to_vec();
-    let cmd_hdr = CommandHdr::new_for_test(dpe::commands::Command::CERTIFY_KEY)
+    let cmd_hdr = dpe
+        .command_hdr(dpe::commands::Command::CERTIFY_KEY)
         .as_bytes()
         .to_vec();
     let mut command = cmd_hdr;
@@ -77,7 +89,7 @@ fn certify_key(dpe: &mut DpeInstance, env: &mut DpeEnv<TestTypes>, format: u32) 
         _ => panic!("Unexpected Response"),
     };
 
-    certify_key_response.cert[..certify_key_response.cert_size as usize].to_vec()
+    certify_key_response.cert().unwrap().to_vec()
 }
 
 fn main() {
@@ -85,29 +97,35 @@ fn main() {
     let (format, format_str) = if args.len() > 1 {
         let arg = &args[1];
         if arg == "csr" {
-            (commands::CertifyKeyCmd::FORMAT_CSR, "PKCS7")
+            (commands::CertifyKeyCommand::FORMAT_CSR, "PKCS7")
         } else if arg == "x509" {
-            (commands::CertifyKeyCmd::FORMAT_X509, "CERTIFICATE")
+            (commands::CertifyKeyCommand::FORMAT_X509, "CERTIFICATE")
         } else {
             panic!("Unsupported format {}", arg)
         }
     } else {
-        (commands::CertifyKeyCmd::FORMAT_X509, "CERTIFICATE")
+        (commands::CertifyKeyCommand::FORMAT_X509, "CERTIFICATE")
     };
     let support = Support::AUTO_INIT | Support::X509 | Support::CSR;
 
+    #[cfg(feature = "dpe_profile_p256_sha256")]
+    let p = DefaultPlatformProfile::P256;
+    #[cfg(feature = "dpe_profile_p384_sha384")]
+    let p = DefaultPlatformProfile::P384;
     let mut env = DpeEnv::<TestTypes> {
-        crypto: OpensslCrypto::new(),
-        platform: DefaultPlatform,
+        crypto: RustCryptoImpl::new(),
+        platform: DefaultPlatform(p),
+        state: &mut dpe::State::new(support, DpeFlags::empty()),
     };
 
-    let mut dpe = DpeInstance::new(&mut env, support).unwrap();
+    let mut dpe = DpeInstance::new(&mut env).unwrap();
 
     add_tcb_info(
         &mut dpe,
         &mut env,
-        &[0; DPE_PROFILE.get_hash_size()],
+        &[0; DPE_PROFILE.hash_size()],
         u32::from_be_bytes(*b"TEST"),
+        0,
     );
     let cert = certify_key(&mut dpe, &mut env, format);
 

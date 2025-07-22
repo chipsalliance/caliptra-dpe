@@ -16,7 +16,7 @@ const (
 	RespMagic uint32 = 0x44504552
 
 	CurrentProfileMajorVersion uint16 = 0
-	CurrentProfileMinorVersion uint16 = 12
+	CurrentProfileMinorVersion uint16 = 13
 )
 
 // CommandCode is a DPE command code
@@ -35,6 +35,10 @@ type Support struct {
 	InternalDice        bool
 	RetainParentContext bool
 	CdiExport           bool
+	// Not a compile time feature but a runtime feature to determine if all DICE extensions
+	// should be marked as critical.
+	// It's passed to the caliptra simulator using this flag, but there is no real "Support" feature this maps to.
+	DpeInstanceMarkDiceExtensionsCritical bool
 }
 
 // profileCommandCodes holds command codes for a specific revision of the
@@ -213,16 +217,16 @@ type DeriveContextFlags uint32
 
 // Supported flags to DeriveContext
 const (
-	InternalInputInfo   DeriveContextFlags = 1 << 31
-	InternalInputDice   DeriveContextFlags = 1 << 30
-	RetainParentContext DeriveContextFlags = 1 << 29
-	MakeDefault         DeriveContextFlags = 1 << 28
-	ChangeLocality      DeriveContextFlags = 1 << 27
-	InputAllowCA        DeriveContextFlags = 1 << 26
-	InputAllowX509      DeriveContextFlags = 1 << 25
-	Recursive           DeriveContextFlags = 1 << 24
-	CdiExport           DeriveContextFlags = 1 << 23
-	CreateCertificate   DeriveContextFlags = 1 << 22
+	InternalInputInfo       DeriveContextFlags = 1 << 31
+	InternalInputDice       DeriveContextFlags = 1 << 30
+	RetainParentContext     DeriveContextFlags = 1 << 29
+	MakeDefault             DeriveContextFlags = 1 << 28
+	ChangeLocality          DeriveContextFlags = 1 << 27
+	AllowNewContextToExport DeriveContextFlags = 1 << 26
+	InputAllowX509          DeriveContextFlags = 1 << 25
+	Recursive               DeriveContextFlags = 1 << 24
+	CdiExport               DeriveContextFlags = 1 << 23
+	CreateCertificate       DeriveContextFlags = 1 << 22
 )
 
 // DeriveContextReq is the input request to DeriveContext
@@ -232,6 +236,7 @@ type DeriveContextReq[Digest DigestAlgorithm] struct {
 	Flags          DeriveContextFlags
 	TciType        uint32
 	TargetLocality uint32
+	Svn            uint32
 }
 
 // DeriveContextResp is the output response from DeriveContext
@@ -665,6 +670,7 @@ func (c *DPEABI[_, Digest, _]) DeriveContext(handle *ContextHandle, inputData []
 		Flags:          flags,
 		TciType:        tciType,
 		TargetLocality: targetLocality,
+		Svn:            0,
 	}
 	resp, err := c.DeriveContextABI(&cmd)
 	if err != nil {

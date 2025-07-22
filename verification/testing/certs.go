@@ -44,13 +44,12 @@ type AuthorityKeyIdentifier struct {
 }
 
 // A tcg-dice-MultiTcbInfo extension.
-// This extension SHOULD be marked as critical.
-func getMultiTcbInfo(extensions []pkix.Extension) (TcgMultiTcbInfo, error) {
+func getMultiTcbInfo(extensions []pkix.Extension, isCritical bool) (TcgMultiTcbInfo, error) {
 	var multiTcbInfo TcgMultiTcbInfo
 	for _, ext := range extensions {
 		if ext.Id.Equal(OidExtensionTcgDiceMultiTcbInfo) {
-			if !ext.Critical {
-				return multiTcbInfo, fmt.Errorf("[ERROR]: TCG DICE MultiTcbInfo extension is not marked as CRITICAL")
+			if ext.Critical != isCritical {
+				return multiTcbInfo, fmt.Errorf("[ERROR]: TCG DICE MultiTcbInfo extension marked CRITICAL as %v but should be %v", ext.Critical, isCritical)
 			}
 			_, err := asn1.Unmarshal(ext.Value, &multiTcbInfo)
 			if err != nil {
@@ -113,12 +112,12 @@ func getAuthorityKeyIdentifier(extensions []pkix.Extension) (AuthorityKeyIdentif
 	return aki, nil
 }
 
-func getUeid(extensions []pkix.Extension) (TcgUeidExtension, error) {
+func getUeid(extensions []pkix.Extension, isCritical bool) (TcgUeidExtension, error) {
 	var ueid TcgUeidExtension
 	for _, ext := range extensions {
 		if ext.Id.Equal(OidExtensionTcgDiceUeid) {
-			if !ext.Critical {
-				return ueid, fmt.Errorf("[ERROR]: UEID extension is not marked as CRITICAL")
+			if ext.Critical != isCritical {
+				return ueid, fmt.Errorf("[ERROR]: UEID extension marked  CRITICAL as %v but it should be %v.", ext.Critical, isCritical)
 			}
 			_, err := asn1.Unmarshal(ext.Value, &ueid)
 			if err != nil {
@@ -171,7 +170,7 @@ func getKeyUsage(extensions []pkix.Extension) (x509.KeyUsage, error) {
 	return x509.KeyUsage(usage), nil
 }
 
-func getTcbInfoForHandle(c client.DPEClient, handle *client.ContextHandle) (*client.ContextHandle, DiceTcbInfo, error) {
+func getTcbInfoForHandle(d client.TestDPEInstance, c client.DPEClient, handle *client.ContextHandle) (*client.ContextHandle, DiceTcbInfo, error) {
 	outHandle := handle
 
 	// Get digest size
@@ -199,7 +198,8 @@ func getTcbInfoForHandle(c client.DPEClient, handle *client.ContextHandle) (*cli
 	}
 
 	// Get DICE information from MultiTcbInfo Extension
-	multiTcbInfo, err := getMultiTcbInfo(leafCert.Extensions)
+	isCritical := d.GetSupport().DpeInstanceMarkDiceExtensionsCritical
+	multiTcbInfo, err := getMultiTcbInfo(leafCert.Extensions, isCritical)
 	if err != nil {
 		return outHandle, DiceTcbInfo{}, err
 	}

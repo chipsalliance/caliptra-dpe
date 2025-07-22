@@ -4,6 +4,9 @@ use constant_time_eq::constant_time_eq_16;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes};
 use zeroize::Zeroize;
 
+#[cfg(test)]
+use std::fmt::Debug;
+
 #[repr(C, align(4))]
 #[derive(IntoBytes, TryFromBytes, KnownLayout, Immutable, Copy, Clone, PartialEq, Eq, Zeroize)]
 pub struct Context {
@@ -27,8 +30,8 @@ pub struct Context {
     pub uses_internal_input_info: U8Bool,
     /// Whether we should hash internal dice info consisting of the certificate chain when deriving the CDI
     pub uses_internal_input_dice: U8Bool,
-    /// Whether this context can emit certificates in X.509 format
-    pub allow_x509: U8Bool,
+    /// Whether this context can use the `EXPORT_CDI` feature.
+    pub allow_export_cdi: U8Bool,
     pub reserved: [u8; 2],
 }
 
@@ -37,6 +40,19 @@ const _: () = assert!(
     MAX_HANDLES <= 32,
     "More than 32 MAX_HANDLES will cause an arithmatic overflow."
 );
+
+#[cfg(test)]
+impl Debug for Context {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("Context")
+            .field("handle", &self.handle.0.get(0..2).unwrap())
+            .field("state", &self.state)
+            .field("chilren", &self.children)
+            .field("locality", &self.locality)
+            .field("parent_idx", &self.parent_idx)
+            .finish()
+    }
+}
 
 impl Default for Context {
     fn default() -> Self {
@@ -58,7 +74,9 @@ impl Context {
             locality: 0,
             uses_internal_input_info: U8Bool::new(false),
             uses_internal_input_dice: U8Bool::new(false),
-            allow_x509: U8Bool::new(false),
+            // The root context needs to
+            // allow_export_cdi or it is never enabled.
+            allow_export_cdi: U8Bool::new(true),
             reserved: [0; 2],
         }
     }
@@ -69,8 +87,8 @@ impl Context {
     pub fn uses_internal_input_dice(&self) -> bool {
         self.uses_internal_input_dice.get()
     }
-    pub fn allow_x509(&self) -> bool {
-        self.allow_x509.get()
+    pub fn allow_export_cdi(&self) -> bool {
+        self.allow_export_cdi.get()
     }
 
     /// Sets all values to an initialized state according to ActiveContextArgs
@@ -79,14 +97,15 @@ impl Context {
         self.tci = TciNodeData::new();
         self.tci.tci_type = args.tci_type;
         self.tci.locality = args.locality;
+        self.tci.svn = args.svn;
         self.children = 0;
         self.parent_idx = args.parent_idx;
         self.context_type = args.context_type;
         self.state = ContextState::Active;
         self.locality = args.locality;
-        self.allow_x509 = args.allow_x509.into();
         self.uses_internal_input_info = args.uses_internal_input_info.into();
         self.uses_internal_input_dice = args.uses_internal_input_dice.into();
+        self.allow_export_cdi = args.allow_export_cdi.into();
     }
 
     /// Destroy this context so it can no longer be used until it is re-initialized. The default
@@ -96,8 +115,10 @@ impl Context {
         self.state = ContextState::Inactive;
         self.uses_internal_input_info = false.into();
         self.uses_internal_input_dice = false.into();
-        self.allow_x509 = false.into();
         self.parent_idx = Self::ROOT_INDEX;
+        self.locality = 0;
+        self.children = 0;
+        self.handle = ContextHandle::new_invalid();
     }
 
     /// Return the list of children of the context with idx added.
@@ -106,8 +127,13 @@ impl Context {
         if idx >= MAX_HANDLES {
             return Err(DpeErrorCode::InternalError);
         }
-        let children_with_idx = self.children | 1 << idx;
+        let children_with_idx = self.children | (1 << idx);
         Ok(children_with_idx)
+    }
+
+    /// Check if `Self` has any children.
+    pub fn has_children(&self) -> bool {
+        self.children != 0
     }
 }
 
@@ -174,9 +200,10 @@ pub struct ActiveContextArgs<'a> {
     pub handle: &'a ContextHandle,
     pub tci_type: u32,
     pub parent_idx: u8,
-    pub allow_x509: bool,
     pub uses_internal_input_info: bool,
     pub uses_internal_input_dice: bool,
+    pub allow_export_cdi: bool,
+    pub svn: u32,
 }
 
 pub(crate) struct ChildToRootIter<'a> {

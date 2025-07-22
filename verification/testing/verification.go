@@ -117,9 +117,19 @@ var TestDeriveContextCdiExportTestCase = TestCase{
 	"DeriveContextCdiExport", TestDeriveContextCdiExport, []string{"CdiExport"},
 }
 
+// TestDeriveContextDisallowedChildCdiExportTestCase tests DeriveContext
+var TestDeriveContextDisallowedChildCdiExportTestCase = TestCase{
+	"DeriveContextCdiExportDisallowedChild", TestDeriveContextDisallowedChildCdiExport, []string{"CdiExport"},
+}
+
+// TestDeriveContextAllowedChildCdiExportTestCase tests DeriveContext
+var TestDeriveContextAllowedChildCdiExportTestCase = TestCase{
+	"DeriveContextCdiExportAllowedChild", TestDeriveContextAllowedChildCdiExport, []string{"CdiExport"},
+}
+
 // DeriveContextSimulationTestCase tests DeriveContext with Simulation contexts
 var DeriveContextSimulationTestCase = TestCase{
-	"DeriveContextSimulation", TestDeriveContextSimulation, []string{"AutoInit", "Simulation", "X509", "InternalDice", "InternalInfo", "RetainParentContext"},
+	"DeriveContextSimulation", TestDeriveContextSimulation, []string{"AutoInit", "Simulation", "InternalDice", "InternalInfo", "RetainParentContext"},
 }
 
 // DeriveContextMaxTCIsTestCase checks whether the number of derived contexts is limited by MAX_TCI_NODES attribute of the profile
@@ -134,7 +144,7 @@ var DeriveContextLocalityTestCase = TestCase{
 
 // DeriveContextPrivilegeEscalationTestCase tests that commands trying to use features that are unsupported by child context fail.
 var DeriveContextPrivilegeEscalationTestCase = TestCase{
-	"DeriveContext_PrivilegeEscalation", TestPrivilegesEscalation, []string{"AutoInit", "X509"},
+	"DeriveContext_PrivilegeEscalation", TestPrivilegesEscalation, []string{"AutoInit", "CdiExport"},
 }
 
 // DeriveContextInputFlagsTestCase tests DeriveContext with the input flags InternalDiceInfo and InternalInputInfo.
@@ -144,12 +154,12 @@ var DeriveContextInputFlagsTestCase = TestCase{
 
 // DeriveContextRecursiveTestCase tests DeriveContext with the Recursive input flag
 var DeriveContextRecursiveTestCase = TestCase{
-	"DeriveContext_Recursive", TestDeriveContextRecursive, []string{"AutoInit", "Recursive", "X509"},
+	"DeriveContext_Recursive", TestDeriveContextRecursive, []string{"AutoInit", "Recursive"},
 }
 
 // DeriveContextRecursiveOnDerivedContextsTestCase tests DeriveContext with the Recursive input flag on derived contexts
 var DeriveContextRecursiveOnDerivedContextsTestCase = TestCase{
-	"DeriveContext_RecursiveOnDerivedContexts", TestDeriveContextRecursiveOnDerivedContexts, []string{"AutoInit", "Recursive", "RetainParentContext", "X509", "RotateContext"},
+	"DeriveContext_RecursiveOnDerivedContexts", TestDeriveContextRecursiveOnDerivedContexts, []string{"AutoInit", "Recursive", "RetainParentContext", "RotateContext"},
 }
 
 // AllTestCases contains all DPE test cases
@@ -168,6 +178,8 @@ var AllTestCases = []TestCase{
 	InitializeContextSimulationTestCase,
 	InvalidHandleTestCase,
 	WrongLocalityTestCase,
+	TestDeriveContextCdiExportTestCase,
+	TestDeriveContextDisallowedChildCdiExportTestCase,
 }
 
 // IrreversibleTestCases contains test cases that are not reversible.

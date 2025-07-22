@@ -80,6 +80,56 @@ func TestDeriveContextCdiExport(d client.TestDPEInstance, c client.DPEClient, t 
 
 	simulation := false
 	handle := getInitialContextHandle(d, c, t, simulation)
+
+	profile, err := client.GetTransportProfile(d)
+	if err != nil {
+		t.Fatalf("Could not get profile: %v", err)
+	}
+	digestLen := profile.GetDigestSize()
+	resp, err = c.DeriveContext(handle, make([]byte, digestLen), client.CdiExport|client.CreateCertificate|client.RetainParentContext, 0, 0)
+	if err != nil {
+		t.Fatalf("[ERROR]: Error while exporting CdiExport: %s", err)
+	}
+
+	if resp.ExportedCdi == client.ExportedCdi(bytes.Repeat([]byte{0x0}, 32)) {
+		t.Fatalf("[FATAL]: Expected ExportedCdi field to be set but was %v", resp.ExportedCdi)
+	}
+	if resp.NewContextHandle != client.ContextHandle(bytes.Repeat([]byte{0xFF}, 16)) {
+		t.Fatalf("[FATAL]: Expected invalid NewContextHandle field but it was set to %v", resp.NewContextHandle)
+	}
+	if resp.ParentContextHandle == client.ContextHandle(bytes.Repeat([]byte{0xFF}, 16)) {
+		t.Fatalf("[FATAL]: Expected valid ParentContextHandle field but it was set to %v", resp.ParentContextHandle)
+	}
+	if resp.CertificateSize == 0 {
+		t.Fatalf("[FATAL]: Expected CertificateSize to be set but was set to %v", resp.CertificateSize)
+	}
+
+	// Check whether certificate is correctly encoded.
+	if _, err := x509.ParseCertificate(resp.NewCertificate); err != nil {
+		t.Fatalf("[FATAL]: Could not parse certificate using crypto/x509: %v", err)
+	}
+	leafCert := checkCertificateStructure(t, resp.NewCertificate)
+
+	certChainBytes, err := c.GetCertificateChain()
+	certChain := checkCertificateChain(t, certChainBytes)
+	if err != nil {
+		t.Fatalf("[FATAL]: Could not get Certificate Chain: %v", err)
+	}
+
+	// Check all extensions
+	isCritical := d.GetSupport().DpeInstanceMarkDiceExtensionsCritical
+	checkCertificateExtension(t, leafCert.Extensions, nil, nil, true, certChain[len(certChain)-1].SubjectKeyId, true, isCritical)
+
+	// Ensure full certificate chain has valid signatures
+	// This also checks certificate lifetime, signatures as part of cert chain validation
+	validateLeafCertChain(t, certChain, leafCert)
+}
+
+// TestDeriveContextDisallowedChildCdiExport tests calling DeriveContext with CdiExport flag set but the parent
+// never set the AllowNewContextToExport flag.
+func TestDeriveContextDisallowedChildCdiExport(d client.TestDPEInstance, c client.DPEClient, t *testing.T) {
+	simulation := false
+	handle := getInitialContextHandle(d, c, t, simulation)
 	defer func() {
 		c.DestroyContext(handle)
 	}()
@@ -89,7 +139,38 @@ func TestDeriveContextCdiExport(d client.TestDPEInstance, c client.DPEClient, t 
 		t.Fatalf("Could not get profile: %v", err)
 	}
 	digestLen := profile.GetDigestSize()
-	resp, err = c.DeriveContext(handle, make([]byte, digestLen), client.CdiExport|client.CreateCertificate, 0, 0)
+	res, err := c.DeriveContext(handle, make([]byte, digestLen), 0, 0, 0)
+	if err != nil {
+		t.Fatalf("[ERROR]: Error while making default: %s", err)
+	}
+
+	_, err = c.DeriveContext(&res.NewContextHandle, make([]byte, digestLen), client.CdiExport|client.CreateCertificate, 0, 0)
+	if err == nil {
+		t.Fatalf("[ERROR]: Expected error when exporting CDI: %s", err)
+	}
+}
+
+// TestDeriveContextAllowedChildCdiExport tests calling DeriveContext with CdiExport flag set and the parent
+// set the AllowNewContextToExport flag.
+func TestDeriveContextAllowedChildCdiExport(d client.TestDPEInstance, c client.DPEClient, t *testing.T) {
+	simulation := false
+	handle := getInitialContextHandle(d, c, t, simulation)
+
+	profile, err := client.GetTransportProfile(d)
+	if err != nil {
+		t.Fatalf("Could not get profile: %v", err)
+	}
+	digestLen := profile.GetDigestSize()
+	res, err := c.DeriveContext(handle, make([]byte, digestLen), client.AllowNewContextToExport, 0, 0)
+	if err != nil {
+		t.Fatalf("[ERROR]: Error while making default: %s", err)
+	}
+
+	resp, err := c.DeriveContext(&res.NewContextHandle, make([]byte, digestLen), client.CdiExport|client.CreateCertificate, 0, 0)
+	if err != nil {
+		t.Fatalf("[ERROR]: Expected error when exporting CDI: %s", err)
+	}
+
 	if err != nil {
 		t.Fatalf("[ERROR]: Error while exporting CdiExport: %s", err)
 	}
@@ -120,7 +201,8 @@ func TestDeriveContextCdiExport(d client.TestDPEInstance, c client.DPEClient, t 
 	}
 
 	// Check all extensions
-	checkCertificateExtension(t, leafCert.Extensions, nil, nil, true, certChain[len(certChain)-1].SubjectKeyId, true)
+	isCritical := d.GetSupport().DpeInstanceMarkDiceExtensionsCritical
+	checkCertificateExtension(t, leafCert.Extensions, nil, nil, true, certChain[len(certChain)-1].SubjectKeyId, true, isCritical)
 
 	// Ensure full certificate chain has valid signatures
 	// This also checks certificate lifetime, signatures as part of cert chain validation
@@ -226,8 +308,7 @@ func TestPrivilegesEscalation(d client.TestDPEInstance, c client.DPEClient, t *t
 	// Create a child TCI node with no special privileges
 	resp, err := c.DeriveContext(handle,
 		make([]byte, digestLen),
-		client.DeriveContextFlags(0),
-		0, 0)
+		0, 0, 0)
 	if err != nil {
 		t.Fatalf("[FATAL]: Error encountered in getting child context: %v", err)
 	}
@@ -236,17 +317,9 @@ func TestPrivilegesEscalation(d client.TestDPEInstance, c client.DPEClient, t *t
 	// Adding new privileges to child that parent does NOT possess will cause failure
 	_, err = c.DeriveContext(handle,
 		make([]byte, digestLen),
-		client.DeriveContextFlags(client.InputAllowX509|client.InputAllowCA),
+		client.DeriveContextFlags(client.AllowNewContextToExport|client.CdiExport|client.CreateCertificate),
 		0, 0)
 	if err == nil {
-		t.Errorf("[ERROR]: Should return %q, but returned no error", client.StatusInvalidArgument)
-	} else if !errors.Is(err, client.StatusInvalidArgument) {
-		t.Errorf("[ERROR]: Incorrect error type. Should return %q, but returned %q", client.StatusInvalidArgument, err)
-	}
-
-	// Similarly, when commands like CertifyKey try to make use of features/flags that are unsupported
-	// by child context, it will fail.
-	if _, err = c.CertifyKey(handle, make([]byte, digestLen), client.CertifyKeyX509, 0); err == nil {
 		t.Errorf("[ERROR]: Should return %q, but returned no error", client.StatusInvalidArgument)
 	} else if !errors.Is(err, client.StatusInvalidArgument) {
 		t.Errorf("[ERROR]: Incorrect error type. Should return %q, but returned %q", client.StatusInvalidArgument, err)
@@ -272,7 +345,7 @@ func TestMaxTCIs(d client.TestDPEInstance, c client.DPEClient, t *testing.T) {
 	maxTciCount := int(d.GetMaxTciNodes())
 	allowedTciCount := maxTciCount - 1 // since, a TCI node is already auto-initialized
 	for i := 0; i < allowedTciCount; i++ {
-		resp, err = c.DeriveContext(handle, make([]byte, digestSize), client.InputAllowX509, 0, 0)
+		resp, err = c.DeriveContext(handle, make([]byte, digestSize), 0, 0, 0)
 		if err != nil {
 			t.Fatalf("[FATAL]: Error encountered in executing derive child: %v", err)
 		}
@@ -407,7 +480,7 @@ func TestDeriveContextRecursive(d client.TestDPEInstance, c client.DPEClient, t 
 		tciValue[i] = byte(i)
 	}
 
-	handle, tcbInfo, err := getTcbInfoForHandle(c, handle)
+	handle, tcbInfo, err := getTcbInfoForHandle(d, c, handle)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -424,7 +497,7 @@ func TestDeriveContextRecursive(d client.TestDPEInstance, c client.DPEClient, t 
 
 	// Check current and cumulative measurement by CertifyKey
 	expectedCumulative := computeExpectedCumulative(lastCumulative, tciValue)
-	verifyMeasurements(c, t, handle, tciValue, expectedCumulative)
+	verifyMeasurements(d, c, t, handle, tciValue, expectedCumulative)
 }
 
 // TestDeriveContextRecursiveOnDerivedContexts tests the DeriveContext command with
@@ -468,7 +541,7 @@ func TestDeriveContextRecursiveOnDerivedContexts(d client.TestDPEInstance, c cli
 	}()
 
 	// DeriveContext with input data, tag it and check TCI_CUMULATIVE
-	childCtx, err := c.DeriveContext(parentHandle, tciValue, client.DeriveContextFlags(client.RetainParentContext|client.InputAllowX509), 0, 0)
+	childCtx, err := c.DeriveContext(parentHandle, tciValue, client.DeriveContextFlags(client.RetainParentContext), 0, 0)
 	if err != nil {
 		t.Fatalf("[FATAL]: Error while creating default child handle in default context: %s", err)
 	}
@@ -484,7 +557,7 @@ func TestDeriveContextRecursiveOnDerivedContexts(d client.TestDPEInstance, c cli
 		}
 	}()
 
-	childHandle, childTcbInfo, err := getTcbInfoForHandle(c, childHandle)
+	childHandle, childTcbInfo, err := getTcbInfoForHandle(d, c, childHandle)
 	if err != nil {
 		t.Fatalf("[FATAL]: Could not get TcbInfo: %v", err)
 	}
@@ -510,7 +583,7 @@ func TestDeriveContextRecursiveOnDerivedContexts(d client.TestDPEInstance, c cli
 	}
 	childHandle = &resp.NewContextHandle
 
-	childHandle, childTcbInfo, err = getTcbInfoForHandle(c, childHandle)
+	childHandle, childTcbInfo, err = getTcbInfoForHandle(d, c, childHandle)
 	if err != nil {
 		t.Fatalf("[FATAL]: Could not get TcbInfo: %v", err)
 	}
@@ -538,8 +611,8 @@ func computeExpectedCumulative(lastCumulative []byte, tciValue []byte) []byte {
 	return hasher.Sum(nil)
 }
 
-func verifyMeasurements(c client.DPEClient, t *testing.T, handle *client.ContextHandle, expectedCurrent []byte, expectedCumulative []byte) {
-	_, tcbInfo, err := getTcbInfoForHandle(c, handle)
+func verifyMeasurements(d client.TestDPEInstance, c client.DPEClient, t *testing.T, handle *client.ContextHandle, expectedCurrent []byte, expectedCumulative []byte) {
+	_, tcbInfo, err := getTcbInfoForHandle(d, c, handle)
 	if err != nil {
 		t.Fatal(err)
 	}
