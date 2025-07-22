@@ -380,12 +380,16 @@ impl CommandExecution for DeriveContextCommand<'_> {
                         dice_extensions_are_critical: env.state.flags.contains(DpeFlags::MARK_DICE_EXTENSIONS_CRITICAL),
                     };
                     let mut cert = [0; MAX_CERT_SIZE];
-                    let CreateDpeCertResult { cert_size, exported_cdi_handle, .. } = create_exported_dpe_cert(
+                    let mut result = CreateDpeCertResult::default();
+                    create_exported_dpe_cert(
                         &args,
                         dpe,
                         env,
                         &mut cert,
+                        &mut result,
                     )?;
+
+                    let CreateDpeCertResult { cert_size, exported_cdi_handle, .. } = result;
 
                     if !flags.retains_parent() && !env.state.contexts[parent_idx].has_children() {
                         // When the parent is not retained and there are no other children,

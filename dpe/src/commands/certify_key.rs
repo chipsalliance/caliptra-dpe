@@ -156,15 +156,15 @@ impl CommandExecution for CertifyKeyCommand<'_> {
         };
         let mut cert = [0; MAX_CERT_SIZE];
 
-        let CreateDpeCertResult {
-            cert_size, pub_key, ..
-        } = match format {
+        let mut result = CreateDpeCertResult::default();
+
+        match format {
             Self::FORMAT_X509 => {
                 cfg_if! {
                     if #[cfg(not(feature = "disable_x509"))] {
                         #[cfg(not(feature = "no-cfi"))]
                         cfi_assert_eq(format, Self::FORMAT_X509);
-                        create_dpe_cert(&args, dpe, env, &mut cert)
+                        create_dpe_cert(&args, dpe, env, &mut cert, &mut result)
                     } else {
                         Err(DpeErrorCode::ArgumentNotSupported)
                     }
@@ -175,7 +175,7 @@ impl CommandExecution for CertifyKeyCommand<'_> {
                     if #[cfg(not(feature = "disable_csr"))] {
                         #[cfg(not(feature = "no-cfi"))]
                         cfi_assert_eq(format, Self::FORMAT_CSR);
-                        crate::x509::create_dpe_csr(&args, dpe, env, &mut cert)
+                        crate::x509::create_dpe_csr(&args, dpe, env, &mut cert, &mut result)
                     } else {
                         Err(DpeErrorCode::ArgumentNotSupported)
                     }
@@ -183,6 +183,10 @@ impl CommandExecution for CertifyKeyCommand<'_> {
             }
             _ => return Err(DpeErrorCode::InvalidArgument),
         }?;
+
+        let CreateDpeCertResult {
+            cert_size, pub_key, ..
+        } = result;
 
         let mut response = match pub_key {
             #[cfg(feature = "dpe_profile_p256_sha256")]
