@@ -38,9 +38,9 @@ pub fn hkdf_derive_cdi(
             // This block assumes that the size of `xi` is the same as `SHA256`.
             const _: () = assert!(MldsaAlgorithm::ExternalMu87.seed_size() == 256 / 8);
 
-            let hk = Hkdf::<Sha256>::new(Some(info), measurement.bytes());
+            let hk = Hkdf::<Sha256>::new(Some(info), measurement.as_slice());
             let mut cdi = [0u8; MldsaAlgorithm::ExternalMu87.seed_size()];
-            hk.expand(measurement.bytes(), &mut cdi)?;
+            hk.expand(measurement.as_slice(), &mut cdi)?;
 
             Ok(cdi.to_vec())
         }

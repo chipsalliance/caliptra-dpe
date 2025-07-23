@@ -31,6 +31,8 @@ pub enum SignCommand<'a> {
     P256(&'a SignP256Cmd),
     #[cfg(feature = "dpe_profile_p384_sha384")]
     P384(&'a SignP384Cmd),
+    #[cfg(feature = "ml-dsa")]
+    ExternalMu87(&'a SignMldsaExternalMu87Cmd),
 }
 
 impl SignCommand<'_> {
@@ -40,7 +42,7 @@ impl SignCommand<'_> {
             DpeProfile::P256Sha256 => SignCommand::parse_command(SignCommand::P256, bytes),
             #[cfg(feature = "dpe_profile_p384_sha384")]
             DpeProfile::P384Sha384 => SignCommand::parse_command(SignCommand::P384, bytes),
-            _ => Err(DpeErrorCode::InvalidArgument)?,
+            _ => todo!("Add ML-DSA sign support"),
         }
     }
     pub fn parse_command<'a, T: FromBytes + KnownLayout + Immutable + 'a>(
@@ -66,6 +68,8 @@ impl CommandExecution for SignCommand<'_> {
             SignCommand::P256(cmd) => cmd.execute(dpe, env, locality),
             #[cfg(feature = "dpe_profile_p384_sha384")]
             SignCommand::P384(cmd) => cmd.execute(dpe, env, locality),
+            #[cfg(feature = "ml-dsa")]
+            _ => todo!("Add ML-DSA sign support"),
         }
     }
 }
@@ -135,7 +139,7 @@ fn execute(
         _ => Err(DpeErrorCode::InvalidArgument)?,
     };
 
-    let mut response = match sign(dpe, env, idx, label, &digest)? {
+    let mut response: SignResp = match sign(dpe, env, idx, label, &digest)? {
         #[cfg(feature = "dpe_profile_p256_sha256")]
         Signature::Ecdsa(EcdsaSignature::Ecdsa256(sig)) => {
             use crate::response::SignP256Resp;
@@ -192,6 +196,15 @@ impl CommandExecution for SignP256Cmd {
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, IntoBytes, FromBytes, Immutable, KnownLayout)]
 pub struct SignP384Cmd {
+    pub handle: ContextHandle,
+    pub label: [u8; 48],
+    pub flags: SignFlags,
+    pub digest: [u8; 48],
+}
+
+#[repr(C)]
+#[derive(Debug, PartialEq, Eq, IntoBytes, FromBytes, Immutable, KnownLayout)]
+pub struct SignMldsaExternalMu87Cmd {
     pub handle: ContextHandle,
     pub label: [u8; 48],
     pub flags: SignFlags,

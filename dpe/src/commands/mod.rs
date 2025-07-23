@@ -12,6 +12,10 @@ pub use self::initialize_context::InitCtxCmd;
 pub use self::certify_key::{
     CertifyKeyCommand, CertifyKeyFlags, CertifyKeyP256Cmd, CertifyKeyP384Cmd,
 };
+
+#[cfg(feature = "ml-dsa")]
+pub use self::certify_key::CertifyKeyMldsaExternalMu87Cmd;
+
 #[cfg(not(feature = "disable_rotate_context"))]
 pub use self::rotate_context::{RotateCtxCmd, RotateCtxFlags};
 pub use self::sign::{SignCommand, SignFlags};
