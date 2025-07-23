@@ -281,8 +281,8 @@ mod tests {
     #[cfg(feature = "ml-dsa")]
     use crypto::ml_dsa::{MldsaAlgorithm, MldsaPublicKey};
     use crypto::{
-        ecdsa::{EcdsaAlgorithm, EcdsaPub, EcdsaPubKey},
-        Crypto, CryptoSuite, PubKey, SignatureAlgorithm, SignatureType,
+        ecdsa::{EcdsaAlgorithm, EcdsaPub},
+        Crypto, CryptoSuite, PubKey, SignatureAlgorithm,
     };
     use der::{Decode, Encode};
     use openssl::{
