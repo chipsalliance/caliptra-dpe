@@ -5,7 +5,6 @@ use crate::{
     context::{ActiveContextArgs, Context, ContextHandle, ContextState, ContextType},
     dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
     response::{DeriveContextExportedCdiResp, DeriveContextResp, DpeErrorCode, Response},
-    tci::TciMeasurement,
     x509::{create_exported_dpe_cert, CreateDpeCertArgs, CreateDpeCertResult},
     DpeFlags, State, DPE_PROFILE, MAX_CERT_SIZE,
 };
@@ -257,7 +256,7 @@ impl CommandExecution for DeriveContextCmd {
                     dpe.add_tci_measurement(
                         env,
                         &mut tmp_context,
-                        &TciMeasurement(self.data),
+                        &self.data.into(),
                         target_locality,
                     )?;
 
@@ -394,7 +393,7 @@ impl CommandExecution for DeriveContextCmd {
         dpe.add_tci_measurement(
             env,
             &mut tmp_child_context,
-            &TciMeasurement(self.data),
+            &self.data.into(),
             target_locality,
         )?;
 
@@ -411,6 +410,19 @@ impl CommandExecution for DeriveContextCmd {
             parent_handle: env.state.contexts[parent_idx].handle,
             resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
         }))
+    }
+}
+
+impl Default for DeriveContextCmd {
+    fn default() -> Self {
+        Self {
+            handle: ContextHandle::default(),
+            data: [0; DPE_PROFILE.hash_size()],
+            flags: DeriveContextFlags(0),
+            tci_type: 0,
+            target_locality: 0,
+            svn: 0,
+        }
     }
 }
 
@@ -903,12 +915,8 @@ mod tests {
     fn test_safe_to_make_default() {
         CfiCounter::reset_for_test();
         let mut make_default_in_0 = DeriveContextCmd {
-            handle: ContextHandle::default(),
-            data: TciMeasurement::default().0,
             flags: DeriveContextFlags::MAKE_DEFAULT,
-            tci_type: 0,
-            target_locality: 0,
-            svn: 0,
+            ..Default::default()
         };
         let parent_idx = 0;
         // No default context.
@@ -943,14 +951,7 @@ mod tests {
     #[test]
     fn test_safe_to_make_non_default() {
         CfiCounter::reset_for_test();
-        let non_default = DeriveContextCmd {
-            handle: ContextHandle::default(),
-            data: TciMeasurement::default().0,
-            flags: DeriveContextFlags(0),
-            tci_type: 0,
-            target_locality: 0,
-            svn: 0,
-        };
+        let non_default = DeriveContextCmd::default();
         let parent_idx = 0;
         // No default context.
         assert!(non_default.safe_to_make_non_default(parent_idx, None));
@@ -972,12 +973,8 @@ mod tests {
 
         assert_eq!(
             DeriveContextCmd {
-                handle: ContextHandle::default(),
-                data: TciMeasurement::default().0,
                 flags: DeriveContextFlags::RETAIN_PARENT_CONTEXT,
-                tci_type: 0,
-                target_locality: 0,
-                svn: 0,
+                ..Default::default()
             }
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0]),
             Err(DpeErrorCode::InvalidArgument)
