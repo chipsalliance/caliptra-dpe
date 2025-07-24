@@ -81,6 +81,8 @@ pub enum DeriveContextCommand<'a> {
     P256(&'a DeriveContextP256Cmd),
     #[cfg(feature = "dpe_profile_p384_sha384")]
     P384(&'a DeriveContextP384Cmd),
+    #[cfg(feature = "ml-dsa")]
+    ExternalMu87(&'a DeriveContextMldsaExternalMu87Cmd),
 }
 
 impl DeriveContextCommand<'_> {
@@ -96,6 +98,10 @@ impl DeriveContextCommand<'_> {
             #[cfg(feature = "dpe_profile_p384_sha384")]
             DpeProfile::P384Sha384 => {
                 DeriveContextCommand::parse_command(DeriveContextCommand::P384, bytes)
+            }
+            #[cfg(feature = "ml-dsa")]
+            DpeProfile::Mldsa87ExternalMu => {
+                DeriveContextCommand::parse_command(DeriveContextCommand::ExternalMu87, bytes)
             }
             _ => Err(DpeErrorCode::InvalidArgument)?,
         }
@@ -116,6 +122,8 @@ impl DeriveContextCommand<'_> {
             DeriveContextCommand::P256(cmd) => cmd.as_bytes(),
             #[cfg(feature = "dpe_profile_p384_sha384")]
             DeriveContextCommand::P384(cmd) => cmd.as_bytes(),
+            #[cfg(feature = "ml-dsa")]
+            DeriveContextCommand::ExternalMu87(cmd) => cmd.as_bytes(),
         }
     }
 
@@ -240,6 +248,15 @@ impl CommandExecution for DeriveContextCommand<'_> {
             ),
             #[cfg(feature = "dpe_profile_p384_sha384")]
             DeriveContextCommand::P384(cmd) => (
+                &cmd.handle,
+                Digest::from(cmd.data),
+                cmd.flags,
+                cmd.tci_type,
+                cmd.target_locality,
+                cmd.svn,
+            ),
+            #[cfg(feature = "ml-dsa")]
+            DeriveContextCommand::ExternalMu87(cmd) => (
                 &cmd.handle,
                 Digest::from(cmd.data),
                 cmd.flags,
@@ -470,6 +487,13 @@ impl<'a> From<&'a DeriveContextP384Cmd> for DeriveContextCommand<'a> {
     }
 }
 
+#[cfg(feature = "ml-dsa")]
+impl<'a> From<&'a DeriveContextMldsaExternalMu87Cmd> for DeriveContextCommand<'a> {
+    fn from(value: &'a DeriveContextMldsaExternalMu87Cmd) -> Self {
+        DeriveContextCommand::ExternalMu87(value)
+    }
+}
+
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct DeriveContextP256Cmd {
@@ -533,6 +557,43 @@ impl Default for DeriveContextP384Cmd {
 
 #[cfg(feature = "dpe_profile_p384_sha384")]
 impl CommandExecution for DeriveContextP384Cmd {
+    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    fn execute(
+        &self,
+        dpe: &mut DpeInstance,
+        env: &mut DpeEnv<impl DpeTypes>,
+        locality: u32,
+    ) -> Result<Response, DpeErrorCode> {
+        DeriveContextCommand::from(self).execute(dpe, env, locality)
+    }
+}
+
+#[repr(C)]
+#[derive(Debug, PartialEq, Eq, FromBytes, IntoBytes, Immutable, KnownLayout)]
+pub struct DeriveContextMldsaExternalMu87Cmd {
+    pub handle: ContextHandle,
+    pub data: [u8; 48],
+    pub flags: DeriveContextFlags,
+    pub tci_type: u32,
+    pub target_locality: u32,
+    pub svn: u32,
+}
+
+impl Default for DeriveContextMldsaExternalMu87Cmd {
+    fn default() -> Self {
+        Self {
+            handle: ContextHandle::default(),
+            data: [0; 48],
+            flags: DeriveContextFlags(0),
+            tci_type: 0,
+            target_locality: 0,
+            svn: 0,
+        }
+    }
+}
+
+#[cfg(feature = "ml-dsa")]
+impl CommandExecution for DeriveContextMldsaExternalMu87Cmd {
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     fn execute(
         &self,

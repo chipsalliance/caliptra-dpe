@@ -31,6 +31,7 @@ use {
 #[cfg(feature = "dpe_mldsa")]
 use {
     commands::CertifyKeyMldsaExternalMu87Cmd as CertifyKeyCmd,
+    commands::DeriveContextMldsaExternalMu87Cmd as DeriveContextCmd,
     crypto::MldsaRustCrypto as RustCrypto,
 };
 
