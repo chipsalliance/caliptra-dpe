@@ -4,7 +4,9 @@ Licensed under the Apache-2.0 license.
 Abstract:
     DPE Commands and deserialization.
 --*/
-pub use self::derive_context::{DeriveContextCmd, DeriveContextFlags};
+pub use self::derive_context::{
+    DeriveContextCommand, DeriveContextFlags, DeriveContextP256Cmd, DeriveContextP384Cmd,
+};
 pub use self::destroy_context::DestroyCtxCmd;
 pub use self::get_certificate_chain::GetCertificateChainCmd;
 pub use self::initialize_context::InitCtxCmd;
@@ -14,7 +16,9 @@ pub use self::certify_key::{
 };
 
 #[cfg(feature = "ml-dsa")]
-pub use self::certify_key::CertifyKeyMldsaExternalMu87Cmd;
+pub use self::{
+    certify_key::CertifyKeyMldsaExternalMu87Cmd, derive_context::DeriveContextMldsaExternalMu87Cmd,
+};
 
 #[cfg(not(feature = "disable_rotate_context"))]
 pub use self::rotate_context::{RotateCtxCmd, RotateCtxFlags};
@@ -41,7 +45,7 @@ mod sign;
 pub enum Command<'a> {
     GetProfile,
     InitCtx(&'a InitCtxCmd),
-    DeriveContext(&'a DeriveContextCmd),
+    DeriveContext(DeriveContextCommand<'a>),
     CertifyKey(CertifyKeyCommand<'a>),
     Sign(SignCommand<'a>),
     #[cfg(not(feature = "disable_rotate_context"))]
@@ -73,7 +77,9 @@ impl Command<'_> {
         match header.cmd_id {
             Command::GET_PROFILE => Ok(Command::GetProfile),
             Command::INITIALIZE_CONTEXT => Self::parse_command(Command::InitCtx, bytes),
-            Command::DERIVE_CONTEXT => Self::parse_command(Command::DeriveContext, bytes),
+            Command::DERIVE_CONTEXT => {
+                Ok(DeriveContextCommand::deserialize(profile, bytes)?.into())
+            }
             Command::CERTIFY_KEY => Ok(CertifyKeyCommand::deserialize(profile, bytes)?.into()),
             Command::SIGN => Ok(Command::Sign(SignCommand::deserialize(profile, bytes)?)),
             #[cfg(not(feature = "disable_rotate_context"))]
@@ -109,6 +115,12 @@ impl From<Command<'_>> for u32 {
             Command::DestroyCtx(_) => Command::DESTROY_CONTEXT,
             Command::GetCertificateChain(_) => Command::GET_CERTIFICATE_CHAIN,
         }
+    }
+}
+
+impl<'a> From<DeriveContextCommand<'a>> for Command<'a> {
+    fn from(cmd: DeriveContextCommand<'a>) -> Command<'a> {
+        Command::DeriveContext(cmd)
     }
 }
 

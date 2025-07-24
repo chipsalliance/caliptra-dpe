@@ -398,7 +398,11 @@ impl Iterator for FlagsIter {
 pub mod tests {
     use super::*;
     use crate::commands::tests::DEFAULT_PLATFORM;
-    use crate::commands::{DeriveContextCmd, DeriveContextFlags};
+    use crate::commands::DeriveContextFlags;
+    #[cfg(feature = "dpe_profile_p256_sha256")]
+    use crate::commands::DeriveContextP256Cmd as DeriveContextCmd;
+    #[cfg(feature = "dpe_profile_p384_sha384")]
+    use crate::commands::DeriveContextP384Cmd as DeriveContextCmd;
     use crate::response::NewHandleResp;
     use crate::support::test::SUPPORT;
     use crate::{DpeFlags, CURRENT_PROFILE_MAJOR_VERSION};

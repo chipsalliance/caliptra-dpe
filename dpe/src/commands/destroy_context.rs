@@ -99,10 +99,12 @@ impl CommandExecution for DestroyCtxCmd {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "dpe_profile_p256_sha256")]
+    use crate::commands::DeriveContextP256Cmd as DeriveContextCmd;
+    #[cfg(feature = "dpe_profile_p384_sha384")]
+    use crate::commands::DeriveContextP384Cmd as DeriveContextCmd;
     use crate::{
-        commands::{
-            tests::PROFILES, Command, CommandHdr, DeriveContextCmd, DeriveContextFlags, InitCtxCmd,
-        },
+        commands::{tests::PROFILES, Command, CommandHdr, DeriveContextFlags, InitCtxCmd},
         context::{Context, ContextState},
         dpe_instance::tests::{
             test_env, test_state, SIMULATION_HANDLE, TEST_HANDLE, TEST_LOCALITIES,
