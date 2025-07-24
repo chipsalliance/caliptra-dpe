@@ -20,6 +20,10 @@ function build_rust_targets() {
   cargo build --manifest-path dpe/Cargo.toml --features=$profile --no-default-features
   cargo build --manifest-path simulator/Cargo.toml --features=$profile,rustcrypto --no-default-features
   cargo build --manifest-path tools/Cargo.toml --features=$profile --no-default-features
+}
+
+function lint_rust_targets() {
+  profile=$1
 
   cargo clippy --manifest-path crypto/Cargo.toml --no-default-features -- --deny=warnings
   cargo clippy --manifest-path platform/Cargo.toml --no-default-features -- --deny=warnings
@@ -68,15 +72,22 @@ function run_verification_tests() {
 format_rust_targets
 format_go_targets
 
+# Build check for ML-DSA
+# TODO: Tests + Linting
+build_rust_targets ml-dsa
+
 # Run tests for P256 profile
 build_rust_targets dpe_profile_p256_sha256
+lint_rust_targets dpe_profile_p256_sha256
 test_rust_targets dpe_profile_p256_sha256
 run_verification_tests dpe_profile_p256_sha256 rustcrypto
 
 # Run tests for P384 profile
 build_rust_targets dpe_profile_p384_sha384
+lint_rust_targets dpe_profile_p384_sha384
 test_rust_targets dpe_profile_p384_sha384
 run_verification_tests dpe_profile_p384_sha384 rustcrypto
+
 
 # Build fuzz target
 ( cd dpe/fuzz

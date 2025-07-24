@@ -28,7 +28,7 @@ use {
     commands::DeriveContextP384Cmd as DeriveContextCmd, crypto::Ecdsa384RustCrypto as RustCrypto,
 };
 
-#[cfg(feature = "dpe_mldsa")]
+#[cfg(feature = "ml-dsa")]
 use {
     commands::CertifyKeyMldsaExternalMu87Cmd as CertifyKeyCmd,
     commands::DeriveContextMldsaExternalMu87Cmd as DeriveContextCmd,
@@ -125,7 +125,7 @@ fn main() {
     let p = DefaultPlatformProfile::P256;
     #[cfg(feature = "dpe_profile_p384_sha384")]
     let p = DefaultPlatformProfile::P384;
-    #[cfg(feature = "dpe_mldsa")]
+    #[cfg(feature = "ml-dsa")]
     let p = DefaultPlatformProfile::Mldsa87ExternalMu;
 
     let mut env = DpeEnv::<TestTypes> {
