@@ -483,12 +483,8 @@ mod tests {
         assert_eq!(
             Err(DpeErrorCode::ArgumentNotSupported),
             DeriveContextCmd {
-                handle: ContextHandle::default(),
-                data: [0; DPE_PROFILE.tci_size()],
                 flags: DeriveContextFlags::INTERNAL_INPUT_DICE,
-                tci_type: 0,
-                target_locality: 0,
-                svn: 0
+                ..Default::default()
             }
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         );
@@ -502,12 +498,8 @@ mod tests {
         assert_eq!(
             Err(DpeErrorCode::ArgumentNotSupported),
             DeriveContextCmd {
-                handle: ContextHandle::default(),
-                data: [0; DPE_PROFILE.tci_size()],
                 flags: DeriveContextFlags::INTERNAL_INPUT_INFO,
-                tci_type: 0,
-                target_locality: 0,
-                svn: 0,
+                ..Default::default()
             }
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         );
@@ -521,12 +513,8 @@ mod tests {
         assert_eq!(
             Err(DpeErrorCode::ArgumentNotSupported),
             DeriveContextCmd {
-                handle: ContextHandle::default(),
-                data: [0; DPE_PROFILE.tci_size()],
                 flags: DeriveContextFlags::RETAIN_PARENT_CONTEXT,
-                tci_type: 0,
-                target_locality: 0,
-                svn: 0,
+                ..Default::default()
             }
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         );
@@ -546,15 +534,7 @@ mod tests {
         // Make sure it can detect wrong locality.
         assert_eq!(
             Err(DpeErrorCode::InvalidLocality),
-            DeriveContextCmd {
-                handle: ContextHandle::default(),
-                data: [0; DPE_PROFILE.tci_size()],
-                flags: DeriveContextFlags::empty(),
-                tci_type: 0,
-                target_locality: 0,
-                svn: 0,
-            }
-            .execute(&mut dpe, &mut env, 1)
+            DeriveContextCmd::default().execute(&mut dpe, &mut env, 1)
         );
     }
 
@@ -568,12 +548,8 @@ mod tests {
         // Fill all contexts with children (minus the auto-init context).
         for _ in 0..MAX_HANDLES - 1 {
             DeriveContextCmd {
-                handle: ContextHandle::default(),
-                data: [0; DPE_PROFILE.tci_size()],
                 flags: DeriveContextFlags::MAKE_DEFAULT,
-                tci_type: 0,
-                target_locality: 0,
-                svn: 0,
+                ..Default::default()
             }
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
             .unwrap();
@@ -582,15 +558,7 @@ mod tests {
         // Try to create one too many.
         assert_eq!(
             Err(DpeErrorCode::MaxTcis),
-            DeriveContextCmd {
-                handle: ContextHandle::default(),
-                data: [0; DPE_PROFILE.tci_size()],
-                flags: DeriveContextFlags::empty(),
-                tci_type: 0,
-                target_locality: 0,
-                svn: 0,
-            }
-            .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
+            DeriveContextCmd::default().execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         );
     }
 
@@ -606,12 +574,10 @@ mod tests {
             .get_active_context_pos(&ContextHandle::default(), TEST_LOCALITIES[0])
             .unwrap();
         DeriveContextCmd {
-            handle: ContextHandle::default(),
-            data: [0; DPE_PROFILE.tci_size()],
             flags: DeriveContextFlags::MAKE_DEFAULT | DeriveContextFlags::CHANGE_LOCALITY,
             tci_type: 7,
             target_locality: TEST_LOCALITIES[1],
-            svn: 0,
+            ..Default::default()
         }
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         .unwrap();
@@ -638,12 +604,10 @@ mod tests {
         let mut dpe = DpeInstance::new(&mut env).unwrap();
 
         DeriveContextCmd {
-            handle: ContextHandle::default(),
-            data: [0; DPE_PROFILE.tci_size()],
             flags: DeriveContextFlags::MAKE_DEFAULT | DeriveContextFlags::CHANGE_LOCALITY,
             tci_type: 7,
             target_locality: TEST_LOCALITIES[1],
-            svn: 0,
+            ..Default::default()
         }
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         .unwrap();
@@ -673,12 +637,8 @@ mod tests {
                 resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
             })),
             DeriveContextCmd {
-                handle: ContextHandle::default(),
-                data: [0; DPE_PROFILE.tci_size()],
                 flags: DeriveContextFlags::MAKE_DEFAULT,
-                tci_type: 0,
-                target_locality: 0,
-                svn: 0,
+                ..Default::default()
             }
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         );
@@ -690,15 +650,7 @@ mod tests {
                 parent_handle: ContextHandle([0xff; ContextHandle::SIZE]),
                 resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
             })),
-            DeriveContextCmd {
-                handle: ContextHandle::default(),
-                data: [0; DPE_PROFILE.tci_size()],
-                flags: DeriveContextFlags::empty(),
-                tci_type: 0,
-                target_locality: 0,
-                svn: 0,
-            }
-            .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
+            DeriveContextCmd::default().execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         );
     }
 
@@ -729,11 +681,8 @@ mod tests {
 
         let parent_handle = match (DeriveContextCmd {
             handle,
-            data: [0; DPE_PROFILE.tci_size()],
             flags: DeriveContextFlags::RETAIN_PARENT_CONTEXT,
-            tci_type: 0,
-            target_locality: 0,
-            svn: 0,
+            ..Default::default()
         })
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         {
@@ -774,12 +723,9 @@ mod tests {
 
         let parent_handle = match (DeriveContextCmd {
             handle: new_context_handle,
-            data: [0; DPE_PROFILE.tci_size()],
             flags: DeriveContextFlags::RETAIN_PARENT_CONTEXT
                 | DeriveContextFlags::INTERNAL_INPUT_INFO,
-            tci_type: 0,
-            target_locality: 0,
-            svn: 0,
+            ..Default::default()
         })
         .execute(&mut dpe, &mut env, 0)
         {
@@ -827,12 +773,8 @@ mod tests {
                 resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
             })),
             DeriveContextCmd {
-                handle: ContextHandle::default(),
-                data: [0; DPE_PROFILE.tci_size()],
                 flags: DeriveContextFlags::MAKE_DEFAULT,
-                tci_type: 0,
-                target_locality: 0,
-                svn: 0,
+                ..Default::default()
             }
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         );
@@ -845,14 +787,11 @@ mod tests {
                 resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
             })),
             DeriveContextCmd {
-                handle: ContextHandle::default(),
-                data: [0; DPE_PROFILE.tci_size()],
                 flags: DeriveContextFlags::RETAIN_PARENT_CONTEXT
                     | DeriveContextFlags::MAKE_DEFAULT
                     | DeriveContextFlags::CHANGE_LOCALITY,
-                tci_type: 0,
                 target_locality: TEST_LOCALITIES[1],
-                svn: 0,
+                ..Default::default()
             }
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         );
@@ -874,11 +813,8 @@ mod tests {
             ..
         }) = DeriveContextCmd {
             handle: env.state.contexts[old_default_idx].handle,
-            data: [0; DPE_PROFILE.tci_size()],
             flags: DeriveContextFlags::RETAIN_PARENT_CONTEXT,
-            tci_type: 0,
-            target_locality: 0,
-            svn: 0,
+            ..Default::default()
         }
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         .unwrap()
@@ -978,27 +914,23 @@ mod tests {
         let mut dpe = DpeInstance::new(&mut env).unwrap();
 
         DeriveContextCmd {
-            handle: ContextHandle::default(),
-            data: [0; DPE_PROFILE.tci_size()],
             flags: DeriveContextFlags::RETAIN_PARENT_CONTEXT
                 | DeriveContextFlags::MAKE_DEFAULT
                 | DeriveContextFlags::CHANGE_LOCALITY,
             tci_type: 7,
             target_locality: TEST_LOCALITIES[1],
-            svn: 0,
+            ..Default::default()
         }
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         .unwrap();
 
         assert_eq!(
             DeriveContextCmd {
-                handle: ContextHandle::default(),
-                data: [0; DPE_PROFILE.tci_size()],
                 flags: DeriveContextFlags::RETAIN_PARENT_CONTEXT
                     | DeriveContextFlags::CHANGE_LOCALITY,
                 tci_type: 7,
                 target_locality: TEST_LOCALITIES[1],
-                svn: 0,
+                ..Default::default()
             }
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0]),
             Err(DpeErrorCode::InvalidArgument)
@@ -1097,24 +1029,18 @@ mod tests {
         assert_eq!(
             Err(DpeErrorCode::InvalidArgument),
             DeriveContextCmd {
-                handle: ContextHandle::default(),
-                data: [0; DPE_PROFILE.tci_size()],
                 flags: DeriveContextFlags::EXPORT_CDI | DeriveContextFlags::CHANGE_LOCALITY,
-                tci_type: 0,
                 target_locality: TEST_LOCALITIES[1],
-                svn: 0,
+                ..Default::default()
             }
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         );
         assert_eq!(
             Err(DpeErrorCode::InvalidArgument),
             DeriveContextCmd {
-                handle: ContextHandle::default(),
-                data: [0; DPE_PROFILE.tci_size()],
                 flags: DeriveContextFlags::EXPORT_CDI | DeriveContextFlags::RECURSIVE,
-                tci_type: 0,
                 target_locality: TEST_LOCALITIES[0],
-                svn: 0,
+                ..Default::default()
             }
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         );
@@ -1123,12 +1049,9 @@ mod tests {
         assert_eq!(
             Err(DpeErrorCode::InvalidArgument),
             DeriveContextCmd {
-                handle: ContextHandle::default(),
-                data: [0; DPE_PROFILE.tci_size()],
                 flags: DeriveContextFlags::EXPORT_CDI | DeriveContextFlags::RETAIN_PARENT_CONTEXT,
-                tci_type: 0,
                 target_locality: TEST_LOCALITIES[0],
-                svn: 0,
+                ..Default::default()
             }
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         );
@@ -1145,11 +1068,9 @@ mod tests {
             Err(DpeErrorCode::InvalidArgument),
             DeriveContextCmd {
                 handle: simulation_handle,
-                data: [0; DPE_PROFILE.tci_size()],
                 flags: DeriveContextFlags::CREATE_CERTIFICATE | DeriveContextFlags::EXPORT_CDI,
-                tci_type: 0,
                 target_locality: TEST_LOCALITIES[0],
-                svn: 0,
+                ..Default::default()
             }
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         );
@@ -1158,14 +1079,11 @@ mod tests {
         assert_eq!(
             Err(DpeErrorCode::InvalidArgument),
             DeriveContextCmd {
-                handle: ContextHandle::default(),
-                data: [0; DPE_PROFILE.tci_size()],
                 flags: DeriveContextFlags::CREATE_CERTIFICATE
                     | DeriveContextFlags::EXPORT_CDI
                     | DeriveContextFlags::RECURSIVE,
-                tci_type: 0,
                 target_locality: TEST_LOCALITIES[0],
-                svn: 0,
+                ..Default::default()
             }
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         );
@@ -1178,12 +1096,8 @@ mod tests {
 
         // Happy case!
         let res = DeriveContextCmd {
-            handle: ContextHandle::default(),
-            data: [0; DPE_PROFILE.tci_size()],
             flags: DeriveContextFlags::EXPORT_CDI | DeriveContextFlags::CREATE_CERTIFICATE,
-            tci_type: 0,
-            target_locality: 0,
-            svn: 0,
+            ..Default::default()
         }
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[0]);
 
@@ -1207,12 +1121,9 @@ mod tests {
         assert_eq!(
             Err(DpeErrorCode::ArgumentNotSupported),
             DeriveContextCmd {
-                handle: ContextHandle::default(),
-                data: [0; DPE_PROFILE.tci_size()],
                 flags: DeriveContextFlags::CREATE_CERTIFICATE | DeriveContextFlags::EXPORT_CDI,
-                tci_type: 0,
                 target_locality: TEST_LOCALITIES[0],
-                svn: 0,
+                ..Default::default()
             }
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         );
@@ -1221,12 +1132,9 @@ mod tests {
         assert_eq!(
             Err(DpeErrorCode::ArgumentNotSupported),
             DeriveContextCmd {
-                handle: ContextHandle::default(),
-                data: [0; DPE_PROFILE.tci_size()],
                 flags: DeriveContextFlags::EXPORT_CDI,
-                tci_type: 0,
                 target_locality: TEST_LOCALITIES[0],
-                svn: 0,
+                ..Default::default()
             }
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         );
@@ -1235,12 +1143,9 @@ mod tests {
         assert_eq!(
             Err(DpeErrorCode::ArgumentNotSupported),
             DeriveContextCmd {
-                handle: ContextHandle::default(),
-                data: [0; DPE_PROFILE.tci_size()],
                 flags: DeriveContextFlags::CREATE_CERTIFICATE,
-                tci_type: 0,
                 target_locality: TEST_LOCALITIES[0],
-                svn: 0,
+                ..Default::default()
             }
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         );
@@ -1257,12 +1162,9 @@ mod tests {
         let mut dpe = DpeInstance::new(&mut env).unwrap();
 
         let Ok(Response::DeriveContext(DeriveContextResp { handle, .. })) = DeriveContextCmd {
-            handle: ContextHandle::default(),
-            data: [0; DPE_PROFILE.tci_size()],
             flags: DeriveContextFlags::ALLOW_NEW_CONTEXT_TO_EXPORT,
-            tci_type: 0,
             target_locality: TEST_LOCALITIES[0],
-            svn: 0,
+            ..Default::default()
         }
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[0]) else {
             panic!("exptected a valid DeriveContextResp");
@@ -1270,13 +1172,11 @@ mod tests {
 
         let res = DeriveContextCmd {
             handle,
-            data: [0; DPE_PROFILE.tci_size()],
             flags: DeriveContextFlags::EXPORT_CDI
                 | DeriveContextFlags::CREATE_CERTIFICATE
                 | DeriveContextFlags::RETAIN_PARENT_CONTEXT,
-            tci_type: 0,
             target_locality: TEST_LOCALITIES[0],
-            svn: 0,
+            ..Default::default()
         }
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[0]);
 
@@ -1307,14 +1207,11 @@ mod tests {
         // When `DeriveContextFlags::RETAIN_PARENT_CONTEXT` a new handle to the parent should be
         // returned. If the default handle was used, it should be the default handle.
         let res = DeriveContextCmd {
-            handle: ContextHandle::default(),
-            data: [0; DPE_PROFILE.tci_size()],
             flags: DeriveContextFlags::EXPORT_CDI
                 | DeriveContextFlags::CREATE_CERTIFICATE
                 | DeriveContextFlags::RETAIN_PARENT_CONTEXT,
-            tci_type: 0,
             target_locality: TEST_LOCALITIES[0],
-            svn: 0,
+            ..Default::default()
         }
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[0]);
 
@@ -1337,12 +1234,9 @@ mod tests {
         dpe = DpeInstance::new(&mut env).unwrap();
 
         let Ok(Response::DeriveContext(res)) = DeriveContextCmd {
-            handle: ContextHandle::default(),
             data: [0xA; DPE_PROFILE.tci_size()],
-            flags: DeriveContextFlags::empty(),
-            tci_type: 0,
             target_locality: TEST_LOCALITIES[0],
-            svn: 0,
+            ..Default::default()
         }
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[0]) else {
             panic!("Unexpected result!");
@@ -1353,11 +1247,9 @@ mod tests {
 
         let res = DeriveContextCmd {
             handle: res.handle,
-            data: [0; DPE_PROFILE.tci_size()],
             flags: DeriveContextFlags::EXPORT_CDI | DeriveContextFlags::CREATE_CERTIFICATE,
-            tci_type: 0,
             target_locality: TEST_LOCALITIES[0],
-            svn: 0,
+            ..Default::default()
         }
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[0]);
         assert_eq!(res, Err(DpeErrorCode::InvalidArgument));
@@ -1372,12 +1264,9 @@ mod tests {
         dpe = DpeInstance::new(&mut env).unwrap();
 
         let Ok(Response::DeriveContext(res)) = DeriveContextCmd {
-            handle: ContextHandle::default(),
             data: [0xA; DPE_PROFILE.tci_size()],
-            flags: DeriveContextFlags::empty(),
-            tci_type: 0,
             target_locality: TEST_LOCALITIES[0],
-            svn: 0,
+            ..Default::default()
         }
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[0]) else {
             panic!("Unexpected result!");
@@ -1387,13 +1276,11 @@ mod tests {
 
         let res = DeriveContextCmd {
             handle: res.handle,
-            data: [0; DPE_PROFILE.tci_size()],
             flags: DeriveContextFlags::EXPORT_CDI
                 | DeriveContextFlags::CREATE_CERTIFICATE
                 | DeriveContextFlags::ALLOW_NEW_CONTEXT_TO_EXPORT,
-            tci_type: 0,
             target_locality: TEST_LOCALITIES[0],
-            svn: 0,
+            ..Default::default()
         }
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[0]);
         assert_eq!(res, Err(DpeErrorCode::InvalidArgument));
@@ -1410,13 +1297,11 @@ mod tests {
         let mut dpe = DpeInstance::new(&mut env).unwrap();
 
         let res = DeriveContextCmd {
-            handle: ContextHandle::default(),
             data: [0xA; DPE_PROFILE.tci_size()],
             flags: DeriveContextFlags::MAKE_DEFAULT
                 | DeriveContextFlags::ALLOW_NEW_CONTEXT_TO_EXPORT,
-            tci_type: 0,
             target_locality: TEST_LOCALITIES[0],
-            svn: 0,
+            ..Default::default()
         }
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[0]);
         let child_idx = env
@@ -1432,13 +1317,11 @@ mod tests {
 
         let res = DeriveContextCmd {
             handle: res.handle,
-            data: [0; DPE_PROFILE.tci_size()],
             flags: DeriveContextFlags::MAKE_DEFAULT
                 | DeriveContextFlags::EXPORT_CDI
                 | DeriveContextFlags::CREATE_CERTIFICATE,
-            tci_type: 0,
             target_locality: TEST_LOCALITIES[0],
-            svn: 0,
+            ..Default::default()
         }
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[0]);
         let res = match res {
@@ -1463,12 +1346,8 @@ mod tests {
         let mut dpe = DpeInstance::new(&mut env).unwrap();
 
         let res = DeriveContextCmd {
-            handle: ContextHandle::default(),
-            data: [0; DPE_PROFILE.tci_size()],
             flags: DeriveContextFlags::EXPORT_CDI | DeriveContextFlags::CREATE_CERTIFICATE,
-            tci_type: 0,
-            target_locality: 0,
-            svn: 0,
+            ..Default::default()
         }
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[0]);
 
@@ -1505,14 +1384,10 @@ mod tests {
         let mut dpe = DpeInstance::new(&mut env).unwrap();
 
         let res = DeriveContextCmd {
-            handle: ContextHandle::default(),
-            data: [0; DPE_PROFILE.tci_size()],
             flags: DeriveContextFlags::EXPORT_CDI
                 | DeriveContextFlags::CREATE_CERTIFICATE
                 | DeriveContextFlags::RETAIN_PARENT_CONTEXT,
-            tci_type: 0,
-            target_locality: 0,
-            svn: 0,
+            ..Default::default()
         }
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[0]);
 
@@ -1581,12 +1456,10 @@ mod tests {
                 &mut env,
                 DeriveContextCmd {
                     handle: parent_handle,
-                    data: [0; DPE_PROFILE.tci_size()],
                     flags: DeriveContextFlags::RETAIN_PARENT_CONTEXT
                         | DeriveContextFlags::ALLOW_NEW_CONTEXT_TO_EXPORT,
-                    tci_type: 0,
                     target_locality: TEST_LOCALITIES[0],
-                    svn: 0,
+                    ..Default::default()
                 },
                 expected_active_contexts,
             );
@@ -1610,11 +1483,9 @@ mod tests {
             &mut env,
             DeriveContextCmd {
                 handle,
-                data: [0; DPE_PROFILE.tci_size()],
                 flags: DeriveContextFlags::EXPORT_CDI | DeriveContextFlags::CREATE_CERTIFICATE,
-                tci_type: 0,
                 target_locality: TEST_LOCALITIES[0],
-                svn: 0,
+                ..Default::default()
             },
             expected_active_contexts,
         );
@@ -1683,11 +1554,9 @@ mod tests {
                 &mut env,
                 DeriveContextCmd {
                     handle: parent_handle,
-                    data: [0; DPE_PROFILE.tci_size()],
                     flags: DeriveContextFlags::RETAIN_PARENT_CONTEXT,
-                    tci_type: 0,
                     target_locality: TEST_LOCALITIES[0],
-                    svn: 0,
+                    ..Default::default()
                 },
                 expected_active_contexts,
             );
@@ -1707,11 +1576,9 @@ mod tests {
             &mut env,
             DeriveContextCmd {
                 handle: parent_handle,
-                data: [0; DPE_PROFILE.tci_size()],
                 flags: DeriveContextFlags::EXPORT_CDI | DeriveContextFlags::CREATE_CERTIFICATE,
-                tci_type: 0,
                 target_locality: TEST_LOCALITIES[0],
-                svn: 0,
+                ..Default::default()
             },
             expected_active_contexts,
         );
@@ -1754,10 +1621,8 @@ mod tests {
             let derive_cmd = DeriveContextCmd {
                 handle: init_resp.handle,
                 flags: DeriveContextFlags::EXPORT_CDI | DeriveContextFlags::CREATE_CERTIFICATE,
-                data: [0; DPE_PROFILE.tci_size()],
-                tci_type: 0,
                 target_locality: TEST_LOCALITIES[0],
-                svn: 0,
+                ..Default::default()
             };
             let derive_resp = match derive_cmd
                 .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
