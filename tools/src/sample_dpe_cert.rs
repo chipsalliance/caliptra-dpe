@@ -22,7 +22,7 @@ use {commands::CertifyKeyP256Cmd as CertifyKeyCmd, crypto::Ecdsa256RustCrypto as
 #[cfg(feature = "dpe_profile_p384_sha384")]
 use {commands::CertifyKeyP384Cmd as CertifyKeyCmd, crypto::Ecdsa384RustCrypto as RustCrypto};
 
-#[cfg(feature = "dpe_mldsa")]
+#[cfg(feature = "ml-dsa")]
 use {
     commands::CertifyKeyMldsaExternalMu87Cmd as CertifyKeyCmd,
     crypto::MldsaRustCrypto as RustCrypto,
@@ -118,7 +118,7 @@ fn main() {
     let p = DefaultPlatformProfile::P256;
     #[cfg(feature = "dpe_profile_p384_sha384")]
     let p = DefaultPlatformProfile::P384;
-    #[cfg(feature = "dpe_mldsa")]
+    #[cfg(feature = "ml-dsa")]
     let p = DefaultPlatformProfile::Mldsa87ExternalMu;
 
     let mut env = DpeEnv::<TestTypes> {

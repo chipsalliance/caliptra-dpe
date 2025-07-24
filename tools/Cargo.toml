@@ -14,7 +14,7 @@ dpe_profile_p384_sha384 = [
   "dpe/dpe_profile_p384_sha384"
 ]
 # TODO(clundin): Placeholder name until we decide pattern for DPE profiles and feature flags.
-dpe_mldsa = [
+ml-dsa = [
   "dpe/ml-dsa"
 ]
 

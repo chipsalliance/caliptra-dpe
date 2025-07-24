@@ -15,7 +15,7 @@ use crate::{
 use {
     crate::ml_dsa::{ExternalMu, MldsaAlgorithm, MldsaPublicKey, MldsaSignature},
     ml_dsa::{signature::Signer, KeyGen, KeyPair, MlDsa87},
-    pkcs8::{DecodePrivateKey, EncodePublicKey},
+    pkcs8::DecodePrivateKey,
     zerocopy::{IntoBytes, SizeError},
 };
 

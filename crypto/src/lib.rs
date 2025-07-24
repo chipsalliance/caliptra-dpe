@@ -181,6 +181,7 @@ impl From<[u8; 48]> for Digest {
 }
 
 #[derive(Clone)]
+#[allow(clippy::large_enum_variant)]
 pub enum PubKey {
     Ecdsa(ecdsa::EcdsaPubKey),
     #[cfg(feature = "ml-dsa")]
@@ -212,6 +213,7 @@ impl From<ml_dsa::MldsaPublicKey> for PubKey {
     }
 }
 
+#[allow(clippy::large_enum_variant)]
 pub enum Signature {
     Ecdsa(EcdsaSignature),
     #[cfg(feature = "ml-dsa")]
