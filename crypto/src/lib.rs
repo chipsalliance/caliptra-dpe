@@ -213,6 +213,7 @@ impl From<ml_dsa::MldsaPublicKey> for PubKey {
     }
 }
 
+#[derive(Clone)]
 #[allow(clippy::large_enum_variant)]
 pub enum Signature {
     Ecdsa(EcdsaSignature),
