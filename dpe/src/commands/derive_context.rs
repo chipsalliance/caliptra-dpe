@@ -31,6 +31,7 @@ bitflags! {
         const MAKE_DEFAULT = 1u32 << 28;
         const CHANGE_LOCALITY = 1u32 << 27;
         const ALLOW_NEW_CONTEXT_TO_EXPORT = 1u32 << 26;
+        const INPUT_ALLOW_X509 = 1u32 << 25;
         const RECURSIVE = 1u32 << 24;
         const EXPORT_CDI = 1u32 << 23;
         const CREATE_CERTIFICATE = 1u32 << 22;
@@ -56,6 +57,10 @@ impl DeriveContextFlags {
 
     pub const fn changes_locality(&self) -> bool {
         self.contains(DeriveContextFlags::CHANGE_LOCALITY)
+    }
+
+    const fn allows_x509(&self) -> bool {
+        self.contains(DeriveContextFlags::INPUT_ALLOW_X509)
     }
 
     pub const fn is_recursive(&self) -> bool {
@@ -270,6 +275,7 @@ impl CommandExecution for DeriveContextCommand<'_> {
         if (!support.internal_info() && flags.uses_internal_info_input())
             || (!support.internal_dice() && flags.uses_internal_dice_input())
             || (!support.retain_parent_context() && flags.retains_parent())
+            || (!support.x509() && flags.allows_x509())
             || (!support.cdi_export() && (flags.creates_certificate() || flags.exports_cdi()))
             || (!support.recursive() && flags.is_recursive())
         {
@@ -277,7 +283,9 @@ impl CommandExecution for DeriveContextCommand<'_> {
         }
 
         let parent_idx = env.state.get_active_context_pos(handle, locality)?;
-        if (flags.exports_cdi() && !flags.creates_certificate())
+
+        if (!env.state.contexts[parent_idx].allow_x509() && flags.allows_x509())
+            || (flags.exports_cdi() && !flags.creates_certificate())
             || (flags.exports_cdi() && flags.is_recursive())
             || (flags.exports_cdi() && flags.changes_locality())
             || (flags.exports_cdi()
@@ -303,6 +311,8 @@ impl CommandExecution for DeriveContextCommand<'_> {
                 cfi_assert!(support.internal_info() || !flags.uses_internal_info_input());
                 cfi_assert!(support.internal_dice() || !flags.uses_internal_dice_input());
                 cfi_assert!(support.retain_parent_context() || !flags.retains_parent());
+                cfi_assert!(support.x509() || !flags.allows_x509());
+                cfi_assert!(env.state.contexts[parent_idx].allow_x509() || !flags.allows_x509());
                 cfi_assert!(!flags.is_recursive() || !flags.retains_parent());
             }
         }
@@ -437,6 +447,7 @@ impl CommandExecution for DeriveContextCommand<'_> {
             dpe.generate_new_handle(env)?
         };
 
+        let allow_x509 = flags.allows_x509();
         let uses_internal_input_info = flags.uses_internal_info_input();
         let uses_internal_input_dice = flags.uses_internal_dice_input();
 
@@ -448,6 +459,7 @@ impl CommandExecution for DeriveContextCommand<'_> {
             handle: &child_handle,
             tci_type,
             parent_idx: parent_idx as u8,
+            allow_x509,
             uses_internal_input_info,
             uses_internal_input_dice,
             allow_export_cdi: flags.allows_new_context_to_export()
@@ -1193,6 +1205,7 @@ mod tests {
             .get_active_context_pos(&ContextHandle::default(), 0)
             .unwrap();
         // ensure flags are unchanged
+        assert!(env.state.contexts[child_idx].allow_x509());
         assert!(!env.state.contexts[child_idx].uses_internal_input_info());
         assert!(!env.state.contexts[child_idx].uses_internal_input_dice());
         // Still using the same context.

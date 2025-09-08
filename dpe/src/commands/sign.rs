@@ -341,7 +341,7 @@ mod tests {
             DeriveContextCmd {
                 handle: ContextHandle::default(),
                 data: [i; DPE_PROFILE.hash_size()],
-                flags: DeriveContextFlags::MAKE_DEFAULT,
+                flags: DeriveContextFlags::MAKE_DEFAULT | DeriveContextFlags::INPUT_ALLOW_X509,
                 tci_type: i as u32,
                 target_locality: 0,
                 svn: 0,

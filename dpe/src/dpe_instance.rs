@@ -331,6 +331,9 @@ impl DpeInstance {
                 uses_internal_input_info || context.uses_internal_input_info();
             uses_internal_input_dice =
                 uses_internal_input_dice || context.uses_internal_input_dice();
+
+            // Add allow x509 to hash
+            hasher.update(context.allow_x509().as_bytes())?;
         }
 
         // Add internal input info to hash
@@ -585,6 +588,9 @@ pub mod tests {
         for result in ChildToRootIter::new(leaf_idx, &env.state.contexts) {
             let context = result.unwrap();
             hasher.update(context.tci.as_bytes()).unwrap();
+            hasher
+                .update(/*allow_x509=*/ context.allow_x509().as_bytes())
+                .unwrap();
         }
 
         let digest = hasher.finish().unwrap();
@@ -630,7 +636,9 @@ pub mod tests {
         let mut hasher = env.crypto.hash_initialize().unwrap();
 
         hasher.update(child_context.tci.as_bytes()).unwrap();
+        hasher.update(/*allow_x509=*/ false.as_bytes()).unwrap();
         hasher.update(parent_context.tci.as_bytes()).unwrap();
+        hasher.update(/*allow_x509=*/ true.as_bytes()).unwrap();
         let mut internal_input_info = [0u8; INTERNAL_INPUT_INFO_SIZE];
         dpe.serialize_internal_input_info(
             &mut env.platform,
@@ -686,7 +694,9 @@ pub mod tests {
         let mut hasher = env.crypto.hash_initialize().unwrap();
 
         hasher.update(child_context.tci.as_bytes()).unwrap();
+        hasher.update(/*allow_x509=*/ false.as_bytes()).unwrap();
         hasher.update(parent_context.tci.as_bytes()).unwrap();
+        hasher.update(/*allow_x509=*/ true.as_bytes()).unwrap();
         let cert_chain = env.platform.0.cert_chain();
         hasher.update(&cert_chain).unwrap();
 

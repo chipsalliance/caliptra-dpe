@@ -34,6 +34,7 @@ pub enum ValidationError {
     ChildWithMultipleParents = 0x12,
     ParentChildLinksCorrupted = 0x13,
     AllowCaNotSupported = 0x14,
+    AllowX509NotSupported = 0x15,
     InactiveParent = 0x16,
     InactiveChild = 0x17,
     DpeNotMarkedInitialized = 0x18,
@@ -119,6 +120,14 @@ impl DpeValidator<'_> {
         if !self.dpe.support.internal_info() && context.uses_internal_input_info() {
             return Err(ValidationError::InternalInfoNotSupported);
         }
+        // initialized contexts will always have parent = Context::ROOT_INDEX and then the allow_x509
+        // field will always be true regardless of support.
+        if context.parent_idx != Context::ROOT_INDEX
+            && !self.dpe.support.x509()
+            && context.allow_x509()
+        {
+            return Err(ValidationError::AllowX509NotSupported);
+        }
         Ok(())
     }
 
@@ -130,7 +139,10 @@ impl DpeValidator<'_> {
             Err(ValidationError::InactiveContextWithChildren)
         } else if context.tci != TciNodeData::default() {
             Err(ValidationError::InactiveContextWithMeasurement)
-        } else if context.uses_internal_input_dice() || context.uses_internal_input_info() {
+        } else if context.uses_internal_input_dice()
+            || context.allow_x509()
+            || context.uses_internal_input_info()
+        {
             Err(ValidationError::InactiveContextWithFlagSet)
         } else {
             Ok(())
@@ -370,6 +382,15 @@ pub mod tests {
             dpe_validator.validate_dpe_state(),
             Err(ValidationError::InternalInfoNotSupported)
         );
+
+        // test x509
+        dpe_validator.dpe.contexts[0].parent_idx = 1;
+        dpe_validator.dpe.contexts[0].uses_internal_input_info = U8Bool::new(false);
+        dpe_validator.dpe.contexts[0].allow_x509 = U8Bool::new(true);
+        assert_eq!(
+            dpe_validator.validate_dpe_state(),
+            Err(ValidationError::AllowX509NotSupported)
+        );
     }
 
     #[test]
@@ -404,7 +425,7 @@ pub mod tests {
         );
 
         dpe_validator.dpe.contexts[0].tci.tci_current = TciMeasurement::default();
-        dpe_validator.dpe.contexts[0].uses_internal_input_info = U8Bool::new(true);
+        dpe_validator.dpe.contexts[0].allow_x509 = U8Bool::new(true);
         assert_eq!(
             dpe_validator.validate_dpe_state(),
             Err(ValidationError::InactiveContextWithFlagSet)
