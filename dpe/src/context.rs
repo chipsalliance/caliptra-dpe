@@ -30,9 +30,11 @@ pub struct Context {
     pub uses_internal_input_info: U8Bool,
     /// Whether we should hash internal dice info consisting of the certificate chain when deriving the CDI
     pub uses_internal_input_dice: U8Bool,
+    /// Whether this context can emit certificates in X.509 format
+    pub allow_x509: U8Bool,
     /// Whether this context can use the `EXPORT_CDI` feature.
     pub allow_export_cdi: U8Bool,
-    pub reserved: [u8; 2],
+    pub reserved: [u8; 1],
 }
 
 // As long as a `u32` is used for the children bit map the MAX_HANDLES upper bound is 32.
@@ -74,10 +76,11 @@ impl Context {
             locality: 0,
             uses_internal_input_info: U8Bool::new(false),
             uses_internal_input_dice: U8Bool::new(false),
+            allow_x509: U8Bool::new(false),
             // The root context needs to
             // allow_export_cdi or it is never enabled.
             allow_export_cdi: U8Bool::new(true),
-            reserved: [0; 2],
+            reserved: [0; 1],
         }
     }
 
@@ -86,6 +89,9 @@ impl Context {
     }
     pub fn uses_internal_input_dice(&self) -> bool {
         self.uses_internal_input_dice.get()
+    }
+    pub fn allow_x509(&self) -> bool {
+        self.allow_x509.get()
     }
     pub fn allow_export_cdi(&self) -> bool {
         self.allow_export_cdi.get()
@@ -103,6 +109,7 @@ impl Context {
         self.context_type = args.context_type;
         self.state = ContextState::Active;
         self.locality = args.locality;
+        self.allow_x509 = args.allow_x509.into();
         self.uses_internal_input_info = args.uses_internal_input_info.into();
         self.uses_internal_input_dice = args.uses_internal_input_dice.into();
         self.allow_export_cdi = args.allow_export_cdi.into();
@@ -115,6 +122,7 @@ impl Context {
         self.state = ContextState::Inactive;
         self.uses_internal_input_info = false.into();
         self.uses_internal_input_dice = false.into();
+        self.allow_x509 = false.into();
         self.parent_idx = Self::ROOT_INDEX;
         self.locality = 0;
         self.children = 0;
@@ -200,6 +208,7 @@ pub struct ActiveContextArgs<'a> {
     pub handle: &'a ContextHandle,
     pub tci_type: u32,
     pub parent_idx: u8,
+    pub allow_x509: bool,
     pub uses_internal_input_info: bool,
     pub uses_internal_input_dice: bool,
     pub allow_export_cdi: bool,

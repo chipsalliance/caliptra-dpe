@@ -125,6 +125,9 @@ impl CommandExecution for CertifyKeyCommand<'_> {
             if !env.state.support.x509() {
                 return Err(DpeErrorCode::ArgumentNotSupported);
             }
+            if !context.allow_x509() {
+                return Err(DpeErrorCode::InvalidArgument);
+            }
         } else if format == Self::FORMAT_CSR && !env.state.support.csr() {
             return Err(DpeErrorCode::ArgumentNotSupported);
         }
@@ -137,6 +140,7 @@ impl CommandExecution for CertifyKeyCommand<'_> {
         cfg_if! {
             if #[cfg(not(feature = "no-cfi"))] {
                 cfi_assert!(format != Self::FORMAT_X509 || env.state.support.x509());
+                cfi_assert!(format != Self::FORMAT_X509 || context.allow_x509());
                 cfi_assert!(format != Self::FORMAT_CSR || env.state.support.csr());
                 cfi_assert_eq(context.locality, locality);
             }
@@ -651,7 +655,7 @@ mod tests {
         let derive_cmd = DeriveContextCmd {
             handle: ContextHandle::default(),
             data: [1; DPE_PROFILE.tci_size()],
-            flags: DeriveContextFlags::MAKE_DEFAULT,
+            flags: DeriveContextFlags::MAKE_DEFAULT | DeriveContextFlags::INPUT_ALLOW_X509,
             tci_type: 1,
             target_locality: 0,
             svn: 0,

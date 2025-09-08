@@ -97,6 +97,7 @@ impl CommandExecution for InitCtxCmd {
             handle: &handle,
             tci_type: 0,
             parent_idx: Context::ROOT_INDEX,
+            allow_x509: true,
             uses_internal_input_info: false,
             uses_internal_input_dice: false,
             allow_export_cdi: true,
