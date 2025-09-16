@@ -13,6 +13,10 @@ use caliptra_cfi_lib_git::cfi_launder;
 #[cfg(not(feature = "no-cfi"))]
 use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq, cfi_assert_ne};
 use cfg_if::cfg_if;
+#[cfg(any(
+    feature = "dpe_profile_p256_sha256",
+    feature = "dpe_profile_p384_sha384"
+))]
 use crypto::ecdsa::EcdsaSignature;
 use crypto::{Crypto, Digest, Signature};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};

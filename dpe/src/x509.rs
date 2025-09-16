@@ -1033,7 +1033,7 @@ impl CertWriter<'_> {
         Ok(size)
     }
 
-    /// Write a single `byte` to be certificate buffer
+    /// Write a single `byte` to the certificate buffer
     fn encode_byte(&mut self, byte: u8) -> Result<usize, DpeErrorCode> {
         if self.offset >= self.certificate.len() {
             return Err(DpeErrorCode::InternalError);
@@ -3186,7 +3186,7 @@ pub(crate) mod tests {
     const DEFAULT_OTHER_NAME_OID: &[u8] = &[0, 0, 0];
     const DEFAULT_OTHER_NAME_VALUE: &str = "default-other-name";
 
-    fn build_test_cert(is_ca: bool, cert_buf: &mut [u8]) -> (usize, X509Certificate<'_>) {
+    fn build_test_cert_ecdsa(is_ca: bool, cert_buf: &mut [u8]) -> (usize, X509Certificate<'_>) {
         let mut issuer_der = [0u8; 1024];
         let mut issuer_writer = CertWriter::new(&mut issuer_der, true);
         let issuer_len = issuer_writer.encode_rdn(&TEST_ISSUER_NAME).unwrap();
@@ -3198,6 +3198,9 @@ pub(crate) mod tests {
         let mut hasher = match DPE_PROFILE {
             DpeProfile::P256Sha256 => Hasher::new(MessageDigest::sha256()).unwrap(),
             DpeProfile::P384Sha384 => Hasher::new(MessageDigest::sha384()).unwrap(),
+            DpeProfile::Mldsa87ExternalMu => {
+                unreachable!("tried to build ecdsa test cert for ml-dsa profile!")
+            }
         };
         let (x, y) = test_pub.as_slice();
         hasher.update(&[0x04]).unwrap();
@@ -3299,7 +3302,7 @@ pub(crate) mod tests {
     #[test]
     fn test_full_leaf() {
         let mut cert_buf = [0u8; 1024];
-        let (_, cert) = build_test_cert(false, &mut cert_buf);
+        let (_, cert) = build_test_cert_ecdsa(false, &mut cert_buf);
 
         match cert.basic_constraints() {
             Ok(Some(basic_constraints)) => {
@@ -3361,9 +3364,10 @@ pub(crate) mod tests {
     }
 
     #[test]
+    // #[cfg(not(feature = "ml-dsa"))]
     fn test_full_ca() {
         let mut cert_buf = [0u8; 1024];
-        let (_, cert) = build_test_cert(/*is_ca=*/ true, &mut cert_buf);
+        let (_, cert) = build_test_cert_ecdsa(/*is_ca=*/ true, &mut cert_buf);
 
         match cert.basic_constraints() {
             Ok(Some(basic_constraints)) => {
@@ -3399,6 +3403,7 @@ pub(crate) mod tests {
         let mut hasher = match DPE_PROFILE {
             DpeProfile::P256Sha256 => Hasher::new(MessageDigest::sha256()).unwrap(),
             DpeProfile::P384Sha384 => Hasher::new(MessageDigest::sha384()).unwrap(),
+            DpeProfile::Mldsa87ExternalMu => todo!(),
         };
         hasher.update(pub_key).unwrap();
         let expected_key_identifier: &[u8] = &hasher.finish().unwrap();
