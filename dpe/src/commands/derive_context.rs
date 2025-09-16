@@ -608,6 +608,11 @@ impl CommandExecution for DeriveContextMldsaExternalMu87Cmd {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "ml-dsa")]
+    use crate::commands::{
+        sign::SignMldsaExternalMu87Cmd as SignCmd, CertifyKeyMldsaExternalMu87Cmd as CertifyKeyCmd,
+        DeriveContextMldsaExternalMu87Cmd as DeriveContextCmd,
+    };
     #[cfg(feature = "dpe_profile_p256_sha256")]
     use crate::commands::{
         sign::SignP256Cmd as SignCmd, CertifyKeyP256Cmd as CertifyKeyCmd,
@@ -1857,6 +1862,7 @@ mod tests {
                         DpeProfile::P384Sha384 => {
                             OpenSSLHasher::new(MessageDigest::sha384()).unwrap()
                         }
+                        DpeProfile::Mldsa87ExternalMu => todo!("sha1?"),
                     };
                     hasher.update(pub_key).unwrap();
                     let expected_ski: &[u8] = &hasher.finish().unwrap();

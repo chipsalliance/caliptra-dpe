@@ -399,6 +399,8 @@ pub mod tests {
     use super::*;
     use crate::commands::tests::DEFAULT_PLATFORM;
     use crate::commands::DeriveContextFlags;
+    #[cfg(feature = "ml-dsa")]
+    use crate::commands::DeriveContextMldsaExternalMu87Cmd as DeriveContextCmd;
     #[cfg(feature = "dpe_profile_p256_sha256")]
     use crate::commands::DeriveContextP256Cmd as DeriveContextCmd;
     #[cfg(feature = "dpe_profile_p384_sha384")]
@@ -417,6 +419,9 @@ pub mod tests {
     #[cfg(feature = "dpe_profile_p384_sha384")]
     use crypto::Ecdsa384RustCrypto;
 
+    #[cfg(feature = "ml-dsa")]
+    use crypto::MldsaRustCrypto;
+
     pub struct TestTypes;
     impl DpeTypes for TestTypes {
         #[cfg(feature = "dpe_profile_p256_sha256")]
@@ -424,6 +429,9 @@ pub mod tests {
 
         #[cfg(feature = "dpe_profile_p384_sha384")]
         type Crypto<'a> = Ecdsa384RustCrypto;
+
+        #[cfg(feature = "ml-dsa")]
+        type Crypto<'a> = MldsaRustCrypto;
 
         type Platform<'a> = DefaultPlatform;
     }

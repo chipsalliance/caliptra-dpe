@@ -206,6 +206,18 @@ pub struct SignP384Cmd {
     pub digest: [u8; 48],
 }
 
+impl CommandExecution for SignP384Cmd {
+    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    fn execute(
+        &self,
+        dpe: &mut DpeInstance,
+        env: &mut DpeEnv<impl DpeTypes>,
+        locality: u32,
+    ) -> Result<Response, DpeErrorCode> {
+        execute(dpe, env, &self.handle, &self.label, &self.digest, locality)
+    }
+}
+
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, IntoBytes, FromBytes, Immutable, KnownLayout)]
 pub struct SignMldsaExternalMu87Cmd {
@@ -215,7 +227,7 @@ pub struct SignMldsaExternalMu87Cmd {
     pub digest: [u8; 48],
 }
 
-impl CommandExecution for SignP384Cmd {
+impl CommandExecution for SignMldsaExternalMu87Cmd {
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     fn execute(
         &self,
@@ -230,6 +242,11 @@ impl CommandExecution for SignP384Cmd {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "ml-dsa")]
+    use crate::commands::{
+        sign::SignMldsaExternalMu87Cmd as SignCmd, CertifyKeyMldsaExternalMu87Cmd as CertifyKeyCmd,
+        DeriveContextMldsaExternalMu87Cmd as DeriveContextCmd,
+    };
     #[cfg(feature = "dpe_profile_p256_sha256")]
     use crate::commands::{
         sign::SignP256Cmd as SignCmd, CertifyKeyP256Cmd as CertifyKeyCmd,
@@ -276,6 +293,8 @@ mod tests {
         let expected = Command::Sign(SignCommand::P256(&TEST_SIGN_CMD));
         #[cfg(feature = "dpe_profile_p384_sha384")]
         let expected = Command::Sign(SignCommand::P384(&TEST_SIGN_CMD));
+        #[cfg(feature = "ml-dsa")]
+        let expected = Command::Sign(SignCommand::ExternalMu87(&TEST_SIGN_CMD));
         assert_eq!(Ok(expected), Command::deserialize(DPE_PROFILE, &command));
     }
 
@@ -371,6 +390,7 @@ mod tests {
                 SignResp::P256(resp) => (resp.sig_r, resp.sig_s),
                 #[cfg(feature = "dpe_profile_p384_sha384")]
                 SignResp::P384(resp) => (resp.sig_r, resp.sig_s),
+                _ => todo!(),
             };
 
             EcdsaSig::from_private_components(

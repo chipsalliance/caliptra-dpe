@@ -2948,6 +2948,7 @@ pub(crate) mod tests {
     use crate::{DpeProfile, DPE_PROFILE};
     use crypto::ecdsa::{EcdsaAlgorithm, EcdsaSig};
     use crypto::ecdsa::{EcdsaPub, EcdsaPubKey};
+    use crypto::ml_dsa::{MldsaAlgorithm, MldsaSignature};
     use crypto::{PubKey, Signature, SignatureAlgorithm};
     use openssl::hash::{Hasher, MessageDigest};
     use platform::{ArrayVec, CertValidity, OtherName, SubjectAltName, MAX_KEY_IDENTIFIER_SIZE};
@@ -3403,7 +3404,9 @@ pub(crate) mod tests {
         let mut hasher = match DPE_PROFILE {
             DpeProfile::P256Sha256 => Hasher::new(MessageDigest::sha256()).unwrap(),
             DpeProfile::P384Sha384 => Hasher::new(MessageDigest::sha384()).unwrap(),
-            DpeProfile::Mldsa87ExternalMu => todo!(),
+            DpeProfile::Mldsa87ExternalMu => {
+                todo!("What hash has to be used for subject key ident?")
+            }
         };
         hasher.update(pub_key).unwrap();
         let expected_key_identifier: &[u8] = &hasher.finish().unwrap();

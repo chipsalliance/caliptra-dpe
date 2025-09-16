@@ -222,6 +222,11 @@ pub mod tests {
         1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
         26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48,
     ];
+    #[cfg(feature = "ml-dsa")] // TODO mgudel: replace with correct digest
+    pub const TEST_DIGEST: [u8; DPE_PROFILE.hash_size()] = [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    ];
 
     #[cfg(feature = "dpe_profile_p256_sha256")]
     pub const TEST_LABEL: [u8; DPE_PROFILE.hash_size()] = [
@@ -233,11 +238,19 @@ pub mod tests {
         48, 47, 46, 45, 44, 43, 42, 41, 40, 39, 38, 37, 36, 35, 34, 33, 32, 31, 30, 29, 28, 27, 26,
         25, 24, 23, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1,
     ];
+    #[cfg(feature = "ml-dsa")] // TODO mgudel: replace with correct digest
+    pub const TEST_LABEL: [u8; DPE_PROFILE.hash_size()] = [
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    ];
 
     #[cfg(feature = "dpe_profile_p256_sha256")]
     pub const DEFAULT_PLATFORM: DefaultPlatform = DefaultPlatform(DefaultPlatformProfile::P256);
     #[cfg(feature = "dpe_profile_p384_sha384")]
     pub const DEFAULT_PLATFORM: DefaultPlatform = DefaultPlatform(DefaultPlatformProfile::P384);
+    #[cfg(feature = "ml-dsa")]
+    pub const DEFAULT_PLATFORM: DefaultPlatform =
+        DefaultPlatform(DefaultPlatformProfile::Mldsa87ExternalMu);
 
     pub const PROFILES: [DpeProfile; 2] = [DpeProfile::P256Sha256, DpeProfile::P384Sha384];
 
@@ -286,6 +299,8 @@ pub mod tests {
         #[cfg(feature = "dpe_profile_p256_sha256")]
         let wrong_profile = DpeProfile::P384Sha384 as u32;
         #[cfg(feature = "dpe_profile_p384_sha384")]
+        let wrong_profile = DpeProfile::P256Sha256 as u32;
+        #[cfg(feature = "ml-dsa")]
         let wrong_profile = DpeProfile::P256Sha256 as u32;
 
         // All commands should check the profile except GetProfile.

@@ -262,6 +262,11 @@ pub struct CertifyKeyMldsaExternalMu87Cmd {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "ml-dsa")]
+    use crate::commands::{
+        CertifyKeyMldsaExternalMu87Cmd as CertifyKeyCmd,
+        DeriveContextMldsaExternalMu87Cmd as DeriveContextCmd,
+    };
     #[cfg(feature = "dpe_profile_p256_sha256")]
     use crate::commands::{
         CertifyKeyP256Cmd as CertifyKeyCmd, DeriveContextP256Cmd as DeriveContextCmd,
