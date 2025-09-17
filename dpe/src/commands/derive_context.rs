@@ -859,6 +859,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "ml-dsa"))] // TODO: Find out how to verify ml-dsa
     fn test_full_attestation_flow() {
         CfiCounter::reset_for_test();
         let mut state = State::new(
@@ -921,6 +922,8 @@ mod tests {
                 )
                 .unwrap(),
             ),
+            #[cfg(feature = "ml-dsa")]
+            Ok(Response::Sign(SignResp::MlDsa(resp))) => (resp.new_context_handle, todo!()),
             Ok(_) => panic!("Invalid response type"),
             Err(e) => panic!("{:?}", e),
         };

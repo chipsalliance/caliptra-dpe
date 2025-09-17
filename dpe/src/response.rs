@@ -10,7 +10,7 @@ use crate::{
 };
 use crypto::{ecdsa::EcdsaAlgorithm, CryptoError};
 use platform::{PlatformError, MAX_CHUNK_SIZE};
-use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes};
+use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes, Unaligned};
 
 #[cfg(feature = "ml-dsa")]
 use crypto::ml_dsa::MldsaAlgorithm;
@@ -266,6 +266,8 @@ pub enum SignResp {
     P256(SignP256Resp),
     #[cfg(feature = "dpe_profile_p384_sha384")]
     P384(SignP384Resp),
+    #[cfg(feature = "ml-dsa")]
+    MlDsa(SignMlDsaResp),
 }
 
 impl SignResp {
@@ -319,6 +321,15 @@ pub struct SignP384Resp {
     pub new_context_handle: ContextHandle,
     pub sig_r: [u8; 48],
     pub sig_s: [u8; 48],
+}
+
+#[repr(C)]
+#[derive(Debug, PartialEq, Eq, IntoBytes, TryFromBytes, Immutable, KnownLayout)]
+pub struct SignMlDsaResp {
+    pub resp_hdr: ResponseHdr,
+    pub new_context_handle: ContextHandle,
+    pub sig: [u8; crypto::ml_dsa::MldsaAlgorithm::ExternalMu87.signature_size()],
+    _pad: [u8; 1], // Is this a acceptable way to statisfy alignment requirements?
 }
 
 #[repr(C)]
