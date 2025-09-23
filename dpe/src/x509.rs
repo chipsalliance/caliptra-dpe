@@ -3408,9 +3408,7 @@ pub(crate) mod tests {
             DpeProfile::P256Sha256 => Hasher::new(MessageDigest::sha256()).unwrap(),
             DpeProfile::P384Sha384 => Hasher::new(MessageDigest::sha384()).unwrap(),
             #[cfg(feature = "ml-dsa")]
-            DpeProfile::Mldsa87ExternalMu => {
-                todo!("What hash has to be used for subject key ident?")
-            }
+            DpeProfile::Mldsa87ExternalMu => Hasher::new(MessageDigest::sha384()).unwrap(),
         };
         hasher.update(pub_key).unwrap();
         let expected_key_identifier: &[u8] = &hasher.finish().unwrap();
