@@ -859,7 +859,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(not(feature = "ml-dsa"))] // TODO: Find out how to verify ml-dsa
+    #[cfg(not(feature = "ml-dsa"))] // TODO https://github.com/chipsalliance/caliptra-dpe/issues/450
     fn test_full_attestation_flow() {
         CfiCounter::reset_for_test();
         let mut state = State::new(
@@ -1865,7 +1865,10 @@ mod tests {
                         DpeProfile::P384Sha384 => {
                             OpenSSLHasher::new(MessageDigest::sha384()).unwrap()
                         }
-                        DpeProfile::Mldsa87ExternalMu => todo!("sha1?"),
+                        #[cfg(feature = "ml-dsa")]
+                        DpeProfile::Mldsa87ExternalMu => {
+                            OpenSSLHasher::new(MessageDigest::sha384()).unwrap()
+                        }
                     };
                     hasher.update(pub_key).unwrap();
                     let expected_ski: &[u8] = &hasher.finish().unwrap();

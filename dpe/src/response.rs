@@ -10,7 +10,7 @@ use crate::{
 };
 use crypto::{ecdsa::EcdsaAlgorithm, CryptoError};
 use platform::{PlatformError, MAX_CHUNK_SIZE};
-use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes, Unaligned};
+use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes};
 
 #[cfg(feature = "ml-dsa")]
 use crypto::ml_dsa::MldsaAlgorithm;
@@ -325,6 +325,7 @@ pub struct SignP384Resp {
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, IntoBytes, TryFromBytes, Immutable, KnownLayout)]
+#[cfg(feature = "ml-dsa")]
 pub struct SignMlDsaResp {
     pub resp_hdr: ResponseHdr,
     pub new_context_handle: ContextHandle,

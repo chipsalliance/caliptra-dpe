@@ -13,7 +13,12 @@ use caliptra_cfi_derive_git::cfi_impl_fn;
 #[cfg(not(feature = "no-cfi"))]
 use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq};
 use cfg_if::cfg_if;
-use crypto::{ecdsa::EcdsaPubKey, PubKey};
+#[cfg(any(
+    feature = "dpe_profile_p256_sha256",
+    feature = "dpe_profile_p384_sha384"
+))]
+use crypto::ecdsa::EcdsaPubKey;
+use crypto::PubKey;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 #[cfg(not(feature = "disable_x509"))]
@@ -389,6 +394,7 @@ mod tests {
     }
 
     #[test]
+    // TODO https://github.com/chipsalliance/caliptra-dpe/issues/450
     fn test_certify_key_csr() {
         // Verify that certify_key csr DICE extensions criticality matches the dpe_instance.
         for mark_dice_extensions_critical in [true, false] {

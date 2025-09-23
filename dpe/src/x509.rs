@@ -2948,6 +2948,7 @@ pub(crate) mod tests {
     use crate::{DpeProfile, DPE_PROFILE};
     use crypto::ecdsa::{EcdsaAlgorithm, EcdsaSig};
     use crypto::ecdsa::{EcdsaPub, EcdsaPubKey};
+    #[cfg(feature = "ml-dsa")]
     use crypto::ml_dsa::{MldsaAlgorithm, MldsaSignature};
     use crypto::{PubKey, Signature, SignatureAlgorithm};
     use openssl::hash::{Hasher, MessageDigest};
@@ -3199,6 +3200,7 @@ pub(crate) mod tests {
         let mut hasher = match DPE_PROFILE {
             DpeProfile::P256Sha256 => Hasher::new(MessageDigest::sha256()).unwrap(),
             DpeProfile::P384Sha384 => Hasher::new(MessageDigest::sha384()).unwrap(),
+            #[cfg(feature = "ml-dsa")]
             DpeProfile::Mldsa87ExternalMu => {
                 unreachable!("tried to build ecdsa test cert for ml-dsa profile!")
             }
@@ -3301,6 +3303,7 @@ pub(crate) mod tests {
     }
 
     #[test]
+    // TODO https://github.com/chipsalliance/caliptra-dpe/issues/450
     fn test_full_leaf() {
         let mut cert_buf = [0u8; 1024];
         let (_, cert) = build_test_cert_ecdsa(false, &mut cert_buf);
@@ -3365,7 +3368,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    // #[cfg(not(feature = "ml-dsa"))]
+    // TODO https://github.com/chipsalliance/caliptra-dpe/issues/450
     fn test_full_ca() {
         let mut cert_buf = [0u8; 1024];
         let (_, cert) = build_test_cert_ecdsa(/*is_ca=*/ true, &mut cert_buf);
@@ -3404,6 +3407,7 @@ pub(crate) mod tests {
         let mut hasher = match DPE_PROFILE {
             DpeProfile::P256Sha256 => Hasher::new(MessageDigest::sha256()).unwrap(),
             DpeProfile::P384Sha384 => Hasher::new(MessageDigest::sha384()).unwrap(),
+            #[cfg(feature = "ml-dsa")]
             DpeProfile::Mldsa87ExternalMu => {
                 todo!("What hash has to be used for subject key ident?")
             }

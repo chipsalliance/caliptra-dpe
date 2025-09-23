@@ -282,6 +282,7 @@ mod tests {
     };
 
     #[test]
+    // TODO https://github.com/chipsalliance/caliptra-dpe/issues/450
     fn test_deserialize_sign() {
         CfiCounter::reset_for_test();
         let mut command = CommandHdr::new(DPE_PROFILE, Command::SIGN)
@@ -354,7 +355,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(not(feature = "ml-dsa"))] // TODO: Find out how to verify ml-dsa
+    #[cfg(not(feature = "ml-dsa"))] // TODO https://github.com/chipsalliance/caliptra-dpe/issues/450
     fn test_asymmetric() {
         CfiCounter::reset_for_test();
         let mut state = test_state();
