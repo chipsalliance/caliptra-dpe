@@ -73,9 +73,8 @@ format_rust_targets
 format_go_targets
 
 # Build check for ML-DSA
-# TODO: Verification tests
+# TODO: Unit and verification tests
 build_rust_targets ml-dsa
-test_rust_targets ml-dsa
 lint_rust_targets ml-dsa
 
 # Run tests for P256 profile

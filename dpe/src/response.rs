@@ -278,7 +278,10 @@ impl SignResp {
             #[cfg(feature = "dpe_profile_p384_sha384")]
             SignResp::P384(resp) => resp.new_context_handle = *handle,
             #[cfg(feature = "ml-dsa")]
-            _ => todo!("clundin: Add ML-DSA variant"),
+            SignResp::MlDsa(_) => {
+                let _ = handle;
+                todo!("clundin: Add ML-DSA variant")
+            }
         }
     }
 

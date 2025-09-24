@@ -453,15 +453,6 @@ impl CertWriter<'_> {
     }
 
     /// If `tagged`, include the tag and size fields
-    #[cfg(feature = "ml-dsa")]
-    fn get_mldsa_signature_bit_string_size(
-        sig: &MldsaSignature,
-        tagged: bool,
-    ) -> Result<usize, DpeErrorCode> {
-        Self::get_structure_size(1 + sig.0.len(), tagged)
-    }
-
-    /// If `tagged`, include the tag and size fields
     #[cfg(not(feature = "disable_csr"))]
     fn get_signature_octet_string_size(
         sig: &Signature,

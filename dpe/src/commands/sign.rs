@@ -46,7 +46,10 @@ impl SignCommand<'_> {
             DpeProfile::P256Sha256 => SignCommand::parse_command(SignCommand::P256, bytes),
             #[cfg(feature = "dpe_profile_p384_sha384")]
             DpeProfile::P384Sha384 => SignCommand::parse_command(SignCommand::P384, bytes),
-            _ => todo!("Add ML-DSA sign support"),
+            _ => {
+                let _ = bytes;
+                todo!("Add ML-DSA sign support")
+            }
         }
     }
     pub fn parse_command<'a, T: FromBytes + KnownLayout + Immutable + 'a>(
@@ -73,7 +76,12 @@ impl CommandExecution for SignCommand<'_> {
             #[cfg(feature = "dpe_profile_p384_sha384")]
             SignCommand::P384(cmd) => cmd.execute(dpe, env, locality),
             #[cfg(feature = "ml-dsa")]
-            _ => todo!("Add ML-DSA sign support"),
+            _ => {
+                let _ = dpe;
+                let _ = env;
+                let _ = locality;
+                todo!("Add ML-DSA sign support")
+            }
         }
     }
 }
@@ -140,6 +148,11 @@ fn execute(
             crypto::Sha384::read_from_bytes(digest)
                 .map_err(|_| DpeErrorCode::Crypto(crypto::CryptoError::Size))?,
         ),
+        #[cfg(feature = "ml-dsa")]
+        crate::DpeProfile::Mldsa87ExternalMu => {
+            let _ = digest;
+            todo!("Add ML-DSA sign support")
+        }
         _ => Err(DpeErrorCode::InvalidArgument)?,
     };
 
