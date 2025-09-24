@@ -330,7 +330,7 @@ pub struct SignMlDsaResp {
     pub resp_hdr: ResponseHdr,
     pub new_context_handle: ContextHandle,
     pub sig: [u8; crypto::ml_dsa::MldsaAlgorithm::ExternalMu87.signature_size()],
-    _pad: [u8; 1], // Is this a acceptable way to statisfy alignment requirements?
+    _padding: [u8; 1],
 }
 
 #[repr(C)]
