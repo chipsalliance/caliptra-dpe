@@ -73,8 +73,9 @@ format_rust_targets
 format_go_targets
 
 # Build check for ML-DSA
-# TODO: Tests + Linting
+# TODO: Unit and verification tests
 build_rust_targets ml-dsa
+lint_rust_targets ml-dsa
 
 # Run tests for P256 profile
 build_rust_targets dpe_profile_p256_sha256
@@ -87,7 +88,6 @@ build_rust_targets dpe_profile_p384_sha384
 lint_rust_targets dpe_profile_p384_sha384
 test_rust_targets dpe_profile_p384_sha384
 run_verification_tests dpe_profile_p384_sha384 rustcrypto
-
 
 # Build fuzz target
 ( cd dpe/fuzz

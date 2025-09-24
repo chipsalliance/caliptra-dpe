@@ -250,6 +250,8 @@ impl DpeInstance {
         let measurement = match (self.profile, measurement) {
             (DpeProfile::P256Sha256, Digest::Sha256(m)) => m.as_bytes(),
             (DpeProfile::P384Sha384, Digest::Sha384(m)) => m.as_bytes(),
+            #[cfg(feature = "ml-dsa")]
+            (DpeProfile::Mldsa87ExternalMu, Digest::Sha384(m)) => m.as_bytes(),
             _ => {
                 return Err(DpeErrorCode::InvalidArgument);
             }
@@ -402,6 +404,8 @@ pub mod tests {
     use super::*;
     use crate::commands::tests::DEFAULT_PLATFORM;
     use crate::commands::DeriveContextFlags;
+    #[cfg(feature = "ml-dsa")]
+    use crate::commands::DeriveContextMldsaExternalMu87Cmd as DeriveContextCmd;
     #[cfg(feature = "dpe_profile_p256_sha256")]
     use crate::commands::DeriveContextP256Cmd as DeriveContextCmd;
     #[cfg(feature = "dpe_profile_p384_sha384")]
@@ -420,6 +424,9 @@ pub mod tests {
     #[cfg(feature = "dpe_profile_p384_sha384")]
     use crypto::Ecdsa384RustCrypto;
 
+    #[cfg(feature = "ml-dsa")]
+    use crypto::MldsaRustCrypto;
+
     pub struct TestTypes;
     impl DpeTypes for TestTypes {
         #[cfg(feature = "dpe_profile_p256_sha256")]
@@ -427,6 +434,9 @@ pub mod tests {
 
         #[cfg(feature = "dpe_profile_p384_sha384")]
         type Crypto<'a> = Ecdsa384RustCrypto;
+
+        #[cfg(feature = "ml-dsa")]
+        type Crypto<'a> = MldsaRustCrypto;
 
         type Platform<'a> = DefaultPlatform;
     }

@@ -13,6 +13,10 @@ use caliptra_cfi_lib_git::cfi_launder;
 #[cfg(not(feature = "no-cfi"))]
 use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq, cfi_assert_ne};
 use cfg_if::cfg_if;
+#[cfg(any(
+    feature = "dpe_profile_p256_sha256",
+    feature = "dpe_profile_p384_sha384"
+))]
 use crypto::ecdsa::EcdsaSignature;
 use crypto::{Crypto, Digest, Signature};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
@@ -42,7 +46,10 @@ impl SignCommand<'_> {
             DpeProfile::P256Sha256 => SignCommand::parse_command(SignCommand::P256, bytes),
             #[cfg(feature = "dpe_profile_p384_sha384")]
             DpeProfile::P384Sha384 => SignCommand::parse_command(SignCommand::P384, bytes),
-            _ => todo!("Add ML-DSA sign support"),
+            _ => {
+                let _ = bytes;
+                todo!("Add ML-DSA sign support")
+            }
         }
     }
     pub fn parse_command<'a, T: FromBytes + KnownLayout + Immutable + 'a>(
@@ -69,7 +76,12 @@ impl CommandExecution for SignCommand<'_> {
             #[cfg(feature = "dpe_profile_p384_sha384")]
             SignCommand::P384(cmd) => cmd.execute(dpe, env, locality),
             #[cfg(feature = "ml-dsa")]
-            _ => todo!("Add ML-DSA sign support"),
+            _ => {
+                let _ = dpe;
+                let _ = env;
+                let _ = locality;
+                todo!("Add ML-DSA sign support")
+            }
         }
     }
 }
@@ -136,6 +148,11 @@ fn execute(
             crypto::Sha384::read_from_bytes(digest)
                 .map_err(|_| DpeErrorCode::Crypto(crypto::CryptoError::Size))?,
         ),
+        #[cfg(feature = "ml-dsa")]
+        crate::DpeProfile::Mldsa87ExternalMu => {
+            let _ = digest;
+            todo!("Add ML-DSA sign support")
+        }
         _ => Err(DpeErrorCode::InvalidArgument)?,
     };
 
@@ -202,6 +219,18 @@ pub struct SignP384Cmd {
     pub digest: [u8; 48],
 }
 
+impl CommandExecution for SignP384Cmd {
+    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    fn execute(
+        &self,
+        dpe: &mut DpeInstance,
+        env: &mut DpeEnv<impl DpeTypes>,
+        locality: u32,
+    ) -> Result<Response, DpeErrorCode> {
+        execute(dpe, env, &self.handle, &self.label, &self.digest, locality)
+    }
+}
+
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, IntoBytes, FromBytes, Immutable, KnownLayout)]
 pub struct SignMldsaExternalMu87Cmd {
@@ -211,7 +240,7 @@ pub struct SignMldsaExternalMu87Cmd {
     pub digest: [u8; 48],
 }
 
-impl CommandExecution for SignP384Cmd {
+impl CommandExecution for SignMldsaExternalMu87Cmd {
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     fn execute(
         &self,
@@ -226,6 +255,11 @@ impl CommandExecution for SignP384Cmd {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "ml-dsa")]
+    use crate::commands::{
+        sign::SignMldsaExternalMu87Cmd as SignCmd, CertifyKeyMldsaExternalMu87Cmd as CertifyKeyCmd,
+        DeriveContextMldsaExternalMu87Cmd as DeriveContextCmd,
+    };
     #[cfg(feature = "dpe_profile_p256_sha256")]
     use crate::commands::{
         sign::SignP256Cmd as SignCmd, CertifyKeyP256Cmd as CertifyKeyCmd,
@@ -261,6 +295,7 @@ mod tests {
     };
 
     #[test]
+    // TODO https://github.com/chipsalliance/caliptra-dpe/issues/450
     fn test_deserialize_sign() {
         CfiCounter::reset_for_test();
         let mut command = CommandHdr::new(DPE_PROFILE, Command::SIGN)
@@ -272,6 +307,8 @@ mod tests {
         let expected = Command::Sign(SignCommand::P256(&TEST_SIGN_CMD));
         #[cfg(feature = "dpe_profile_p384_sha384")]
         let expected = Command::Sign(SignCommand::P384(&TEST_SIGN_CMD));
+        #[cfg(feature = "ml-dsa")]
+        let expected = Command::Sign(SignCommand::ExternalMu87(&TEST_SIGN_CMD));
         assert_eq!(Ok(expected), Command::deserialize(DPE_PROFILE, &command));
     }
 
@@ -331,6 +368,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "ml-dsa"))] // TODO https://github.com/chipsalliance/caliptra-dpe/issues/450
     fn test_asymmetric() {
         CfiCounter::reset_for_test();
         let mut state = test_state();
@@ -367,6 +405,7 @@ mod tests {
                 SignResp::P256(resp) => (resp.sig_r, resp.sig_s),
                 #[cfg(feature = "dpe_profile_p384_sha384")]
                 SignResp::P384(resp) => (resp.sig_r, resp.sig_s),
+                _ => todo!(),
             };
 
             EcdsaSig::from_private_components(

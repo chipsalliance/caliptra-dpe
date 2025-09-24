@@ -620,6 +620,11 @@ impl CommandExecution for DeriveContextMldsaExternalMu87Cmd {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "ml-dsa")]
+    use crate::commands::{
+        sign::SignMldsaExternalMu87Cmd as SignCmd, CertifyKeyMldsaExternalMu87Cmd as CertifyKeyCmd,
+        DeriveContextMldsaExternalMu87Cmd as DeriveContextCmd,
+    };
     #[cfg(feature = "dpe_profile_p256_sha256")]
     use crate::commands::{
         sign::SignP256Cmd as SignCmd, CertifyKeyP256Cmd as CertifyKeyCmd,
@@ -866,6 +871,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "ml-dsa"))] // TODO https://github.com/chipsalliance/caliptra-dpe/issues/450
     fn test_full_attestation_flow() {
         CfiCounter::reset_for_test();
         let mut state = State::new(
@@ -928,6 +934,8 @@ mod tests {
                 )
                 .unwrap(),
             ),
+            #[cfg(feature = "ml-dsa")]
+            Ok(Response::Sign(SignResp::MlDsa(resp))) => (resp.new_context_handle, todo!()),
             Ok(_) => panic!("Invalid response type"),
             Err(e) => panic!("{:?}", e),
         };
@@ -1868,6 +1876,10 @@ mod tests {
                             OpenSSLHasher::new(MessageDigest::sha256()).unwrap()
                         }
                         DpeProfile::P384Sha384 => {
+                            OpenSSLHasher::new(MessageDigest::sha384()).unwrap()
+                        }
+                        #[cfg(feature = "ml-dsa")]
+                        DpeProfile::Mldsa87ExternalMu => {
                             OpenSSLHasher::new(MessageDigest::sha384()).unwrap()
                         }
                     };

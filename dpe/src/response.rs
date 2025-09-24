@@ -266,6 +266,8 @@ pub enum SignResp {
     P256(SignP256Resp),
     #[cfg(feature = "dpe_profile_p384_sha384")]
     P384(SignP384Resp),
+    #[cfg(feature = "ml-dsa")]
+    MlDsa(SignMlDsaResp),
 }
 
 impl SignResp {
@@ -276,7 +278,10 @@ impl SignResp {
             #[cfg(feature = "dpe_profile_p384_sha384")]
             SignResp::P384(resp) => resp.new_context_handle = *handle,
             #[cfg(feature = "ml-dsa")]
-            _ => todo!("clundin: Add ML-DSA variant"),
+            SignResp::MlDsa(_) => {
+                let _ = handle;
+                todo!("clundin: Add ML-DSA variant")
+            }
         }
     }
 
@@ -319,6 +324,16 @@ pub struct SignP384Resp {
     pub new_context_handle: ContextHandle,
     pub sig_r: [u8; 48],
     pub sig_s: [u8; 48],
+}
+
+#[repr(C)]
+#[derive(Debug, PartialEq, Eq, IntoBytes, TryFromBytes, Immutable, KnownLayout)]
+#[cfg(feature = "ml-dsa")]
+pub struct SignMlDsaResp {
+    pub resp_hdr: ResponseHdr,
+    pub new_context_handle: ContextHandle,
+    pub sig: [u8; crypto::ml_dsa::MldsaAlgorithm::ExternalMu87.signature_size()],
+    _padding: [u8; 1],
 }
 
 #[repr(C)]
