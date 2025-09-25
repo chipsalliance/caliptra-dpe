@@ -30,6 +30,9 @@ function lint_rust_targets() {
   cargo clippy --manifest-path dpe/Cargo.toml --features=$profile --no-default-features -- --deny=warnings
   cargo clippy --manifest-path simulator/Cargo.toml --features=$profile,rustcrypto --no-default-features -- --deny=warnings
   cargo clippy --manifest-path tools/Cargo.toml --features=$profile --no-default-features -- --deny=warnings
+
+  # Check that C bindings are up to date
+  git diff --exit-code -- dpe/include/caliptra_dpe.h
 }
 
 function format_rust_targets() {
