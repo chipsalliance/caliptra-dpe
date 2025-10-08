@@ -1056,10 +1056,6 @@ impl CertWriter<'_> {
     fn encode_bytes(&mut self, bytes: &[u8]) -> Result<usize, DpeErrorCode> {
         let size = bytes.len();
 
-        if self.offset >= self.certificate.len() || self.offset + size > self.certificate.len() {
-            return Err(DpeErrorCode::InternalError);
-        }
-
         self.certificate
             .get_mut(self.offset..self.offset + size)
             .ok_or(DpeErrorCode::InternalError)?
