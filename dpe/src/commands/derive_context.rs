@@ -463,6 +463,7 @@ mod tests {
         x509::X509,
     };
     use platform::{Platform, MAX_KEY_IDENTIFIER_SIZE};
+    use public_key::PublicKey;
     use x509_parser::{nom::Parser, oid_registry::asn1_rs::oid, prelude::*};
     use zerocopy::IntoBytes;
 
@@ -739,7 +740,13 @@ mod tests {
                 .unwrap(),
             ),
             #[cfg(feature = "ml-dsa")]
-            Ok(Response::Sign(SignResp::MlDsa(resp))) => (resp.new_context_handle, todo!()),
+            Ok(Response::Sign(SignResp::MlDsa(resp))) => {
+                let enc_sig =
+                    ml_dsa::EncodedSignature::<ml_dsa::MlDsa87>::try_from(resp.sig).unwrap();
+                let sig: ml_dsa::Signature<ml_dsa::MlDsa87> =
+                    ml_dsa::Signature::decode(&enc_sig).expect("Error decoding signature");
+                (resp.new_context_handle, sig)
+            }
             Ok(_) => panic!("Invalid response type"),
             Err(e) => panic!("{:?}", e),
         };
@@ -757,6 +764,7 @@ mod tests {
             Err(e) => panic!("{:?}", e),
         };
 
+        #[cfg(not(feature = "ml-dsa"))]
         let ec_pub_key = {
             let cmd = CertifyKeyCmd {
                 handle: parent_handle,
@@ -774,8 +782,37 @@ mod tests {
             let x509 = X509::from_der(&certify_resp.cert().unwrap()).unwrap();
             x509.public_key().unwrap().ec_key().unwrap()
         };
+        #[cfg(feature = "ml-dsa")]
+        let ml_dsa_key = {
+            let cmd = CertifyKeyCmd {
+                handle: parent_handle,
+                flags: CertifyKeyFlags::empty(),
+                label: TEST_LABEL,
+                format: CertifyKeyCommand::FORMAT_X509,
+            };
+            let certify_resp = match CertifyKeyCommand::from(&cmd)
+                .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
+                .unwrap()
+            {
+                Response::CertifyKey(resp) => resp,
+                _ => panic!("Incorrect response type"),
+            };
+            let (rest, x509) =
+                x509_parser::parse_x509_certificate(&certify_resp.cert().unwrap()).unwrap();
+            let pub_key = x509.tbs_certificate.subject_pki.parsed().unwrap();
+            if let x509_parser::public_key::PublicKey::Unknown(key) = pub_key {
+                ml_dsa::VerifyingKey::<ml_dsa::MlDsa87>::decode(key.try_into().unwrap())
+            } else {
+                panic!();
+            }
+        };
 
+        #[cfg(not(feature = "ml-dsa"))]
         assert!(sig.verify(&TEST_DIGEST, &ec_pub_key).unwrap());
+        #[cfg(feature = "ml-dsa")]
+        use ml_dsa::signature::Verifier;
+        #[cfg(feature = "ml-dsa")]
+        assert!(ml_dsa_key.verify(&TEST_DIGEST, &sig).is_ok());
     }
 
     #[test]

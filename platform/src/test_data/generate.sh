@@ -25,5 +25,5 @@ openssl genpkey -algorithm ML-DSA-87 -provparam ml-dsa.output_formats=bare-seed 
 openssl req -new -key key_mldsa_87.pem -x509 -nodes -days 365000 -out cert_mldsa_87.pem \
   -addext keyUsage=critical,keyCertSign \
   -subj /CN="DPE Test Alias"/
-openssl pkey -in key_mldsa_87.pem -outform DER -out key_mldsa_87.der
+openssl pkey -in key_mldsa_87.pem -outform DER -provparam ml-dsa.output_formats=seed-only -out key_mldsa_87.der
 openssl x509 -in cert_mldsa_87.pem -outform DER -out cert_mldsa_87.der

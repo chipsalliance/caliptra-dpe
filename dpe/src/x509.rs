@@ -1057,10 +1057,6 @@ impl CertWriter<'_> {
     fn encode_bytes(&mut self, bytes: &[u8]) -> Result<usize, DpeErrorCode> {
         let size = bytes.len();
 
-        if self.offset >= self.certificate.len() || self.offset + size > self.certificate.len() {
-            return Err(DpeErrorCode::InternalError);
-        }
-
         self.certificate
             .get_mut(self.offset..self.offset + size)
             .ok_or(DpeErrorCode::InternalError)?
@@ -2355,7 +2351,7 @@ impl CertWriter<'_> {
     /// * `serial_number` - A byte slice holding the serial number.
     /// * `issuer_name` - A DER encoded issuer RDN.
     /// * `subject_name` - The subject name RDN struct to encode.
-    /// * `pubkey` - ECDSA Public key.
+    /// * `pubkey` - Public key.
     /// * `measurements` - DPE measurement data.
     /// * `validity` - Time period in which certificate is valid.
     #[cfg(not(feature = "disable_x509"))]
@@ -2987,6 +2983,8 @@ pub(crate) mod tests {
     use crypto::ecdsa::{EcdsaAlgorithm, EcdsaSig};
     use crypto::ecdsa::{EcdsaPub, EcdsaPubKey};
     #[cfg(feature = "ml-dsa")]
+    use crypto::ml_dsa::MldsaPublicKey;
+    #[cfg(feature = "ml-dsa")]
     use crypto::ml_dsa::{MldsaAlgorithm, MldsaSignature};
     use crypto::{PubKey, Signature, SignatureAlgorithm};
     use openssl::hash::{Hasher, MessageDigest};
@@ -3109,6 +3107,7 @@ pub(crate) mod tests {
         );
     }
 
+    #[cfg(not(feature = "ml-dsa"))]
     #[test]
     fn test_subject_pubkey() {
         let mut cert = [0u8; 384];
@@ -3122,6 +3121,25 @@ pub(crate) mod tests {
         assert_eq!(
             CertWriter::new(&mut [], DPE_PROFILE, true)
                 .get_ecdsa_subject_pubkey_info_size(&test_key, true)
+                .unwrap(),
+            bytes_written
+        );
+    }
+
+    #[cfg(feature = "ml-dsa")]
+    #[test]
+    fn test_subject_pubkey() {
+        let mut cert = [0u8; 4096];
+        let test_key = MldsaPublicKey([0; MldsaAlgorithm::ExternalMu87.public_key_size()]);
+
+        let mut w = CertWriter::new(&mut cert, DPE_PROFILE, true);
+        let bytes_written = w.encode_mldsa_subject_pubkey_info(&test_key).unwrap();
+
+        SubjectPublicKeyInfo::from_der(&cert[..bytes_written]).unwrap();
+
+        assert_eq!(
+            CertWriter::new(&mut [], DPE_PROFILE, true)
+                .get_mldsa_subject_pubkey_info_size(&test_key, true)
                 .unwrap(),
             bytes_written
         );
@@ -3347,11 +3365,135 @@ pub(crate) mod tests {
         (bytes_written, cert)
     }
 
+    #[cfg(feature = "ml-dsa")]
+    fn build_test_cert_mldsa(is_ca: bool, cert_buf: &mut [u8]) -> (usize, X509Certificate<'_>) {
+        let mut issuer_der = [0u8; 1024];
+        let mut issuer_writer = CertWriter::new(&mut issuer_der, DPE_PROFILE, true);
+        let issuer_len = issuer_writer.encode_rdn(&TEST_ISSUER_NAME).unwrap();
+
+        const ALGORITHM: MldsaAlgorithm = match DPE_PROFILE.alg() {
+            SignatureAlgorithm::MlDsa(mldsa_algorithm) => mldsa_algorithm,
+            _ => panic!("tried to build ml-dsa test cert for non ml-dsa profile!"),
+        };
+
+        let test_pub = MldsaPublicKey::from_slice(&[0xAA; ALGORITHM.public_key_size()]);
+
+        let node = TciNodeData::new();
+
+        let mut hasher = match DPE_PROFILE {
+            DpeProfile::Mldsa87ExternalMu => Hasher::new(MessageDigest::sha384()).unwrap(),
+            _ => unreachable!("tried to build ml-dsa test cert for non ml-dsa profile!"),
+        };
+        hasher.update(test_pub.as_slice()).unwrap();
+        let mut subject_key_identifier = [0u8; MAX_KEY_IDENTIFIER_SIZE];
+        let digest = &hasher.finish().unwrap();
+        subject_key_identifier.copy_from_slice(&digest[..MAX_KEY_IDENTIFIER_SIZE]);
+        let mut other_name = ArrayVec::new();
+        other_name
+            .try_extend_from_slice(DEFAULT_OTHER_NAME_VALUE.as_bytes())
+            .unwrap();
+        let subject_alt_name = SubjectAltName::OtherName(OtherName {
+            oid: DEFAULT_OTHER_NAME_OID,
+            other_name,
+        });
+        let measurements = MeasurementData {
+            label: &[0; DPE_PROFILE.hash_size()],
+            tci_nodes: &[node],
+            is_ca,
+            supports_recursive: true,
+            subject_key_identifier,
+            authority_key_identifier: subject_key_identifier,
+            subject_alt_name: Some(subject_alt_name),
+        };
+
+        let mut not_before = ArrayVec::new();
+        not_before
+            .try_extend_from_slice("20230227000000Z".as_bytes())
+            .unwrap();
+        let mut not_after = ArrayVec::new();
+        not_after
+            .try_extend_from_slice("99991231235959Z".as_bytes())
+            .unwrap();
+        let validity = CertValidity {
+            not_before,
+            not_after,
+        };
+
+        let pub_key = match DPE_PROFILE.alg() {
+            #[cfg(feature = "dpe_profile_p256_sha256")]
+            SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit256) => {
+                PubKey::Ecdsa(EcdsaPubKey::Ecdsa256(test_pub))
+            }
+            #[cfg(feature = "dpe_profile_p384_sha384")]
+            SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384) => {
+                PubKey::Ecdsa(EcdsaPubKey::Ecdsa384(test_pub))
+            }
+            #[cfg(feature = "ml-dsa")]
+            SignatureAlgorithm::MlDsa(MldsaAlgorithm::ExternalMu87) => PubKey::MlDsa(test_pub),
+            _ => panic!("Missing signature"),
+        };
+
+        let test_sig: Signature = match DPE_PROFILE.alg() {
+            #[cfg(feature = "dpe_profile_p256_sha256")]
+            SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit256) => Signature::Ecdsa(
+                EcdsaSig::from_slice(&[0xCC; ECC_INT_SIZE], &[0xDD; ECC_INT_SIZE]).into(),
+            ),
+            #[cfg(feature = "dpe_profile_p384_sha384")]
+            SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384) => Signature::Ecdsa(
+                EcdsaSig::from_slice(&[0xCC; ECC_INT_SIZE], &[0xDD; ECC_INT_SIZE]).into(),
+            ),
+            #[cfg(feature = "ml-dsa")]
+            SignatureAlgorithm::MlDsa(MldsaAlgorithm::ExternalMu87) => {
+                Signature::MlDsa(MldsaSignature([0xBB; ALGORITHM.signature_size()]))
+            }
+            _ => panic!("Missing signature"),
+        };
+
+        let mut sign_cb = |_data: &[u8], _use_derived: bool| Ok(test_sig.clone());
+
+        let mut w = CertWriter::new(cert_buf, DPE_PROFILE, true);
+        let bytes_written = w
+            .encode_certificate(
+                &mut sign_cb,
+                TEST_SERIAL,
+                &issuer_der[..issuer_len],
+                &TEST_SUBJECT_NAME,
+                &pub_key,
+                &measurements,
+                &validity,
+            )
+            .unwrap();
+
+        let mut parser = X509CertificateParser::new().with_deep_parse_extensions(true);
+        let cert = match parser.parse(&cert_buf[..bytes_written]) {
+            Ok((_, parsed_cert)) => {
+                assert_eq!(parsed_cert.version(), X509Version::V3);
+                parsed_cert
+            }
+            Err(e) => panic!("x509 parsing failed: {:?}", e),
+        };
+
+        let ueid = cert
+            .get_extension_unique(&oid!(2.23.133 .5 .4 .4))
+            .unwrap()
+            .unwrap();
+        assert!(ueid.critical);
+        let parsed_ueid = asn1::parse_single::<Ueid>(ueid.value).unwrap();
+        assert_eq!(parsed_ueid.ueid, measurements.label);
+
+        (bytes_written, cert)
+    }
+
     #[test]
-    // TODO https://github.com/chipsalliance/caliptra-dpe/issues/450
     fn test_full_leaf() {
+        #[cfg(feature = "dpe_profile_p256_sha256")]
         let mut cert_buf = [0u8; 1024];
+        #[cfg(feature = "dpe_profile_p256_sha256")]
         let (_, cert) = build_test_cert_ecdsa(false, &mut cert_buf);
+        #[cfg(feature = "ml-dsa")]
+        let mut cert_buf = [0u8; 8192];
+        #[cfg(feature = "ml-dsa")]
+        let (_, cert) = build_test_cert_mldsa(false, &mut cert_buf);
 
         match cert.basic_constraints() {
             Ok(Some(basic_constraints)) => {
@@ -3413,10 +3555,15 @@ pub(crate) mod tests {
     }
 
     #[test]
-    // TODO https://github.com/chipsalliance/caliptra-dpe/issues/450
     fn test_full_ca() {
+        #[cfg(feature = "dpe_profile_p256_sha256")]
         let mut cert_buf = [0u8; 1024];
-        let (_, cert) = build_test_cert_ecdsa(/*is_ca=*/ true, &mut cert_buf);
+        #[cfg(feature = "dpe_profile_p256_sha256")]
+        let (_, cert) = build_test_cert_ecdsa(true, &mut cert_buf);
+        #[cfg(feature = "ml-dsa")]
+        let mut cert_buf = [0u8; 8192];
+        #[cfg(feature = "ml-dsa")]
+        let (_, cert) = build_test_cert_mldsa(true, &mut cert_buf);
 
         match cert.basic_constraints() {
             Ok(Some(basic_constraints)) => {
