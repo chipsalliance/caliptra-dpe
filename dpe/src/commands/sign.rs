@@ -43,10 +43,11 @@ impl SignCommand<'_> {
             DpeProfile::P256Sha256 => SignCommand::parse_command(SignCommand::P256, bytes),
             #[cfg(feature = "p384")]
             DpeProfile::P384Sha384 => SignCommand::parse_command(SignCommand::P384, bytes),
-            _ => {
-                let _ = bytes;
-                todo!("Add ML-DSA sign support")
+            #[cfg(feature = "ml-dsa")]
+            DpeProfile::Mldsa87ExternalMu => {
+                SignCommand::parse_command(SignCommand::ExternalMu87, bytes)
             }
+            _ => Err(DpeErrorCode::InvalidArgument)?,
         }
     }
     pub fn parse_command<'a, T: FromBytes + KnownLayout + Immutable + 'a>(
@@ -285,7 +286,6 @@ mod tests {
     };
 
     #[test]
-    // TODO https://github.com/chipsalliance/caliptra-dpe/issues/450
     fn test_deserialize_sign() {
         CfiCounter::reset_for_test();
         let mut command = CommandHdr::new(DPE_PROFILE, Command::SIGN)

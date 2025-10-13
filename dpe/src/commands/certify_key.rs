@@ -488,13 +488,9 @@ mod tests {
                 SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit256) => "2.16.840.1.101.3.4.2.1",
                 SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384) => "2.16.840.1.101.3.4.2.2",
                 #[cfg(feature = "ml-dsa")]
-                SignatureAlgorithm::MlDsa(MldsaAlgorithm::ExternalMu87) => {
-                    "2.16.840.1.101.3.4.3.19"
-                }
+                SignatureAlgorithm::MlDsa(MldsaAlgorithm::ExternalMu87) => "2.16.840.1.101.3.4.2.2",
             };
-            assert!(digest_alg
-                .assert_algorithm_oid(ObjectIdentifier::new_unwrap(hash_alg_oid))
-                .is_ok());
+            assert_eq!(digest_alg.oid, ObjectIdentifier::new_unwrap(hash_alg_oid));
 
             // validate signer infos
             let signer_infos = signed_data.signer_infos.0;
@@ -524,10 +520,10 @@ mod tests {
                     "2.16.840.1.101.3.4.3.19"
                 }
             };
-            assert!(signer_info
-                .signature_algorithm
-                .assert_algorithm_oid(ObjectIdentifier::new_unwrap(sig_alg_oid))
-                .is_ok());
+            assert_eq!(
+                signer_info.signature_algorithm.oid,
+                ObjectIdentifier::new_unwrap(sig_alg_oid)
+            );
 
             // validate signer identifier
             let sid = &signer_info.sid;
