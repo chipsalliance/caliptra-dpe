@@ -28,7 +28,7 @@ no-cfi = ["crypto/no-cfi"]
 bitflags = "2.4.0"
 caliptra-cfi-lib-git = { workspace = true, default-features = false, features = ["cfi", "cfi-counter" ] }
 caliptra-cfi-derive-git.workspace = true
-constant_time_eq = "0.3.0"
+constant_time_eq.workspace = true
 crypto = {path = "../crypto", default-features = false}
 platform = {path = "../platform", default-features = false}
 ufmt = { git = "https://github.com/korran/ufmt.git", rev = "1d0743c1ffffc68bc05ca8eeb81c166192863f33", features = ["inline"] }

@@ -294,6 +294,7 @@ dependencies = [
  "base64ct",
  "caliptra-cfi-derive-git",
  "caliptra-cfi-lib-git",
+ "constant_time_eq",
  "ecdsa",
  "hkdf",
  "ml-dsa",
