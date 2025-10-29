@@ -324,13 +324,13 @@ mod tests {
     use caliptra_cfi_lib_git::CfiCounter;
     use cms::{
         content_info::{CmsVersion, ContentInfo},
-        signed_data::{SignedData, SignerIdentifier},
+        signed_data::{SignedData, SignerIdentifier, SignerInfo},
     };
     #[cfg(feature = "ml-dsa")]
     use crypto::ml_dsa::{MldsaAlgorithm, MldsaPublicKey};
     use crypto::{
         ecdsa::{EcdsaAlgorithm, EcdsaPub},
-        Crypto, CryptoSuite, PubKey, SignatureAlgorithm,
+        Crypto, CryptoSuite, Digest, PubKey, SignatureAlgorithm,
     };
     use der::{Decode, Encode};
     use openssl::{
@@ -430,6 +430,7 @@ mod tests {
     #[test]
     // TODO https://github.com/chipsalliance/caliptra-dpe/issues/450
     fn test_certify_key_csr() {
+        crate::tests::logger_init();
         // Verify that certify_key csr DICE extensions criticality matches the dpe_instance.
         for mark_dice_extensions_critical in [true, false] {
             CfiCounter::reset_for_test();
@@ -555,34 +556,6 @@ mod tests {
             // skip first 4 explicit encoding bytes
             let econtent = &econtent_info.econtent.as_mut().unwrap().to_der().unwrap()[4..];
 
-            // validate csr signature with the alias key
-            let csr_digest = env.crypto.hash(econtent).unwrap();
-            let priv_key = match DPE_PROFILE.alg() {
-                SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit256) => EcKey::private_key_from_der(
-                    include_bytes!("../../../platform/src/test_data/key_256.der"),
-                ),
-                SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384) => EcKey::private_key_from_der(
-                    include_bytes!("../../../platform/src/test_data/key_384.der"),
-                ),
-                #[cfg(feature = "ml-dsa")]
-                SignatureAlgorithm::MlDsa(MldsaAlgorithm::ExternalMu87) => {
-                    todo!("Add MLDSA for OpenSSL?")
-                }
-            }
-            .unwrap();
-            let curve = match DPE_PROFILE.alg() {
-                SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit256) => Nid::X9_62_PRIME256V1,
-                SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384) => Nid::SECP384R1,
-                #[cfg(feature = "ml-dsa")]
-                SignatureAlgorithm::MlDsa(MldsaAlgorithm::ExternalMu87) => {
-                    todo!("Add MLDSA for OpenSSL?")
-                }
-            };
-            let group = &EcGroup::from_curve_name(curve).unwrap();
-            let alias_key = EcKey::from_public_key(group, priv_key.public_key()).unwrap();
-            let csr_sig = EcdsaSig::from_der(signer_info.signature.as_bytes()).unwrap();
-            assert!(csr_sig.verify(csr_digest.as_slice(), &alias_key).unwrap());
-
             // validate csr
             let (_, csr) = X509CertificationRequest::from_der(econtent).unwrap();
             let cri = csr.certification_request_info;
@@ -592,21 +565,70 @@ mod tests {
                 sig_alg_oid
             );
 
-            // validate certification request info signature
-            let cri_sig = EcdsaSig::from_der(csr.signature_value.data.as_ref()).unwrap();
+            let csr_digest = env.crypto.hash(econtent).unwrap();
 
-            // validate certification request info subject pki
-            let PublicKey::EC(ec_point) = cri.subject_pki.parsed().unwrap() else {
-                panic!("Error: Failed to parse public key correctly.");
-            };
-            let pub_key_der = ec_point.data();
-            // skip first 0x04 der encoding byte
-            let x = BigNum::from_slice(&pub_key_der[1..DPE_PROFILE.ecc_int_size() + 1]).unwrap();
-            let y = BigNum::from_slice(&pub_key_der[DPE_PROFILE.ecc_int_size() + 1..]).unwrap();
-            let pub_key = EcKey::from_public_key_affine_coordinates(group, &x, &y).unwrap();
+            match DPE_PROFILE.alg() {
+                SignatureAlgorithm::Ecdsa(algorithm) => {
+                    let priv_key = match algorithm {
+                        EcdsaAlgorithm::Bit256 => EcKey::private_key_from_der(include_bytes!(
+                            "../../../platform/src/test_data/key_256.der"
+                        )),
+                        EcdsaAlgorithm::Bit384 => EcKey::private_key_from_der(include_bytes!(
+                            "../../../platform/src/test_data/key_384.der"
+                        )),
+                    }
+                    .unwrap();
+                    let curve = match algorithm {
+                        EcdsaAlgorithm::Bit256 => Nid::X9_62_PRIME256V1,
+                        EcdsaAlgorithm::Bit384 => Nid::SECP384R1,
+                    };
+                    let group = &EcGroup::from_curve_name(curve).unwrap();
+                    let alias_key = EcKey::from_public_key(group, priv_key.public_key()).unwrap();
+                    let csr_sig = EcdsaSig::from_der(signer_info.signature.as_bytes()).unwrap();
+                    assert!(csr_sig.verify(csr_digest.as_slice(), &alias_key).unwrap());
 
-            let cri_digest = env.crypto.hash(cri.raw).unwrap();
-            assert!(cri_sig.verify(cri_digest.as_slice(), &pub_key).unwrap());
+                    // validate certification request info signature
+                    let cri_sig = EcdsaSig::from_der(csr.signature_value.data.as_ref()).unwrap();
+
+                    // validate certification request info subject pki
+                    let PublicKey::EC(ec_point) = cri.subject_pki.parsed().unwrap() else {
+                        panic!("Error: Failed to parse public key correctly.");
+                    };
+                    let pub_key_der = ec_point.data();
+                    // skip first 0x04 der encoding byte
+                    let x = BigNum::from_slice(&pub_key_der[1..DPE_PROFILE.ecc_int_size() + 1])
+                        .unwrap();
+                    let y =
+                        BigNum::from_slice(&pub_key_der[DPE_PROFILE.ecc_int_size() + 1..]).unwrap();
+                    let pub_key = EcKey::from_public_key_affine_coordinates(group, &x, &y).unwrap();
+
+                    let cri_digest = env.crypto.hash(cri.raw).unwrap();
+                    assert!(cri_sig.verify(cri_digest.as_slice(), &pub_key).unwrap());
+                }
+                #[cfg(feature = "ml-dsa")]
+                SignatureAlgorithm::MlDsa(MldsaAlgorithm::ExternalMu87) => {
+                    // TODO Replace RustCrypto with OpenSSL
+                    use pkcs8::DecodePrivateKey;
+                    let key: ml_dsa::KeyPair<ml_dsa::MlDsa87> = ml_dsa::KeyPair::from_pkcs8_der(
+                        include_bytes!("../../../platform/src/test_data/key_mldsa_87.der"),
+                    )
+                    .expect("Error decoding ML-DSA private key");
+
+                    info!(
+                        "CSR signature length: {}",
+                        signer_info.signature.as_bytes().len()
+                    );
+                    let csr_sig: ml_dsa::Signature<ml_dsa::MlDsa87> = ml_dsa::Signature::decode(
+                        signer_info
+                            .signature
+                            .as_bytes()
+                            .try_into()
+                            .expect("Error creating encoded signature from bytes"),
+                    )
+                    .expect("Error decoding signature");
+                    todo!()
+                }
+            }
 
             // validate subject_name
             let mut subj_serial = [0u8; DPE_PROFILE.hash_size() * 2];
