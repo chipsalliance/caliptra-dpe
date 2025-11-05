@@ -14,6 +14,7 @@ members = [
 caliptra-cfi-lib-git = { git = "https://github.com/chipsalliance/caliptra-cfi.git", package = "caliptra-cfi-lib-git", rev = "a98e499d279e81ae85881991b1e9eee354151189", default-features = false, features = ["cfi", "cfi-counter" ] }
 caliptra-cfi-derive-git = { git = "https://github.com/chipsalliance/caliptra-cfi.git", package = "caliptra-cfi-derive-git", rev = "a98e499d279e81ae85881991b1e9eee354151189"}
 zerocopy = { version = "0.8.17", features = ["derive"] }
+constant_time_eq = "0.3.0"
 
 [profile.firmware]
 inherits = "release"
