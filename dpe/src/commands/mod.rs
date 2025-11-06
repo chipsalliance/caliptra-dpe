@@ -4,16 +4,16 @@ Licensed under the Apache-2.0 license.
 Abstract:
     DPE Commands and deserialization.
 --*/
+pub use self::certify_key::{
+    CertifyKeyCommand, CertifyKeyFlags, CertifyKeyP256Cmd, CertifyKeyP384Cmd,
+};
 pub use self::derive_context::{
     DeriveContextCommand, DeriveContextFlags, DeriveContextP256Cmd, DeriveContextP384Cmd,
 };
 pub use self::destroy_context::DestroyCtxCmd;
 pub use self::get_certificate_chain::GetCertificateChainCmd;
 pub use self::initialize_context::InitCtxCmd;
-
-pub use self::certify_key::{
-    CertifyKeyCommand, CertifyKeyFlags, CertifyKeyP256Cmd, CertifyKeyP384Cmd,
-};
+pub use self::sign::{SignCommand, SignFlags, SignP256Cmd, SignP384Cmd};
 
 #[cfg(feature = "ml-dsa")]
 pub use self::{
@@ -22,7 +22,6 @@ pub use self::{
 
 #[cfg(not(feature = "disable_rotate_context"))]
 pub use self::rotate_context::{RotateCtxCmd, RotateCtxFlags};
-pub use self::sign::{SignCommand, SignFlags};
 
 use crate::{
     dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
