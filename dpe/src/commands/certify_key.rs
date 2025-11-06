@@ -241,6 +241,19 @@ pub struct CertifyKeyP256Cmd {
     pub label: [u8; 32],
 }
 
+#[cfg(feature = "dpe_profile_p256_sha256")]
+impl CommandExecution for CertifyKeyP256Cmd {
+    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    fn execute(
+        &self,
+        dpe: &mut DpeInstance,
+        env: &mut DpeEnv<impl DpeTypes>,
+        locality: u32,
+    ) -> Result<Response, DpeErrorCode> {
+        CertifyKeyCommand::from(self).execute(dpe, env, locality)
+    }
+}
+
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct CertifyKeyP384Cmd {
@@ -250,6 +263,19 @@ pub struct CertifyKeyP384Cmd {
     pub label: [u8; 48],
 }
 
+#[cfg(feature = "dpe_profile_p384_sha384")]
+impl CommandExecution for CertifyKeyP384Cmd {
+    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    fn execute(
+        &self,
+        dpe: &mut DpeInstance,
+        env: &mut DpeEnv<impl DpeTypes>,
+        locality: u32,
+    ) -> Result<Response, DpeErrorCode> {
+        CertifyKeyCommand::from(self).execute(dpe, env, locality)
+    }
+}
+
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct CertifyKeyMldsaExternalMu87Cmd {
@@ -257,6 +283,19 @@ pub struct CertifyKeyMldsaExternalMu87Cmd {
     pub flags: CertifyKeyFlags,
     pub format: u32,
     pub label: [u8; 48],
+}
+
+#[cfg(feature = "ml-dsa")]
+impl CommandExecution for CertifyKeyMldsaExternalMu87Cmd {
+    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    fn execute(
+        &self,
+        dpe: &mut DpeInstance,
+        env: &mut DpeEnv<impl DpeTypes>,
+        locality: u32,
+    ) -> Result<Response, DpeErrorCode> {
+        CertifyKeyCommand::from(self).execute(dpe, env, locality)
+    }
 }
 
 #[cfg(test)]
