@@ -205,6 +205,13 @@ impl<'a> From<&'a SignMldsaExternalMu87Cmd> for Command<'a> {
     }
 }
 
+#[cfg(not(feature = "disable_rotate_context"))]
+impl<'a> From<&'a RotateCtxCmd> for Command<'a> {
+    fn from(cmd: &'a RotateCtxCmd) -> Command<'a> {
+        Command::RotateCtx(cmd)
+    }
+}
+
 impl<'a> From<&'a DestroyCtxCmd> for Command<'a> {
     fn from(cmd: &'a DestroyCtxCmd) -> Command<'a> {
         Command::DestroyCtx(cmd)
