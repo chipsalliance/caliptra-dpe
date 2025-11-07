@@ -36,8 +36,8 @@ mod certify_key;
 mod derive_context;
 mod destroy_context;
 mod get_certificate_chain;
-mod initialize_context;
 mod get_profile;
+mod initialize_context;
 #[cfg(not(feature = "disable_rotate_context"))]
 mod rotate_context;
 mod sign;
@@ -243,11 +243,11 @@ pub mod tests {
     #[cfg(feature = "ml-dsa")]
     pub const DEFAULT_PLATFORM: DefaultPlatform =
         DefaultPlatform(DefaultPlatformProfile::Mldsa87ExternalMu);
-    
+
     pub const PROFILES: [DpeProfile; 2] = [DpeProfile::P256Sha256, DpeProfile::P384Sha384];
-    
+
     const TEST_GET_PROFILE_CMD: get_profile::GetProfileCmd = get_profile::GetProfileCmd {};
-    
+
     const DEFAULT_COMMAND_HDR: CommandHdr = CommandHdr {
         magic: CommandHdr::DPE_COMMAND_MAGIC,
         cmd_id: Command::GET_PROFILE,
@@ -258,7 +258,8 @@ pub mod tests {
     fn test_deserialize_get_profile() {
         CfiCounter::reset_for_test();
         for p in [DpeProfile::P256Sha256, DpeProfile::P384Sha384] {
-            assert_eq!( // The expected command now includes a reference to the empty struct
+            assert_eq!(
+                // The expected command now includes a reference to the empty struct
                 Ok(Command::GetProfile(&TEST_GET_PROFILE_CMD)),
                 Command::deserialize(p, CommandHdr::new(p, Command::GET_PROFILE).as_bytes())
             );
@@ -300,7 +301,7 @@ pub mod tests {
         // All commands should check the profile except GetProfile.
         assert_eq!(
             Err(DpeErrorCode::InvalidCommand),
-             Command::deserialize(
+            Command::deserialize(
                 profile,
                 CommandHdr {
                     profile: wrong_profile,
@@ -312,7 +313,7 @@ pub mod tests {
         );
 
         // Make sure GetProfile doesn't care.
-         assert!(Command::deserialize(
+        assert!(Command::deserialize(
             profile,
             CommandHdr {
                 profile: wrong_profile,
