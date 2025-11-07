@@ -18,6 +18,7 @@ pub use self::sign::{SignCommand, SignFlags, SignP256Cmd, SignP384Cmd};
 #[cfg(feature = "ml-dsa")]
 pub use self::{
     certify_key::CertifyKeyMldsaExternalMu87Cmd, derive_context::DeriveContextMldsaExternalMu87Cmd,
+    sign::SignMldsaExternalMu87Cmd,
 };
 
 #[cfg(not(feature = "disable_rotate_context"))]
@@ -117,15 +118,102 @@ impl From<Command<'_>> for u32 {
     }
 }
 
+impl<'a> From<&'a InitCtxCmd> for Command<'a> {
+    fn from(cmd: &'a InitCtxCmd) -> Command<'a> {
+        Command::InitCtx(cmd)
+    }
+}
+
 impl<'a> From<DeriveContextCommand<'a>> for Command<'a> {
     fn from(cmd: DeriveContextCommand<'a>) -> Command<'a> {
         Command::DeriveContext(cmd)
     }
 }
 
+#[cfg(feature = "dpe_profile_p256_sha256")]
+impl<'a> From<&'a DeriveContextP256Cmd> for Command<'a> {
+    fn from(cmd: &'a DeriveContextP256Cmd) -> Command<'a> {
+        Command::DeriveContext(DeriveContextCommand::P256(cmd))
+    }
+}
+
+#[cfg(feature = "dpe_profile_p384_sha384")]
+impl<'a> From<&'a DeriveContextP384Cmd> for Command<'a> {
+    fn from(cmd: &'a DeriveContextP384Cmd) -> Command<'a> {
+        Command::DeriveContext(DeriveContextCommand::P384(cmd))
+    }
+}
+
+#[cfg(feature = "ml-dsa")]
+impl<'a> From<&'a DeriveContextMldsaExternalMu87Cmd> for Command<'a> {
+    fn from(cmd: &'a DeriveContextMldsaExternalMu87Cmd) -> Command<'a> {
+        Command::DeriveContext(DeriveContextCommand::ExternalMu87(cmd))
+    }
+}
+
 impl<'a> From<CertifyKeyCommand<'a>> for Command<'a> {
     fn from(cmd: CertifyKeyCommand<'a>) -> Command<'a> {
         Command::CertifyKey(cmd)
+    }
+}
+
+#[cfg(feature = "dpe_profile_p256_sha256")]
+impl<'a> From<&'a CertifyKeyP256Cmd> for Command<'a> {
+    fn from(cmd: &'a CertifyKeyP256Cmd) -> Command<'a> {
+        Command::CertifyKey(CertifyKeyCommand::P256(cmd))
+    }
+}
+
+#[cfg(feature = "dpe_profile_p384_sha384")]
+impl<'a> From<&'a CertifyKeyP384Cmd> for Command<'a> {
+    fn from(cmd: &'a CertifyKeyP384Cmd) -> Command<'a> {
+        Command::CertifyKey(CertifyKeyCommand::P384(cmd))
+    }
+}
+
+#[cfg(feature = "ml-dsa")]
+impl<'a> From<&'a CertifyKeyMldsaExternalMu87Cmd> for Command<'a> {
+    fn from(cmd: &'a CertifyKeyMldsaExternalMu87Cmd) -> Command<'a> {
+        Command::CertifyKey(CertifyKeyCommand::ExternalMu87(cmd))
+    }
+}
+
+impl<'a> From<SignCommand<'a>> for Command<'a> {
+    fn from(cmd: SignCommand<'a>) -> Command<'a> {
+        Command::Sign(cmd)
+    }
+}
+
+#[cfg(feature = "dpe_profile_p256_sha256")]
+impl<'a> From<&'a SignP256Cmd> for Command<'a> {
+    fn from(cmd: &'a SignP256Cmd) -> Command<'a> {
+        Command::Sign(SignCommand::P256(cmd))
+    }
+}
+
+#[cfg(feature = "dpe_profile_p384_sha384")]
+impl<'a> From<&'a SignP384Cmd> for Command<'a> {
+    fn from(cmd: &'a SignP384Cmd) -> Command<'a> {
+        Command::Sign(SignCommand::P384(cmd))
+    }
+}
+
+#[cfg(feature = "ml-dsa")]
+impl<'a> From<&'a SignMldsaExternalMu87Cmd> for Command<'a> {
+    fn from(cmd: &'a SignMldsaExternalMu87Cmd) -> Command<'a> {
+        Command::Sign(SignCommand::ExternalMu87(cmd))
+    }
+}
+
+impl<'a> From<&'a DestroyCtxCmd> for Command<'a> {
+    fn from(cmd: &'a DestroyCtxCmd) -> Command<'a> {
+        Command::DestroyCtx(cmd)
+    }
+}
+
+impl<'a> From<&'a GetCertificateChainCmd> for Command<'a> {
+    fn from(cmd: &'a GetCertificateChainCmd) -> Command<'a> {
+        Command::GetCertificateChain(cmd)
     }
 }
 
