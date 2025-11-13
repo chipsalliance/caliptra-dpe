@@ -131,10 +131,10 @@ mod tests {
     use crate::{
         commands::{tests::PROFILES, Command, CommandHdr, InitCtxCmd},
         dpe_instance::tests::{
-            test_env, RANDOM_HANDLE, SIMULATION_HANDLE, TEST_HANDLE, TEST_LOCALITIES,
+            test_env, DPE_PROFILE, RANDOM_HANDLE, SIMULATION_HANDLE, TEST_HANDLE, TEST_LOCALITIES,
         },
         support::Support,
-        DpeFlags, DPE_PROFILE,
+        DpeFlags,
     };
     use caliptra_cfi_lib_git::CfiCounter;
     use zerocopy::IntoBytes;

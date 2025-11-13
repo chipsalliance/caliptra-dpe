@@ -643,12 +643,12 @@ mod tests {
         },
         context::ContextType,
         dpe_instance::tests::{
-            test_env, TestTypes, RANDOM_HANDLE, SIMULATION_HANDLE, TEST_LOCALITIES,
+            test_env, TestTypes, DPE_PROFILE, RANDOM_HANDLE, SIMULATION_HANDLE, TEST_LOCALITIES,
         },
         response::{NewHandleResp, SignResp},
         support::Support,
         validation::DpeValidator,
-        DpeProfile, DPE_PROFILE, MAX_EXPORTED_CDI_SIZE, MAX_HANDLES, TCI_SIZE,
+        DpeProfile, MAX_EXPORTED_CDI_SIZE, MAX_HANDLES, TCI_SIZE,
     };
     use caliptra_cfi_lib_git::CfiCounter;
     use crypto::{Crypto, Hasher};

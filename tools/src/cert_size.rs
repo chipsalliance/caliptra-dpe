@@ -6,7 +6,7 @@ use clap::{Parser, ValueEnum};
 use dpe::{
     commands::{CertifyKeyCommand, CertifyKeyFlags, CommandExecution, DeriveContextFlags},
     context::ContextHandle,
-    DpeFlags, DpeProfile, DPE_PROFILE,
+    DpeFlags, DpeProfile,
 };
 use dpe::{
     dpe_instance::{DpeEnv, DpeTypes},
@@ -23,6 +23,7 @@ mod alg {
     pub use dpe::commands::{
         CertifyKeyP256Cmd as CertifyKeyCmd, DeriveContextP256Cmd as DeriveContextCmd,
     };
+    pub const DPE_PROFILE: dpe::DpeProfile = dpe::DpeProfile::P256Sha256;
 }
 #[cfg(feature = "p384")]
 mod alg {
@@ -31,6 +32,7 @@ mod alg {
     pub use dpe::commands::{
         CertifyKeyP384Cmd as CertifyKeyCmd, DeriveContextP384Cmd as DeriveContextCmd,
     };
+    pub const DPE_PROFILE: dpe::DpeProfile = dpe::DpeProfile::P384Sha384;
 }
 #[cfg(feature = "ml-dsa")]
 mod alg {
@@ -40,6 +42,7 @@ mod alg {
         CertifyKeyMldsaExternalMu87Cmd as CertifyKeyCmd,
         DeriveContextMldsaExternalMu87Cmd as DeriveContextCmd,
     };
+    pub const DPE_PROFILE: dpe::DpeProfile = dpe::DpeProfile::Mldsa87ExternalMu;
 }
 
 #[derive(ValueEnum, Clone, Debug, Default, Copy)]

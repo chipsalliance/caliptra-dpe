@@ -275,9 +275,8 @@ mod tests {
             Command, CommandHdr, InitCtxCmd,
         },
         dpe_instance::tests::{
-            test_env, test_state, RANDOM_HANDLE, SIMULATION_HANDLE, TEST_LOCALITIES,
+            test_env, test_state, DPE_PROFILE, RANDOM_HANDLE, SIMULATION_HANDLE, TEST_LOCALITIES,
         },
-        DPE_PROFILE,
     };
     use caliptra_cfi_lib_git::CfiCounter;
     use openssl::x509::X509;

@@ -2979,9 +2979,10 @@ fn create_dpe_cert_or_csr(
 
 #[cfg(test)]
 pub(crate) mod tests {
+    use crate::dpe_instance::tests::DPE_PROFILE;
     use crate::tci::{TciMeasurement, TciNodeData};
     use crate::x509::{CertWriter, DirectoryString, MeasurementData, Name};
-    use crate::{DpeProfile, DPE_PROFILE};
+    use crate::DpeProfile;
     use crypto::ecdsa::{EcdsaAlgorithm, EcdsaSig};
     use crypto::ecdsa::{EcdsaPub, EcdsaPubKey};
     #[cfg(feature = "ml-dsa")]

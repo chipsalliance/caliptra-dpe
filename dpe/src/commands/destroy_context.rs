@@ -109,9 +109,9 @@ mod tests {
         commands::{tests::PROFILES, Command, CommandHdr, DeriveContextFlags, InitCtxCmd},
         context::{Context, ContextState},
         dpe_instance::tests::{
-            test_env, test_state, SIMULATION_HANDLE, TEST_HANDLE, TEST_LOCALITIES,
+            test_env, test_state, DPE_PROFILE, SIMULATION_HANDLE, TEST_HANDLE, TEST_LOCALITIES,
         },
-        DPE_PROFILE, TCI_SIZE,
+        TCI_SIZE,
     };
     use caliptra_cfi_lib_git::CfiCounter;
     use zerocopy::IntoBytes;

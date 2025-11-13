@@ -126,15 +126,6 @@ impl From<DpeProfile> for u32 {
 }
 
 #[cfg(feature = "p256")]
-pub const DPE_PROFILE: DpeProfile = DpeProfile::P256Sha256;
-
-#[cfg(feature = "p384")]
-pub const DPE_PROFILE: DpeProfile = DpeProfile::P384Sha384;
-
-#[cfg(feature = "ml-dsa")]
-pub const DPE_PROFILE: DpeProfile = DpeProfile::Mldsa87ExternalMu;
-
-#[cfg(feature = "p256")]
 pub const TCI_SIZE: usize = 32;
 
 #[cfg(any(feature = "p384", feature = "ml-dsa"))]

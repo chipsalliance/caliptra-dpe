@@ -116,9 +116,9 @@ mod tests {
     use crate::{
         commands::{tests::PROFILES, Command, CommandHdr},
         context::ContextState,
-        dpe_instance::tests::{test_env, TEST_LOCALITIES},
+        dpe_instance::tests::{test_env, DPE_PROFILE, TEST_LOCALITIES},
         support::Support,
-        DpeFlags, State, DPE_PROFILE,
+        DpeFlags, State,
     };
     use caliptra_cfi_lib_git::CfiCounter;
     use zerocopy::IntoBytes;

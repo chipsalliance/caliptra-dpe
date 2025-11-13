@@ -322,10 +322,10 @@ mod tests {
     };
     use crate::{
         commands::{Command, CommandHdr, DeriveContextCommand, DeriveContextFlags, InitCtxCmd},
-        dpe_instance::tests::{test_env, SIMULATION_HANDLE, TEST_LOCALITIES},
+        dpe_instance::tests::{test_env, DPE_PROFILE, SIMULATION_HANDLE, TEST_LOCALITIES},
         support::Support,
         x509::{tests::TcbInfo, DirectoryString, Name},
-        State, DPE_PROFILE, TCI_SIZE,
+        State, TCI_SIZE,
     };
     use caliptra_cfi_lib_git::CfiCounter;
     use cms::{
