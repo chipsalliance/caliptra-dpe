@@ -6,7 +6,7 @@ use clap::{Parser, ValueEnum};
 use dpe::{
     commands::{CertifyKeyCommand, CertifyKeyFlags, CommandExecution, DeriveContextFlags},
     context::ContextHandle,
-    DpeFlags, DPE_PROFILE,
+    DpeFlags, DpeProfile, DPE_PROFILE,
 };
 use dpe::{
     dpe_instance::{DpeEnv, DpeTypes},
@@ -42,7 +42,7 @@ mod alg {
     };
 }
 
-#[derive(ValueEnum, Clone, Debug, Default)]
+#[derive(ValueEnum, Clone, Debug, Default, Copy)]
 pub enum Algorithm {
     /// Use EC P256 or P384 depending on the build feature
     #[cfg(any(feature = "p256", feature = "p384"))]
@@ -63,6 +63,19 @@ impl From<Algorithm> for DefaultPlatformProfile {
             Algorithm::Ec => DefaultPlatformProfile::P384,
             #[cfg(feature = "ml-dsa")]
             Algorithm::Mldsa => DefaultPlatformProfile::Mldsa87ExternalMu,
+        }
+    }
+}
+
+impl From<Algorithm> for DpeProfile {
+    fn from(algorithm: Algorithm) -> Self {
+        match algorithm {
+            #[cfg(feature = "p256")]
+            Algorithm::Ec => DpeProfile::P256Sha256,
+            #[cfg(feature = "p384")]
+            Algorithm::Ec => DpeProfile::P384Sha384,
+            #[cfg(feature = "ml-dsa")]
+            Algorithm::Mldsa => DpeProfile::Mldsa87ExternalMu,
         }
     }
 }
@@ -99,8 +112,8 @@ impl DpeTypes for SimTypesMldsa {
 }
 
 fn run<T: DpeTypes>(env: &mut DpeEnv<T>, args: &Args) -> Result<()> {
-    let mut dpe =
-        DpeInstance::new(env).map_err(|e| anyhow!("DPE error creating instance: {e:?}"))?;
+    let mut dpe = DpeInstance::new(env, args.algorithm.into())
+        .map_err(|e| anyhow!("DPE error creating instance: {e:?}"))?;
 
     // Minus 1 to account for the default context
     for i in 0..args.num_contexts - 1 {

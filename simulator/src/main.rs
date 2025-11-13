@@ -191,7 +191,7 @@ fn main() -> std::io::Result<()> {
         platform: DefaultPlatform(p),
         state: &mut dpe::State::new(support, flags),
     };
-    let mut dpe = DpeInstance::new(&mut env).map_err(|err| {
+    let mut dpe = DpeInstance::new(&mut env, dpe::DPE_PROFILE).map_err(|err| {
         Error::new(
             ErrorKind::Other,
             format!("{err:?} while creating new DPE instance"),

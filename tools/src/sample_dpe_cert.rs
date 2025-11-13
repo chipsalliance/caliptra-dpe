@@ -134,7 +134,7 @@ fn main() {
         state: &mut dpe::State::new(support, DpeFlags::empty()),
     };
 
-    let mut dpe = DpeInstance::new(&mut env).unwrap();
+    let mut dpe = DpeInstance::new(&mut env, dpe::DPE_PROFILE).unwrap();
 
     add_tcb_info(
         &mut dpe,

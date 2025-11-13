@@ -11,7 +11,7 @@ use crate::{
     context::{ChildToRootIter, Context, ContextHandle, ContextState},
     response::{DpeErrorCode, GetProfileResp, Response, ResponseHdr},
     support::Support,
-    DpeProfile, State, DPE_PROFILE, MAX_HANDLES,
+    DpeProfile, State, MAX_HANDLES,
 };
 #[cfg(not(feature = "no-cfi"))]
 use caliptra_cfi_derive_git::cfi_impl_fn;
@@ -48,10 +48,8 @@ impl DpeInstance {
     const MAX_NEW_HANDLE_ATTEMPTS: usize = 8;
 
     /// Create a new DPE instance without initializing.
-    pub const fn initialized() -> Self {
-        Self {
-            profile: DPE_PROFILE,
-        }
+    pub const fn initialized(profile: DpeProfile) -> Self {
+        Self { profile }
     }
 
     /// Create a new DPE instance.
@@ -62,8 +60,8 @@ impl DpeInstance {
     /// * `support` - optional functionality the instance supports
     /// * `flags` - configures `Self` behaviors.
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
-    pub fn new(env: &mut DpeEnv<impl DpeTypes>) -> Result<Self, DpeErrorCode> {
-        let mut dpe = Self::initialized();
+    pub fn new(env: &mut DpeEnv<impl DpeTypes>, profile: DpeProfile) -> Result<Self, DpeErrorCode> {
+        let mut dpe = Self::initialized(profile);
 
         if env.state.support.auto_init() {
             let locality = env.platform.get_auto_init_locality()?;
@@ -88,6 +86,7 @@ impl DpeInstance {
     #[cfg(not(feature = "disable_auto_init"))]
     pub fn new_auto_init(
         env: &mut DpeEnv<impl DpeTypes>,
+        profile: DpeProfile,
         tci_type: u32,
         auto_init_measurement: &Digest,
     ) -> Result<Self, DpeErrorCode> {
@@ -98,7 +97,7 @@ impl DpeInstance {
             #[cfg(not(feature = "no-cfi"))]
             cfi_assert!(env.state.support.auto_init());
         }
-        let dpe = Self::new(env)?;
+        let dpe = Self::new(env, profile)?;
 
         let locality = env.platform.get_auto_init_locality()?;
         let idx = env
@@ -287,7 +286,7 @@ impl DpeInstance {
         support: Support,
         internal_input_info: &mut [u8; INTERNAL_INPUT_INFO_SIZE],
     ) -> Result<(), DpeErrorCode> {
-        // Internal DPE Info contains get profile response fields as well as the DPE_PROFILE
+        // Internal DPE Info contains get profile response fields as well as the profile
         let profile = self.get_profile(platform, support)?;
         let profile_bytes = profile.as_bytes();
         internal_input_info
@@ -298,7 +297,7 @@ impl DpeInstance {
         internal_input_info
             .get_mut(profile_bytes.len()..)
             .ok_or(DpeErrorCode::InternalError)?
-            .copy_from_slice(&(DPE_PROFILE as u32).to_le_bytes());
+            .copy_from_slice(&(u32::from(self.profile)).to_le_bytes());
 
         Ok(())
     }
@@ -412,7 +411,7 @@ pub mod tests {
     use crate::commands::DeriveContextP384Cmd as DeriveContextCmd;
     use crate::response::NewHandleResp;
     use crate::support::test::SUPPORT;
-    use crate::{DpeFlags, CURRENT_PROFILE_MAJOR_VERSION};
+    use crate::{DpeFlags, CURRENT_PROFILE_MAJOR_VERSION, DPE_PROFILE};
     use caliptra_cfi_lib_git::CfiCounter;
     use crypto::RustCryptoImpl;
     use platform::default::{DefaultPlatform, AUTO_INIT_LOCALITY};
@@ -468,7 +467,7 @@ pub mod tests {
         CfiCounter::reset_for_test();
         let mut state = test_state();
         let mut env = test_env(&mut state);
-        let mut dpe = DpeInstance::new(&mut env).unwrap();
+        let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
         assert_eq!(
             Response::GetProfile(GetProfileResp::new(
@@ -507,7 +506,7 @@ pub mod tests {
         CfiCounter::reset_for_test();
         let mut state = test_state();
         let mut env = test_env(&mut state);
-        let dpe = DpeInstance::new(&mut env).unwrap();
+        let dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
         let profile = dpe
             .get_profile(&mut env.platform, env.state.support)
             .unwrap();
@@ -520,7 +519,7 @@ pub mod tests {
         CfiCounter::reset_for_test();
         let mut state = State::new(Support::AUTO_INIT, DpeFlags::empty());
         let mut env = test_env(&mut state);
-        let dpe = DpeInstance::new(&mut env).unwrap();
+        let dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
         let data = [1; DPE_PROFILE.hash_size()];
         let mut context = env.state.contexts[0];
@@ -559,7 +558,7 @@ pub mod tests {
         CfiCounter::reset_for_test();
         let mut state = test_state();
         let mut env = test_env(&mut state);
-        let mut dpe = DpeInstance::new(&mut env).unwrap();
+        let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
         let mut last_cdi = vec![];
 
@@ -613,7 +612,7 @@ pub mod tests {
         CfiCounter::reset_for_test();
         let mut state = State::new(SUPPORT | Support::INTERNAL_INFO, DpeFlags::empty());
         let mut env = test_env(&mut state);
-        let mut dpe = DpeInstance::new(&mut env).unwrap();
+        let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
         let parent_context_idx = env
             .state
@@ -671,7 +670,7 @@ pub mod tests {
         CfiCounter::reset_for_test();
         let mut state = State::new(SUPPORT | Support::INTERNAL_DICE, DpeFlags::empty());
         let mut env = test_env(&mut state);
-        let mut dpe = DpeInstance::new(&mut env).unwrap();
+        let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
         let parent_context_idx = env
             .state
@@ -723,8 +722,13 @@ pub mod tests {
         let tci_type = 0xdeadbeef_u32;
         let auto_init_measurement = [0x1; DPE_PROFILE.hash_size()];
         let auto_init_locality = env.platform.get_auto_init_locality().unwrap();
-        let mut dpe =
-            DpeInstance::new_auto_init(&mut env, tci_type, &auto_init_measurement.into()).unwrap();
+        let mut dpe = DpeInstance::new_auto_init(
+            &mut env,
+            DPE_PROFILE,
+            tci_type,
+            &auto_init_measurement.into(),
+        )
+        .unwrap();
 
         let idx = env
             .state
