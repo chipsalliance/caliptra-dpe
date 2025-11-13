@@ -119,7 +119,7 @@ fn run<T: DpeTypes>(env: &mut DpeEnv<T>, args: &Args) -> Result<()> {
     for i in 0..args.num_contexts - 1 {
         let _resp = DeriveContextCmd {
             handle: ContextHandle::default(),
-            data: [1; DPE_PROFILE.tci_size()],
+            data: [1; dpe::TCI_SIZE],
             flags: DeriveContextFlags::MAKE_DEFAULT
                 | DeriveContextFlags::INTERNAL_INPUT_INFO
                 | DeriveContextFlags::INTERNAL_INPUT_DICE,

@@ -1,5 +1,5 @@
 // Licensed under the Apache-2.0 license.
-use crate::DPE_PROFILE;
+use crate::TCI_SIZE;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 use zeroize::Zeroize;
 
@@ -19,8 +19,8 @@ impl TciNodeData {
     pub const fn new() -> TciNodeData {
         TciNodeData {
             tci_type: 0,
-            tci_cumulative: TciMeasurement([0; DPE_PROFILE.tci_size()]),
-            tci_current: TciMeasurement([0; DPE_PROFILE.tci_size()]),
+            tci_cumulative: TciMeasurement([0; TCI_SIZE]),
+            tci_current: TciMeasurement([0; TCI_SIZE]),
             locality: 0,
             svn: 0,
         }
@@ -31,10 +31,10 @@ impl TciNodeData {
 #[derive(
     Copy, Clone, Debug, IntoBytes, FromBytes, KnownLayout, Immutable, PartialEq, Eq, Zeroize,
 )]
-pub struct TciMeasurement(pub [u8; DPE_PROFILE.tci_size()]);
+pub struct TciMeasurement(pub [u8; TCI_SIZE]);
 
 impl Default for TciMeasurement {
     fn default() -> Self {
-        Self([0; DPE_PROFILE.tci_size()])
+        Self([0; TCI_SIZE])
     }
 }
