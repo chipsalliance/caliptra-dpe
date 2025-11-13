@@ -134,7 +134,7 @@ mod tests {
             test_env, RANDOM_HANDLE, SIMULATION_HANDLE, TEST_HANDLE, TEST_LOCALITIES,
         },
         support::Support,
-        DpeFlags,
+        DpeFlags, DPE_PROFILE,
     };
     use caliptra_cfi_lib_git::CfiCounter;
     use zerocopy::IntoBytes;
@@ -164,7 +164,7 @@ mod tests {
         CfiCounter::reset_for_test();
         let mut state = State::default();
         let mut env = test_env(&mut state);
-        let mut dpe = DpeInstance::new(&mut env).unwrap();
+        let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
         // Make sure it returns an error if the command is marked unsupported.
         assert_eq!(
             Err(DpeErrorCode::InvalidCommand),
@@ -177,7 +177,7 @@ mod tests {
 
         // Make a new instance that supports RotateContext.
         *env.state = State::new(Support::ROTATE_CONTEXT, DpeFlags::empty());
-        let mut dpe = DpeInstance::new(&mut env).unwrap();
+        let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
         InitCtxCmd::new_use_default()
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
             .unwrap();

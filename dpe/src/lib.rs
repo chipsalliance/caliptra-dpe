@@ -110,6 +110,12 @@ impl DpeProfile {
     }
 }
 
+impl From<DpeProfile> for u32 {
+    fn from(item: DpeProfile) -> Self {
+        item as u32
+    }
+}
+
 #[cfg(feature = "p256")]
 pub const DPE_PROFILE: DpeProfile = DpeProfile::P256Sha256;
 

@@ -314,7 +314,7 @@ mod tests {
         CfiCounter::reset_for_test();
         let mut state = test_state();
         let mut env = test_env(&mut state);
-        let mut dpe = DpeInstance::new(&mut env).unwrap();
+        let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
         // Bad handle.
         assert_eq!(
@@ -370,7 +370,7 @@ mod tests {
         CfiCounter::reset_for_test();
         let mut state = test_state();
         let mut env = test_env(&mut state);
-        let mut dpe = DpeInstance::new(&mut env).unwrap();
+        let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
         for i in 0..3 {
             DeriveContextCmd {

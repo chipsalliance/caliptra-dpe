@@ -694,7 +694,7 @@ mod tests {
             DpeFlags::empty(),
         );
         let mut env = test_env(&mut state);
-        let mut dpe = DpeInstance::new(&mut env).unwrap();
+        let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
         assert_eq!(
             Err(DpeErrorCode::ArgumentNotSupported),
@@ -709,7 +709,7 @@ mod tests {
             Support::AUTO_INIT | Support::INTERNAL_DICE | Support::RETAIN_PARENT_CONTEXT,
             DpeFlags::empty(),
         );
-        dpe = DpeInstance::new(&mut env).unwrap();
+        dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
         assert_eq!(
             Err(DpeErrorCode::ArgumentNotSupported),
@@ -724,7 +724,7 @@ mod tests {
             Support::AUTO_INIT | Support::INTERNAL_INFO | Support::INTERNAL_DICE,
             DpeFlags::empty(),
         );
-        dpe = DpeInstance::new(&mut env).unwrap();
+        dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
         assert_eq!(
             Err(DpeErrorCode::ArgumentNotSupported),
@@ -741,7 +741,7 @@ mod tests {
         CfiCounter::reset_for_test();
         let mut state = State::default();
         let mut env = test_env(&mut state);
-        let mut dpe = DpeInstance::new(&mut env).unwrap();
+        let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
         InitCtxCmd::new_use_default()
             .execute(&mut dpe, &mut env, 0)
@@ -759,7 +759,7 @@ mod tests {
         CfiCounter::reset_for_test();
         let mut state = State::new(Support::AUTO_INIT, DpeFlags::empty());
         let mut env = test_env(&mut state);
-        let mut dpe = DpeInstance::new(&mut env).unwrap();
+        let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
         // Fill all contexts with children (minus the auto-init context).
         for _ in 0..MAX_HANDLES - 1 {
@@ -783,7 +783,7 @@ mod tests {
         CfiCounter::reset_for_test();
         let mut state = State::new(Support::AUTO_INIT, DpeFlags::empty());
         let mut env = test_env(&mut state);
-        let mut dpe = DpeInstance::new(&mut env).unwrap();
+        let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
         let parent_idx = env
             .state
@@ -817,7 +817,7 @@ mod tests {
         CfiCounter::reset_for_test();
         let mut state = State::new(Support::AUTO_INIT, DpeFlags::empty());
         let mut env = test_env(&mut state);
-        let mut dpe = DpeInstance::new(&mut env).unwrap();
+        let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
         DeriveContextCmd {
             flags: DeriveContextFlags::MAKE_DEFAULT | DeriveContextFlags::CHANGE_LOCALITY,
@@ -843,7 +843,7 @@ mod tests {
         CfiCounter::reset_for_test();
         let mut state = State::new(Support::AUTO_INIT, DpeFlags::empty());
         let mut env = test_env(&mut state);
-        let mut dpe = DpeInstance::new(&mut env).unwrap();
+        let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
         // Make sure child handle is default when creating default child.
         assert_eq!(
@@ -883,7 +883,7 @@ mod tests {
             DpeFlags::empty(),
         );
         let mut env = test_env(&mut state);
-        let mut dpe = DpeInstance::new(&mut env).unwrap();
+        let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
         let handle = match (RotateCtxCmd {
             handle: ContextHandle::default(),
@@ -982,7 +982,7 @@ mod tests {
             DpeFlags::empty(),
         );
         let mut env = test_env(&mut state);
-        let mut dpe = DpeInstance::new(&mut env).unwrap();
+        let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
         // Make sure the parent handle is non-sense when not retaining.
         assert_eq!(
@@ -1115,7 +1115,7 @@ mod tests {
             DpeFlags::empty(),
         );
         let mut env = test_env(&mut state);
-        let mut dpe = DpeInstance::new(&mut env).unwrap();
+        let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
         assert_eq!(
             DeriveContextCmd {
@@ -1135,7 +1135,7 @@ mod tests {
             DpeFlags::empty(),
         );
         let mut env = test_env(&mut state);
-        let mut dpe = DpeInstance::new(&mut env).unwrap();
+        let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
         DeriveContextCmd {
             flags: DeriveContextFlags::RETAIN_PARENT_CONTEXT
@@ -1172,7 +1172,7 @@ mod tests {
             DpeFlags::empty(),
         );
         let mut env = test_env(&mut state);
-        let mut dpe = DpeInstance::new(&mut env).unwrap();
+        let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
         assert_eq!(
             Ok(Response::DeriveContext(DeriveContextResp {
@@ -1247,7 +1247,7 @@ mod tests {
             DpeFlags::empty(),
         );
         let mut env = test_env(&mut state);
-        let mut dpe = DpeInstance::new(&mut env).unwrap();
+        let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
         // When `DeriveContextFlags::EXPORT_CDI` is set, `DeriveContextFlags::CREATE_CERTIFICATE` MUST
         // also be set, or `DpeErrorCode::InvalidArgument` is raised.
@@ -1317,7 +1317,7 @@ mod tests {
             Support::AUTO_INIT | Support::CDI_EXPORT | Support::X509,
             DpeFlags::empty(),
         );
-        dpe = DpeInstance::new(&mut env).unwrap();
+        dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
         // Happy case!
         let res = DeriveContextCmd {
@@ -1340,7 +1340,7 @@ mod tests {
             Support::AUTO_INIT | Support::INTERNAL_INFO | Support::INTERNAL_DICE | Support::X509,
             DpeFlags::empty(),
         );
-        dpe = DpeInstance::new(&mut env).unwrap();
+        dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
         // `DpeInstance` needs `Support::EXPORT_CDI` to use `DeriveContextFlags::EXPORT_CDI`.
         assert_eq!(
@@ -1384,7 +1384,7 @@ mod tests {
             DpeFlags::empty(),
         );
         let mut env = test_env(&mut state);
-        let mut dpe = DpeInstance::new(&mut env).unwrap();
+        let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
         let Ok(Response::DeriveContext(DeriveContextResp { handle, .. })) = DeriveContextCmd {
             flags: DeriveContextFlags::ALLOW_NEW_CONTEXT_TO_EXPORT,
@@ -1427,7 +1427,7 @@ mod tests {
             DpeFlags::empty(),
         );
         let mut env = test_env(&mut state);
-        let mut dpe = DpeInstance::new(&mut env).unwrap();
+        let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
         // When `DeriveContextFlags::RETAIN_PARENT_CONTEXT` a new handle to the parent should be
         // returned. If the default handle was used, it should be the default handle.
@@ -1456,7 +1456,7 @@ mod tests {
             Support::AUTO_INIT | Support::CDI_EXPORT | Support::X509,
             DpeFlags::empty(),
         );
-        dpe = DpeInstance::new(&mut env).unwrap();
+        dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
         let Ok(Response::DeriveContext(res)) = DeriveContextCmd {
             data: [0xA; DPE_PROFILE.tci_size()],
@@ -1486,7 +1486,7 @@ mod tests {
             Support::AUTO_INIT | Support::CDI_EXPORT | Support::X509,
             DpeFlags::empty(),
         );
-        dpe = DpeInstance::new(&mut env).unwrap();
+        dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
         let Ok(Response::DeriveContext(res)) = DeriveContextCmd {
             data: [0xA; DPE_PROFILE.tci_size()],
@@ -1519,7 +1519,7 @@ mod tests {
             DpeFlags::empty(),
         );
         let mut env = test_env(&mut state);
-        let mut dpe = DpeInstance::new(&mut env).unwrap();
+        let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
         let res = DeriveContextCmd {
             data: [0xA; DPE_PROFILE.tci_size()],
@@ -1568,7 +1568,7 @@ mod tests {
             DpeFlags::empty(),
         );
         let mut env = test_env(&mut state);
-        let mut dpe = DpeInstance::new(&mut env).unwrap();
+        let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
         let res = DeriveContextCmd {
             flags: DeriveContextFlags::EXPORT_CDI | DeriveContextFlags::CREATE_CERTIFICATE,
@@ -1606,7 +1606,7 @@ mod tests {
             DpeFlags::empty(),
         );
         let mut env = test_env(&mut state);
-        let mut dpe = DpeInstance::new(&mut env).unwrap();
+        let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
         let res = DeriveContextCmd {
             flags: DeriveContextFlags::EXPORT_CDI
@@ -1654,7 +1654,7 @@ mod tests {
             DpeFlags::empty(),
         );
         let mut env = test_env(&mut state);
-        let mut dpe = DpeInstance::new(&mut env).unwrap();
+        let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
         // We want to use multiple contexts, so rotate out the default handle for a new handle.
         let Ok(Response::RotateCtx(NewHandleResp {
@@ -1753,7 +1753,7 @@ mod tests {
             DpeFlags::empty(),
         );
         let mut env = test_env(&mut state);
-        let mut dpe = DpeInstance::new(&mut env).unwrap();
+        let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
         // We want to use multiple contexts, so rotate out the default handle for a new handle.
         let Ok(Response::RotateCtx(NewHandleResp {
@@ -1834,7 +1834,7 @@ mod tests {
             };
             let mut state = State::new(Support::X509 | Support::CDI_EXPORT, flags);
             let mut env = test_env(&mut state);
-            let mut dpe = DpeInstance::new(&mut env).unwrap();
+            let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
             let init_resp = match InitCtxCmd::new_use_default()
                 .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])

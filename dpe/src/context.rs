@@ -26,7 +26,7 @@ pub struct Context {
 
     /// The current state of this context
     pub state: ContextState,
-    /// Whether we should hash internal input info consisting of major_version, minor_version, vendor_id, vendor_sku, max_tci_nodes, flags, and DPE_PROFILE when deriving the CDI
+    /// Whether we should hash internal input info consisting of major_version, minor_version, vendor_id, vendor_sku, max_tci_nodes, flags, and profile when deriving the CDI
     pub uses_internal_input_info: U8Bool,
     /// Whether we should hash internal dice info consisting of the certificate chain when deriving the CDI
     pub uses_internal_input_dice: U8Bool,
