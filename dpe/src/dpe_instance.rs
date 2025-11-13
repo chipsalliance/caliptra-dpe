@@ -406,9 +406,9 @@ pub mod tests {
     use crate::commands::DeriveContextFlags;
     #[cfg(feature = "ml-dsa")]
     use crate::commands::DeriveContextMldsaExternalMu87Cmd as DeriveContextCmd;
-    #[cfg(feature = "dpe_profile_p256_sha256")]
+    #[cfg(feature = "p256")]
     use crate::commands::DeriveContextP256Cmd as DeriveContextCmd;
-    #[cfg(feature = "dpe_profile_p384_sha384")]
+    #[cfg(feature = "p384")]
     use crate::commands::DeriveContextP384Cmd as DeriveContextCmd;
     use crate::response::NewHandleResp;
     use crate::support::test::SUPPORT;
@@ -418,10 +418,10 @@ pub mod tests {
     use platform::default::{DefaultPlatform, AUTO_INIT_LOCALITY};
     use zerocopy::IntoBytes;
 
-    #[cfg(feature = "dpe_profile_p256_sha256")]
+    #[cfg(feature = "p256")]
     use crypto::Ecdsa256RustCrypto;
 
-    #[cfg(feature = "dpe_profile_p384_sha384")]
+    #[cfg(feature = "p384")]
     use crypto::Ecdsa384RustCrypto;
 
     #[cfg(feature = "ml-dsa")]
@@ -429,10 +429,10 @@ pub mod tests {
 
     pub struct TestTypes;
     impl DpeTypes for TestTypes {
-        #[cfg(feature = "dpe_profile_p256_sha256")]
+        #[cfg(feature = "p256")]
         type Crypto<'a> = Ecdsa256RustCrypto;
 
-        #[cfg(feature = "dpe_profile_p384_sha384")]
+        #[cfg(feature = "p384")]
         type Crypto<'a> = Ecdsa384RustCrypto;
 
         #[cfg(feature = "ml-dsa")]

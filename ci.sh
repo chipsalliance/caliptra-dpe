@@ -78,16 +78,16 @@ build_rust_targets ml-dsa
 lint_rust_targets ml-dsa
 
 # Run tests for P256 profile
-build_rust_targets dpe_profile_p256_sha256
-lint_rust_targets dpe_profile_p256_sha256
-test_rust_targets dpe_profile_p256_sha256
-run_verification_tests dpe_profile_p256_sha256 rustcrypto
+build_rust_targets p256
+lint_rust_targets p256
+test_rust_targets p256
+run_verification_tests p256 rustcrypto
 
 # Run tests for P384 profile
-build_rust_targets dpe_profile_p384_sha384
-lint_rust_targets dpe_profile_p384_sha384
-test_rust_targets dpe_profile_p384_sha384
-run_verification_tests dpe_profile_p384_sha384 rustcrypto
+build_rust_targets p384
+lint_rust_targets p384
+test_rust_targets p384
+run_verification_tests p384 rustcrypto
 
 # Build fuzz target
 ( cd dpe/fuzz

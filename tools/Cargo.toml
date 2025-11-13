@@ -6,15 +6,11 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = ["dpe_profile_p256_sha256"]
+default = ["p256"]
 # Run ARBITRARY_MAX_HANDLES=n cargo build --features arbitrary_max_handles to use this feature
 arbitrary_max_handles = ["dpe/arbitrary_max_handles"]
-dpe_profile_p256_sha256 = [
-  "dpe/dpe_profile_p256_sha256"
-]
-dpe_profile_p384_sha384 = [
-  "dpe/dpe_profile_p384_sha384"
-]
+p256 = ["dpe/p256"]
+p384 = ["dpe/p384"]
 # TODO(clundin): Placeholder name until we decide pattern for DPE profiles and feature flags.
 ml-dsa = [
   "dpe/ml-dsa"

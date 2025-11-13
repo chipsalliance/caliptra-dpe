@@ -20,10 +20,10 @@ use dpe::{
     DpeInstance,
 };
 
-#[cfg(feature = "dpe_profile_p256_sha256")]
+#[cfg(feature = "p256")]
 use crypto::Ecdsa256RustCrypto;
 
-#[cfg(feature = "dpe_profile_p384_sha384")]
+#[cfg(feature = "p384")]
 use crypto::Ecdsa384RustCrypto;
 
 #[cfg(feature = "ml-dsa")]
@@ -128,10 +128,10 @@ struct Args {
 struct SimTypes {}
 
 impl DpeTypes for SimTypes {
-    #[cfg(feature = "dpe_profile_p256_sha256")]
+    #[cfg(feature = "p256")]
     type Crypto<'a> = Ecdsa256RustCrypto;
 
-    #[cfg(feature = "dpe_profile_p384_sha384")]
+    #[cfg(feature = "p384")]
     type Crypto<'a> = Ecdsa384RustCrypto;
 
     #[cfg(feature = "ml-dsa")]
@@ -179,9 +179,9 @@ fn main() -> std::io::Result<()> {
         args.mark_dice_extensions_critical,
     );
 
-    #[cfg(feature = "dpe_profile_p256_sha256")]
+    #[cfg(feature = "p256")]
     let p = DefaultPlatformProfile::P256;
-    #[cfg(feature = "dpe_profile_p384_sha384")]
+    #[cfg(feature = "p384")]
     let p = DefaultPlatformProfile::P384;
     #[cfg(feature = "ml-dsa")]
     let p = DefaultPlatformProfile::Mldsa87ExternalMu;

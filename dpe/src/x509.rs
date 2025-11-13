@@ -3235,11 +3235,11 @@ pub(crate) mod tests {
         };
 
         let pub_key = match DPE_PROFILE.alg() {
-            #[cfg(feature = "dpe_profile_p256_sha256")]
+            #[cfg(feature = "p256")]
             SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit256) => {
                 PubKey::Ecdsa(EcdsaPubKey::Ecdsa256(test_pub))
             }
-            #[cfg(feature = "dpe_profile_p384_sha384")]
+            #[cfg(feature = "p384")]
             SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384) => {
                 PubKey::Ecdsa(EcdsaPubKey::Ecdsa384(test_pub))
             }
@@ -3247,11 +3247,11 @@ pub(crate) mod tests {
         };
 
         let test_sig: Signature = match DPE_PROFILE.alg() {
-            #[cfg(feature = "dpe_profile_p256_sha256")]
+            #[cfg(feature = "p256")]
             SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit256) => Signature::Ecdsa(
                 EcdsaSig::from_slice(&[0xCC; ECC_INT_SIZE], &[0xDD; ECC_INT_SIZE]).into(),
             ),
-            #[cfg(feature = "dpe_profile_p384_sha384")]
+            #[cfg(feature = "p384")]
             SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384) => Signature::Ecdsa(
                 EcdsaSig::from_slice(&[0xCC; ECC_INT_SIZE], &[0xDD; ECC_INT_SIZE]).into(),
             ),

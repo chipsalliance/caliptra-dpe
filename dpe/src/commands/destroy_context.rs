@@ -101,9 +101,9 @@ mod tests {
     use super::*;
     #[cfg(feature = "ml-dsa")]
     use crate::commands::DeriveContextMldsaExternalMu87Cmd as DeriveContextCmd;
-    #[cfg(feature = "dpe_profile_p256_sha256")]
+    #[cfg(feature = "p256")]
     use crate::commands::DeriveContextP256Cmd as DeriveContextCmd;
-    #[cfg(feature = "dpe_profile_p384_sha384")]
+    #[cfg(feature = "p384")]
     use crate::commands::DeriveContextP384Cmd as DeriveContextCmd;
     use crate::{
         commands::{tests::PROFILES, Command, CommandHdr, DeriveContextFlags, InitCtxCmd},

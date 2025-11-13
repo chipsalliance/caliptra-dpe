@@ -13,10 +13,7 @@ use caliptra_cfi_lib_git::cfi_launder;
 #[cfg(not(feature = "no-cfi"))]
 use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq, cfi_assert_ne};
 use cfg_if::cfg_if;
-#[cfg(any(
-    feature = "dpe_profile_p256_sha256",
-    feature = "dpe_profile_p384_sha384"
-))]
+#[cfg(any(feature = "p256", feature = "p384"))]
 use crypto::ecdsa::EcdsaSignature;
 use crypto::{Crypto, Digest, Signature};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
@@ -31,9 +28,9 @@ bitflags! {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum SignCommand<'a> {
-    #[cfg(feature = "dpe_profile_p256_sha256")]
+    #[cfg(feature = "p256")]
     P256(&'a SignP256Cmd),
-    #[cfg(feature = "dpe_profile_p384_sha384")]
+    #[cfg(feature = "p384")]
     P384(&'a SignP384Cmd),
     #[cfg(feature = "ml-dsa")]
     ExternalMu87(&'a SignMldsaExternalMu87Cmd),
@@ -42,9 +39,9 @@ pub enum SignCommand<'a> {
 impl SignCommand<'_> {
     pub fn deserialize(profile: DpeProfile, bytes: &[u8]) -> Result<SignCommand, DpeErrorCode> {
         match profile {
-            #[cfg(feature = "dpe_profile_p256_sha256")]
+            #[cfg(feature = "p256")]
             DpeProfile::P256Sha256 => SignCommand::parse_command(SignCommand::P256, bytes),
-            #[cfg(feature = "dpe_profile_p384_sha384")]
+            #[cfg(feature = "p384")]
             DpeProfile::P384Sha384 => SignCommand::parse_command(SignCommand::P384, bytes),
             _ => {
                 let _ = bytes;
@@ -71,9 +68,9 @@ impl CommandExecution for SignCommand<'_> {
         locality: u32,
     ) -> Result<Response, DpeErrorCode> {
         match self {
-            #[cfg(feature = "dpe_profile_p256_sha256")]
+            #[cfg(feature = "p256")]
             SignCommand::P256(cmd) => cmd.execute(dpe, env, locality),
-            #[cfg(feature = "dpe_profile_p384_sha384")]
+            #[cfg(feature = "p384")]
             SignCommand::P384(cmd) => cmd.execute(dpe, env, locality),
             #[cfg(feature = "ml-dsa")]
             _ => {
@@ -138,12 +135,12 @@ fn execute(
     }
 
     let digest = match dpe.profile {
-        #[cfg(feature = "dpe_profile_p256_sha256")]
+        #[cfg(feature = "p256")]
         crate::DpeProfile::P256Sha256 => Digest::Sha256(
             crypto::Sha256::read_from_bytes(digest)
                 .map_err(|_| DpeErrorCode::Crypto(crypto::CryptoError::Size))?,
         ),
-        #[cfg(feature = "dpe_profile_p384_sha384")]
+        #[cfg(feature = "p384")]
         crate::DpeProfile::P384Sha384 => Digest::Sha384(
             crypto::Sha384::read_from_bytes(digest)
                 .map_err(|_| DpeErrorCode::Crypto(crypto::CryptoError::Size))?,
@@ -157,7 +154,7 @@ fn execute(
     };
 
     let mut response: SignResp = match sign(dpe, env, idx, label, &digest)? {
-        #[cfg(feature = "dpe_profile_p256_sha256")]
+        #[cfg(feature = "p256")]
         Signature::Ecdsa(EcdsaSignature::Ecdsa256(sig)) => {
             use crate::response::SignP256Resp;
             let (&sig_r, &sig_s) = sig.as_slice();
@@ -168,7 +165,7 @@ fn execute(
                 resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
             })
         }
-        #[cfg(feature = "dpe_profile_p384_sha384")]
+        #[cfg(feature = "p384")]
         Signature::Ecdsa(EcdsaSignature::Ecdsa384(sig)) => {
             use crate::response::SignP384Resp;
             let (&sig_r, &sig_s) = sig.as_slice();
@@ -260,12 +257,12 @@ mod tests {
         sign::SignMldsaExternalMu87Cmd as SignCmd, CertifyKeyMldsaExternalMu87Cmd as CertifyKeyCmd,
         DeriveContextMldsaExternalMu87Cmd as DeriveContextCmd,
     };
-    #[cfg(feature = "dpe_profile_p256_sha256")]
+    #[cfg(feature = "p256")]
     use crate::commands::{
         sign::SignP256Cmd as SignCmd, CertifyKeyP256Cmd as CertifyKeyCmd,
         DeriveContextP256Cmd as DeriveContextCmd,
     };
-    #[cfg(feature = "dpe_profile_p384_sha384")]
+    #[cfg(feature = "p384")]
     use crate::commands::{
         sign::SignP384Cmd as SignCmd, CertifyKeyP384Cmd as CertifyKeyCmd,
         DeriveContextP384Cmd as DeriveContextCmd,
@@ -303,9 +300,9 @@ mod tests {
             .to_vec();
         command.extend(TEST_SIGN_CMD.as_bytes());
 
-        #[cfg(feature = "dpe_profile_p256_sha256")]
+        #[cfg(feature = "p256")]
         let expected = Command::Sign(SignCommand::P256(&TEST_SIGN_CMD));
-        #[cfg(feature = "dpe_profile_p384_sha384")]
+        #[cfg(feature = "p384")]
         let expected = Command::Sign(SignCommand::P384(&TEST_SIGN_CMD));
         #[cfg(feature = "ml-dsa")]
         let expected = Command::Sign(SignCommand::ExternalMu87(&TEST_SIGN_CMD));
@@ -401,9 +398,9 @@ mod tests {
             };
 
             let (r, s) = match resp {
-                #[cfg(feature = "dpe_profile_p256_sha256")]
+                #[cfg(feature = "p256")]
                 SignResp::P256(resp) => (resp.sig_r, resp.sig_s),
-                #[cfg(feature = "dpe_profile_p384_sha384")]
+                #[cfg(feature = "p384")]
                 SignResp::P384(resp) => (resp.sig_r, resp.sig_s),
                 _ => todo!(),
             };
