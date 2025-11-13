@@ -16,13 +16,13 @@ use {
     zerocopy::IntoBytes,
 };
 
-#[cfg(feature = "dpe_profile_p256_sha256")]
+#[cfg(feature = "p256")]
 use {
     commands::CertifyKeyP256Cmd as CertifyKeyCmd,
     commands::DeriveContextP256Cmd as DeriveContextCmd, crypto::Ecdsa256RustCrypto as RustCrypto,
 };
 
-#[cfg(feature = "dpe_profile_p384_sha384")]
+#[cfg(feature = "p384")]
 use {
     commands::CertifyKeyP384Cmd as CertifyKeyCmd,
     commands::DeriveContextP384Cmd as DeriveContextCmd, crypto::Ecdsa384RustCrypto as RustCrypto,
@@ -121,9 +121,9 @@ fn main() {
     };
     let support = Support::AUTO_INIT | Support::X509 | Support::CSR;
 
-    #[cfg(feature = "dpe_profile_p256_sha256")]
+    #[cfg(feature = "p256")]
     let p = DefaultPlatformProfile::P256;
-    #[cfg(feature = "dpe_profile_p384_sha384")]
+    #[cfg(feature = "p384")]
     let p = DefaultPlatformProfile::P384;
     #[cfg(feature = "ml-dsa")]
     let p = DefaultPlatformProfile::Mldsa87ExternalMu;

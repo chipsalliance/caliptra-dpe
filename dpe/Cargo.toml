@@ -6,9 +6,9 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = ["dpe_profile_p256_sha256", "no-cfi"]
-dpe_profile_p256_sha256 = []
-dpe_profile_p384_sha384 = []
+default = ["p256", "no-cfi"]
+p256 = []
+p384 = []
 ml-dsa = ["crypto/ml-dsa"]
 # Run ARBITRARY_MAX_HANDLES=n cargo build --features arbitrary_max_handles to use this feature
 arbitrary_max_handles = []

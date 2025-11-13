@@ -172,9 +172,9 @@ pub struct DeriveContextExportedCdiResp {
 
 #[derive(PartialEq, Debug, Eq)]
 pub enum CertifyKeyResp {
-    #[cfg(feature = "dpe_profile_p256_sha256")]
+    #[cfg(feature = "p256")]
     P256(CertifyKeyP256Resp),
-    #[cfg(feature = "dpe_profile_p384_sha384")]
+    #[cfg(feature = "p384")]
     P384(CertifyKeyP384Resp),
     #[cfg(feature = "ml-dsa")]
     MldsaExternalMu87(CertifyKeyMldsaExternalMu87Resp),
@@ -183,9 +183,9 @@ pub enum CertifyKeyResp {
 impl CertifyKeyResp {
     pub fn set_handle(&mut self, handle: &ContextHandle) {
         match self {
-            #[cfg(feature = "dpe_profile_p256_sha256")]
+            #[cfg(feature = "p256")]
             CertifyKeyResp::P256(resp) => resp.new_context_handle = *handle,
-            #[cfg(feature = "dpe_profile_p384_sha384")]
+            #[cfg(feature = "p384")]
             CertifyKeyResp::P384(resp) => resp.new_context_handle = *handle,
             #[cfg(feature = "ml-dsa")]
             CertifyKeyResp::MldsaExternalMu87(resp) => resp.new_context_handle = *handle,
@@ -194,9 +194,9 @@ impl CertifyKeyResp {
 
     pub fn resp_hdr(&self) -> &ResponseHdr {
         match self {
-            #[cfg(feature = "dpe_profile_p256_sha256")]
+            #[cfg(feature = "p256")]
             CertifyKeyResp::P256(resp) => &resp.resp_hdr,
-            #[cfg(feature = "dpe_profile_p384_sha384")]
+            #[cfg(feature = "p384")]
             CertifyKeyResp::P384(resp) => &resp.resp_hdr,
             #[cfg(feature = "ml-dsa")]
             CertifyKeyResp::MldsaExternalMu87(resp) => &resp.resp_hdr,
@@ -205,9 +205,9 @@ impl CertifyKeyResp {
 
     pub fn as_bytes(&self) -> &[u8] {
         match self {
-            #[cfg(feature = "dpe_profile_p256_sha256")]
+            #[cfg(feature = "p256")]
             CertifyKeyResp::P256(resp) => resp.as_bytes(),
-            #[cfg(feature = "dpe_profile_p384_sha384")]
+            #[cfg(feature = "p384")]
             CertifyKeyResp::P384(resp) => resp.as_bytes(),
             #[cfg(feature = "ml-dsa")]
             CertifyKeyResp::MldsaExternalMu87(resp) => resp.as_bytes(),
@@ -216,9 +216,9 @@ impl CertifyKeyResp {
 
     pub fn cert(&self) -> Result<&[u8], DpeErrorCode> {
         let (buf, size) = match self {
-            #[cfg(feature = "dpe_profile_p256_sha256")]
+            #[cfg(feature = "p256")]
             CertifyKeyResp::P256(r) => (&r.cert, r.cert_size),
-            #[cfg(feature = "dpe_profile_p384_sha384")]
+            #[cfg(feature = "p384")]
             CertifyKeyResp::P384(r) => (&r.cert, r.cert_size),
             #[cfg(feature = "ml-dsa")]
             CertifyKeyResp::MldsaExternalMu87(r) => (&r.cert, r.cert_size),
@@ -262,9 +262,9 @@ pub struct CertifyKeyMldsaExternalMu87Resp {
 
 #[derive(PartialEq, Debug, Eq)]
 pub enum SignResp {
-    #[cfg(feature = "dpe_profile_p256_sha256")]
+    #[cfg(feature = "p256")]
     P256(SignP256Resp),
-    #[cfg(feature = "dpe_profile_p384_sha384")]
+    #[cfg(feature = "p384")]
     P384(SignP384Resp),
     #[cfg(feature = "ml-dsa")]
     MlDsa(SignMlDsaResp),
@@ -273,9 +273,9 @@ pub enum SignResp {
 impl SignResp {
     pub fn set_handle(&mut self, handle: &ContextHandle) {
         match self {
-            #[cfg(feature = "dpe_profile_p256_sha256")]
+            #[cfg(feature = "p256")]
             SignResp::P256(resp) => resp.new_context_handle = *handle,
-            #[cfg(feature = "dpe_profile_p384_sha384")]
+            #[cfg(feature = "p384")]
             SignResp::P384(resp) => resp.new_context_handle = *handle,
             #[cfg(feature = "ml-dsa")]
             SignResp::MlDsa(_) => {
@@ -287,9 +287,9 @@ impl SignResp {
 
     pub fn resp_hdr(&self) -> &ResponseHdr {
         match self {
-            #[cfg(feature = "dpe_profile_p256_sha256")]
+            #[cfg(feature = "p256")]
             SignResp::P256(resp) => &resp.resp_hdr,
-            #[cfg(feature = "dpe_profile_p384_sha384")]
+            #[cfg(feature = "p384")]
             SignResp::P384(resp) => &resp.resp_hdr,
             #[cfg(feature = "ml-dsa")]
             _ => todo!("clundin: Add ML-DSA variant"),
@@ -298,9 +298,9 @@ impl SignResp {
 
     pub fn as_bytes(&self) -> &[u8] {
         match self {
-            #[cfg(feature = "dpe_profile_p256_sha256")]
+            #[cfg(feature = "p256")]
             SignResp::P256(resp) => resp.as_bytes(),
-            #[cfg(feature = "dpe_profile_p384_sha384")]
+            #[cfg(feature = "p384")]
             SignResp::P384(resp) => resp.as_bytes(),
             #[cfg(feature = "ml-dsa")]
             _ => todo!("clundin: Add ML-DSA variant"),

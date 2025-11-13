@@ -16,7 +16,7 @@ use dpe::{
 };
 use platform::default::{DefaultPlatform, DefaultPlatformProfile};
 
-#[cfg(feature = "dpe_profile_p256_sha256")]
+#[cfg(feature = "p256")]
 mod alg {
     pub use super::Algorithm::Ec as DefaultAlg;
     pub use crypto::Ecdsa256RustCrypto as EcdsaRustCrypto;
@@ -24,7 +24,7 @@ mod alg {
         CertifyKeyP256Cmd as CertifyKeyCmd, DeriveContextP256Cmd as DeriveContextCmd,
     };
 }
-#[cfg(feature = "dpe_profile_p384_sha384")]
+#[cfg(feature = "p384")]
 mod alg {
     pub use super::Algorithm::Ec as DefaultAlg;
     pub use crypto::Ecdsa384RustCrypto as EcdsaRustCrypto;
@@ -45,10 +45,7 @@ mod alg {
 #[derive(ValueEnum, Clone, Debug, Default)]
 pub enum Algorithm {
     /// Use EC P256 or P384 depending on the build feature
-    #[cfg(any(
-        feature = "dpe_profile_p256_sha256",
-        feature = "dpe_profile_p384_sha384"
-    ))]
+    #[cfg(any(feature = "p256", feature = "p384"))]
     #[default]
     Ec,
     #[cfg(feature = "ml-dsa")]
@@ -60,9 +57,9 @@ pub enum Algorithm {
 impl From<Algorithm> for DefaultPlatformProfile {
     fn from(algorithm: Algorithm) -> Self {
         match algorithm {
-            #[cfg(feature = "dpe_profile_p256_sha256")]
+            #[cfg(feature = "p256")]
             Algorithm::Ec => DefaultPlatformProfile::P256,
-            #[cfg(feature = "dpe_profile_p384_sha384")]
+            #[cfg(feature = "p384")]
             Algorithm::Ec => DefaultPlatformProfile::P384,
             #[cfg(feature = "ml-dsa")]
             Algorithm::Mldsa => DefaultPlatformProfile::Mldsa87ExternalMu,
@@ -85,15 +82,9 @@ struct Args {
     cert: bool,
 }
 
-#[cfg(any(
-    feature = "dpe_profile_p256_sha256",
-    feature = "dpe_profile_p384_sha384"
-))]
+#[cfg(any(feature = "p256", feature = "p384"))]
 struct SimTypesEc;
-#[cfg(any(
-    feature = "dpe_profile_p256_sha256",
-    feature = "dpe_profile_p384_sha384"
-))]
+#[cfg(any(feature = "p256", feature = "p384"))]
 impl DpeTypes for SimTypesEc {
     type Crypto<'a> = EcdsaRustCrypto;
     type Platform<'a> = DefaultPlatform;
@@ -174,10 +165,7 @@ fn main() -> Result<()> {
     let mut state = dpe::State::new(support, flags);
 
     match args.algorithm {
-        #[cfg(any(
-            feature = "dpe_profile_p256_sha256",
-            feature = "dpe_profile_p384_sha384"
-        ))]
+        #[cfg(any(feature = "p256", feature = "p384"))]
         Algorithm::Ec => run(
             &mut DpeEnv::<SimTypesEc> {
                 crypto: EcdsaRustCrypto::new(),

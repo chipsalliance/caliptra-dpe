@@ -82,9 +82,9 @@ impl DeriveContextFlags {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum DeriveContextCommand<'a> {
-    #[cfg(feature = "dpe_profile_p256_sha256")]
+    #[cfg(feature = "p256")]
     P256(&'a DeriveContextP256Cmd),
-    #[cfg(feature = "dpe_profile_p384_sha384")]
+    #[cfg(feature = "p384")]
     P384(&'a DeriveContextP384Cmd),
     #[cfg(feature = "ml-dsa")]
     ExternalMu87(&'a DeriveContextMldsaExternalMu87Cmd),
@@ -96,11 +96,11 @@ impl DeriveContextCommand<'_> {
         bytes: &[u8],
     ) -> Result<DeriveContextCommand, DpeErrorCode> {
         match profile {
-            #[cfg(feature = "dpe_profile_p256_sha256")]
+            #[cfg(feature = "p256")]
             DpeProfile::P256Sha256 => {
                 DeriveContextCommand::parse_command(DeriveContextCommand::P256, bytes)
             }
-            #[cfg(feature = "dpe_profile_p384_sha384")]
+            #[cfg(feature = "p384")]
             DpeProfile::P384Sha384 => {
                 DeriveContextCommand::parse_command(DeriveContextCommand::P384, bytes)
             }
@@ -123,9 +123,9 @@ impl DeriveContextCommand<'_> {
 
     pub fn as_bytes(&self) -> &[u8] {
         match self {
-            #[cfg(feature = "dpe_profile_p256_sha256")]
+            #[cfg(feature = "p256")]
             DeriveContextCommand::P256(cmd) => cmd.as_bytes(),
-            #[cfg(feature = "dpe_profile_p384_sha384")]
+            #[cfg(feature = "p384")]
             DeriveContextCommand::P384(cmd) => cmd.as_bytes(),
             #[cfg(feature = "ml-dsa")]
             DeriveContextCommand::ExternalMu87(cmd) => cmd.as_bytes(),
@@ -242,7 +242,7 @@ impl CommandExecution for DeriveContextCommand<'_> {
     ) -> Result<Response, DpeErrorCode> {
         let support = env.state.support;
         let (handle, data, flags, tci_type, target_locality, svn) = match self {
-            #[cfg(feature = "dpe_profile_p256_sha256")]
+            #[cfg(feature = "p256")]
             DeriveContextCommand::P256(cmd) => (
                 &cmd.handle,
                 Digest::from(cmd.data),
@@ -251,7 +251,7 @@ impl CommandExecution for DeriveContextCommand<'_> {
                 cmd.target_locality,
                 cmd.svn,
             ),
-            #[cfg(feature = "dpe_profile_p384_sha384")]
+            #[cfg(feature = "p384")]
             DeriveContextCommand::P384(cmd) => (
                 &cmd.handle,
                 Digest::from(cmd.data),
@@ -485,14 +485,14 @@ impl CommandExecution for DeriveContextCommand<'_> {
     }
 }
 
-#[cfg(feature = "dpe_profile_p256_sha256")]
+#[cfg(feature = "p256")]
 impl<'a> From<&'a DeriveContextP256Cmd> for DeriveContextCommand<'a> {
     fn from(value: &'a DeriveContextP256Cmd) -> Self {
         DeriveContextCommand::P256(value)
     }
 }
 
-#[cfg(feature = "dpe_profile_p384_sha384")]
+#[cfg(feature = "p384")]
 impl<'a> From<&'a DeriveContextP384Cmd> for DeriveContextCommand<'a> {
     fn from(value: &'a DeriveContextP384Cmd) -> Self {
         DeriveContextCommand::P384(value)
@@ -530,7 +530,7 @@ impl Default for DeriveContextP256Cmd {
     }
 }
 
-#[cfg(feature = "dpe_profile_p256_sha256")]
+#[cfg(feature = "p256")]
 impl CommandExecution for DeriveContextP256Cmd {
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     fn execute(
@@ -567,7 +567,7 @@ impl Default for DeriveContextP384Cmd {
     }
 }
 
-#[cfg(feature = "dpe_profile_p384_sha384")]
+#[cfg(feature = "p384")]
 impl CommandExecution for DeriveContextP384Cmd {
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     fn execute(
@@ -625,12 +625,12 @@ mod tests {
         sign::SignMldsaExternalMu87Cmd as SignCmd, CertifyKeyMldsaExternalMu87Cmd as CertifyKeyCmd,
         DeriveContextMldsaExternalMu87Cmd as DeriveContextCmd,
     };
-    #[cfg(feature = "dpe_profile_p256_sha256")]
+    #[cfg(feature = "p256")]
     use crate::commands::{
         sign::SignP256Cmd as SignCmd, CertifyKeyP256Cmd as CertifyKeyCmd,
         DeriveContextP256Cmd as DeriveContextCmd,
     };
-    #[cfg(feature = "dpe_profile_p384_sha384")]
+    #[cfg(feature = "p384")]
     use crate::commands::{
         sign::SignP384Cmd as SignCmd, CertifyKeyP384Cmd as CertifyKeyCmd,
         DeriveContextP384Cmd as DeriveContextCmd,
@@ -916,7 +916,7 @@ mod tests {
         })
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         {
-            #[cfg(feature = "dpe_profile_p256_sha256")]
+            #[cfg(feature = "p256")]
             Ok(Response::Sign(SignResp::P256(resp))) => (
                 resp.new_context_handle,
                 EcdsaSig::from_private_components(
@@ -925,7 +925,7 @@ mod tests {
                 )
                 .unwrap(),
             ),
-            #[cfg(feature = "dpe_profile_p384_sha384")]
+            #[cfg(feature = "p384")]
             Ok(Response::Sign(SignResp::P384(resp))) => (
                 resp.new_context_handle,
                 EcdsaSig::from_private_components(

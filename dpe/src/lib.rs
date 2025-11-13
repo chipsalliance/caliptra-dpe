@@ -110,10 +110,10 @@ impl DpeProfile {
     }
 }
 
-#[cfg(feature = "dpe_profile_p256_sha256")]
+#[cfg(feature = "p256")]
 pub const DPE_PROFILE: DpeProfile = DpeProfile::P256Sha256;
 
-#[cfg(feature = "dpe_profile_p384_sha384")]
+#[cfg(feature = "p384")]
 pub const DPE_PROFILE: DpeProfile = DpeProfile::P384Sha384;
 
 #[cfg(feature = "ml-dsa")]

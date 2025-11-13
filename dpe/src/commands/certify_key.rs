@@ -13,10 +13,7 @@ use caliptra_cfi_derive_git::cfi_impl_fn;
 #[cfg(not(feature = "no-cfi"))]
 use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq};
 use cfg_if::cfg_if;
-#[cfg(any(
-    feature = "dpe_profile_p256_sha256",
-    feature = "dpe_profile_p384_sha384"
-))]
+#[cfg(any(feature = "p256", feature = "p384"))]
 use crypto::ecdsa::EcdsaPubKey;
 use crypto::PubKey;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
@@ -32,9 +29,9 @@ bitflags! {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum CertifyKeyCommand<'a> {
-    #[cfg(feature = "dpe_profile_p256_sha256")]
+    #[cfg(feature = "p256")]
     P256(&'a CertifyKeyP256Cmd),
-    #[cfg(feature = "dpe_profile_p384_sha384")]
+    #[cfg(feature = "p384")]
     P384(&'a CertifyKeyP384Cmd),
     #[cfg(feature = "ml-dsa")]
     ExternalMu87(&'a CertifyKeyMldsaExternalMu87Cmd),
@@ -49,11 +46,11 @@ impl CertifyKeyCommand<'_> {
         bytes: &[u8],
     ) -> Result<CertifyKeyCommand, DpeErrorCode> {
         match profile {
-            #[cfg(feature = "dpe_profile_p256_sha256")]
+            #[cfg(feature = "p256")]
             DpeProfile::P256Sha256 => {
                 CertifyKeyCommand::parse_command(CertifyKeyCommand::P256, bytes)
             }
-            #[cfg(feature = "dpe_profile_p384_sha384")]
+            #[cfg(feature = "p384")]
             DpeProfile::P384Sha384 => {
                 CertifyKeyCommand::parse_command(CertifyKeyCommand::P384, bytes)
             }
@@ -76,9 +73,9 @@ impl CertifyKeyCommand<'_> {
 
     pub fn as_bytes(&self) -> &[u8] {
         match self {
-            #[cfg(feature = "dpe_profile_p256_sha256")]
+            #[cfg(feature = "p256")]
             CertifyKeyCommand::P256(cmd) => cmd.as_bytes(),
-            #[cfg(feature = "dpe_profile_p384_sha384")]
+            #[cfg(feature = "p384")]
             CertifyKeyCommand::P384(cmd) => cmd.as_bytes(),
             #[cfg(feature = "ml-dsa")]
             CertifyKeyCommand::ExternalMu87(cmd) => cmd.as_bytes(),
@@ -86,14 +83,14 @@ impl CertifyKeyCommand<'_> {
     }
 }
 
-#[cfg(feature = "dpe_profile_p256_sha256")]
+#[cfg(feature = "p256")]
 impl<'a> From<&'a CertifyKeyP256Cmd> for CertifyKeyCommand<'a> {
     fn from(value: &'a CertifyKeyP256Cmd) -> Self {
         CertifyKeyCommand::P256(value)
     }
 }
 
-#[cfg(feature = "dpe_profile_p384_sha384")]
+#[cfg(feature = "p384")]
 impl<'a> From<&'a CertifyKeyP384Cmd> for CertifyKeyCommand<'a> {
     fn from(value: &'a CertifyKeyP384Cmd) -> Self {
         CertifyKeyCommand::P384(value)
@@ -116,9 +113,9 @@ impl CommandExecution for CertifyKeyCommand<'_> {
         locality: u32,
     ) -> Result<Response, DpeErrorCode> {
         let (handle, format, label) = match *self {
-            #[cfg(feature = "dpe_profile_p256_sha256")]
+            #[cfg(feature = "p256")]
             CertifyKeyCommand::P256(cmd) => (&cmd.handle, cmd.format, cmd.label.as_slice()),
-            #[cfg(feature = "dpe_profile_p384_sha384")]
+            #[cfg(feature = "p384")]
             CertifyKeyCommand::P384(cmd) => (&cmd.handle, cmd.format, cmd.label.as_slice()),
             #[cfg(feature = "ml-dsa")]
             CertifyKeyCommand::ExternalMu87(cmd) => (&cmd.handle, cmd.format, cmd.label.as_slice()),
@@ -194,7 +191,7 @@ impl CommandExecution for CertifyKeyCommand<'_> {
         }?;
 
         let mut response = match pub_key {
-            #[cfg(feature = "dpe_profile_p256_sha256")]
+            #[cfg(feature = "p256")]
             PubKey::Ecdsa(EcdsaPubKey::Ecdsa256(pub_key)) => {
                 let (x, y) = pub_key.as_slice();
                 CertifyKeyResp::P256(crate::response::CertifyKeyP256Resp {
@@ -206,7 +203,7 @@ impl CommandExecution for CertifyKeyCommand<'_> {
                     resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
                 })
             }
-            #[cfg(feature = "dpe_profile_p384_sha384")]
+            #[cfg(feature = "p384")]
             PubKey::Ecdsa(EcdsaPubKey::Ecdsa384(pub_key)) => {
                 let (x, y) = pub_key.as_slice();
                 CertifyKeyResp::P384(crate::response::CertifyKeyP384Resp {
@@ -250,7 +247,7 @@ pub struct CertifyKeyP256Cmd {
     pub label: [u8; 32],
 }
 
-#[cfg(feature = "dpe_profile_p256_sha256")]
+#[cfg(feature = "p256")]
 impl CommandExecution for CertifyKeyP256Cmd {
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     fn execute(
@@ -272,7 +269,7 @@ pub struct CertifyKeyP384Cmd {
     pub label: [u8; 48],
 }
 
-#[cfg(feature = "dpe_profile_p384_sha384")]
+#[cfg(feature = "p384")]
 impl CommandExecution for CertifyKeyP384Cmd {
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     fn execute(
@@ -315,11 +312,11 @@ mod tests {
         CertifyKeyMldsaExternalMu87Cmd as CertifyKeyCmd,
         DeriveContextMldsaExternalMu87Cmd as DeriveContextCmd,
     };
-    #[cfg(feature = "dpe_profile_p256_sha256")]
+    #[cfg(feature = "p256")]
     use crate::commands::{
         CertifyKeyP256Cmd as CertifyKeyCmd, DeriveContextP256Cmd as DeriveContextCmd,
     };
-    #[cfg(feature = "dpe_profile_p384_sha384")]
+    #[cfg(feature = "p384")]
     use crate::commands::{
         CertifyKeyP384Cmd as CertifyKeyCmd, DeriveContextP384Cmd as DeriveContextCmd,
     };
@@ -624,11 +621,11 @@ mod tests {
             // validate subject_name
             let mut subj_serial = [0u8; DPE_PROFILE.hash_size() * 2];
             let pub_key = match certify_resp {
-                #[cfg(feature = "dpe_profile_p256_sha256")]
+                #[cfg(feature = "p256")]
                 CertifyKeyResp::P256(r) => PubKey::Ecdsa(
                     EcdsaPub::from_slice(&r.derived_pubkey_x, &r.derived_pubkey_y).into(),
                 ),
-                #[cfg(feature = "dpe_profile_p384_sha384")]
+                #[cfg(feature = "p384")]
                 CertifyKeyResp::P384(r) => PubKey::Ecdsa(
                     EcdsaPub::from_slice(&r.derived_pubkey_x, &r.derived_pubkey_y).into(),
                 ),
