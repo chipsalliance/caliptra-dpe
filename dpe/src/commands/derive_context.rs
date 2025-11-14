@@ -648,7 +648,7 @@ mod tests {
         response::{NewHandleResp, SignResp},
         support::Support,
         validation::DpeValidator,
-        DpeProfile, DPE_PROFILE, MAX_EXPORTED_CDI_SIZE, MAX_HANDLES,
+        DpeProfile, DPE_PROFILE, MAX_EXPORTED_CDI_SIZE, MAX_HANDLES, TCI_SIZE,
     };
     use caliptra_cfi_lib_git::CfiCounter;
     use crypto::{Crypto, Hasher};
@@ -1182,7 +1182,7 @@ mod tests {
             })),
             DeriveContextCmd {
                 handle: ContextHandle::default(),
-                data: [1; DPE_PROFILE.tci_size()],
+                data: [1; TCI_SIZE],
                 flags: DeriveContextFlags::MAKE_DEFAULT
                     | DeriveContextFlags::RECURSIVE
                     | DeriveContextFlags::INTERNAL_INPUT_INFO
@@ -1196,7 +1196,7 @@ mod tests {
 
         DeriveContextCmd {
             handle: ContextHandle::default(),
-            data: [2; DPE_PROFILE.tci_size()],
+            data: [2; TCI_SIZE],
             flags: DeriveContextFlags::MAKE_DEFAULT
                 | DeriveContextFlags::RECURSIVE
                 | DeriveContextFlags::INTERNAL_INPUT_INFO
@@ -1459,7 +1459,7 @@ mod tests {
         dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
         let Ok(Response::DeriveContext(res)) = DeriveContextCmd {
-            data: [0xA; DPE_PROFILE.tci_size()],
+            data: [0xA; TCI_SIZE],
             target_locality: TEST_LOCALITIES[0],
             ..Default::default()
         }
@@ -1489,7 +1489,7 @@ mod tests {
         dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
         let Ok(Response::DeriveContext(res)) = DeriveContextCmd {
-            data: [0xA; DPE_PROFILE.tci_size()],
+            data: [0xA; TCI_SIZE],
             target_locality: TEST_LOCALITIES[0],
             ..Default::default()
         }
@@ -1522,7 +1522,7 @@ mod tests {
         let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
         let res = DeriveContextCmd {
-            data: [0xA; DPE_PROFILE.tci_size()],
+            data: [0xA; TCI_SIZE],
             flags: DeriveContextFlags::MAKE_DEFAULT
                 | DeriveContextFlags::ALLOW_NEW_CONTEXT_TO_EXPORT,
             target_locality: TEST_LOCALITIES[0],

@@ -290,7 +290,7 @@ pub mod tests {
         support::Support,
         tci::TciMeasurement,
         validation::{DpeValidator, ValidationError},
-        DpeFlags, State, U8Bool, DPE_PROFILE,
+        DpeFlags, State, U8Bool, TCI_SIZE,
     };
     use caliptra_cfi_lib_git::CfiCounter;
 
@@ -418,7 +418,7 @@ pub mod tests {
         );
 
         dpe_validator.dpe.contexts[0].children = 0;
-        dpe_validator.dpe.contexts[0].tci.tci_current = TciMeasurement([1; DPE_PROFILE.tci_size()]);
+        dpe_validator.dpe.contexts[0].tci.tci_current = TciMeasurement([1; TCI_SIZE]);
         assert_eq!(
             dpe_validator.validate_dpe_state(),
             Err(ValidationError::InactiveContextWithMeasurement)

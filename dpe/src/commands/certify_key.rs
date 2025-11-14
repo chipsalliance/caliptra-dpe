@@ -325,7 +325,7 @@ mod tests {
         dpe_instance::tests::{test_env, SIMULATION_HANDLE, TEST_LOCALITIES},
         support::Support,
         x509::{tests::TcbInfo, DirectoryString, Name},
-        State, DPE_PROFILE,
+        State, DPE_PROFILE, TCI_SIZE,
     };
     use caliptra_cfi_lib_git::CfiCounter;
     use cms::{
@@ -701,7 +701,7 @@ mod tests {
         // Derive context twice with different types
         let derive_cmd = DeriveContextCmd {
             handle: ContextHandle::default(),
-            data: [1; DPE_PROFILE.tci_size()],
+            data: [1; TCI_SIZE],
             flags: DeriveContextFlags::MAKE_DEFAULT | DeriveContextFlags::INPUT_ALLOW_X509,
             tci_type: 1,
             target_locality: 0,

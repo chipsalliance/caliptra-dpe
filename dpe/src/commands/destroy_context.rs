@@ -111,7 +111,7 @@ mod tests {
         dpe_instance::tests::{
             test_env, test_state, SIMULATION_HANDLE, TEST_HANDLE, TEST_LOCALITIES,
         },
-        DPE_PROFILE,
+        DPE_PROFILE, TCI_SIZE,
     };
     use caliptra_cfi_lib_git::CfiCounter;
     use zerocopy::IntoBytes;
@@ -300,7 +300,7 @@ mod tests {
         // create new context while preserving auto-initialized context
         let handle_1 = match (DeriveContextCmd {
             handle: ContextHandle::default(),
-            data: [0u8; DPE_PROFILE.tci_size()],
+            data: [0u8; TCI_SIZE],
             flags: DeriveContextFlags::RETAIN_PARENT_CONTEXT | DeriveContextFlags::CHANGE_LOCALITY,
             tci_type: 0,
             target_locality: TEST_LOCALITIES[1],
@@ -316,7 +316,7 @@ mod tests {
         // retire context with handle 1 and create new context
         let handle_2 = match (DeriveContextCmd {
             handle: handle_1,
-            data: [0u8; DPE_PROFILE.tci_size()],
+            data: [0u8; TCI_SIZE],
             flags: DeriveContextFlags::empty(),
             tci_type: 0,
             target_locality: TEST_LOCALITIES[1],
@@ -332,7 +332,7 @@ mod tests {
         // retire context with handle 2 and create new context
         let handle_3 = match (DeriveContextCmd {
             handle: handle_2,
-            data: [0u8; DPE_PROFILE.tci_size()],
+            data: [0u8; TCI_SIZE],
             flags: DeriveContextFlags::empty(),
             tci_type: 0,
             target_locality: TEST_LOCALITIES[1],
@@ -371,7 +371,7 @@ mod tests {
         // create new context while preserving auto-initialized context
         let parent_handle = match (DeriveContextCmd {
             handle: ContextHandle::default(),
-            data: [0u8; DPE_PROFILE.tci_size()],
+            data: [0u8; TCI_SIZE],
             flags: DeriveContextFlags::RETAIN_PARENT_CONTEXT | DeriveContextFlags::CHANGE_LOCALITY,
             tci_type: 0,
             target_locality: TEST_LOCALITIES[1],
@@ -387,7 +387,7 @@ mod tests {
         // derive one child from the parent
         let parent_handle = match (DeriveContextCmd {
             handle: parent_handle,
-            data: [0u8; DPE_PROFILE.tci_size()],
+            data: [0u8; TCI_SIZE],
             flags: DeriveContextFlags::RETAIN_PARENT_CONTEXT,
             tci_type: 0,
             target_locality: TEST_LOCALITIES[1],
@@ -403,7 +403,7 @@ mod tests {
         // derive another child while retiring the parent handle
         let handle_b = match (DeriveContextCmd {
             handle: parent_handle,
-            data: [0u8; DPE_PROFILE.tci_size()],
+            data: [0u8; TCI_SIZE],
             flags: DeriveContextFlags::empty(),
             tci_type: 0,
             target_locality: TEST_LOCALITIES[1],

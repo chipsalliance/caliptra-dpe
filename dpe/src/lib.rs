@@ -125,6 +125,12 @@ pub const DPE_PROFILE: DpeProfile = DpeProfile::P384Sha384;
 #[cfg(feature = "ml-dsa")]
 pub const DPE_PROFILE: DpeProfile = DpeProfile::Mldsa87ExternalMu;
 
+#[cfg(feature = "p256")]
+pub const TCI_SIZE: usize = 32;
+
+#[cfg(any(feature = "p384", feature = "ml-dsa"))]
+pub const TCI_SIZE: usize = 48;
+
 // Recursive macro that does a union of all the flags passed to it. This is
 // const and looks about as nice as using the | operator.
 #[macro_export]
