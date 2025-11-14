@@ -46,6 +46,19 @@ const SIZE_TAG_OFFSET: usize = 3;
 /// This is the size of a SHA384 digest.
 const MAX_HASH_SIZE: usize = 48;
 
+#[cfg(feature = "p256")]
+mod profile_oids {
+    pub const ECDSA_WITH_SHA256_OID: &[u8] = &[0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x04, 0x03, 0x02];
+    pub const CURVE_P256_OID: &[u8] = &[0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x03, 0x01, 0x07];
+    pub const HASH_SHA256_OID: &[u8] = &[0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01];
+}
+
+#[cfg(feature = "p384")]
+mod profile_oids {
+    pub const ECDSA_WITH_SHA384_OID: &[u8] = &[0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x04, 0x03, 0x03];
+    pub const CURVE_P384_OID: &[u8] = &[0x2B, 0x81, 0x04, 0x00, 0x22];
+}
+
 pub enum DirectoryString<'a> {
     PrintableString(&'a [u8]),
     Utf8String(&'a [u8]),
@@ -133,11 +146,6 @@ impl CertWriter<'_> {
     #[cfg(not(feature = "disable_csr"))]
     const CSR_V0: u64 = 0;
 
-    // ECDSA with SHA256
-    const ECDSA_WITH_SHA256_OID: &'static [u8] = &[0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x04, 0x03, 0x02];
-    // ECDSA with SHA384
-    const ECDSA_WITH_SHA384_OID: &'static [u8] = &[0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x04, 0x03, 0x03];
-
     /// ASN.1 encoding with length stripped of the following OID.
     /// id-ml-dnsa-87 OBJECT IDENTIFIER ::= { joint-iso-itu-t(2)
     ///     country(16) us(840) organization(1) gov(101) csor(3)
@@ -147,14 +155,9 @@ impl CertWriter<'_> {
     const MLDSA_OID: &'static [u8] = &[0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x03, 0x13];
 
     const EC_PUB_OID: &'static [u8] = &[0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x02, 0x01];
-    // P256
-    const CURVE_P256_OID: &'static [u8] = &[0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x03, 0x01, 0x07];
-    // P384
-    const CURVE_P384_OID: &'static [u8] = &[0x2B, 0x81, 0x04, 0x00, 0x22];
 
-    // SHA256
-    const HASH_SHA256_OID: &'static [u8] = &[0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01];
     // SHA384
+    #[cfg(any(feature = "p384", feature = "ml-dsa"))]
     const HASH_SHA384_OID: &'static [u8] = &[0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x02];
 
     const RDN_COMMON_NAME_OID: [u8; 3] = [0x55, 0x04, 0x03];
@@ -360,30 +363,39 @@ impl CertWriter<'_> {
         Self::get_structure_size(cn_set_size + serialnumber_set_size, tagged)
     }
 
-    fn sig_oid(&self) -> &'static [u8] {
+    fn sig_oid(&self) -> Result<&'static [u8], DpeErrorCode> {
         match self.profile {
-            DpeProfile::P256Sha256 => Self::ECDSA_WITH_SHA256_OID,
-            DpeProfile::P384Sha384 => Self::ECDSA_WITH_SHA384_OID,
+            #[cfg(feature = "p256")]
+            DpeProfile::P256Sha256 => Ok(profile_oids::ECDSA_WITH_SHA256_OID),
+            #[cfg(feature = "p384")]
+            DpeProfile::P384Sha384 => Ok(profile_oids::ECDSA_WITH_SHA384_OID),
             #[cfg(feature = "ml-dsa")]
-            DpeProfile::Mldsa87ExternalMu => Self::MLDSA_OID,
+            DpeProfile::Mldsa87ExternalMu => Ok(Self::MLDSA_OID),
+            _ => Err(DpeErrorCode::X509AlgorithmMismatch),
         }
     }
 
-    fn hash_oid(&self) -> &'static [u8] {
+    fn hash_oid(&self) -> Result<&'static [u8], DpeErrorCode> {
         match self.profile {
-            DpeProfile::P256Sha256 => Self::HASH_SHA256_OID,
-            DpeProfile::P384Sha384 => Self::HASH_SHA384_OID,
+            #[cfg(feature = "p256")]
+            DpeProfile::P256Sha256 => Ok(profile_oids::HASH_SHA256_OID),
+            #[cfg(feature = "p384")]
+            DpeProfile::P384Sha384 => Ok(Self::HASH_SHA384_OID),
             #[cfg(feature = "ml-dsa")]
-            DpeProfile::Mldsa87ExternalMu => Self::HASH_SHA384_OID,
+            DpeProfile::Mldsa87ExternalMu => Ok(Self::HASH_SHA384_OID),
+            _ => Err(DpeErrorCode::X509AlgorithmMismatch),
         }
     }
 
     fn curve_oid(&self) -> Result<&'static [u8], DpeErrorCode> {
         match self.profile {
-            DpeProfile::P256Sha256 => Ok(Self::CURVE_P256_OID),
-            DpeProfile::P384Sha384 => Ok(Self::CURVE_P384_OID),
+            #[cfg(feature = "p256")]
+            DpeProfile::P256Sha256 => Ok(profile_oids::CURVE_P256_OID),
+            #[cfg(feature = "p384")]
+            DpeProfile::P384Sha384 => Ok(profile_oids::CURVE_P384_OID),
             #[cfg(feature = "ml-dsa")]
             DpeProfile::Mldsa87ExternalMu => Err(DpeErrorCode::X509AlgorithmMismatch),
+            _ => Err(DpeErrorCode::X509AlgorithmMismatch),
         }
     }
 
@@ -398,7 +410,7 @@ impl CertWriter<'_> {
     /// Calculate the number of bytes for an ECDSA signature AlgorithmIdentifier
     /// If `tagged`, include the tag and size fields
     fn get_ecdsa_sig_alg_id_size(&self, tagged: bool) -> Result<usize, DpeErrorCode> {
-        let len = Self::get_bytes_size(self.sig_oid(), true)?;
+        let len = Self::get_bytes_size(self.sig_oid()?, true)?;
         Self::get_structure_size(len, tagged)
     }
 
@@ -406,7 +418,7 @@ impl CertWriter<'_> {
     /// If `tagged`, include the tag and size fields
     #[cfg(feature = "ml-dsa")]
     fn get_mldsa_sig_alg_id_size(&self, tagged: bool) -> Result<usize, DpeErrorCode> {
-        let len = Self::get_bytes_size(self.sig_oid(), true)?;
+        let len = Self::get_bytes_size(self.sig_oid()?, true)?;
         Self::get_structure_size(len, tagged)
     }
 
@@ -414,7 +426,7 @@ impl CertWriter<'_> {
     /// If `tagged`, include the tag and size fields
     #[cfg(not(feature = "disable_csr"))]
     fn get_hash_alg_id_size(&self, tagged: bool) -> Result<usize, DpeErrorCode> {
-        let len = Self::get_bytes_size(self.hash_oid(), true)?;
+        let len = Self::get_bytes_size(self.hash_oid()?, true)?;
         Self::get_structure_size(len, tagged)
     }
 
@@ -539,7 +551,7 @@ impl CertWriter<'_> {
 
     /// Get the size of a DICE FWID structure
     fn get_fwid_size(&self, digest: &[u8], tagged: bool) -> Result<usize, DpeErrorCode> {
-        let size = Self::get_structure_size(self.hash_oid().len(), /*tagged=*/ true)?
+        let size = Self::get_structure_size(self.hash_oid()?.len(), /*tagged=*/ true)?
             + Self::get_structure_size(digest.len(), /*tagged=*/ true)?;
 
         Self::get_structure_size(size, tagged)
@@ -1248,7 +1260,7 @@ impl CertWriter<'_> {
 
         let mut bytes_written = self.encode_tag_field(Self::SEQUENCE_TAG)?;
         bytes_written += self.encode_size_field(seq_size)?;
-        bytes_written += self.encode_oid(self.sig_oid())?;
+        bytes_written += self.encode_oid(self.sig_oid()?)?;
 
         Ok(bytes_written)
     }
@@ -1266,7 +1278,7 @@ impl CertWriter<'_> {
 
         let mut bytes_written = self.encode_tag_field(Self::SEQUENCE_TAG)?;
         bytes_written += self.encode_size_field(seq_size)?;
-        bytes_written += self.encode_oid(self.hash_oid())?;
+        bytes_written += self.encode_oid(self.hash_oid()?)?;
 
         Ok(bytes_written)
     }
@@ -1465,7 +1477,7 @@ impl CertWriter<'_> {
 
         let mut bytes_written = self.encode_tag_field(Self::SEQUENCE_TAG)?;
         bytes_written += self.encode_size_field(seq_size)?;
-        bytes_written += self.encode_oid(self.sig_oid())?;
+        bytes_written += self.encode_oid(self.sig_oid()?)?;
 
         Ok(bytes_written)
     }
@@ -1524,7 +1536,7 @@ impl CertWriter<'_> {
         bytes_written += self.encode_size_field(self.get_fwid_size(tci, /*tagged=*/ false)?)?;
 
         // hashAlg OID
-        let oid = self.hash_oid();
+        let oid = self.hash_oid()?;
         bytes_written += self.encode_byte(Self::OID_TAG)?;
         bytes_written += self.encode_size_field(oid.len())?;
         bytes_written += self.encode_bytes(oid)?;
