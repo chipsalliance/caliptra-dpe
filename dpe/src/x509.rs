@@ -393,8 +393,6 @@ impl CertWriter<'_> {
             DpeProfile::P256Sha256 => Ok(profile_oids::CURVE_P256_OID),
             #[cfg(feature = "p384")]
             DpeProfile::P384Sha384 => Ok(profile_oids::CURVE_P384_OID),
-            #[cfg(feature = "ml-dsa")]
-            DpeProfile::Mldsa87ExternalMu => Err(DpeErrorCode::X509AlgorithmMismatch),
             _ => Err(DpeErrorCode::X509AlgorithmMismatch),
         }
     }
