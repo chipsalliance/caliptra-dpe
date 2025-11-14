@@ -286,9 +286,6 @@ pub trait CryptoSuite: Crypto + SignatureType + DigestType {
 
         let digest = hasher.finish()?;
         let src = digest.as_slice();
-        if serial.len() != src.len() * 2 {
-            return Err(CryptoError::Size);
-        }
 
         let mut curr_idx = 0;
         const HEX_CHARS: &[u8; 16] = b"0123456789ABCDEF";

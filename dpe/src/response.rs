@@ -364,6 +364,7 @@ pub enum DpeErrorCode {
     X509InvalidState = 6,
     X509SkipsExhausted = 7,
     X509InvalidWidth = 8,
+    X509AlgorithmMismatch = 9,
     InvalidHandle = 0x1000,
     InvalidLocality = 0x1001,
     MaxTcis = 0x1003,
