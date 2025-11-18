@@ -6,6 +6,15 @@ Abstract:
 --*/
 #![cfg_attr(not(test), no_std)]
 
+#[cfg(not(feature = "log"))]
+#[allow(unused_macros)]
+#[macro_use]
+mod log_stub;
+#[cfg(feature = "log")]
+#[allow(unused_imports)]
+#[macro_use(debug, error, info, trace, warn)]
+extern crate log;
+
 pub use dpe_instance::DpeInstance;
 pub use state::{DpeFlags, State};
 
@@ -140,4 +149,24 @@ macro_rules! bitflags_join {
     // In input is 1 or more comma separated things, take the first one, and call
     // .union(bitflags_join!(remaining))
     ($x: expr, $($z: expr),+) => ($x.union(bitflags_join!($($z),*)));
+}
+
+#[cfg(test)]
+pub(crate) mod tests {
+    /// Convenience function to initialize logging for unit tests
+    ///
+    /// Since unit tests are not compiled and executed seperately,
+    /// we have to ensure the initialization is only called once.
+    #[allow(unused)]
+    pub fn logger_init() {
+        use std::sync::Once;
+        static LOGGER: Once = Once::new();
+        LOGGER.call_once(|| {
+            flexi_logger::Logger::try_with_env_or_str("info")
+                .unwrap()
+                .write_mode(flexi_logger::WriteMode::SupportCapture)
+                .start()
+                .ok();
+        });
+    }
 }
