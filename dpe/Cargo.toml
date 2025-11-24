@@ -23,6 +23,7 @@ disable_internal_dice = []
 disable_retain_parent_context = []
 disable_export_cdi = []
 no-cfi = ["crypto/no-cfi"]
+log = ["dep:log"]
 
 [dependencies]
 bitflags = "2.4.0"
@@ -35,6 +36,7 @@ ufmt = { git = "https://github.com/korran/ufmt.git", rev = "1d0743c1ffffc68bc05c
 zerocopy.workspace = true
 zeroize = { version = "1.6.0", default-features = false, features = ["zeroize_derive"] }
 cfg-if = "1.0.0"
+log = { version = "0.4.28", optional = true }
 
 [dev-dependencies]
 asn1 = "0.13.0"
@@ -47,3 +49,4 @@ der = "0.7.8"
 spki = "0.7.2"
 rand = "0.8.5"
 openssl = "0.10.64"
+flexi_logger = "0.31.7"
