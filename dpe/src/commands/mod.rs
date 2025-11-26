@@ -108,8 +108,8 @@ impl Command<'_> {
     }
 }
 
-impl From<Command<'_>> for u32 {
-    fn from(cmd: Command) -> u32 {
+impl From<&Command<'_>> for u32 {
+    fn from(cmd: &Command) -> u32 {
         match cmd {
             Command::GetProfile => Command::GET_PROFILE,
             Command::InitCtx(_) => Command::INITIALIZE_CONTEXT,
@@ -121,6 +121,18 @@ impl From<Command<'_>> for u32 {
             Command::DestroyCtx(_) => Command::DESTROY_CONTEXT,
             Command::GetCertificateChain(_) => Command::GET_CERTIFICATE_CHAIN,
         }
+    }
+}
+
+impl From<&mut Command<'_>> for u32 {
+    fn from(cmd: &mut Command) -> u32 {
+        (&*cmd).into()
+    }
+}
+
+impl From<Command<'_>> for u32 {
+    fn from(cmd: Command) -> u32 {
+        (&cmd).into()
     }
 }
 
