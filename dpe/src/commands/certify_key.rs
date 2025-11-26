@@ -81,6 +81,17 @@ impl CertifyKeyCommand<'_> {
             CertifyKeyCommand::ExternalMu87(cmd) => cmd.as_bytes(),
         }
     }
+
+    pub fn format(&self) -> u32 {
+        match self {
+            #[cfg(feature = "p256")]
+            CertifyKeyCommand::P256(cmd) => cmd.format,
+            #[cfg(feature = "p384")]
+            CertifyKeyCommand::P384(cmd) => cmd.format,
+            #[cfg(feature = "ml-dsa")]
+            CertifyKeyCommand::ExternalMu87(cmd) => cmd.format,
+        }
+    }
 }
 
 #[cfg(feature = "p256")]
