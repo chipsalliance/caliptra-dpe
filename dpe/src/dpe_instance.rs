@@ -11,6 +11,7 @@ use crate::{
     context::{ChildToRootIter, Context, ContextHandle, ContextState},
     response::{DpeErrorCode, GetProfileResp, Response, ResponseHdr},
     support::Support,
+    tci::TciMeasurement,
     DpeProfile, State, MAX_HANDLES,
 };
 #[cfg(not(feature = "no-cfi"))]
@@ -88,7 +89,7 @@ impl DpeInstance {
         env: &mut DpeEnv<impl DpeTypes>,
         profile: DpeProfile,
         tci_type: u32,
-        auto_init_measurement: &Digest,
+        auto_init_measurement: &TciMeasurement,
     ) -> Result<Self, DpeErrorCode> {
         // auto-init must be supported to add an auto init measurement
         if !env.state.support.auto_init() {
@@ -230,7 +231,7 @@ impl DpeInstance {
         &self,
         env: &mut DpeEnv<impl DpeTypes>,
         context: &mut Context,
-        measurement: &Digest,
+        measurement: &TciMeasurement,
         locality: u32,
     ) -> Result<(), DpeErrorCode> {
         if context.state != ContextState::Active {
@@ -246,20 +247,10 @@ impl DpeInstance {
             }
         }
 
-        let measurement = match (self.profile, measurement) {
-            (DpeProfile::P256Sha256, Digest::Sha256(m)) => m.as_bytes(),
-            (DpeProfile::P384Sha384, Digest::Sha384(m)) => m.as_bytes(),
-            #[cfg(feature = "ml-dsa")]
-            (DpeProfile::Mldsa87ExternalMu, Digest::Sha384(m)) => m.as_bytes(),
-            _ => {
-                return Err(DpeErrorCode::InvalidArgument);
-            }
-        };
-
         // Derive the new TCI as HASH(TCI_CUMULATIVE || INPUT_DATA).
         let mut hasher = env.crypto.hash_initialize()?;
         hasher.update(&context.tci.tci_cumulative.0)?;
-        hasher.update(measurement)?;
+        hasher.update(&measurement.0)?;
         let digest = hasher.finish()?;
 
         let digest_bytes = digest.as_slice();
@@ -268,7 +259,7 @@ impl DpeInstance {
             return Err(DpeErrorCode::InternalError);
         }
         context.tci.tci_cumulative.0.copy_from_slice(digest_bytes);
-        context.tci.tci_current.0.copy_from_slice(measurement);
+        context.tci.tci_current = *measurement;
         Ok(())
     }
 
@@ -527,8 +518,13 @@ pub mod tests {
 
         let data = [1; DPE_PROFILE.hash_size()];
         let mut context = env.state.contexts[0];
-        dpe.add_tci_measurement(&mut env, &mut context, &data.into(), TEST_LOCALITIES[0])
-            .unwrap();
+        dpe.add_tci_measurement(
+            &mut env,
+            &mut context,
+            &TciMeasurement(data),
+            TEST_LOCALITIES[0],
+        )
+        .unwrap();
         env.state.contexts[0] = context;
         assert_eq!(data, context.tci.tci_current.0);
 
@@ -542,8 +538,13 @@ pub mod tests {
         assert_eq!(first_cumulative.as_slice(), context.tci.tci_cumulative.0);
 
         let data = [2; DPE_PROFILE.hash_size()];
-        dpe.add_tci_measurement(&mut env, &mut context, &data.into(), TEST_LOCALITIES[0])
-            .unwrap();
+        dpe.add_tci_measurement(
+            &mut env,
+            &mut context,
+            &TciMeasurement(data),
+            TEST_LOCALITIES[0],
+        )
+        .unwrap();
         // Make sure the current TCI was updated correctly.
         env.state.contexts[0] = context;
         assert_eq!(data, context.tci.tci_current.0);
@@ -722,7 +723,7 @@ pub mod tests {
             &mut env,
             DPE_PROFILE,
             tci_type,
-            &auto_init_measurement.into(),
+            &TciMeasurement(auto_init_measurement),
         )
         .unwrap();
 
