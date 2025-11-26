@@ -255,24 +255,17 @@ mod tests {
     #[cfg(feature = "ml-dsa")]
     use crate::commands::{
         sign::SignMldsaExternalMu87Cmd as SignCmd, CertifyKeyMldsaExternalMu87Cmd as CertifyKeyCmd,
-        DeriveContextMldsaExternalMu87Cmd as DeriveContextCmd,
     };
     #[cfg(feature = "p256")]
-    use crate::commands::{
-        sign::SignP256Cmd as SignCmd, CertifyKeyP256Cmd as CertifyKeyCmd,
-        DeriveContextP256Cmd as DeriveContextCmd,
-    };
+    use crate::commands::{sign::SignP256Cmd as SignCmd, CertifyKeyP256Cmd as CertifyKeyCmd};
     #[cfg(feature = "p384")]
-    use crate::commands::{
-        sign::SignP384Cmd as SignCmd, CertifyKeyP384Cmd as CertifyKeyCmd,
-        DeriveContextP384Cmd as DeriveContextCmd,
-    };
+    use crate::commands::{sign::SignP384Cmd as SignCmd, CertifyKeyP384Cmd as CertifyKeyCmd};
     use crate::{
         commands::{
             certify_key::{CertifyKeyCommand, CertifyKeyFlags},
             derive_context::DeriveContextFlags,
             tests::{TEST_DIGEST, TEST_LABEL},
-            Command, CommandHdr, InitCtxCmd,
+            Command, CommandHdr, DeriveContextCmd, InitCtxCmd,
         },
         dpe_instance::tests::{
             test_env, test_state, DPE_PROFILE, RANDOM_HANDLE, SIMULATION_HANDLE, TEST_LOCALITIES,

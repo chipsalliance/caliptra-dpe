@@ -99,14 +99,10 @@ impl CommandExecution for DestroyCtxCmd {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[cfg(feature = "ml-dsa")]
-    use crate::commands::DeriveContextMldsaExternalMu87Cmd as DeriveContextCmd;
-    #[cfg(feature = "p256")]
-    use crate::commands::DeriveContextP256Cmd as DeriveContextCmd;
-    #[cfg(feature = "p384")]
-    use crate::commands::DeriveContextP384Cmd as DeriveContextCmd;
     use crate::{
-        commands::{tests::PROFILES, Command, CommandHdr, DeriveContextFlags, InitCtxCmd},
+        commands::{
+            tests::PROFILES, Command, CommandHdr, DeriveContextCmd, DeriveContextFlags, InitCtxCmd,
+        },
         context::{Context, ContextState},
         dpe_instance::tests::{
             test_env, test_state, DPE_PROFILE, SIMULATION_HANDLE, TEST_HANDLE, TEST_LOCALITIES,

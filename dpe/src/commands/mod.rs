@@ -7,19 +7,14 @@ Abstract:
 pub use self::certify_key::{
     CertifyKeyCommand, CertifyKeyFlags, CertifyKeyP256Cmd, CertifyKeyP384Cmd,
 };
-pub use self::derive_context::{
-    DeriveContextCommand, DeriveContextFlags, DeriveContextP256Cmd, DeriveContextP384Cmd,
-};
+pub use self::derive_context::{DeriveContextCmd, DeriveContextFlags};
 pub use self::destroy_context::DestroyCtxCmd;
 pub use self::get_certificate_chain::GetCertificateChainCmd;
 pub use self::initialize_context::InitCtxCmd;
 pub use self::sign::{SignCommand, SignFlags, SignP256Cmd, SignP384Cmd};
 
 #[cfg(feature = "ml-dsa")]
-pub use self::{
-    certify_key::CertifyKeyMldsaExternalMu87Cmd, derive_context::DeriveContextMldsaExternalMu87Cmd,
-    sign::SignMldsaExternalMu87Cmd,
-};
+pub use {self::certify_key::CertifyKeyMldsaExternalMu87Cmd, sign::SignMldsaExternalMu87Cmd};
 
 #[cfg(not(feature = "disable_rotate_context"))]
 pub use self::rotate_context::{RotateCtxCmd, RotateCtxFlags};
@@ -45,7 +40,7 @@ mod sign;
 pub enum Command<'a> {
     GetProfile,
     InitCtx(&'a InitCtxCmd),
-    DeriveContext(DeriveContextCommand<'a>),
+    DeriveContext(&'a DeriveContextCmd),
     CertifyKey(CertifyKeyCommand<'a>),
     Sign(SignCommand<'a>),
     #[cfg(not(feature = "disable_rotate_context"))]
@@ -77,9 +72,7 @@ impl Command<'_> {
         match header.cmd_id {
             Command::GET_PROFILE => Ok(Command::GetProfile),
             Command::INITIALIZE_CONTEXT => Self::parse_command(Command::InitCtx, bytes),
-            Command::DERIVE_CONTEXT => {
-                Ok(DeriveContextCommand::deserialize(profile, bytes)?.into())
-            }
+            Command::DERIVE_CONTEXT => Self::parse_command(Command::DeriveContext, bytes),
             Command::CERTIFY_KEY => Ok(CertifyKeyCommand::deserialize(profile, bytes)?.into()),
             Command::SIGN => Ok(Command::Sign(SignCommand::deserialize(profile, bytes)?)),
             #[cfg(not(feature = "disable_rotate_context"))]
@@ -124,30 +117,9 @@ impl<'a> From<&'a InitCtxCmd> for Command<'a> {
     }
 }
 
-impl<'a> From<DeriveContextCommand<'a>> for Command<'a> {
-    fn from(cmd: DeriveContextCommand<'a>) -> Command<'a> {
+impl<'a> From<&'a DeriveContextCmd> for Command<'a> {
+    fn from(cmd: &'a DeriveContextCmd) -> Command<'a> {
         Command::DeriveContext(cmd)
-    }
-}
-
-#[cfg(feature = "p256")]
-impl<'a> From<&'a DeriveContextP256Cmd> for Command<'a> {
-    fn from(cmd: &'a DeriveContextP256Cmd) -> Command<'a> {
-        Command::DeriveContext(DeriveContextCommand::P256(cmd))
-    }
-}
-
-#[cfg(feature = "p384")]
-impl<'a> From<&'a DeriveContextP384Cmd> for Command<'a> {
-    fn from(cmd: &'a DeriveContextP384Cmd) -> Command<'a> {
-        Command::DeriveContext(DeriveContextCommand::P384(cmd))
-    }
-}
-
-#[cfg(feature = "ml-dsa")]
-impl<'a> From<&'a DeriveContextMldsaExternalMu87Cmd> for Command<'a> {
-    fn from(cmd: &'a DeriveContextMldsaExternalMu87Cmd) -> Command<'a> {
-        Command::DeriveContext(DeriveContextCommand::ExternalMu87(cmd))
     }
 }
 

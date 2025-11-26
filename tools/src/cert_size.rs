@@ -4,7 +4,9 @@ use alg::*;
 use anyhow::{anyhow, Result};
 use clap::{Parser, ValueEnum};
 use dpe::{
-    commands::{CertifyKeyCommand, CertifyKeyFlags, CommandExecution, DeriveContextFlags},
+    commands::{
+        CertifyKeyCommand, CertifyKeyFlags, CommandExecution, DeriveContextCmd, DeriveContextFlags,
+    },
     context::ContextHandle,
     DpeFlags, DpeProfile,
 };
@@ -20,28 +22,21 @@ use platform::default::{DefaultPlatform, DefaultPlatformProfile};
 mod alg {
     pub use super::Algorithm::Ec as DefaultAlg;
     pub use crypto::Ecdsa256RustCrypto as EcdsaRustCrypto;
-    pub use dpe::commands::{
-        CertifyKeyP256Cmd as CertifyKeyCmd, DeriveContextP256Cmd as DeriveContextCmd,
-    };
+    pub use dpe::commands::CertifyKeyP256Cmd as CertifyKeyCmd;
     pub const DPE_PROFILE: dpe::DpeProfile = dpe::DpeProfile::P256Sha256;
 }
 #[cfg(feature = "p384")]
 mod alg {
     pub use super::Algorithm::Ec as DefaultAlg;
     pub use crypto::Ecdsa384RustCrypto as EcdsaRustCrypto;
-    pub use dpe::commands::{
-        CertifyKeyP384Cmd as CertifyKeyCmd, DeriveContextP384Cmd as DeriveContextCmd,
-    };
+    pub use dpe::commands::CertifyKeyP384Cmd as CertifyKeyCmd;
     pub const DPE_PROFILE: dpe::DpeProfile = dpe::DpeProfile::P384Sha384;
 }
 #[cfg(feature = "ml-dsa")]
 mod alg {
     pub use super::Algorithm::Mldsa as DefaultAlg;
     pub use crypto::MldsaRustCrypto;
-    pub use dpe::commands::{
-        CertifyKeyMldsaExternalMu87Cmd as CertifyKeyCmd,
-        DeriveContextMldsaExternalMu87Cmd as DeriveContextCmd,
-    };
+    pub use dpe::commands::CertifyKeyMldsaExternalMu87Cmd as CertifyKeyCmd;
     pub const DPE_PROFILE: dpe::DpeProfile = dpe::DpeProfile::Mldsa87ExternalMu;
 }
 
