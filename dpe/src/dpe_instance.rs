@@ -405,6 +405,7 @@ pub mod tests {
     use crate::commands::{DeriveContextCmd, DeriveContextFlags};
     use crate::response::NewHandleResp;
     use crate::support::test::SUPPORT;
+    use crate::tci::TciMeasurement;
     use crate::{DpeFlags, CURRENT_PROFILE_MAJOR_VERSION};
     use caliptra_cfi_lib_git::CfiCounter;
     use crypto::RustCryptoImpl;
@@ -568,7 +569,7 @@ pub mod tests {
         for i in 0..3 {
             DeriveContextCmd {
                 handle: ContextHandle::default(),
-                data: [i; DPE_PROFILE.hash_size()],
+                data: TciMeasurement([i; DPE_PROFILE.hash_size()]),
                 flags: DeriveContextFlags::MAKE_DEFAULT,
                 tci_type: i as u32,
                 target_locality: 0,
@@ -622,12 +623,8 @@ pub mod tests {
             .get_active_context_pos(&ContextHandle::default(), TEST_LOCALITIES[0])
             .unwrap();
         DeriveContextCmd {
-            handle: ContextHandle::default(),
-            data: [0; DPE_PROFILE.hash_size()],
             flags: DeriveContextFlags::MAKE_DEFAULT | DeriveContextFlags::INTERNAL_INPUT_INFO,
-            tci_type: 0u32,
-            target_locality: 0,
-            svn: 0,
+            ..Default::default()
         }
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         .unwrap();
@@ -680,12 +677,8 @@ pub mod tests {
             .get_active_context_pos(&ContextHandle::default(), TEST_LOCALITIES[0])
             .unwrap();
         DeriveContextCmd {
-            handle: ContextHandle::default(),
-            data: [0; DPE_PROFILE.hash_size()],
             flags: DeriveContextFlags::MAKE_DEFAULT | DeriveContextFlags::INTERNAL_INPUT_DICE,
-            tci_type: 0u32,
-            target_locality: 0,
-            svn: 0,
+            ..Default::default()
         }
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         .unwrap();

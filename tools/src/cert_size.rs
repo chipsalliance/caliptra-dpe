@@ -116,14 +116,10 @@ fn run<T: DpeTypes>(env: &mut DpeEnv<T>, args: &Args) -> Result<()> {
     // Minus 1 to account for the default context
     for i in 0..args.num_contexts - 1 {
         let _resp = DeriveContextCmd {
-            handle: ContextHandle::default(),
-            data: [1; dpe::TCI_SIZE],
             flags: DeriveContextFlags::MAKE_DEFAULT
                 | DeriveContextFlags::INTERNAL_INPUT_INFO
                 | DeriveContextFlags::INTERNAL_INPUT_DICE,
-            tci_type: 0,
-            target_locality: 0,
-            svn: 0,
+            ..Default::default()
         }
         .execute(&mut dpe, env, 0)
         .map_err(|e| anyhow!("DPE error creating {i}th context: {e:?}"));

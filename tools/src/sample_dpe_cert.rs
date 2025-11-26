@@ -1,6 +1,6 @@
 // Licensed under the Apache-2.0 license
 
-use dpe::DpeFlags;
+use dpe::{tci::TciMeasurement, DpeFlags};
 use platform::default::DefaultPlatformProfile;
 use profile::*;
 use std::env;
@@ -56,7 +56,7 @@ impl DpeTypes for TestTypes {
 fn add_tcb_info(
     dpe: &mut DpeInstance,
     env: &mut DpeEnv<TestTypes>,
-    data: &[u8; DPE_PROFILE.hash_size()],
+    data: &TciMeasurement,
     tci_type: u32,
     svn: u32,
 ) {
@@ -140,7 +140,7 @@ fn main() {
     add_tcb_info(
         &mut dpe,
         &mut env,
-        &[0; DPE_PROFILE.hash_size()],
+        &TciMeasurement::default(),
         u32::from_be_bytes(*b"TEST"),
         0,
     );

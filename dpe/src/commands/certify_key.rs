@@ -317,6 +317,7 @@ mod tests {
         commands::{Command, CommandHdr, DeriveContextCmd, DeriveContextFlags, InitCtxCmd},
         dpe_instance::tests::{test_env, DPE_PROFILE, SIMULATION_HANDLE, TEST_LOCALITIES},
         support::Support,
+        tci::TciMeasurement,
         x509::{tests::TcbInfo, DirectoryString, Name},
         State, TCI_SIZE,
     };
@@ -694,7 +695,7 @@ mod tests {
         // Derive context twice with different types
         let derive_cmd = DeriveContextCmd {
             handle: ContextHandle::default(),
-            data: [1; TCI_SIZE],
+            data: TciMeasurement([1; TCI_SIZE]),
             flags: DeriveContextFlags::MAKE_DEFAULT | DeriveContextFlags::INPUT_ALLOW_X509,
             tci_type: 1,
             target_locality: 0,
