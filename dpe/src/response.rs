@@ -171,6 +171,7 @@ pub struct DeriveContextExportedCdiResp {
 }
 
 #[derive(PartialEq, Debug, Eq)]
+#[allow(clippy::large_enum_variant)]
 pub enum CertifyKeyResp {
     #[cfg(feature = "p256")]
     P256(CertifyKeyP256Resp),
@@ -261,6 +262,7 @@ pub struct CertifyKeyMldsaExternalMu87Resp {
 }
 
 #[derive(PartialEq, Debug, Eq)]
+#[allow(clippy::large_enum_variant)]
 pub enum SignResp {
     #[cfg(feature = "p256")]
     P256(SignP256Resp),

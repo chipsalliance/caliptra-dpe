@@ -4,7 +4,7 @@ Licensed under the Apache-2.0 license.
 Abstract:
     DPE Library Crate.
 --*/
-#![cfg_attr(not(test), no_std)]
+#![cfg_attr(not(any(test, target_arch = "x86_64")), no_std)]
 
 #[cfg(not(feature = "log"))]
 #[allow(unused_macros)]
@@ -40,7 +40,7 @@ use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes};
 pub use crypto::{ecdsa::EcdsaAlgorithm, ExportedCdiHandle, MAX_EXPORTED_CDI_SIZE};
 
 // Max cert size returned by CertifyKey
-const MAX_CERT_SIZE: usize = 7872;
+const MAX_CERT_SIZE: usize = 17 * 1024;
 #[cfg(not(feature = "arbitrary_max_handles"))]
 pub const MAX_HANDLES: usize = 24;
 #[cfg(feature = "arbitrary_max_handles")]

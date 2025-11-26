@@ -15,6 +15,7 @@ p384 = ["dpe/p384"]
 ml-dsa = [
   "dpe/ml-dsa"
 ]
+p384_hybrid = ["p384", "ml-dsa"]
 
 [dependencies]
 anyhow = "1.0.70"

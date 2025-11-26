@@ -147,7 +147,17 @@ impl Context {
 
 #[repr(C)]
 #[derive(
-    Debug, PartialEq, Eq, Clone, Copy, IntoBytes, FromBytes, Immutable, KnownLayout, Zeroize,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    Clone,
+    Copy,
+    IntoBytes,
+    FromBytes,
+    Immutable,
+    KnownLayout,
+    Zeroize,
 )]
 pub struct ContextHandle(pub [u8; ContextHandle::SIZE]);
 
