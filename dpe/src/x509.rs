@@ -18,7 +18,8 @@ use caliptra_cfi_lib_git::cfi_launder;
 use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq};
 use crypto::{
     ecdsa::{EcdsaPubKey, EcdsaSignature},
-    Crypto, CryptoError, CryptoSuite, Digest, Hasher, PubKey, Signature, MAX_EXPORTED_CDI_SIZE,
+    Crypto, CryptoError, CryptoSuite, Digest, Hasher, PubKey, SignData, Signature,
+    MAX_EXPORTED_CDI_SIZE,
 };
 #[cfg(not(feature = "disable_x509"))]
 use platform::CertValidity;
@@ -2912,11 +2913,11 @@ fn create_dpe_cert_or_csr(
     };
 
     let mut sign_cb = |data: &[u8], use_derived: bool| {
-        let hash = env.crypto.hash(data)?;
         if use_derived {
-            env.crypto.sign_with_derived(&hash, &priv_key, &pub_key)
+            env.crypto
+                .sign_with_derived(&SignData::Raw(data), &priv_key, &pub_key)
         } else {
-            env.crypto.sign_with_alias(&hash)
+            env.crypto.sign_with_alias(&SignData::Raw(data))
         }
     };
 
