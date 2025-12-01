@@ -308,20 +308,13 @@ impl CommandExecution for CertifyKeyMldsaExternalMu87Cmd {
 mod tests {
     use super::*;
     #[cfg(feature = "ml-dsa")]
-    use crate::commands::{
-        CertifyKeyMldsaExternalMu87Cmd as CertifyKeyCmd,
-        DeriveContextMldsaExternalMu87Cmd as DeriveContextCmd,
-    };
+    use crate::commands::CertifyKeyMldsaExternalMu87Cmd as CertifyKeyCmd;
     #[cfg(feature = "p256")]
-    use crate::commands::{
-        CertifyKeyP256Cmd as CertifyKeyCmd, DeriveContextP256Cmd as DeriveContextCmd,
-    };
+    use crate::commands::CertifyKeyP256Cmd as CertifyKeyCmd;
     #[cfg(feature = "p384")]
-    use crate::commands::{
-        CertifyKeyP384Cmd as CertifyKeyCmd, DeriveContextP384Cmd as DeriveContextCmd,
-    };
+    use crate::commands::CertifyKeyP384Cmd as CertifyKeyCmd;
     use crate::{
-        commands::{Command, CommandHdr, DeriveContextCommand, DeriveContextFlags, InitCtxCmd},
+        commands::{Command, CommandHdr, DeriveContextCmd, DeriveContextFlags, InitCtxCmd},
         dpe_instance::tests::{test_env, DPE_PROFILE, SIMULATION_HANDLE, TEST_LOCALITIES},
         support::Support,
         x509::{tests::TcbInfo, DirectoryString, Name},
@@ -708,7 +701,7 @@ mod tests {
             svn: 0,
         };
 
-        DeriveContextCommand::from(&derive_cmd)
+        derive_cmd
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
             .unwrap();
 

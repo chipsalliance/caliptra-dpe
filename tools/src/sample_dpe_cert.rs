@@ -6,7 +6,7 @@ use profile::*;
 use std::env;
 use {
     crypto::RustCryptoImpl,
-    dpe::commands::{self, CertifyKeyFlags, DeriveContextFlags},
+    dpe::commands::{self, CertifyKeyFlags, DeriveContextCmd, DeriveContextFlags},
     dpe::context::ContextHandle,
     dpe::dpe_instance::{DpeEnv, DpeTypes},
     dpe::response::Response,
@@ -20,9 +20,7 @@ use {
 mod profile {
     use super::*;
     pub use crypto::Ecdsa256RustCrypto as RustCrypto;
-    pub use dpe::commands::{
-        CertifyKeyP256Cmd as CertifyKeyCmd, DeriveContextP256Cmd as DeriveContextCmd,
-    };
+    pub use dpe::commands::CertifyKeyP256Cmd as CertifyKeyCmd;
     pub const DPE_PROFILE: dpe::DpeProfile = dpe::DpeProfile::P256Sha256;
     pub const PLATFORM_PROFILE: DefaultPlatformProfile = DefaultPlatformProfile::P256;
 }
@@ -31,9 +29,7 @@ mod profile {
 mod profile {
     use super::*;
     pub use crypto::Ecdsa384RustCrypto as RustCrypto;
-    pub use dpe::commands::{
-        CertifyKeyP384Cmd as CertifyKeyCmd, DeriveContextP384Cmd as DeriveContextCmd,
-    };
+    pub use dpe::commands::CertifyKeyP384Cmd as CertifyKeyCmd;
     pub const DPE_PROFILE: dpe::DpeProfile = dpe::DpeProfile::P384Sha384;
     pub const PLATFORM_PROFILE: DefaultPlatformProfile = DefaultPlatformProfile::P384;
 }
@@ -42,10 +38,7 @@ mod profile {
 mod profile {
     use super::*;
     pub use crypto::Ecdsa256RustCrypto as RustCrypto;
-    pub use dpe::commands::{
-        CertifyKeyMldsaExternalMu87Cmd as CertifyKeyCmd,
-        DeriveContextMldsaExternalMu87Cmd as DeriveContextCmd,
-    };
+    pub use dpe::commands::CertifyKeyMldsaExternalMu87Cmd as CertifyKeyCmd;
     pub const DPE_PROFILE: dpe::DpeProfile = dpe::DpeProfile::Mldsa87ExternalMu;
     pub const PLATFORM_PROFILE: DefaultPlatformProfile = DefaultPlatformProfile::Mldsa87ExternalMu;
 }

@@ -6,7 +6,7 @@ use crate::{
     dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
     response::{DeriveContextExportedCdiResp, DeriveContextResp, DpeErrorCode, Response},
     x509::{create_exported_dpe_cert, CreateDpeCertArgs, CreateDpeCertResult},
-    DpeFlags, DpeProfile, State, MAX_CERT_SIZE,
+    DpeFlags, State, MAX_CERT_SIZE, TCI_SIZE,
 };
 use bitflags::bitflags;
 #[cfg(not(feature = "no-cfi"))]
@@ -80,58 +80,18 @@ impl DeriveContextFlags {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
-pub enum DeriveContextCommand<'a> {
-    #[cfg(feature = "p256")]
-    P256(&'a DeriveContextP256Cmd),
-    #[cfg(feature = "p384")]
-    P384(&'a DeriveContextP384Cmd),
-    #[cfg(feature = "ml-dsa")]
-    ExternalMu87(&'a DeriveContextMldsaExternalMu87Cmd),
+#[repr(C)]
+#[derive(Debug, PartialEq, Eq, FromBytes, IntoBytes, Immutable, KnownLayout)]
+pub struct DeriveContextCmd {
+    pub handle: ContextHandle,
+    pub data: [u8; TCI_SIZE],
+    pub flags: DeriveContextFlags,
+    pub tci_type: u32,
+    pub target_locality: u32,
+    pub svn: u32,
 }
 
-impl DeriveContextCommand<'_> {
-    pub fn deserialize(
-        profile: DpeProfile,
-        bytes: &[u8],
-    ) -> Result<DeriveContextCommand, DpeErrorCode> {
-        match profile {
-            #[cfg(feature = "p256")]
-            DpeProfile::P256Sha256 => {
-                DeriveContextCommand::parse_command(DeriveContextCommand::P256, bytes)
-            }
-            #[cfg(feature = "p384")]
-            DpeProfile::P384Sha384 => {
-                DeriveContextCommand::parse_command(DeriveContextCommand::P384, bytes)
-            }
-            #[cfg(feature = "ml-dsa")]
-            DpeProfile::Mldsa87ExternalMu => {
-                DeriveContextCommand::parse_command(DeriveContextCommand::ExternalMu87, bytes)
-            }
-            _ => Err(DpeErrorCode::InvalidArgument)?,
-        }
-    }
-
-    pub fn parse_command<'a, T: FromBytes + KnownLayout + Immutable + 'a>(
-        build: impl FnOnce(&'a T) -> DeriveContextCommand<'a>,
-        bytes: &'a [u8],
-    ) -> Result<DeriveContextCommand<'a>, DpeErrorCode> {
-        let (prefix, _remaining_bytes) =
-            T::ref_from_prefix(bytes).map_err(|_| DpeErrorCode::InvalidArgument)?;
-        Ok(build(prefix))
-    }
-
-    pub fn as_bytes(&self) -> &[u8] {
-        match self {
-            #[cfg(feature = "p256")]
-            DeriveContextCommand::P256(cmd) => cmd.as_bytes(),
-            #[cfg(feature = "p384")]
-            DeriveContextCommand::P384(cmd) => cmd.as_bytes(),
-            #[cfg(feature = "ml-dsa")]
-            DeriveContextCommand::ExternalMu87(cmd) => cmd.as_bytes(),
-        }
-    }
-
+impl DeriveContextCmd {
     /// Whether it is okay to make a default context.
     ///
     /// When a default context is in a locality, it MUST be the only context in the locality. This
@@ -148,7 +108,6 @@ impl DeriveContextCommand<'_> {
         parent_idx: usize,
         default_context_idx: Option<usize>,
         num_contexts_in_locality: usize,
-        flags: DeriveContextFlags,
     ) -> bool {
         match (num_contexts_in_locality, default_context_idx) {
             // No other contexts in the locality.
@@ -158,7 +117,7 @@ impl DeriveContextCommand<'_> {
                 // It is okay if the parent is about to be retired. The Child can be the default
                 // because the parent is the only other context in the locality and it is about to
                 // be retired.
-                !flags.retains_parent()
+                !self.flags.retains_parent()
             }
             // In all other scenarios, there will be a combination of default and non-default
             // contexts
@@ -179,14 +138,13 @@ impl DeriveContextCommand<'_> {
         &self,
         parent_idx: usize,
         default_context_idx: Option<usize>,
-        flags: DeriveContextFlags,
     ) -> bool {
         match default_context_idx {
             None => true,
             // If the default context is the parent.
             Some(default_idx) if default_idx == parent_idx => {
                 // It is okay if the parent is about to be retired.
-                !flags.retains_parent()
+                !self.flags.retains_parent()
             }
             _ => false,
         }
@@ -208,7 +166,6 @@ impl DeriveContextCommand<'_> {
         state: &State,
         parent_idx: usize,
         target_locality: u32,
-        flags: DeriveContextFlags,
     ) -> Result<bool, DpeErrorCode> {
         let default_context_idx = state
             .get_active_context_pos(&ContextHandle::default(), target_locality)
@@ -219,20 +176,15 @@ impl DeriveContextCommand<'_> {
             c.state == ContextState::Active && c.locality == target_locality
         })?;
 
-        Ok(if flags.makes_default() {
-            self.safe_to_make_default(
-                parent_idx,
-                default_context_idx,
-                num_contexts_in_locality,
-                flags,
-            )
+        Ok(if self.flags.makes_default() {
+            self.safe_to_make_default(parent_idx, default_context_idx, num_contexts_in_locality)
         } else {
-            self.safe_to_make_non_default(parent_idx, default_context_idx, flags)
+            self.safe_to_make_non_default(parent_idx, default_context_idx)
         })
     }
 }
 
-impl CommandExecution for DeriveContextCommand<'_> {
+impl CommandExecution for DeriveContextCmd {
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     fn execute(
         &self,
@@ -241,35 +193,14 @@ impl CommandExecution for DeriveContextCommand<'_> {
         locality: u32,
     ) -> Result<Response, DpeErrorCode> {
         let support = env.state.support;
-        let (handle, data, flags, tci_type, target_locality, svn) = match self {
-            #[cfg(feature = "p256")]
-            DeriveContextCommand::P256(cmd) => (
-                &cmd.handle,
-                Digest::from(cmd.data),
-                cmd.flags,
-                cmd.tci_type,
-                cmd.target_locality,
-                cmd.svn,
-            ),
-            #[cfg(feature = "p384")]
-            DeriveContextCommand::P384(cmd) => (
-                &cmd.handle,
-                Digest::from(cmd.data),
-                cmd.flags,
-                cmd.tci_type,
-                cmd.target_locality,
-                cmd.svn,
-            ),
-            #[cfg(feature = "ml-dsa")]
-            DeriveContextCommand::ExternalMu87(cmd) => (
-                &cmd.handle,
-                Digest::from(cmd.data),
-                cmd.flags,
-                cmd.tci_type,
-                cmd.target_locality,
-                cmd.svn,
-            ),
-        };
+        let DeriveContextCmd {
+            ref handle,
+            ref data,
+            flags,
+            tci_type,
+            target_locality,
+            svn,
+        } = *self;
 
         // Make sure the operation is supported.
         if (!support.internal_info() && flags.uses_internal_info_input())
@@ -330,7 +261,7 @@ impl CommandExecution for DeriveContextCommand<'_> {
                     dpe.add_tci_measurement(
                         env,
                         &mut tmp_context,
-                        &data,
+                        &Digest::from(*data),
                         target_locality,
                     )?;
 
@@ -428,8 +359,7 @@ impl CommandExecution for DeriveContextCommand<'_> {
             .get_next_inactive_context_pos()
             .ok_or(DpeErrorCode::MaxTcis)?;
 
-        let safe_to_make_child =
-            self.safe_to_make_child(env.state, parent_idx, target_locality, flags)?;
+        let safe_to_make_child = self.safe_to_make_child(env.state, parent_idx, target_locality)?;
         if !safe_to_make_child {
             return Err(DpeErrorCode::InvalidArgument);
         } else {
@@ -467,7 +397,12 @@ impl CommandExecution for DeriveContextCommand<'_> {
             svn,
         });
 
-        dpe.add_tci_measurement(env, &mut tmp_child_context, &data, target_locality)?;
+        dpe.add_tci_measurement(
+            env,
+            &mut tmp_child_context,
+            &Digest::from(*data),
+            target_locality,
+        )?;
 
         // Add child to the parent's list of children.
         let children_with_child_idx = tmp_parent_context.add_child(child_idx)?;
@@ -485,135 +420,16 @@ impl CommandExecution for DeriveContextCommand<'_> {
     }
 }
 
-#[cfg(feature = "p256")]
-impl<'a> From<&'a DeriveContextP256Cmd> for DeriveContextCommand<'a> {
-    fn from(value: &'a DeriveContextP256Cmd) -> Self {
-        DeriveContextCommand::P256(value)
-    }
-}
-
-#[cfg(feature = "p384")]
-impl<'a> From<&'a DeriveContextP384Cmd> for DeriveContextCommand<'a> {
-    fn from(value: &'a DeriveContextP384Cmd) -> Self {
-        DeriveContextCommand::P384(value)
-    }
-}
-
-#[cfg(feature = "ml-dsa")]
-impl<'a> From<&'a DeriveContextMldsaExternalMu87Cmd> for DeriveContextCommand<'a> {
-    fn from(value: &'a DeriveContextMldsaExternalMu87Cmd) -> Self {
-        DeriveContextCommand::ExternalMu87(value)
-    }
-}
-
-#[repr(C)]
-#[derive(Debug, PartialEq, Eq, FromBytes, IntoBytes, Immutable, KnownLayout)]
-pub struct DeriveContextP256Cmd {
-    pub handle: ContextHandle,
-    pub data: [u8; 32],
-    pub flags: DeriveContextFlags,
-    pub tci_type: u32,
-    pub target_locality: u32,
-    pub svn: u32,
-}
-
-impl Default for DeriveContextP256Cmd {
+impl Default for DeriveContextCmd {
     fn default() -> Self {
         Self {
             handle: ContextHandle::default(),
-            data: [0; 32],
+            data: [0; TCI_SIZE],
             flags: DeriveContextFlags(0),
             tci_type: 0,
             target_locality: 0,
             svn: 0,
         }
-    }
-}
-
-#[cfg(feature = "p256")]
-impl CommandExecution for DeriveContextP256Cmd {
-    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
-    fn execute(
-        &self,
-        dpe: &mut DpeInstance,
-        env: &mut DpeEnv<impl DpeTypes>,
-        locality: u32,
-    ) -> Result<Response, DpeErrorCode> {
-        DeriveContextCommand::from(self).execute(dpe, env, locality)
-    }
-}
-
-#[repr(C)]
-#[derive(Debug, PartialEq, Eq, FromBytes, IntoBytes, Immutable, KnownLayout)]
-pub struct DeriveContextP384Cmd {
-    pub handle: ContextHandle,
-    pub data: [u8; 48],
-    pub flags: DeriveContextFlags,
-    pub tci_type: u32,
-    pub target_locality: u32,
-    pub svn: u32,
-}
-
-impl Default for DeriveContextP384Cmd {
-    fn default() -> Self {
-        Self {
-            handle: ContextHandle::default(),
-            data: [0; 48],
-            flags: DeriveContextFlags(0),
-            tci_type: 0,
-            target_locality: 0,
-            svn: 0,
-        }
-    }
-}
-
-#[cfg(feature = "p384")]
-impl CommandExecution for DeriveContextP384Cmd {
-    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
-    fn execute(
-        &self,
-        dpe: &mut DpeInstance,
-        env: &mut DpeEnv<impl DpeTypes>,
-        locality: u32,
-    ) -> Result<Response, DpeErrorCode> {
-        DeriveContextCommand::from(self).execute(dpe, env, locality)
-    }
-}
-
-#[repr(C)]
-#[derive(Debug, PartialEq, Eq, FromBytes, IntoBytes, Immutable, KnownLayout)]
-pub struct DeriveContextMldsaExternalMu87Cmd {
-    pub handle: ContextHandle,
-    pub data: [u8; 48],
-    pub flags: DeriveContextFlags,
-    pub tci_type: u32,
-    pub target_locality: u32,
-    pub svn: u32,
-}
-
-impl Default for DeriveContextMldsaExternalMu87Cmd {
-    fn default() -> Self {
-        Self {
-            handle: ContextHandle::default(),
-            data: [0; 48],
-            flags: DeriveContextFlags(0),
-            tci_type: 0,
-            target_locality: 0,
-            svn: 0,
-        }
-    }
-}
-
-#[cfg(feature = "ml-dsa")]
-impl CommandExecution for DeriveContextMldsaExternalMu87Cmd {
-    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
-    fn execute(
-        &self,
-        dpe: &mut DpeInstance,
-        env: &mut DpeEnv<impl DpeTypes>,
-        locality: u32,
-    ) -> Result<Response, DpeErrorCode> {
-        DeriveContextCommand::from(self).execute(dpe, env, locality)
     }
 }
 
@@ -623,22 +439,15 @@ mod tests {
     #[cfg(feature = "ml-dsa")]
     use crate::commands::{
         sign::SignMldsaExternalMu87Cmd as SignCmd, CertifyKeyMldsaExternalMu87Cmd as CertifyKeyCmd,
-        DeriveContextMldsaExternalMu87Cmd as DeriveContextCmd,
     };
     #[cfg(feature = "p256")]
-    use crate::commands::{
-        sign::SignP256Cmd as SignCmd, CertifyKeyP256Cmd as CertifyKeyCmd,
-        DeriveContextP256Cmd as DeriveContextCmd,
-    };
+    use crate::commands::{sign::SignP256Cmd as SignCmd, CertifyKeyP256Cmd as CertifyKeyCmd};
     #[cfg(feature = "p384")]
-    use crate::commands::{
-        sign::SignP384Cmd as SignCmd, CertifyKeyP384Cmd as CertifyKeyCmd,
-        DeriveContextP384Cmd as DeriveContextCmd,
-    };
+    use crate::commands::{sign::SignP384Cmd as SignCmd, CertifyKeyP384Cmd as CertifyKeyCmd};
     use crate::{
         commands::{
             rotate_context::{RotateCtxCmd, RotateCtxFlags},
-            tests::{TEST_DIGEST, TEST_LABEL},
+            tests::{PROFILES, TEST_DIGEST, TEST_LABEL},
             CertifyKeyCommand, CertifyKeyFlags, Command, CommandHdr, InitCtxCmd, SignFlags,
         },
         context::ContextType,
@@ -674,16 +483,16 @@ mod tests {
     #[test]
     fn test_deserialize_derive_context() {
         CfiCounter::reset_for_test();
-        let mut command = CommandHdr::new(DPE_PROFILE, Command::DERIVE_CONTEXT)
-            .as_bytes()
-            .to_vec();
-        command.extend(TEST_DERIVE_CONTEXT_CMD.as_bytes());
-        assert_eq!(
-            Ok(Command::DeriveContext(DeriveContextCommand::from(
-                &TEST_DERIVE_CONTEXT_CMD
-            ))),
-            Command::deserialize(DPE_PROFILE, &command)
-        );
+        for p in PROFILES {
+            let mut command = CommandHdr::new(p, Command::DERIVE_CONTEXT)
+                .as_bytes()
+                .to_vec();
+            command.extend(TEST_DERIVE_CONTEXT_CMD.as_bytes());
+            assert_eq!(
+                Ok(Command::DeriveContext(&TEST_DERIVE_CONTEXT_CMD)),
+                Command::deserialize(p, &command)
+            );
+        }
     }
 
     #[test]
@@ -1055,56 +864,51 @@ mod tests {
     #[test]
     fn test_safe_to_make_default() {
         CfiCounter::reset_for_test();
-        let mut flags = DeriveContextFlags::MAKE_DEFAULT;
-        let cmd = DeriveContextCmd {
-            flags,
+        let mut make_default_in_0 = DeriveContextCmd {
+            flags: DeriveContextFlags::MAKE_DEFAULT,
             ..Default::default()
         };
-        let make_default_in_0 = DeriveContextCommand::from(&cmd);
         let parent_idx = 0;
-
         // No default context.
-        assert!(make_default_in_0.safe_to_make_default(parent_idx, None, 0, flags));
+        assert!(make_default_in_0.safe_to_make_default(parent_idx, None, 0));
         // Default context at parent, but not going to retain parent.
-        assert!(make_default_in_0.safe_to_make_default(parent_idx, Some(parent_idx), 1, flags));
+        assert!(make_default_in_0.safe_to_make_default(parent_idx, Some(parent_idx), 1));
         // Make default in a different locality that already has a default.
-        assert!(!make_default_in_0.safe_to_make_default(parent_idx, Some(1), 1, flags));
+        assert!(!make_default_in_0.safe_to_make_default(parent_idx, Some(1), 1));
         // There is a non-default context already.
-        assert!(!make_default_in_0.safe_to_make_default(parent_idx, None, 1, flags));
+        assert!(!make_default_in_0.safe_to_make_default(parent_idx, None, 1));
         // Two non-default contexts.
-        assert!(!make_default_in_0.safe_to_make_default(parent_idx, None, 2, flags));
+        assert!(!make_default_in_0.safe_to_make_default(parent_idx, None, 2));
         // This should never be possible, but there is already a mixture of default and non-default
         // contexts.
-        assert!(!make_default_in_0.safe_to_make_default(parent_idx, Some(parent_idx), 2, flags));
+        assert!(!make_default_in_0.safe_to_make_default(parent_idx, Some(parent_idx), 2));
         // This should never be possible, but there is already a mixture of default and non-default
         // contexts.
-        assert!(!make_default_in_0.safe_to_make_default(parent_idx, Some(1), 2, flags));
+        assert!(!make_default_in_0.safe_to_make_default(parent_idx, Some(1), 2));
         // This should never be possible, but there no contexts but somehow the is a default context
-        assert!(!make_default_in_0.safe_to_make_default(parent_idx, Some(parent_idx), 0, flags));
+        assert!(!make_default_in_0.safe_to_make_default(parent_idx, Some(parent_idx), 0));
 
-        flags |= DeriveContextFlags::RETAIN_PARENT_CONTEXT;
+        make_default_in_0.flags |= DeriveContextFlags::RETAIN_PARENT_CONTEXT;
 
         // Retain parent and make default in another locality that doesn't have a default.
-        assert!(make_default_in_0.safe_to_make_default(parent_idx, None, 0, flags));
+        assert!(make_default_in_0.safe_to_make_default(parent_idx, None, 0));
         // Retain default parent and make default in another locality that has a default.
-        assert!(!make_default_in_0.safe_to_make_default(parent_idx, Some(1), 1, flags));
+        assert!(!make_default_in_0.safe_to_make_default(parent_idx, Some(1), 1));
         // Retain default parent.
-        assert!(!make_default_in_0.safe_to_make_default(parent_idx, Some(parent_idx), 1, flags));
+        assert!(!make_default_in_0.safe_to_make_default(parent_idx, Some(parent_idx), 1));
     }
 
     #[test]
     fn test_safe_to_make_non_default() {
         CfiCounter::reset_for_test();
-        let cmd = DeriveContextCmd::default();
-        let non_default = DeriveContextCommand::from(&cmd);
-        let flags = DeriveContextFlags::empty();
+        let non_default = DeriveContextCmd::default();
         let parent_idx = 0;
         // No default context.
-        assert!(non_default.safe_to_make_non_default(parent_idx, None, flags));
+        assert!(non_default.safe_to_make_non_default(parent_idx, None));
         // Default context is parent.
-        assert!(non_default.safe_to_make_non_default(parent_idx, Some(parent_idx), flags));
+        assert!(non_default.safe_to_make_non_default(parent_idx, Some(parent_idx)));
         // Default context is not parent.
-        assert!(!non_default.safe_to_make_non_default(parent_idx, Some(1), flags));
+        assert!(!non_default.safe_to_make_non_default(parent_idx, Some(1)));
     }
 
     #[test]
