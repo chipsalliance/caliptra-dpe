@@ -301,7 +301,8 @@ impl TryFrom<&[u8]> for CommandHdr {
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::{DpeProfile, DPE_PROFILE};
+    use crate::dpe_instance::tests::DPE_PROFILE;
+    use crate::DpeProfile;
     use caliptra_cfi_lib_git::CfiCounter;
     use platform::default::{DefaultPlatform, DefaultPlatformProfile};
     use zerocopy::IntoBytes;

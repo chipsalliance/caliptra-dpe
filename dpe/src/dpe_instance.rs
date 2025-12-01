@@ -411,11 +411,20 @@ pub mod tests {
     use crate::commands::DeriveContextP384Cmd as DeriveContextCmd;
     use crate::response::NewHandleResp;
     use crate::support::test::SUPPORT;
-    use crate::{DpeFlags, CURRENT_PROFILE_MAJOR_VERSION, DPE_PROFILE};
+    use crate::{DpeFlags, CURRENT_PROFILE_MAJOR_VERSION};
     use caliptra_cfi_lib_git::CfiCounter;
     use crypto::RustCryptoImpl;
     use platform::default::{DefaultPlatform, AUTO_INIT_LOCALITY};
     use zerocopy::IntoBytes;
+
+    #[cfg(feature = "p256")]
+    pub const DPE_PROFILE: DpeProfile = DpeProfile::P256Sha256;
+
+    #[cfg(feature = "p384")]
+    pub const DPE_PROFILE: DpeProfile = DpeProfile::P384Sha384;
+
+    #[cfg(feature = "ml-dsa")]
+    pub const DPE_PROFILE: DpeProfile = DpeProfile::Mldsa87ExternalMu;
 
     #[cfg(feature = "p256")]
     use crypto::Ecdsa256RustCrypto;

@@ -53,8 +53,7 @@ mod tests {
     use super::*;
     use crate::{
         commands::{tests::PROFILES, Command, CommandHdr},
-        dpe_instance::tests::{test_env, test_state, TEST_LOCALITIES},
-        DPE_PROFILE,
+        dpe_instance::tests::{test_env, test_state, DPE_PROFILE, TEST_LOCALITIES},
     };
     use caliptra_cfi_lib_git::CfiCounter;
     use zerocopy::IntoBytes;
