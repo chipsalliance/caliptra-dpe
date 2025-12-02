@@ -31,6 +31,7 @@ mod certify_key;
 mod derive_context;
 mod destroy_context;
 mod get_certificate_chain;
+mod get_profile;
 mod initialize_context;
 #[cfg(not(feature = "disable_rotate_context"))]
 mod rotate_context;
@@ -38,7 +39,8 @@ mod sign;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Command<'a> {
-    GetProfile,
+    // GetProfile has a different signature than the rest of the functions, we want the same wrapper that the other functions have
+    GetProfile(&'a get_profile::GetProfileCmd),
     InitCtx(&'a InitCtxCmd),
     DeriveContext(&'a DeriveContextCmd),
     CertifyKey(CertifyKeyCommand<'a>),
@@ -70,7 +72,7 @@ impl Command<'_> {
         let bytes = &bytes[size_of::<CommandHdr>()..];
 
         match header.cmd_id {
-            Command::GET_PROFILE => Ok(Command::GetProfile),
+            Command::GET_PROFILE => Self::parse_command(Command::GetProfile, bytes),
             Command::INITIALIZE_CONTEXT => Self::parse_command(Command::InitCtx, bytes),
             Command::DERIVE_CONTEXT => Self::parse_command(Command::DeriveContext, bytes),
             Command::CERTIFY_KEY => Ok(CertifyKeyCommand::deserialize(profile, bytes)?.into()),
@@ -98,7 +100,7 @@ impl Command<'_> {
 impl From<Command<'_>> for u32 {
     fn from(cmd: Command) -> u32 {
         match cmd {
-            Command::GetProfile => Command::GET_PROFILE,
+            Command::GetProfile(_) => Command::GET_PROFILE,
             Command::InitCtx(_) => Command::INITIALIZE_CONTEXT,
             Command::DeriveContext(_) => Command::DERIVE_CONTEXT,
             Command::CertifyKey(_) => Command::CERTIFY_KEY,
@@ -311,7 +313,9 @@ pub mod tests {
 
     pub const PROFILES: [DpeProfile; 2] = [DpeProfile::P256Sha256, DpeProfile::P384Sha384];
 
-    const DEFAULT_COMMAND: CommandHdr = CommandHdr {
+    const TEST_GET_PROFILE_CMD: get_profile::GetProfileCmd = get_profile::GetProfileCmd {};
+
+    const DEFAULT_COMMAND_HDR: CommandHdr = CommandHdr {
         magic: CommandHdr::DPE_COMMAND_MAGIC,
         cmd_id: Command::GET_PROFILE,
         profile: DPE_PROFILE as u32,
@@ -322,7 +326,8 @@ pub mod tests {
         CfiCounter::reset_for_test();
         for p in [DpeProfile::P256Sha256, DpeProfile::P384Sha384] {
             assert_eq!(
-                Ok(Command::GetProfile),
+                // The expected command now includes a reference to the empty struct
+                Ok(Command::GetProfile(&TEST_GET_PROFILE_CMD)),
                 Command::deserialize(p, CommandHdr::new(p, Command::GET_PROFILE).as_bytes())
             );
         }
@@ -336,7 +341,7 @@ pub mod tests {
         // Test if too small.
         assert_eq!(
             invalid_command,
-            CommandHdr::try_from([0u8; size_of::<CommandHdr>() - 1].as_slice())
+            CommandHdr::try_from([0u8; size_of::<CommandHdr>() - 1].as_slice()),
         );
 
         // Test wrong magic.
@@ -345,7 +350,7 @@ pub mod tests {
             CommandHdr::try_from(
                 CommandHdr {
                     magic: 0,
-                    ..DEFAULT_COMMAND
+                    ..DEFAULT_COMMAND_HDR
                 }
                 .as_bytes()
             )
@@ -368,7 +373,7 @@ pub mod tests {
                 CommandHdr {
                     profile: wrong_profile,
                     cmd_id: Command::INITIALIZE_CONTEXT,
-                    ..DEFAULT_COMMAND
+                    ..DEFAULT_COMMAND_HDR
                 }
                 .as_bytes()
             )
@@ -379,7 +384,7 @@ pub mod tests {
             profile,
             CommandHdr {
                 profile: wrong_profile,
-                ..DEFAULT_COMMAND
+                ..DEFAULT_COMMAND_HDR
             }
             .as_bytes()
         )
@@ -388,7 +393,7 @@ pub mod tests {
         // Test correct command. Using random command ID to check endianness and consistency.
         const GOOD_HEADER: CommandHdr = CommandHdr {
             cmd_id: 0x8765_4321,
-            ..DEFAULT_COMMAND
+            ..DEFAULT_COMMAND_HDR
         };
         assert_eq!(
             GOOD_HEADER,
