@@ -9,7 +9,7 @@ use crate::{
     context::ContextHandle,
     dpe_instance::{DpeEnv, DpeTypes},
     response::DpeErrorCode,
-    tci::TciNodeData,
+    tci::{TciMeasurement, TciNodeData},
     DpeInstance, DpeProfile, State, MAX_HANDLES,
 };
 use bitflags::bitflags;
@@ -1529,9 +1529,9 @@ impl CertWriter<'_> {
         Ok(bytes_written)
     }
 
-    fn encode_fwid(&mut self, tci: &[u8]) -> Result<usize, DpeErrorCode> {
+    fn encode_fwid(&mut self, tci: &TciMeasurement) -> Result<usize, DpeErrorCode> {
         let mut bytes_written = self.encode_byte(Self::SEQUENCE_TAG)?;
-        bytes_written += self.encode_size_field(self.get_fwid_size(tci, /*tagged=*/ false)?)?;
+        bytes_written += self.encode_size_field(self.get_fwid_size(&tci.0, /*tagged=*/ false)?)?;
 
         // hashAlg OID
         let oid = self.hash_oid()?;
@@ -1541,8 +1541,8 @@ impl CertWriter<'_> {
 
         // digest OCTET STRING
         bytes_written += self.encode_byte(Self::OCTET_STRING_TAG)?;
-        bytes_written += self.encode_size_field(tci.len())?;
-        bytes_written += self.encode_bytes(tci)?;
+        bytes_written += self.encode_size_field(tci.0.len())?;
+        bytes_written += self.encode_bytes(&tci.0)?;
 
         Ok(bytes_written)
     }
@@ -1582,7 +1582,7 @@ impl CertWriter<'_> {
         bytes_written += self.encode_size_field(fwid_size)?;
 
         // fwid[0] current measurement
-        bytes_written += self.encode_fwid(&node.tci_current.0)?;
+        bytes_written += self.encode_fwid(&node.tci_current)?;
 
         // vendorInfo OCTET STRING
         // IMPLICIT[8] Primitive
@@ -1620,7 +1620,7 @@ impl CertWriter<'_> {
             // supports a single register.
             bytes_written += self.encode_byte(Self::CONTEXT_SPECIFIC | Self::CONSTRUCTED | 0x02)?;
             bytes_written += self.encode_size_field(fwid_size)?;
-            bytes_written += self.encode_fwid(&node.tci_cumulative.0)?;
+            bytes_written += self.encode_fwid(&node.tci_cumulative)?;
         }
 
         Ok(bytes_written)
