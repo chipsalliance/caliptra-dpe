@@ -5,8 +5,9 @@ use crate::{
     context::{ActiveContextArgs, Context, ContextHandle, ContextState, ContextType},
     dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
     response::{DeriveContextExportedCdiResp, DeriveContextResp, DpeErrorCode, Response},
+    tci::TciMeasurement,
     x509::{create_exported_dpe_cert, CreateDpeCertArgs, CreateDpeCertResult},
-    DpeFlags, State, MAX_CERT_SIZE, TCI_SIZE,
+    DpeFlags, State, MAX_CERT_SIZE,
 };
 use bitflags::bitflags;
 #[cfg(not(feature = "no-cfi"))]
@@ -84,7 +85,7 @@ impl DeriveContextFlags {
 #[derive(Debug, PartialEq, Eq, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct DeriveContextCmd {
     pub handle: ContextHandle,
-    pub data: [u8; TCI_SIZE],
+    pub data: TciMeasurement,
     pub flags: DeriveContextFlags,
     pub tci_type: u32,
     pub target_locality: u32,
@@ -261,7 +262,7 @@ impl CommandExecution for DeriveContextCmd {
                     dpe.add_tci_measurement(
                         env,
                         &mut tmp_context,
-                        &Digest::from(*data),
+                        &Digest::from(data.0),
                         target_locality,
                     )?;
 
@@ -400,7 +401,7 @@ impl CommandExecution for DeriveContextCmd {
         dpe.add_tci_measurement(
             env,
             &mut tmp_child_context,
-            &Digest::from(*data),
+            &Digest::from(data.0),
             target_locality,
         )?;
 
@@ -424,7 +425,7 @@ impl Default for DeriveContextCmd {
     fn default() -> Self {
         Self {
             handle: ContextHandle::default(),
-            data: [0; TCI_SIZE],
+            data: TciMeasurement::default(),
             flags: DeriveContextFlags(0),
             tci_type: 0,
             target_locality: 0,
@@ -473,7 +474,7 @@ mod tests {
 
     const TEST_DERIVE_CONTEXT_CMD: DeriveContextCmd = DeriveContextCmd {
         handle: SIMULATION_HANDLE,
-        data: TEST_DIGEST,
+        data: TciMeasurement(TEST_DIGEST),
         flags: DeriveContextFlags(0x1234_5678),
         tci_type: 0x9876_5432,
         target_locality: 0x10CA_1171,
@@ -986,7 +987,7 @@ mod tests {
             })),
             DeriveContextCmd {
                 handle: ContextHandle::default(),
-                data: [1; TCI_SIZE],
+                data: TciMeasurement([1; TCI_SIZE]),
                 flags: DeriveContextFlags::MAKE_DEFAULT
                     | DeriveContextFlags::RECURSIVE
                     | DeriveContextFlags::INTERNAL_INPUT_INFO
@@ -1000,7 +1001,7 @@ mod tests {
 
         DeriveContextCmd {
             handle: ContextHandle::default(),
-            data: [2; TCI_SIZE],
+            data: TciMeasurement([2; TCI_SIZE]),
             flags: DeriveContextFlags::MAKE_DEFAULT
                 | DeriveContextFlags::RECURSIVE
                 | DeriveContextFlags::INTERNAL_INPUT_INFO
@@ -1263,7 +1264,7 @@ mod tests {
         dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
         let Ok(Response::DeriveContext(res)) = DeriveContextCmd {
-            data: [0xA; TCI_SIZE],
+            data: TciMeasurement([0xA; TCI_SIZE]),
             target_locality: TEST_LOCALITIES[0],
             ..Default::default()
         }
@@ -1293,7 +1294,7 @@ mod tests {
         dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
         let Ok(Response::DeriveContext(res)) = DeriveContextCmd {
-            data: [0xA; TCI_SIZE],
+            data: TciMeasurement([0xA; TCI_SIZE]),
             target_locality: TEST_LOCALITIES[0],
             ..Default::default()
         }
@@ -1326,7 +1327,7 @@ mod tests {
         let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
         let res = DeriveContextCmd {
-            data: [0xA; TCI_SIZE],
+            data: TciMeasurement([0xA; TCI_SIZE]),
             flags: DeriveContextFlags::MAKE_DEFAULT
                 | DeriveContextFlags::ALLOW_NEW_CONTEXT_TO_EXPORT,
             target_locality: TEST_LOCALITIES[0],

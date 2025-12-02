@@ -270,6 +270,7 @@ mod tests {
         dpe_instance::tests::{
             test_env, test_state, DPE_PROFILE, RANDOM_HANDLE, SIMULATION_HANDLE, TEST_LOCALITIES,
         },
+        tci::TciMeasurement,
     };
     use caliptra_cfi_lib_git::CfiCounter;
     use openssl::x509::X509;
@@ -367,7 +368,7 @@ mod tests {
         for i in 0..3 {
             DeriveContextCmd {
                 handle: ContextHandle::default(),
-                data: [i; DPE_PROFILE.hash_size()],
+                data: TciMeasurement([i; DPE_PROFILE.hash_size()]),
                 flags: DeriveContextFlags::MAKE_DEFAULT | DeriveContextFlags::INPUT_ALLOW_X509,
                 tci_type: i as u32,
                 target_locality: 0,
