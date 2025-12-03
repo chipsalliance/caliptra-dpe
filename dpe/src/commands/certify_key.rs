@@ -357,7 +357,7 @@ mod tests {
         support::Support,
         tci::TciMeasurement,
         x509::{tests::TcbInfo, DirectoryString, Name},
-        State, TCI_SIZE,
+        State, MAX_HANDLES, TCI_SIZE,
     };
     use caliptra_cfi_lib_git::CfiCounter;
     use cms::{
@@ -813,5 +813,87 @@ mod tests {
         assert_eq!(first.tci_type.unwrap(), &[0, 0, 0, 0]);
         assert_eq!(second.tci_type.unwrap(), &[1, 0, 0, 0]);
         assert!(parsed_tcb_infos.next().is_none());
+    }
+
+    #[test]
+    fn test_max_tcis_certify_key_x509() {
+        CfiCounter::reset_for_test();
+        let mut state = State::new(Support::X509 | Support::AUTO_INIT, DpeFlags::empty());
+        let mut env = test_env(&mut state);
+        let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
+
+        // Derive context MAX_HANDLES times. The first was already created by auto-init.
+        for _ in 0..MAX_HANDLES - 1 {
+            let derive_cmd = DeriveContextCmd {
+                flags: DeriveContextFlags::MAKE_DEFAULT | DeriveContextFlags::INPUT_ALLOW_X509,
+                ..Default::default()
+            };
+
+            derive_cmd.execute(&mut dpe, &mut env, 0).unwrap();
+        }
+
+        // Now certify the last derived context
+        let certify_cmd = CertifyKeyCmd {
+            format: CertifyKeyCommand::FORMAT_X509,
+            ..Default::default()
+        };
+
+        let Response::CertifyKey(certify_resp) = CertifyKeyCommand::from(&certify_cmd)
+            .execute(&mut dpe, &mut env, 0)
+            .unwrap()
+        else {
+            panic!("Wrong response type.");
+        };
+
+        let mut parser = X509CertificateParser::new().with_deep_parse_extensions(true);
+        let (_, cert) = parser.parse(certify_resp.cert().unwrap()).unwrap();
+
+        let multi_tcb_info = cert
+            .get_extension_unique(&oid!(2.23.133 .5 .4 .5))
+            .unwrap()
+            .unwrap();
+        let mut parsed_tcb_infos =
+            asn1::parse_single::<asn1::SequenceOf<TcbInfo>>(multi_tcb_info.value).unwrap();
+
+        // Verify we have MAX_HANDLES TCB infos
+        for _ in 0..MAX_HANDLES {
+            let tcb_info = parsed_tcb_infos.next().unwrap();
+            assert_eq!(tcb_info.tci_type.unwrap(), &(0 as u32).to_le_bytes());
+        }
+        assert!(parsed_tcb_infos.next().is_none());
+    }
+
+    #[test]
+    fn test_max_tcis_certify_key_csr() {
+        CfiCounter::reset_for_test();
+        let mut state = State::new(
+            Support::X509 | Support::AUTO_INIT | Support::CSR,
+            DpeFlags::empty(),
+        );
+        let mut env = test_env(&mut state);
+        let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
+
+        // Derive context MAX_HANDLES times. The first was already created by auto-init.
+        for _ in 0..MAX_HANDLES - 1 {
+            let derive_cmd = DeriveContextCmd {
+                flags: DeriveContextFlags::MAKE_DEFAULT,
+                ..Default::default()
+            };
+
+            derive_cmd.execute(&mut dpe, &mut env, 0).unwrap();
+        }
+
+        // Now certify the last derived context
+        let certify_cmd = CertifyKeyCmd {
+            format: CertifyKeyCommand::FORMAT_CSR,
+            ..Default::default()
+        };
+
+        let Response::CertifyKey(_) = CertifyKeyCommand::from(&certify_cmd)
+            .execute(&mut dpe, &mut env, 0)
+            .unwrap()
+        else {
+            panic!("Wrong response type.");
+        };
     }
 }

@@ -23,7 +23,7 @@ const (
 
 	DPESimulatorAutoInitLocality    uint32 = 0
 	DPESimulatorOtherLocality       uint32 = 0x4f544852
-	DPESimulatorMaxTCINodes         uint32 = 32
+	DPESimulatorMaxTCINodes         uint32 = 64
 	DPESimulatorMajorProfileVersion uint16 = client.CurrentProfileMajorVersion
 	DPESimulatorMinorProfileVersion uint16 = client.CurrentProfileMinorVersion
 	DPESimulatorVendorID            uint32 = 0
