@@ -19,6 +19,7 @@ use {
     zerocopy::{IntoBytes, SizeError},
 };
 
+use constant_time_eq::constant_time_eq;
 use core::marker::PhantomData;
 use core::ops::Deref;
 use ecdsa::{signature::hazmat::PrehashSigner, Signature};
@@ -295,7 +296,7 @@ impl<S: SignatureType, D: DigestType> Crypto for RustCryptoImpl<S, D> {
         let cdi = hkdf_derive_cdi(S::SIGNATURE_ALGORITHM, measurement, info)?;
 
         for (stored_cdi, _) in self.export_cdi_slots.iter() {
-            if *stored_cdi == cdi {
+            if constant_time_eq(stored_cdi.as_slice(), cdi.as_slice()) {
                 return Err(CryptoError::ExportedCdiHandleDuplicateCdi);
             }
         }
@@ -330,7 +331,7 @@ impl<S: SignatureType, D: DigestType> Crypto for RustCryptoImpl<S, D> {
         let cdi = {
             let mut cdi = None;
             for (stored_cdi, stored_handle) in self.export_cdi_slots.iter() {
-                if stored_handle == exported_handle {
+                if constant_time_eq(stored_handle.as_slice(), exported_handle.as_slice()) {
                     cdi = Some(stored_cdi.clone());
                 }
             }
