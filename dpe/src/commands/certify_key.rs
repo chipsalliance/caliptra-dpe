@@ -333,6 +333,7 @@ mod tests {
         Crypto, CryptoSuite, Digest, PubKey, SignatureAlgorithm,
     };
     use der::{Decode, Encode};
+    use ml_dsa::EncodedSignature;
     use openssl::{
         bn::BigNum,
         ec::{EcGroup, EcKey},
@@ -618,12 +619,17 @@ mod tests {
                         "CSR signature length: {}",
                         signer_info.signature.as_bytes().len()
                     );
-                    let csr_sig: ml_dsa::Signature<ml_dsa::MlDsa87> = ml_dsa::Signature::decode(
-                        signer_info
+                    let sig = signer_info
                             .signature
+                            // clundin: I would expect `as_bytes` to drop the ASN.1 Octet String
+                            // information, since it claims to return the raw inner string.
                             .as_bytes()
-                            .try_into()
-                            .expect("Error creating encoded signature from bytes"),
+                            // slice away the DER tag and length bytes to get the raw signature.
+                            .get(8..)
+                            .unwrap();
+                    let sig_bytes = EncodedSignature::<ml_dsa::MlDsa87>::try_from(sig).unwrap();
+                    let csr_sig: ml_dsa::Signature<ml_dsa::MlDsa87> = ml_dsa::Signature::decode(
+                        &sig_bytes
                     )
                     .expect("Error decoding signature");
                     todo!()
