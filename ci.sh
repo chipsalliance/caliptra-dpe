@@ -77,6 +77,18 @@ format_go_targets
 build_rust_targets ml-dsa
 lint_rust_targets ml-dsa
 
+# Build check for P384/ML-DSA hybrid
+cargo build --release --manifest-path dpe/Cargo.toml --features=hybrid,no-cfi --no-default-features
+
+cargo build --release --manifest-path dpe/Cargo.toml --features=hybrid --no-default-features
+cargo build --release --bin cert-size --features=hybrid --no-default-features
+
+cargo build --manifest-path dpe/Cargo.toml --features=hybrid --no-default-features
+cargo build --bin cert-size --features=hybrid --no-default-features
+
+cargo clippy --manifest-path dpe/Cargo.toml --features=hybrid --no-default-features -- --deny=warnings
+cargo clippy --bin cert-size --features=hybrid --no-default-features -- --deny=warnings
+
 # Run tests for P256 profile
 build_rust_targets p256
 lint_rust_targets p256

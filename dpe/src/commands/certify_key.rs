@@ -20,7 +20,7 @@ use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 #[cfg(not(feature = "disable_x509"))]
 #[repr(C)]
-#[derive(Debug, PartialEq, Eq, FromBytes, IntoBytes, Immutable, KnownLayout)]
+#[derive(Debug, Default, PartialEq, Eq, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct CertifyKeyFlags(pub u32);
 
 bitflags! {
@@ -239,7 +239,7 @@ impl CommandExecution for CertifyKeyCommand<'_> {
 }
 
 #[repr(C)]
-#[derive(Debug, PartialEq, Eq, FromBytes, IntoBytes, Immutable, KnownLayout)]
+#[derive(Debug, Default, PartialEq, Eq, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct CertifyKeyP256Cmd {
     pub handle: ContextHandle,
     pub flags: CertifyKeyFlags,
@@ -269,6 +269,17 @@ pub struct CertifyKeyP384Cmd {
     pub label: [u8; 48],
 }
 
+impl Default for CertifyKeyP384Cmd {
+    fn default() -> Self {
+        Self {
+            handle: ContextHandle::default(),
+            flags: CertifyKeyFlags::empty(),
+            format: 0,
+            label: [0; 48],
+        }
+    }
+}
+
 #[cfg(feature = "p384")]
 impl CommandExecution for CertifyKeyP384Cmd {
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
@@ -289,6 +300,17 @@ pub struct CertifyKeyMldsaExternalMu87Cmd {
     pub flags: CertifyKeyFlags,
     pub format: u32,
     pub label: [u8; 48],
+}
+
+impl Default for CertifyKeyMldsaExternalMu87Cmd {
+    fn default() -> Self {
+        Self {
+            handle: ContextHandle::default(),
+            flags: CertifyKeyFlags::empty(),
+            format: 0,
+            label: [0; 48],
+        }
+    }
 }
 
 #[cfg(feature = "ml-dsa")]
