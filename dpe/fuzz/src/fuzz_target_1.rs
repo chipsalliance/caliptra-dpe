@@ -20,7 +20,7 @@ use dpe::{
     dpe_instance::{DpeEnv, DpeTypes},
     response::Response,
     support::Support,
-    DpeInstance,
+    DpeInstance, DpeProfile,
 };
 use platform::default::{DefaultPlatform, DefaultPlatformProfile, AUTO_INIT_LOCALITY};
 
@@ -56,7 +56,7 @@ fn harness(data: &[u8]) {
         platform: DefaultPlatform(DefaultPlatformProfile::P256),
         state: &mut dpe::State::new(SUPPORT, DpeFlags::empty()),
     };
-    let mut dpe = DpeInstance::new(&mut env).unwrap();
+    let mut dpe = DpeInstance::new(&mut env, DpeProfile::P256Sha256).unwrap();
     trace!("----------------------------------");
     if let Ok(command) = dpe.deserialize_command(data) {
         trace!("| Fuzzer's locality requested {command:x?}");

@@ -53,7 +53,7 @@ mod tests {
     use super::*;
     use crate::{
         commands::{tests::PROFILES, Command, CommandHdr},
-        dpe_instance::tests::{test_env, test_state, TEST_LOCALITIES},
+        dpe_instance::tests::{test_env, test_state, DPE_PROFILE, TEST_LOCALITIES},
     };
     use caliptra_cfi_lib_git::CfiCounter;
     use zerocopy::IntoBytes;
@@ -85,7 +85,7 @@ mod tests {
         CfiCounter::reset_for_test();
         let mut state = test_state();
         let mut env = test_env(&mut state);
-        let mut dpe = DpeInstance::new(&mut env).unwrap();
+        let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
         assert_eq!(
             Err(DpeErrorCode::InvalidArgument),

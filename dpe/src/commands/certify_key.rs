@@ -13,17 +13,14 @@ use caliptra_cfi_derive_git::cfi_impl_fn;
 #[cfg(not(feature = "no-cfi"))]
 use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq};
 use cfg_if::cfg_if;
-#[cfg(any(
-    feature = "dpe_profile_p256_sha256",
-    feature = "dpe_profile_p384_sha384"
-))]
+#[cfg(any(feature = "p256", feature = "p384"))]
 use crypto::ecdsa::EcdsaPubKey;
 use crypto::PubKey;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 #[cfg(not(feature = "disable_x509"))]
 #[repr(C)]
-#[derive(Debug, PartialEq, Eq, FromBytes, IntoBytes, Immutable, KnownLayout)]
+#[derive(Debug, Default, PartialEq, Eq, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct CertifyKeyFlags(pub u32);
 
 bitflags! {
@@ -32,9 +29,9 @@ bitflags! {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum CertifyKeyCommand<'a> {
-    #[cfg(feature = "dpe_profile_p256_sha256")]
+    #[cfg(feature = "p256")]
     P256(&'a CertifyKeyP256Cmd),
-    #[cfg(feature = "dpe_profile_p384_sha384")]
+    #[cfg(feature = "p384")]
     P384(&'a CertifyKeyP384Cmd),
     #[cfg(feature = "ml-dsa")]
     ExternalMu87(&'a CertifyKeyMldsaExternalMu87Cmd),
@@ -49,11 +46,11 @@ impl CertifyKeyCommand<'_> {
         bytes: &[u8],
     ) -> Result<CertifyKeyCommand, DpeErrorCode> {
         match profile {
-            #[cfg(feature = "dpe_profile_p256_sha256")]
+            #[cfg(feature = "p256")]
             DpeProfile::P256Sha256 => {
                 CertifyKeyCommand::parse_command(CertifyKeyCommand::P256, bytes)
             }
-            #[cfg(feature = "dpe_profile_p384_sha384")]
+            #[cfg(feature = "p384")]
             DpeProfile::P384Sha384 => {
                 CertifyKeyCommand::parse_command(CertifyKeyCommand::P384, bytes)
             }
@@ -76,9 +73,9 @@ impl CertifyKeyCommand<'_> {
 
     pub fn as_bytes(&self) -> &[u8] {
         match self {
-            #[cfg(feature = "dpe_profile_p256_sha256")]
+            #[cfg(feature = "p256")]
             CertifyKeyCommand::P256(cmd) => cmd.as_bytes(),
-            #[cfg(feature = "dpe_profile_p384_sha384")]
+            #[cfg(feature = "p384")]
             CertifyKeyCommand::P384(cmd) => cmd.as_bytes(),
             #[cfg(feature = "ml-dsa")]
             CertifyKeyCommand::ExternalMu87(cmd) => cmd.as_bytes(),
@@ -86,14 +83,14 @@ impl CertifyKeyCommand<'_> {
     }
 }
 
-#[cfg(feature = "dpe_profile_p256_sha256")]
+#[cfg(feature = "p256")]
 impl<'a> From<&'a CertifyKeyP256Cmd> for CertifyKeyCommand<'a> {
     fn from(value: &'a CertifyKeyP256Cmd) -> Self {
         CertifyKeyCommand::P256(value)
     }
 }
 
-#[cfg(feature = "dpe_profile_p384_sha384")]
+#[cfg(feature = "p384")]
 impl<'a> From<&'a CertifyKeyP384Cmd> for CertifyKeyCommand<'a> {
     fn from(value: &'a CertifyKeyP384Cmd) -> Self {
         CertifyKeyCommand::P384(value)
@@ -116,9 +113,9 @@ impl CommandExecution for CertifyKeyCommand<'_> {
         locality: u32,
     ) -> Result<Response, DpeErrorCode> {
         let (handle, format, label) = match *self {
-            #[cfg(feature = "dpe_profile_p256_sha256")]
+            #[cfg(feature = "p256")]
             CertifyKeyCommand::P256(cmd) => (&cmd.handle, cmd.format, cmd.label.as_slice()),
-            #[cfg(feature = "dpe_profile_p384_sha384")]
+            #[cfg(feature = "p384")]
             CertifyKeyCommand::P384(cmd) => (&cmd.handle, cmd.format, cmd.label.as_slice()),
             #[cfg(feature = "ml-dsa")]
             CertifyKeyCommand::ExternalMu87(cmd) => (&cmd.handle, cmd.format, cmd.label.as_slice()),
@@ -194,7 +191,7 @@ impl CommandExecution for CertifyKeyCommand<'_> {
         }?;
 
         let mut response = match pub_key {
-            #[cfg(feature = "dpe_profile_p256_sha256")]
+            #[cfg(feature = "p256")]
             PubKey::Ecdsa(EcdsaPubKey::Ecdsa256(pub_key)) => {
                 let (x, y) = pub_key.as_slice();
                 CertifyKeyResp::P256(crate::response::CertifyKeyP256Resp {
@@ -206,7 +203,7 @@ impl CommandExecution for CertifyKeyCommand<'_> {
                     resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
                 })
             }
-            #[cfg(feature = "dpe_profile_p384_sha384")]
+            #[cfg(feature = "p384")]
             PubKey::Ecdsa(EcdsaPubKey::Ecdsa384(pub_key)) => {
                 let (x, y) = pub_key.as_slice();
                 CertifyKeyResp::P384(crate::response::CertifyKeyP384Resp {
@@ -242,12 +239,25 @@ impl CommandExecution for CertifyKeyCommand<'_> {
 }
 
 #[repr(C)]
-#[derive(Debug, PartialEq, Eq, FromBytes, IntoBytes, Immutable, KnownLayout)]
+#[derive(Debug, Default, PartialEq, Eq, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct CertifyKeyP256Cmd {
     pub handle: ContextHandle,
     pub flags: CertifyKeyFlags,
     pub format: u32,
     pub label: [u8; 32],
+}
+
+#[cfg(feature = "p256")]
+impl CommandExecution for CertifyKeyP256Cmd {
+    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    fn execute(
+        &self,
+        dpe: &mut DpeInstance,
+        env: &mut DpeEnv<impl DpeTypes>,
+        locality: u32,
+    ) -> Result<Response, DpeErrorCode> {
+        CertifyKeyCommand::from(self).execute(dpe, env, locality)
+    }
 }
 
 #[repr(C)]
@@ -259,6 +269,30 @@ pub struct CertifyKeyP384Cmd {
     pub label: [u8; 48],
 }
 
+impl Default for CertifyKeyP384Cmd {
+    fn default() -> Self {
+        Self {
+            handle: ContextHandle::default(),
+            flags: CertifyKeyFlags::empty(),
+            format: 0,
+            label: [0; 48],
+        }
+    }
+}
+
+#[cfg(feature = "p384")]
+impl CommandExecution for CertifyKeyP384Cmd {
+    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    fn execute(
+        &self,
+        dpe: &mut DpeInstance,
+        env: &mut DpeEnv<impl DpeTypes>,
+        locality: u32,
+    ) -> Result<Response, DpeErrorCode> {
+        CertifyKeyCommand::from(self).execute(dpe, env, locality)
+    }
+}
+
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct CertifyKeyMldsaExternalMu87Cmd {
@@ -268,28 +302,46 @@ pub struct CertifyKeyMldsaExternalMu87Cmd {
     pub label: [u8; 48],
 }
 
+impl Default for CertifyKeyMldsaExternalMu87Cmd {
+    fn default() -> Self {
+        Self {
+            handle: ContextHandle::default(),
+            flags: CertifyKeyFlags::empty(),
+            format: 0,
+            label: [0; 48],
+        }
+    }
+}
+
+#[cfg(feature = "ml-dsa")]
+impl CommandExecution for CertifyKeyMldsaExternalMu87Cmd {
+    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    fn execute(
+        &self,
+        dpe: &mut DpeInstance,
+        env: &mut DpeEnv<impl DpeTypes>,
+        locality: u32,
+    ) -> Result<Response, DpeErrorCode> {
+        CertifyKeyCommand::from(self).execute(dpe, env, locality)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     #[cfg(feature = "ml-dsa")]
-    use crate::commands::{
-        CertifyKeyMldsaExternalMu87Cmd as CertifyKeyCmd,
-        DeriveContextMldsaExternalMu87Cmd as DeriveContextCmd,
-    };
-    #[cfg(feature = "dpe_profile_p256_sha256")]
-    use crate::commands::{
-        CertifyKeyP256Cmd as CertifyKeyCmd, DeriveContextP256Cmd as DeriveContextCmd,
-    };
-    #[cfg(feature = "dpe_profile_p384_sha384")]
-    use crate::commands::{
-        CertifyKeyP384Cmd as CertifyKeyCmd, DeriveContextP384Cmd as DeriveContextCmd,
-    };
+    use crate::commands::CertifyKeyMldsaExternalMu87Cmd as CertifyKeyCmd;
+    #[cfg(feature = "p256")]
+    use crate::commands::CertifyKeyP256Cmd as CertifyKeyCmd;
+    #[cfg(feature = "p384")]
+    use crate::commands::CertifyKeyP384Cmd as CertifyKeyCmd;
     use crate::{
-        commands::{Command, CommandHdr, DeriveContextCommand, DeriveContextFlags, InitCtxCmd},
-        dpe_instance::tests::{test_env, SIMULATION_HANDLE, TEST_LOCALITIES},
+        commands::{Command, CommandHdr, DeriveContextCmd, DeriveContextFlags, InitCtxCmd},
+        dpe_instance::tests::{test_env, DPE_PROFILE, SIMULATION_HANDLE, TEST_LOCALITIES},
         support::Support,
+        tci::TciMeasurement,
         x509::{tests::TcbInfo, DirectoryString, Name},
-        State, DPE_PROFILE,
+        State, TCI_SIZE,
     };
     use caliptra_cfi_lib_git::CfiCounter;
     use cms::{
@@ -356,7 +408,7 @@ mod tests {
             };
             let mut state = State::new(Support::X509, flags);
             let mut env = test_env(&mut state);
-            let mut dpe = DpeInstance::new(&mut env).unwrap();
+            let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
             let init_resp = match InitCtxCmd::new_use_default()
                 .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
@@ -413,7 +465,7 @@ mod tests {
             };
             let mut state = State::new(Support::CSR, flags);
             let mut env = test_env(&mut state);
-            let mut dpe = DpeInstance::new(&mut env).unwrap();
+            let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
             let init_resp = match InitCtxCmd::new_use_default()
                 .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
@@ -585,11 +637,11 @@ mod tests {
             // validate subject_name
             let mut subj_serial = [0u8; DPE_PROFILE.hash_size() * 2];
             let pub_key = match certify_resp {
-                #[cfg(feature = "dpe_profile_p256_sha256")]
+                #[cfg(feature = "p256")]
                 CertifyKeyResp::P256(r) => PubKey::Ecdsa(
                     EcdsaPub::from_slice(&r.derived_pubkey_x, &r.derived_pubkey_y).into(),
                 ),
-                #[cfg(feature = "dpe_profile_p384_sha384")]
+                #[cfg(feature = "p384")]
                 CertifyKeyResp::P384(r) => PubKey::Ecdsa(
                     EcdsaPub::from_slice(&r.derived_pubkey_x, &r.derived_pubkey_y).into(),
                 ),
@@ -660,19 +712,19 @@ mod tests {
         CfiCounter::reset_for_test();
         let mut state = State::new(Support::X509 | Support::AUTO_INIT, DpeFlags::empty());
         let mut env = test_env(&mut state);
-        let mut dpe = DpeInstance::new(&mut env).unwrap();
+        let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
         // Derive context twice with different types
         let derive_cmd = DeriveContextCmd {
             handle: ContextHandle::default(),
-            data: [1; DPE_PROFILE.tci_size()],
+            data: TciMeasurement([1; TCI_SIZE]),
             flags: DeriveContextFlags::MAKE_DEFAULT | DeriveContextFlags::INPUT_ALLOW_X509,
             tci_type: 1,
             target_locality: 0,
             svn: 0,
         };
 
-        DeriveContextCommand::from(&derive_cmd)
+        derive_cmd
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
             .unwrap();
 

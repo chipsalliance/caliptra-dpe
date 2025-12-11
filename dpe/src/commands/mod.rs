@@ -4,26 +4,21 @@ Licensed under the Apache-2.0 license.
 Abstract:
     DPE Commands and deserialization.
 --*/
-pub use self::derive_context::{
-    DeriveContextCommand, DeriveContextFlags, DeriveContextP256Cmd, DeriveContextP384Cmd,
+pub use self::certify_key::{
+    CertifyKeyCommand, CertifyKeyFlags, CertifyKeyP256Cmd, CertifyKeyP384Cmd,
 };
+pub use self::derive_context::{DeriveContextCmd, DeriveContextFlags};
 pub use self::destroy_context::DestroyCtxCmd;
 pub use self::get_certificate_chain::GetCertificateChainCmd;
 pub use self::get_profile::GetProfileCmd;
 pub use self::initialize_context::InitCtxCmd;
-
-pub use self::certify_key::{
-    CertifyKeyCommand, CertifyKeyFlags, CertifyKeyP256Cmd, CertifyKeyP384Cmd,
-};
+pub use self::sign::{SignCommand, SignFlags, SignP256Cmd, SignP384Cmd};
 
 #[cfg(feature = "ml-dsa")]
-pub use self::{
-    certify_key::CertifyKeyMldsaExternalMu87Cmd, derive_context::DeriveContextMldsaExternalMu87Cmd,
-};
+pub use {self::certify_key::CertifyKeyMldsaExternalMu87Cmd, sign::SignMldsaExternalMu87Cmd};
 
 #[cfg(not(feature = "disable_rotate_context"))]
 pub use self::rotate_context::{RotateCtxCmd, RotateCtxFlags};
-pub use self::sign::{SignCommand, SignFlags};
 
 use crate::{
     dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
@@ -47,7 +42,7 @@ mod sign;
 pub enum Command<'a> {
     GetProfile(&'a GetProfileCmd),
     InitCtx(&'a InitCtxCmd),
-    DeriveContext(DeriveContextCommand<'a>),
+    DeriveContext(&'a DeriveContextCmd),
     CertifyKey(CertifyKeyCommand<'a>),
     Sign(SignCommand<'a>),
     #[cfg(not(feature = "disable_rotate_context"))]
@@ -79,9 +74,7 @@ impl Command<'_> {
         match header.cmd_id {
             Command::GET_PROFILE => Self::parse_command(Command::GetProfile, bytes),
             Command::INITIALIZE_CONTEXT => Self::parse_command(Command::InitCtx, bytes),
-            Command::DERIVE_CONTEXT => {
-                Ok(DeriveContextCommand::deserialize(profile, bytes)?.into())
-            }
+            Command::DERIVE_CONTEXT => Self::parse_command(Command::DeriveContext, bytes),
             Command::CERTIFY_KEY => Ok(CertifyKeyCommand::deserialize(profile, bytes)?.into()),
             Command::SIGN => Ok(Command::Sign(SignCommand::deserialize(profile, bytes)?)),
             #[cfg(not(feature = "disable_rotate_context"))]
@@ -120,8 +113,14 @@ impl From<Command<'_>> for u32 {
     }
 }
 
-impl<'a> From<DeriveContextCommand<'a>> for Command<'a> {
-    fn from(cmd: DeriveContextCommand<'a>) -> Command<'a> {
+impl<'a> From<&'a InitCtxCmd> for Command<'a> {
+    fn from(cmd: &'a InitCtxCmd) -> Command<'a> {
+        Command::InitCtx(cmd)
+    }
+}
+
+impl<'a> From<&'a DeriveContextCmd> for Command<'a> {
+    fn from(cmd: &'a DeriveContextCmd) -> Command<'a> {
         Command::DeriveContext(cmd)
     }
 }
@@ -129,6 +128,73 @@ impl<'a> From<DeriveContextCommand<'a>> for Command<'a> {
 impl<'a> From<CertifyKeyCommand<'a>> for Command<'a> {
     fn from(cmd: CertifyKeyCommand<'a>) -> Command<'a> {
         Command::CertifyKey(cmd)
+    }
+}
+
+#[cfg(feature = "p256")]
+impl<'a> From<&'a CertifyKeyP256Cmd> for Command<'a> {
+    fn from(cmd: &'a CertifyKeyP256Cmd) -> Command<'a> {
+        Command::CertifyKey(CertifyKeyCommand::P256(cmd))
+    }
+}
+
+#[cfg(feature = "p384")]
+impl<'a> From<&'a CertifyKeyP384Cmd> for Command<'a> {
+    fn from(cmd: &'a CertifyKeyP384Cmd) -> Command<'a> {
+        Command::CertifyKey(CertifyKeyCommand::P384(cmd))
+    }
+}
+
+#[cfg(feature = "ml-dsa")]
+impl<'a> From<&'a CertifyKeyMldsaExternalMu87Cmd> for Command<'a> {
+    fn from(cmd: &'a CertifyKeyMldsaExternalMu87Cmd) -> Command<'a> {
+        Command::CertifyKey(CertifyKeyCommand::ExternalMu87(cmd))
+    }
+}
+
+impl<'a> From<SignCommand<'a>> for Command<'a> {
+    fn from(cmd: SignCommand<'a>) -> Command<'a> {
+        Command::Sign(cmd)
+    }
+}
+
+#[cfg(feature = "p256")]
+impl<'a> From<&'a SignP256Cmd> for Command<'a> {
+    fn from(cmd: &'a SignP256Cmd) -> Command<'a> {
+        Command::Sign(SignCommand::P256(cmd))
+    }
+}
+
+#[cfg(feature = "p384")]
+impl<'a> From<&'a SignP384Cmd> for Command<'a> {
+    fn from(cmd: &'a SignP384Cmd) -> Command<'a> {
+        Command::Sign(SignCommand::P384(cmd))
+    }
+}
+
+#[cfg(feature = "ml-dsa")]
+impl<'a> From<&'a SignMldsaExternalMu87Cmd> for Command<'a> {
+    fn from(cmd: &'a SignMldsaExternalMu87Cmd) -> Command<'a> {
+        Command::Sign(SignCommand::ExternalMu87(cmd))
+    }
+}
+
+#[cfg(not(feature = "disable_rotate_context"))]
+impl<'a> From<&'a RotateCtxCmd> for Command<'a> {
+    fn from(cmd: &'a RotateCtxCmd) -> Command<'a> {
+        Command::RotateCtx(cmd)
+    }
+}
+
+impl<'a> From<&'a DestroyCtxCmd> for Command<'a> {
+    fn from(cmd: &'a DestroyCtxCmd) -> Command<'a> {
+        Command::DestroyCtx(cmd)
+    }
+}
+
+impl<'a> From<&'a GetCertificateChainCmd> for Command<'a> {
+    fn from(cmd: &'a GetCertificateChainCmd) -> Command<'a> {
+        Command::GetCertificateChain(cmd)
     }
 }
 
@@ -209,36 +275,37 @@ impl TryFrom<&[u8]> for CommandHdr {
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::{DpeProfile, DPE_PROFILE};
+    use crate::dpe_instance::tests::DPE_PROFILE;
+    use crate::DpeProfile;
     use caliptra_cfi_lib_git::CfiCounter;
     use platform::default::{DefaultPlatform, DefaultPlatformProfile};
     use zerocopy::IntoBytes;
 
-    #[cfg(feature = "dpe_profile_p256_sha256")]
+    #[cfg(feature = "p256")]
     pub const TEST_DIGEST: [u8; DPE_PROFILE.hash_size()] = [
         1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
         26, 27, 28, 29, 30, 31, 32,
     ];
-    #[cfg(any(feature = "dpe_profile_p384_sha384", feature = "ml-dsa"))]
+    #[cfg(any(feature = "p384", feature = "ml-dsa"))]
     pub const TEST_DIGEST: [u8; DPE_PROFILE.hash_size()] = [
         1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
         26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48,
     ];
 
-    #[cfg(feature = "dpe_profile_p256_sha256")]
+    #[cfg(feature = "p256")]
     pub const TEST_LABEL: [u8; DPE_PROFILE.hash_size()] = [
         32, 31, 30, 29, 28, 27, 26, 25, 24, 23, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10,
         9, 8, 7, 6, 5, 4, 3, 2, 1,
     ];
-    #[cfg(any(feature = "dpe_profile_p384_sha384", feature = "ml-dsa"))]
+    #[cfg(any(feature = "p384", feature = "ml-dsa"))]
     pub const TEST_LABEL: [u8; DPE_PROFILE.hash_size()] = [
         48, 47, 46, 45, 44, 43, 42, 41, 40, 39, 38, 37, 36, 35, 34, 33, 32, 31, 30, 29, 28, 27, 26,
         25, 24, 23, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1,
     ];
 
-    #[cfg(feature = "dpe_profile_p256_sha256")]
+    #[cfg(feature = "p256")]
     pub const DEFAULT_PLATFORM: DefaultPlatform = DefaultPlatform(DefaultPlatformProfile::P256);
-    #[cfg(feature = "dpe_profile_p384_sha384")]
+    #[cfg(feature = "p384")]
     pub const DEFAULT_PLATFORM: DefaultPlatform = DefaultPlatform(DefaultPlatformProfile::P384);
     #[cfg(feature = "ml-dsa")]
     pub const DEFAULT_PLATFORM: DefaultPlatform =
@@ -291,9 +358,9 @@ pub mod tests {
 
         // Test wrong profile.
         let profile = DPE_PROFILE;
-        #[cfg(feature = "dpe_profile_p256_sha256")]
+        #[cfg(feature = "p256")]
         let wrong_profile = DpeProfile::P384Sha384 as u32;
-        #[cfg(feature = "dpe_profile_p384_sha384")]
+        #[cfg(feature = "p384")]
         let wrong_profile = DpeProfile::P256Sha256 as u32;
         #[cfg(feature = "ml-dsa")]
         let wrong_profile = DpeProfile::P256Sha256 as u32;

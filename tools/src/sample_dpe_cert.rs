@@ -1,39 +1,47 @@
 // Licensed under the Apache-2.0 license
 
-use dpe::DpeFlags;
+use dpe::{tci::TciMeasurement, DpeFlags};
 use platform::default::DefaultPlatformProfile;
+use profile::*;
 use std::env;
-
 use {
     crypto::RustCryptoImpl,
-    dpe::commands::{self, CertifyKeyFlags, DeriveContextFlags},
+    dpe::commands::{self, CertifyKeyFlags, DeriveContextCmd, DeriveContextFlags},
     dpe::context::ContextHandle,
     dpe::dpe_instance::{DpeEnv, DpeTypes},
     dpe::response::Response,
-    dpe::{support::Support, DpeInstance, DPE_PROFILE},
+    dpe::{support::Support, DpeInstance},
     pem::{encode_config, EncodeConfig, LineEnding, Pem},
     platform::default::DefaultPlatform,
     zerocopy::IntoBytes,
 };
 
-#[cfg(feature = "dpe_profile_p256_sha256")]
-use {
-    commands::CertifyKeyP256Cmd as CertifyKeyCmd,
-    commands::DeriveContextP256Cmd as DeriveContextCmd, crypto::Ecdsa256RustCrypto as RustCrypto,
-};
+#[cfg(feature = "p256")]
+mod profile {
+    use super::*;
+    pub use crypto::Ecdsa256RustCrypto as RustCrypto;
+    pub use dpe::commands::CertifyKeyP256Cmd as CertifyKeyCmd;
+    pub const DPE_PROFILE: dpe::DpeProfile = dpe::DpeProfile::P256Sha256;
+    pub const PLATFORM_PROFILE: DefaultPlatformProfile = DefaultPlatformProfile::P256;
+}
 
-#[cfg(feature = "dpe_profile_p384_sha384")]
-use {
-    commands::CertifyKeyP384Cmd as CertifyKeyCmd,
-    commands::DeriveContextP384Cmd as DeriveContextCmd, crypto::Ecdsa384RustCrypto as RustCrypto,
-};
+#[cfg(feature = "p384")]
+mod profile {
+    use super::*;
+    pub use crypto::Ecdsa384RustCrypto as RustCrypto;
+    pub use dpe::commands::CertifyKeyP384Cmd as CertifyKeyCmd;
+    pub const DPE_PROFILE: dpe::DpeProfile = dpe::DpeProfile::P384Sha384;
+    pub const PLATFORM_PROFILE: DefaultPlatformProfile = DefaultPlatformProfile::P384;
+}
 
 #[cfg(feature = "ml-dsa")]
-use {
-    commands::CertifyKeyMldsaExternalMu87Cmd as CertifyKeyCmd,
-    commands::DeriveContextMldsaExternalMu87Cmd as DeriveContextCmd,
-    crypto::MldsaRustCrypto as RustCrypto,
-};
+mod profile {
+    use super::*;
+    pub use crypto::Ecdsa256RustCrypto as RustCrypto;
+    pub use dpe::commands::CertifyKeyMldsaExternalMu87Cmd as CertifyKeyCmd;
+    pub const DPE_PROFILE: dpe::DpeProfile = dpe::DpeProfile::Mldsa87ExternalMu;
+    pub const PLATFORM_PROFILE: DefaultPlatformProfile = DefaultPlatformProfile::Mldsa87ExternalMu;
+}
 
 pub struct TestTypes {}
 
@@ -48,7 +56,7 @@ impl DpeTypes for TestTypes {
 fn add_tcb_info(
     dpe: &mut DpeInstance,
     env: &mut DpeEnv<TestTypes>,
-    data: &[u8; DPE_PROFILE.hash_size()],
+    data: &TciMeasurement,
     tci_type: u32,
     svn: u32,
 ) {
@@ -121,25 +129,18 @@ fn main() {
     };
     let support = Support::AUTO_INIT | Support::X509 | Support::CSR;
 
-    #[cfg(feature = "dpe_profile_p256_sha256")]
-    let p = DefaultPlatformProfile::P256;
-    #[cfg(feature = "dpe_profile_p384_sha384")]
-    let p = DefaultPlatformProfile::P384;
-    #[cfg(feature = "ml-dsa")]
-    let p = DefaultPlatformProfile::Mldsa87ExternalMu;
-
     let mut env = DpeEnv::<TestTypes> {
         crypto: RustCryptoImpl::new(),
-        platform: DefaultPlatform(p),
+        platform: DefaultPlatform(PLATFORM_PROFILE),
         state: &mut dpe::State::new(support, DpeFlags::empty()),
     };
 
-    let mut dpe = DpeInstance::new(&mut env).unwrap();
+    let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
     add_tcb_info(
         &mut dpe,
         &mut env,
-        &[0; DPE_PROFILE.hash_size()],
+        &TciMeasurement::default(),
         u32::from_be_bytes(*b"TEST"),
         0,
     );

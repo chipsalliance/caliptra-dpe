@@ -5,29 +5,44 @@ compile_error!("must provide a crypto implementation");
 
 use clap::Parser;
 use dpe::DpeFlags;
-use log::{error, info, trace, warn};
-use platform::default::{DefaultPlatform, DefaultPlatformProfile};
-use std::fs;
-use std::io::{Error, ErrorKind, Read, Write};
-use std::os::unix::net::{UnixListener, UnixStream};
-use std::path::Path;
-use std::process;
-
 use dpe::{
     dpe_instance::{DpeEnv, DpeTypes},
     response::Response,
     support::Support,
     DpeInstance,
 };
+use log::{error, info, trace, warn};
+use platform::default::{DefaultPlatform, DefaultPlatformProfile};
+use profile::*;
+use std::fs;
+use std::io::{Error, ErrorKind, Read, Write};
+use std::os::unix::net::{UnixListener, UnixStream};
+use std::path::Path;
+use std::process;
 
-#[cfg(feature = "dpe_profile_p256_sha256")]
-use crypto::Ecdsa256RustCrypto;
+#[cfg(feature = "p256")]
+mod profile {
+    use super::*;
+    pub use crypto::Ecdsa256RustCrypto as RustCrypto;
+    pub const DPE_PROFILE: dpe::DpeProfile = dpe::DpeProfile::P256Sha256;
+    pub const PLATFORM_PROFILE: DefaultPlatformProfile = DefaultPlatformProfile::P256;
+}
 
-#[cfg(feature = "dpe_profile_p384_sha384")]
-use crypto::Ecdsa384RustCrypto;
+#[cfg(feature = "p384")]
+mod profile {
+    use super::*;
+    pub use crypto::Ecdsa384RustCrypto as RustCrypto;
+    pub const DPE_PROFILE: dpe::DpeProfile = dpe::DpeProfile::P384Sha384;
+    pub const PLATFORM_PROFILE: DefaultPlatformProfile = DefaultPlatformProfile::P384;
+}
 
 #[cfg(feature = "ml-dsa")]
-use crypto::MldsaRustCrypto;
+mod profile {
+    use super::*;
+    pub use crypto::Ecdsa256RustCrypto as RustCrypto;
+    pub const DPE_PROFILE: dpe::DpeProfile = dpe::DpeProfile::Mldsa87ExternalMu;
+    pub const PLATFORM_PROFILE: DefaultPlatformProfile = DefaultPlatformProfile::Mldsa87ExternalMu;
+}
 
 const SOCKET_PATH: &str = "/tmp/dpe-sim.socket";
 
@@ -128,14 +143,7 @@ struct Args {
 struct SimTypes {}
 
 impl DpeTypes for SimTypes {
-    #[cfg(feature = "dpe_profile_p256_sha256")]
-    type Crypto<'a> = Ecdsa256RustCrypto;
-
-    #[cfg(feature = "dpe_profile_p384_sha384")]
-    type Crypto<'a> = Ecdsa384RustCrypto;
-
-    #[cfg(feature = "ml-dsa")]
-    type Crypto<'a> = MldsaRustCrypto;
+    type Crypto<'a> = RustCrypto;
 
     type Platform<'a> = DefaultPlatform;
 }
@@ -179,19 +187,12 @@ fn main() -> std::io::Result<()> {
         args.mark_dice_extensions_critical,
     );
 
-    #[cfg(feature = "dpe_profile_p256_sha256")]
-    let p = DefaultPlatformProfile::P256;
-    #[cfg(feature = "dpe_profile_p384_sha384")]
-    let p = DefaultPlatformProfile::P384;
-    #[cfg(feature = "ml-dsa")]
-    let p = DefaultPlatformProfile::Mldsa87ExternalMu;
-
     let mut env = DpeEnv::<SimTypes> {
         crypto: <SimTypes as DpeTypes>::Crypto::new(),
-        platform: DefaultPlatform(p),
+        platform: DefaultPlatform(PLATFORM_PROFILE),
         state: &mut dpe::State::new(support, flags),
     };
-    let mut dpe = DpeInstance::new(&mut env).map_err(|err| {
+    let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).map_err(|err| {
         Error::new(
             ErrorKind::Other,
             format!("{err:?} while creating new DPE instance"),

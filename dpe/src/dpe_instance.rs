@@ -11,7 +11,8 @@ use crate::{
     context::{ChildToRootIter, Context, ContextHandle, ContextState},
     response::{DpeErrorCode, GetProfileResp, Response, ResponseHdr},
     support::Support,
-    DpeProfile, State, DPE_PROFILE, MAX_HANDLES,
+    tci::TciMeasurement,
+    DpeProfile, State, MAX_HANDLES,
 };
 #[cfg(not(feature = "no-cfi"))]
 use caliptra_cfi_derive_git::cfi_impl_fn;
@@ -48,10 +49,8 @@ impl DpeInstance {
     const MAX_NEW_HANDLE_ATTEMPTS: usize = 8;
 
     /// Create a new DPE instance without initializing.
-    pub const fn initialized() -> Self {
-        Self {
-            profile: DPE_PROFILE,
-        }
+    pub const fn initialized(profile: DpeProfile) -> Self {
+        Self { profile }
     }
 
     /// Create a new DPE instance.
@@ -62,8 +61,8 @@ impl DpeInstance {
     /// * `support` - optional functionality the instance supports
     /// * `flags` - configures `Self` behaviors.
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
-    pub fn new(env: &mut DpeEnv<impl DpeTypes>) -> Result<Self, DpeErrorCode> {
-        let mut dpe = Self::initialized();
+    pub fn new(env: &mut DpeEnv<impl DpeTypes>, profile: DpeProfile) -> Result<Self, DpeErrorCode> {
+        let mut dpe = Self::initialized(profile);
 
         if env.state.support.auto_init() {
             let locality = env.platform.get_auto_init_locality()?;
@@ -88,8 +87,9 @@ impl DpeInstance {
     #[cfg(not(feature = "disable_auto_init"))]
     pub fn new_auto_init(
         env: &mut DpeEnv<impl DpeTypes>,
+        profile: DpeProfile,
         tci_type: u32,
-        auto_init_measurement: &Digest,
+        auto_init_measurement: &TciMeasurement,
     ) -> Result<Self, DpeErrorCode> {
         // auto-init must be supported to add an auto init measurement
         if !env.state.support.auto_init() {
@@ -98,7 +98,7 @@ impl DpeInstance {
             #[cfg(not(feature = "no-cfi"))]
             cfi_assert!(env.state.support.auto_init());
         }
-        let dpe = Self::new(env)?;
+        let dpe = Self::new(env, profile)?;
 
         let locality = env.platform.get_auto_init_locality()?;
         let idx = env
@@ -229,7 +229,7 @@ impl DpeInstance {
         &self,
         env: &mut DpeEnv<impl DpeTypes>,
         context: &mut Context,
-        measurement: &Digest,
+        measurement: &TciMeasurement,
         locality: u32,
     ) -> Result<(), DpeErrorCode> {
         if context.state != ContextState::Active {
@@ -245,20 +245,10 @@ impl DpeInstance {
             }
         }
 
-        let measurement = match (self.profile, measurement) {
-            (DpeProfile::P256Sha256, Digest::Sha256(m)) => m.as_bytes(),
-            (DpeProfile::P384Sha384, Digest::Sha384(m)) => m.as_bytes(),
-            #[cfg(feature = "ml-dsa")]
-            (DpeProfile::Mldsa87ExternalMu, Digest::Sha384(m)) => m.as_bytes(),
-            _ => {
-                return Err(DpeErrorCode::InvalidArgument);
-            }
-        };
-
         // Derive the new TCI as HASH(TCI_CUMULATIVE || INPUT_DATA).
         let mut hasher = env.crypto.hash_initialize()?;
         hasher.update(&context.tci.tci_cumulative.0)?;
-        hasher.update(measurement)?;
+        hasher.update(&measurement.0)?;
         let digest = hasher.finish()?;
 
         let digest_bytes = digest.as_slice();
@@ -267,7 +257,7 @@ impl DpeInstance {
             return Err(DpeErrorCode::InternalError);
         }
         context.tci.tci_cumulative.0.copy_from_slice(digest_bytes);
-        context.tci.tci_current.0.copy_from_slice(measurement);
+        context.tci.tci_current = *measurement;
         Ok(())
     }
 
@@ -285,7 +275,7 @@ impl DpeInstance {
         support: Support,
         internal_input_info: &mut [u8; INTERNAL_INPUT_INFO_SIZE],
     ) -> Result<(), DpeErrorCode> {
-        // Internal DPE Info contains get profile response fields as well as the DPE_PROFILE
+        // Internal DPE Info contains get profile response fields as well as the profile
         let profile = self.get_profile(platform, support)?;
         let profile_bytes = profile.as_bytes();
         internal_input_info
@@ -296,7 +286,7 @@ impl DpeInstance {
         internal_input_info
             .get_mut(profile_bytes.len()..)
             .ok_or(DpeErrorCode::InternalError)?
-            .copy_from_slice(&(DPE_PROFILE as u32).to_le_bytes());
+            .copy_from_slice(&(u32::from(self.profile)).to_le_bytes());
 
         Ok(())
     }
@@ -401,25 +391,29 @@ impl Iterator for FlagsIter {
 pub mod tests {
     use super::*;
     use crate::commands::tests::DEFAULT_PLATFORM;
-    use crate::commands::DeriveContextFlags;
-    #[cfg(feature = "ml-dsa")]
-    use crate::commands::DeriveContextMldsaExternalMu87Cmd as DeriveContextCmd;
-    #[cfg(feature = "dpe_profile_p256_sha256")]
-    use crate::commands::DeriveContextP256Cmd as DeriveContextCmd;
-    #[cfg(feature = "dpe_profile_p384_sha384")]
-    use crate::commands::DeriveContextP384Cmd as DeriveContextCmd;
+    use crate::commands::{DeriveContextCmd, DeriveContextFlags};
     use crate::response::NewHandleResp;
     use crate::support::test::SUPPORT;
+    use crate::tci::TciMeasurement;
     use crate::{DpeFlags, CURRENT_PROFILE_MAJOR_VERSION};
     use caliptra_cfi_lib_git::CfiCounter;
     use crypto::RustCryptoImpl;
     use platform::default::{DefaultPlatform, AUTO_INIT_LOCALITY};
     use zerocopy::IntoBytes;
 
-    #[cfg(feature = "dpe_profile_p256_sha256")]
+    #[cfg(feature = "p256")]
+    pub const DPE_PROFILE: DpeProfile = DpeProfile::P256Sha256;
+
+    #[cfg(feature = "p384")]
+    pub const DPE_PROFILE: DpeProfile = DpeProfile::P384Sha384;
+
+    #[cfg(feature = "ml-dsa")]
+    pub const DPE_PROFILE: DpeProfile = DpeProfile::Mldsa87ExternalMu;
+
+    #[cfg(feature = "p256")]
     use crypto::Ecdsa256RustCrypto;
 
-    #[cfg(feature = "dpe_profile_p384_sha384")]
+    #[cfg(feature = "p384")]
     use crypto::Ecdsa384RustCrypto;
 
     #[cfg(feature = "ml-dsa")]
@@ -427,10 +421,10 @@ pub mod tests {
 
     pub struct TestTypes;
     impl DpeTypes for TestTypes {
-        #[cfg(feature = "dpe_profile_p256_sha256")]
+        #[cfg(feature = "p256")]
         type Crypto<'a> = Ecdsa256RustCrypto;
 
-        #[cfg(feature = "dpe_profile_p384_sha384")]
+        #[cfg(feature = "p384")]
         type Crypto<'a> = Ecdsa384RustCrypto;
 
         #[cfg(feature = "ml-dsa")]
@@ -466,7 +460,7 @@ pub mod tests {
         CfiCounter::reset_for_test();
         let mut state = test_state();
         let mut env = test_env(&mut state);
-        let mut dpe = DpeInstance::new(&mut env).unwrap();
+        let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
         assert_eq!(
             Response::GetProfile(GetProfileResp::new(
@@ -505,7 +499,7 @@ pub mod tests {
         CfiCounter::reset_for_test();
         let mut state = test_state();
         let mut env = test_env(&mut state);
-        let dpe = DpeInstance::new(&mut env).unwrap();
+        let dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
         let profile = dpe
             .get_profile(&mut env.platform, env.state.support)
             .unwrap();
@@ -518,12 +512,17 @@ pub mod tests {
         CfiCounter::reset_for_test();
         let mut state = State::new(Support::AUTO_INIT, DpeFlags::empty());
         let mut env = test_env(&mut state);
-        let dpe = DpeInstance::new(&mut env).unwrap();
+        let dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
         let data = [1; DPE_PROFILE.hash_size()];
         let mut context = env.state.contexts[0];
-        dpe.add_tci_measurement(&mut env, &mut context, &data.into(), TEST_LOCALITIES[0])
-            .unwrap();
+        dpe.add_tci_measurement(
+            &mut env,
+            &mut context,
+            &TciMeasurement(data),
+            TEST_LOCALITIES[0],
+        )
+        .unwrap();
         env.state.contexts[0] = context;
         assert_eq!(data, context.tci.tci_current.0);
 
@@ -537,8 +536,13 @@ pub mod tests {
         assert_eq!(first_cumulative.as_slice(), context.tci.tci_cumulative.0);
 
         let data = [2; DPE_PROFILE.hash_size()];
-        dpe.add_tci_measurement(&mut env, &mut context, &data.into(), TEST_LOCALITIES[0])
-            .unwrap();
+        dpe.add_tci_measurement(
+            &mut env,
+            &mut context,
+            &TciMeasurement(data),
+            TEST_LOCALITIES[0],
+        )
+        .unwrap();
         // Make sure the current TCI was updated correctly.
         env.state.contexts[0] = context;
         assert_eq!(data, context.tci.tci_current.0);
@@ -557,14 +561,14 @@ pub mod tests {
         CfiCounter::reset_for_test();
         let mut state = test_state();
         let mut env = test_env(&mut state);
-        let mut dpe = DpeInstance::new(&mut env).unwrap();
+        let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
         let mut last_cdi = vec![];
 
         for i in 0..3 {
             DeriveContextCmd {
                 handle: ContextHandle::default(),
-                data: [i; DPE_PROFILE.hash_size()],
+                data: TciMeasurement([i; DPE_PROFILE.hash_size()]),
                 flags: DeriveContextFlags::MAKE_DEFAULT,
                 tci_type: i as u32,
                 target_locality: 0,
@@ -611,19 +615,15 @@ pub mod tests {
         CfiCounter::reset_for_test();
         let mut state = State::new(SUPPORT | Support::INTERNAL_INFO, DpeFlags::empty());
         let mut env = test_env(&mut state);
-        let mut dpe = DpeInstance::new(&mut env).unwrap();
+        let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
         let parent_context_idx = env
             .state
             .get_active_context_pos(&ContextHandle::default(), TEST_LOCALITIES[0])
             .unwrap();
         DeriveContextCmd {
-            handle: ContextHandle::default(),
-            data: [0; DPE_PROFILE.hash_size()],
             flags: DeriveContextFlags::MAKE_DEFAULT | DeriveContextFlags::INTERNAL_INPUT_INFO,
-            tci_type: 0u32,
-            target_locality: 0,
-            svn: 0,
+            ..Default::default()
         }
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         .unwrap();
@@ -669,19 +669,15 @@ pub mod tests {
         CfiCounter::reset_for_test();
         let mut state = State::new(SUPPORT | Support::INTERNAL_DICE, DpeFlags::empty());
         let mut env = test_env(&mut state);
-        let mut dpe = DpeInstance::new(&mut env).unwrap();
+        let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
         let parent_context_idx = env
             .state
             .get_active_context_pos(&ContextHandle::default(), TEST_LOCALITIES[0])
             .unwrap();
         DeriveContextCmd {
-            handle: ContextHandle::default(),
-            data: [0; DPE_PROFILE.hash_size()],
             flags: DeriveContextFlags::MAKE_DEFAULT | DeriveContextFlags::INTERNAL_INPUT_DICE,
-            tci_type: 0u32,
-            target_locality: 0,
-            svn: 0,
+            ..Default::default()
         }
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         .unwrap();
@@ -721,8 +717,13 @@ pub mod tests {
         let tci_type = 0xdeadbeef_u32;
         let auto_init_measurement = [0x1; DPE_PROFILE.hash_size()];
         let auto_init_locality = env.platform.get_auto_init_locality().unwrap();
-        let mut dpe =
-            DpeInstance::new_auto_init(&mut env, tci_type, &auto_init_measurement.into()).unwrap();
+        let mut dpe = DpeInstance::new_auto_init(
+            &mut env,
+            DPE_PROFILE,
+            tci_type,
+            &TciMeasurement(auto_init_measurement),
+        )
+        .unwrap();
 
         let idx = env
             .state

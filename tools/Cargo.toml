@@ -6,20 +6,21 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = ["dpe_profile_p256_sha256"]
-dpe_profile_p256_sha256 = [
-  "dpe/dpe_profile_p256_sha256"
-]
-dpe_profile_p384_sha384 = [
-  "dpe/dpe_profile_p384_sha384"
-]
+default = ["p256"]
+# Run ARBITRARY_MAX_HANDLES=n cargo build --features arbitrary_max_handles to use this feature
+arbitrary_max_handles = ["dpe/arbitrary_max_handles"]
+p256 = ["dpe/p256"]
+p384 = ["dpe/p384"]
 # TODO(clundin): Placeholder name until we decide pattern for DPE profiles and feature flags.
 ml-dsa = [
   "dpe/ml-dsa"
 ]
+hybrid = ["p384", "ml-dsa"]
 
 [dependencies]
+anyhow = "1.0.70"
 dpe = {path = "../dpe", default-features = false, features = ["no-cfi"]}
+clap = { version = "4.1.8", features = ["derive"] }
 crypto = {path = "../crypto", default-features = false, features = ["deterministic_rand", "rustcrypto"]}
 pem = "2"
 platform = {path = "../platform", default-features = false, features = ["rustcrypto"]}
@@ -29,3 +30,7 @@ zerocopy.workspace = true
 name = "sample_dpe_cert"
 path = "src/sample_dpe_cert.rs"
 target = 'cfg("test")'
+
+[[bin]]
+name = "cert-size"
+path = "src/cert_size.rs"

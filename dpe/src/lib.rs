@@ -4,7 +4,16 @@ Licensed under the Apache-2.0 license.
 Abstract:
     DPE Library Crate.
 --*/
-#![cfg_attr(not(test), no_std)]
+#![cfg_attr(not(any(test, target_arch = "x86_64")), no_std)]
+
+#[cfg(not(feature = "log"))]
+#[allow(unused_macros)]
+#[macro_use]
+mod log_stub;
+#[cfg(feature = "log")]
+#[allow(unused_imports)]
+#[macro_use(debug, error, info, trace, warn)]
+extern crate log;
 
 pub use dpe_instance::DpeInstance;
 pub use state::{DpeFlags, State};
@@ -31,7 +40,7 @@ use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes};
 pub use crypto::{ecdsa::EcdsaAlgorithm, ExportedCdiHandle, MAX_EXPORTED_CDI_SIZE};
 
 // Max cert size returned by CertifyKey
-const MAX_CERT_SIZE: usize = 7872;
+const MAX_CERT_SIZE: usize = 17 * 1024;
 #[cfg(not(feature = "arbitrary_max_handles"))]
 pub const MAX_HANDLES: usize = 24;
 #[cfg(feature = "arbitrary_max_handles")]
@@ -110,14 +119,17 @@ impl DpeProfile {
     }
 }
 
-#[cfg(feature = "dpe_profile_p256_sha256")]
-pub const DPE_PROFILE: DpeProfile = DpeProfile::P256Sha256;
+impl From<DpeProfile> for u32 {
+    fn from(item: DpeProfile) -> Self {
+        item as u32
+    }
+}
 
-#[cfg(feature = "dpe_profile_p384_sha384")]
-pub const DPE_PROFILE: DpeProfile = DpeProfile::P384Sha384;
+#[cfg(feature = "p256")]
+pub const TCI_SIZE: usize = 32;
 
-#[cfg(feature = "ml-dsa")]
-pub const DPE_PROFILE: DpeProfile = DpeProfile::Mldsa87ExternalMu;
+#[cfg(any(feature = "p384", feature = "ml-dsa"))]
+pub const TCI_SIZE: usize = 48;
 
 // Recursive macro that does a union of all the flags passed to it. This is
 // const and looks about as nice as using the | operator.
@@ -128,4 +140,24 @@ macro_rules! bitflags_join {
     // In input is 1 or more comma separated things, take the first one, and call
     // .union(bitflags_join!(remaining))
     ($x: expr, $($z: expr),+) => ($x.union(bitflags_join!($($z),*)));
+}
+
+#[cfg(test)]
+pub(crate) mod tests {
+    /// Convenience function to initialize logging for unit tests
+    ///
+    /// Since unit tests are not compiled and executed seperately,
+    /// we have to ensure the initialization is only called once.
+    #[allow(unused)]
+    pub fn logger_init() {
+        use std::sync::Once;
+        static LOGGER: Once = Once::new();
+        LOGGER.call_once(|| {
+            flexi_logger::Logger::try_with_env_or_str("info")
+                .unwrap()
+                .write_mode(flexi_logger::WriteMode::SupportCapture)
+                .start()
+                .ok();
+        });
+    }
 }

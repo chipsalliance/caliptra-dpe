@@ -99,19 +99,14 @@ impl CommandExecution for DestroyCtxCmd {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[cfg(feature = "ml-dsa")]
-    use crate::commands::DeriveContextMldsaExternalMu87Cmd as DeriveContextCmd;
-    #[cfg(feature = "dpe_profile_p256_sha256")]
-    use crate::commands::DeriveContextP256Cmd as DeriveContextCmd;
-    #[cfg(feature = "dpe_profile_p384_sha384")]
-    use crate::commands::DeriveContextP384Cmd as DeriveContextCmd;
     use crate::{
-        commands::{tests::PROFILES, Command, CommandHdr, DeriveContextFlags, InitCtxCmd},
+        commands::{
+            tests::PROFILES, Command, CommandHdr, DeriveContextCmd, DeriveContextFlags, InitCtxCmd,
+        },
         context::{Context, ContextState},
         dpe_instance::tests::{
-            test_env, test_state, SIMULATION_HANDLE, TEST_HANDLE, TEST_LOCALITIES,
+            test_env, test_state, DPE_PROFILE, SIMULATION_HANDLE, TEST_HANDLE, TEST_LOCALITIES,
         },
-        DPE_PROFILE,
     };
     use caliptra_cfi_lib_git::CfiCounter;
     use zerocopy::IntoBytes;
@@ -140,7 +135,7 @@ mod tests {
         CfiCounter::reset_for_test();
         let mut state = State::default();
         let mut env = test_env(&mut state);
-        let mut dpe = DpeInstance::new(&mut env).unwrap();
+        let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
         InitCtxCmd::new_use_default()
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
@@ -295,16 +290,13 @@ mod tests {
         CfiCounter::reset_for_test();
         let mut state = test_state();
         let mut env = test_env(&mut state);
-        let mut dpe = DpeInstance::new(&mut env).unwrap();
+        let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
         // create new context while preserving auto-initialized context
         let handle_1 = match (DeriveContextCmd {
-            handle: ContextHandle::default(),
-            data: [0u8; DPE_PROFILE.tci_size()],
             flags: DeriveContextFlags::RETAIN_PARENT_CONTEXT | DeriveContextFlags::CHANGE_LOCALITY,
-            tci_type: 0,
             target_locality: TEST_LOCALITIES[1],
-            svn: 0,
+            ..Default::default()
         })
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         {
@@ -316,11 +308,8 @@ mod tests {
         // retire context with handle 1 and create new context
         let handle_2 = match (DeriveContextCmd {
             handle: handle_1,
-            data: [0u8; DPE_PROFILE.tci_size()],
-            flags: DeriveContextFlags::empty(),
-            tci_type: 0,
             target_locality: TEST_LOCALITIES[1],
-            svn: 0,
+            ..Default::default()
         })
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[1])
         {
@@ -332,11 +321,8 @@ mod tests {
         // retire context with handle 2 and create new context
         let handle_3 = match (DeriveContextCmd {
             handle: handle_2,
-            data: [0u8; DPE_PROFILE.tci_size()],
-            flags: DeriveContextFlags::empty(),
-            tci_type: 0,
             target_locality: TEST_LOCALITIES[1],
-            svn: 0,
+            ..Default::default()
         })
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[1])
         {
@@ -366,16 +352,13 @@ mod tests {
         CfiCounter::reset_for_test();
         let mut state = test_state();
         let mut env = test_env(&mut state);
-        let mut dpe = DpeInstance::new(&mut env).unwrap();
+        let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
         // create new context while preserving auto-initialized context
         let parent_handle = match (DeriveContextCmd {
-            handle: ContextHandle::default(),
-            data: [0u8; DPE_PROFILE.tci_size()],
             flags: DeriveContextFlags::RETAIN_PARENT_CONTEXT | DeriveContextFlags::CHANGE_LOCALITY,
-            tci_type: 0,
             target_locality: TEST_LOCALITIES[1],
-            svn: 0,
+            ..Default::default()
         })
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         {
@@ -387,11 +370,9 @@ mod tests {
         // derive one child from the parent
         let parent_handle = match (DeriveContextCmd {
             handle: parent_handle,
-            data: [0u8; DPE_PROFILE.tci_size()],
             flags: DeriveContextFlags::RETAIN_PARENT_CONTEXT,
-            tci_type: 0,
             target_locality: TEST_LOCALITIES[1],
-            svn: 0,
+            ..Default::default()
         })
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[1])
         {
@@ -403,11 +384,8 @@ mod tests {
         // derive another child while retiring the parent handle
         let handle_b = match (DeriveContextCmd {
             handle: parent_handle,
-            data: [0u8; DPE_PROFILE.tci_size()],
-            flags: DeriveContextFlags::empty(),
-            tci_type: 0,
             target_locality: TEST_LOCALITIES[1],
-            svn: 0,
+            ..Default::default()
         })
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[1])
         {
