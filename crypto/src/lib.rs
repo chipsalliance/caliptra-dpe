@@ -154,6 +154,26 @@ impl Digest {
             Self::Sha384(dig) => dig.0.as_slice(),
         }
     }
+    pub fn write_hex_str(&self, dst: &mut [u8]) -> Result<(), CryptoError> {
+        if dst.len() < self.size() * 2 {
+            return Err(CryptoError::Size);
+        }
+
+        let src = self.as_slice();
+        let mut curr_idx = 0;
+        const HEX_CHARS: &[u8; 16] = b"0123456789ABCDEF";
+        for &b in src {
+            let h1 = (b >> 4) as usize;
+            let h2 = (b & 0xF) as usize;
+            if h1 >= HEX_CHARS.len() || h2 >= HEX_CHARS.len() || curr_idx + 1 >= dst.len() {
+                return Err(CryptoError::CryptoLibError(0));
+            }
+            dst[curr_idx] = HEX_CHARS[h1];
+            dst[curr_idx + 1] = HEX_CHARS[h2];
+            curr_idx += 2;
+        }
+        Ok(())
+    }
 }
 
 impl From<Sha256> for Digest {
@@ -285,21 +305,7 @@ pub trait CryptoSuite: Crypto + SignatureType + DigestType {
         }
 
         let digest = hasher.finish()?;
-        let src = digest.as_slice();
-
-        let mut curr_idx = 0;
-        const HEX_CHARS: &[u8; 16] = b"0123456789ABCDEF";
-        for &b in src {
-            let h1 = (b >> 4) as usize;
-            let h2 = (b & 0xF) as usize;
-            if h1 >= HEX_CHARS.len() || h2 >= HEX_CHARS.len() || curr_idx + 1 >= serial.len() {
-                return Err(CryptoError::CryptoLibError(0));
-            }
-            serial[curr_idx] = HEX_CHARS[h1];
-            serial[curr_idx + 1] = HEX_CHARS[h2];
-            curr_idx += 2;
-        }
-        Ok(())
+        digest.write_hex_str(serial)
     }
 }
 

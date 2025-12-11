@@ -25,7 +25,7 @@ use crate::{
     DpeProfile,
 };
 use core::mem::size_of;
-use zerocopy::{FromBytes, Immutable, KnownLayout};
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 mod certify_key;
 mod derive_context;
@@ -93,10 +93,23 @@ impl Command<'_> {
             T::ref_from_prefix(bytes).map_err(|_| DpeErrorCode::InvalidArgument)?;
         Ok(build(prefix))
     }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        match self {
+            Command::CertifyKey(cmd) => cmd.as_bytes(),
+            Command::DeriveContext(cmd) => cmd.as_bytes(),
+            Command::GetCertificateChain(cmd) => cmd.as_bytes(),
+            Command::DestroyCtx(cmd) => cmd.as_bytes(),
+            Command::GetProfile => &[],
+            Command::InitCtx(cmd) => cmd.as_bytes(),
+            Command::RotateCtx(cmd) => cmd.as_bytes(),
+            Command::Sign(cmd) => cmd.as_bytes(),
+        }
+    }
 }
 
-impl From<Command<'_>> for u32 {
-    fn from(cmd: Command) -> u32 {
+impl From<&Command<'_>> for u32 {
+    fn from(cmd: &Command) -> u32 {
         match cmd {
             Command::GetProfile => Command::GET_PROFILE,
             Command::InitCtx(_) => Command::INITIALIZE_CONTEXT,
@@ -108,6 +121,18 @@ impl From<Command<'_>> for u32 {
             Command::DestroyCtx(_) => Command::DESTROY_CONTEXT,
             Command::GetCertificateChain(_) => Command::GET_CERTIFICATE_CHAIN,
         }
+    }
+}
+
+impl From<&mut Command<'_>> for u32 {
+    fn from(cmd: &mut Command) -> u32 {
+        (&*cmd).into()
+    }
+}
+
+impl From<Command<'_>> for u32 {
+    fn from(cmd: Command) -> u32 {
+        (&cmd).into()
     }
 }
 

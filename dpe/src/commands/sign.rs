@@ -57,6 +57,16 @@ impl SignCommand<'_> {
             T::ref_from_prefix(bytes).map_err(|_| DpeErrorCode::InvalidArgument)?;
         Ok(build(prefix))
     }
+    pub fn as_bytes(&self) -> &[u8] {
+        match self {
+            #[cfg(feature = "p256")]
+            SignCommand::P256(cmd) => cmd.as_bytes(),
+            #[cfg(feature = "p384")]
+            SignCommand::P384(cmd) => cmd.as_bytes(),
+            #[cfg(feature = "ml-dsa")]
+            SignCommand::ExternalMu87(cmd) => cmd.as_bytes(),
+        }
+    }
 }
 
 impl CommandExecution for SignCommand<'_> {
