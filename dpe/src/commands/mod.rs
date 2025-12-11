@@ -9,6 +9,7 @@ pub use self::derive_context::{
 };
 pub use self::destroy_context::DestroyCtxCmd;
 pub use self::get_certificate_chain::GetCertificateChainCmd;
+pub use self::get_profile::GetProfileCmd;
 pub use self::initialize_context::InitCtxCmd;
 
 pub use self::certify_key::{
@@ -44,8 +45,7 @@ mod sign;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Command<'a> {
-    // GetProfile has a different signature than the rest of the functions, we want the same wrapper that the other functions have
-    GetProfile(&'a get_profile::GetProfileCmd),
+    GetProfile(&'a GetProfileCmd),
     InitCtx(&'a InitCtxCmd),
     DeriveContext(DeriveContextCommand<'a>),
     CertifyKey(CertifyKeyCommand<'a>),
@@ -246,7 +246,7 @@ pub mod tests {
 
     pub const PROFILES: [DpeProfile; 2] = [DpeProfile::P256Sha256, DpeProfile::P384Sha384];
 
-    const TEST_GET_PROFILE_CMD: get_profile::GetProfileCmd = get_profile::GetProfileCmd {};
+    const TEST_GET_PROFILE_CMD: GetProfileCmd = GetProfileCmd;
 
     const DEFAULT_COMMAND_HDR: CommandHdr = CommandHdr {
         magic: CommandHdr::DPE_COMMAND_MAGIC,

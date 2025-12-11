@@ -5,7 +5,8 @@ use crate::{
     dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
     response::{DpeErrorCode, Response},
 };
-use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
+#[cfg(not(feature = "no-cfi"))]
+use caliptra_cfi_derive_git::cfi_impl_fn;
 
 #[repr(C)]
 #[derive(
@@ -18,7 +19,7 @@ use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
     zerocopy::KnownLayout,
     Default,
 )]
-pub struct GetProfileCmd {}
+pub struct GetProfileCmd;
 
 impl CommandExecution for GetProfileCmd {
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
