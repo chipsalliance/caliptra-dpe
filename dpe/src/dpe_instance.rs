@@ -143,9 +143,7 @@ impl DpeInstance {
     ) -> Result<Response, DpeErrorCode> {
         let command = self.deserialize_command(cmd)?;
         let resp = match cfi_launder(command) {
-            Command::GetProfile => Ok(Response::GetProfile(
-                self.get_profile(&mut env.platform, env.state.support)?,
-            )),
+            Command::GetProfile(cmd) => cmd.execute(self, env, locality),
             Command::InitCtx(cmd) => cmd.execute(self, env, locality),
             Command::DeriveContext(cmd) => cmd.execute(self, env, locality),
             Command::CertifyKey(cmd) => cmd.execute(self, env, locality),
