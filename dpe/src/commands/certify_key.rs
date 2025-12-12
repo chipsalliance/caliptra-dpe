@@ -608,7 +608,9 @@ mod tests {
                 }
                 #[cfg(feature = "ml-dsa")]
                 SignatureAlgorithm::MlDsa(MldsaAlgorithm::ExternalMu87) => {
-                    // TODO Replace RustCrypto with OpenSSL
+                    // TODO Replace RustCrypto with OpenSSL.
+                    //      See https://github.com/rust-openssl/rust-openssl/pull/2405
+                    //      for the current state of ml-dsa OpenSSL bindings.
                     use pkcs8::DecodePrivateKey;
                     let key: ml_dsa::KeyPair<ml_dsa::MlDsa87> = ml_dsa::KeyPair::from_pkcs8_der(
                         include_bytes!("../../../platform/src/test_data/key_mldsa_87.der"),
@@ -620,19 +622,47 @@ mod tests {
                         signer_info.signature.as_bytes().len()
                     );
                     let sig = signer_info
-                            .signature
-                            // clundin: I would expect `as_bytes` to drop the ASN.1 Octet String
-                            // information, since it claims to return the raw inner string.
-                            .as_bytes()
-                            // slice away the DER tag and length bytes to get the raw signature.
-                            .get(8..)
-                            .unwrap();
+                        .signature
+                        // clundin: I would expect `as_bytes` to drop the ASN.1 Octet String
+                        // information, since it claims to return the raw inner string.
+                        .as_bytes()
+                        // slice away the DER tag and length bytes to get the raw signature.
+                        .get(8..)
+                        .unwrap();
                     let sig_bytes = EncodedSignature::<ml_dsa::MlDsa87>::try_from(sig).unwrap();
-                    let csr_sig: ml_dsa::Signature<ml_dsa::MlDsa87> = ml_dsa::Signature::decode(
-                        &sig_bytes
+                    let csr_sig: ml_dsa::Signature<ml_dsa::MlDsa87> =
+                        ml_dsa::Signature::decode(&sig_bytes).expect("Error decoding signature");
+
+                    // Verify the csr signature
+                    use ml_dsa::signature::Verifier;
+                    assert!(key
+                        .verifying_key()
+                        .verify(csr_digest.as_slice(), &csr_sig)
+                        .is_ok());
+
+                    // validate certification request info signature
+                    let sig_bytes = EncodedSignature::<ml_dsa::MlDsa87>::try_from(
+                        csr.signature_value.data.as_ref(),
                     )
-                    .expect("Error decoding signature");
-                    todo!()
+                    .unwrap();
+                    let cri_sig: ml_dsa::Signature<ml_dsa::MlDsa87> =
+                        ml_dsa::Signature::decode(&sig_bytes)
+                            .expect("Error decoding csr info signature");
+
+                    // validate certification request info subject pki
+                    let PublicKey::Unknown(ml_dsa_ver_key) = cri.subject_pki.parsed().unwrap()
+                    else {
+                        panic!("Error: Failed to parse public key correctly.");
+                    };
+                    let encoded_ver_key =
+                        ml_dsa::EncodedVerifyingKey::<ml_dsa::MlDsa87>::try_from(ml_dsa_ver_key)
+                            .unwrap();
+                    let subject_pki: ml_dsa::VerifyingKey<ml_dsa::MlDsa87> =
+                        ml_dsa::VerifyingKey::decode(&encoded_ver_key);
+
+                    let cri_digest = env.crypto.hash(cri.raw).unwrap();
+                    assert!(subject_pki.verify(cri_digest.as_slice(), &cri_sig).is_ok());
+                    info!("Ok");
                 }
             }
 
