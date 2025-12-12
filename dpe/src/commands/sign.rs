@@ -15,7 +15,9 @@ use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq, cfi_assert_ne};
 use cfg_if::cfg_if;
 #[cfg(any(feature = "p256", feature = "p384"))]
 use crypto::ecdsa::EcdsaSignature;
-use crypto::{Crypto, Digest, Signature};
+#[cfg(any(feature = "p256", feature = "p384"))]
+use crypto::Digest;
+use crypto::{Crypto, SignData, Signature};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 #[repr(C)]
@@ -106,7 +108,7 @@ fn sign(
     env: &mut DpeEnv<impl DpeTypes>,
     idx: usize,
     label: &[u8],
-    digest: &Digest,
+    data: &SignData,
 ) -> Result<Signature, DpeErrorCode> {
     let cdi_digest = dpe.compute_measurement_hash(env, idx)?;
     let cdi = env.crypto.derive_cdi(&cdi_digest, b"DPE")?;
@@ -120,7 +122,7 @@ fn sign(
     }
     let (priv_key, pub_key) = key_pair?;
 
-    Ok(env.crypto.sign_with_derived(digest, &priv_key, &pub_key)?)
+    Ok(env.crypto.sign_with_derived(data, &priv_key, &pub_key)?)
 }
 
 fn execute(
@@ -128,7 +130,7 @@ fn execute(
     env: &mut DpeEnv<impl DpeTypes>,
     handle: &ContextHandle,
     label: &[u8],
-    digest: &[u8],
+    data: &[u8],
     locality: u32,
 ) -> Result<Response, DpeErrorCode> {
     let idx = env.state.get_active_context_pos(handle, locality)?;
@@ -144,26 +146,26 @@ fn execute(
         }
     }
 
-    let digest = match dpe.profile {
+    let data = match dpe.profile {
         #[cfg(feature = "p256")]
-        crate::DpeProfile::P256Sha256 => Digest::Sha256(
-            crypto::Sha256::read_from_bytes(digest)
+        crate::DpeProfile::P256Sha256 => SignData::Digest(Digest::Sha256(
+            crypto::Sha256::read_from_bytes(data)
                 .map_err(|_| DpeErrorCode::Crypto(crypto::CryptoError::Size))?,
-        ),
+        )),
         #[cfg(feature = "p384")]
-        crate::DpeProfile::P384Sha384 => Digest::Sha384(
-            crypto::Sha384::read_from_bytes(digest)
+        crate::DpeProfile::P384Sha384 => SignData::Digest(Digest::Sha384(
+            crypto::Sha384::read_from_bytes(data)
                 .map_err(|_| DpeErrorCode::Crypto(crypto::CryptoError::Size))?,
-        ),
+        )),
         #[cfg(feature = "ml-dsa")]
         crate::DpeProfile::Mldsa87ExternalMu => {
-            let _ = digest;
+            let _ = data;
             todo!("Add ML-DSA sign support")
         }
         _ => Err(DpeErrorCode::InvalidArgument)?,
     };
 
-    let mut response: SignResp = match sign(dpe, env, idx, label, &digest)? {
+    let mut response: SignResp = match sign(dpe, env, idx, label, &data)? {
         #[cfg(feature = "p256")]
         Signature::Ecdsa(EcdsaSignature::Ecdsa256(sig)) => {
             use crate::response::SignP256Resp;

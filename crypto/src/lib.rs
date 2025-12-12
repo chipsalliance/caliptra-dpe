@@ -45,6 +45,31 @@ pub trait DigestType {
 }
 
 #[derive(Debug, Clone, Copy)]
+pub enum SignDataAlgorithm {
+    Sha256,
+    Sha384,
+    Mu,
+}
+
+impl SignDataAlgorithm {
+    pub const fn size(&self) -> usize {
+        match self {
+            Self::Sha256 => 32,
+            Self::Sha384 => 48,
+            Self::Mu => 64,
+        }
+    }
+}
+
+pub trait SignDataType {
+    const SIGN_DATA_ALGORITHM: SignDataAlgorithm;
+
+    fn digest_algorithm(&self) -> SignDataAlgorithm {
+        Self::SIGN_DATA_ALGORITHM
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
 pub enum DigestAlgorithm {
     Sha256,
     Sha384,
@@ -128,12 +153,20 @@ impl DigestType for Sha256 {
     const DIGEST_ALGORITHM: DigestAlgorithm = DigestAlgorithm::Sha256;
 }
 
+impl SignDataType for Sha256 {
+    const SIGN_DATA_ALGORITHM: SignDataAlgorithm = SignDataAlgorithm::Sha256;
+}
+
 #[derive(FromBytes, IntoBytes, KnownLayout, Immutable)]
 #[repr(C)]
 pub struct Sha384(pub [u8; DigestAlgorithm::Sha384.size()]);
 
 impl DigestType for Sha384 {
     const DIGEST_ALGORITHM: DigestAlgorithm = DigestAlgorithm::Sha384;
+}
+
+impl SignDataType for Sha384 {
+    const SIGN_DATA_ALGORITHM: SignDataAlgorithm = SignDataAlgorithm::Sha384;
 }
 
 pub enum Digest {
@@ -197,6 +230,96 @@ impl From<[u8; 32]> for Digest {
 impl From<[u8; 48]> for Digest {
     fn from(digest: [u8; 48]) -> Self {
         Digest::Sha384(Sha384(digest))
+    }
+}
+
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable)]
+#[repr(C)]
+pub struct Mu(pub [u8; 64]);
+
+impl SignDataType for Mu {
+    const SIGN_DATA_ALGORITHM: SignDataAlgorithm = SignDataAlgorithm::Mu;
+}
+
+impl From<[u8; 64]> for Mu {
+    fn from(mu: [u8; 64]) -> Self {
+        Mu(mu)
+    }
+}
+
+pub enum PrecomputedSignData {
+    Digest(Digest),
+    Mu(Mu),
+}
+
+impl PrecomputedSignData {
+    pub fn size(&self) -> usize {
+        match self {
+            Self::Digest(dig) => dig.size(),
+            Self::Mu(mu) => mu.0.len(),
+        }
+    }
+    pub fn as_slice(&self) -> &[u8] {
+        match self {
+            Self::Digest(dig) => dig.as_slice(),
+            Self::Mu(mu) => mu.0.as_slice(),
+        }
+    }
+}
+
+impl From<Digest> for PrecomputedSignData {
+    fn from(digest: Digest) -> Self {
+        PrecomputedSignData::Digest(digest)
+    }
+}
+
+impl From<Mu> for PrecomputedSignData {
+    fn from(mu: Mu) -> Self {
+        PrecomputedSignData::Mu(mu)
+    }
+}
+
+pub enum SignData<'a> {
+    Digest(Digest),
+    Mu(Mu),
+    Raw(&'a [u8]),
+}
+
+impl SignData<'_> {
+    pub fn size(&self) -> usize {
+        match self {
+            Self::Digest(dig) => dig.size(),
+            Self::Mu(mu) => mu.0.len(),
+            Self::Raw(raw) => raw.len(),
+        }
+    }
+    pub fn as_slice(&self) -> &[u8] {
+        match self {
+            Self::Digest(dig) => dig.as_slice(),
+            Self::Mu(mu) => mu.0.as_slice(),
+            Self::Raw(raw) => raw,
+        }
+    }
+}
+
+impl From<Digest> for SignData<'_> {
+    fn from(digest: Digest) -> Self {
+        SignData::Digest(digest)
+    }
+}
+
+impl From<Mu> for SignData<'_> {
+    fn from(mu: Mu) -> Self {
+        SignData::Mu(mu)
+    }
+}
+
+impl From<PrecomputedSignData> for SignData<'_> {
+    fn from(precalc: PrecomputedSignData) -> Self {
+        match precalc {
+            PrecomputedSignData::Digest(dig) => SignData::Digest(dig),
+            PrecomputedSignData::Mu(mu) => SignData::Mu(mu),
+        }
     }
 }
 
@@ -274,7 +397,6 @@ pub trait CryptoSuite: Crypto + SignatureType + DigestType {
     ///
     /// # Arguments
     ///
-    /// * `algs` - Length of algorithm to use.
     /// * `pub_key` - EC public key
     /// * `serial` - Output buffer to write serial number
     fn get_pubkey_serial(
@@ -327,7 +449,6 @@ pub trait Crypto {
     ///
     /// # Arguments
     ///
-    /// * `algs` - Which length of algorithm to use.
     /// * `bytes` - Value to be hashed.
     fn hash(&mut self, bytes: &[u8]) -> Result<Digest, CryptoError> {
         let mut hasher = self.hash_initialize()?;
@@ -335,20 +456,25 @@ pub trait Crypto {
         hasher.finish()
     }
 
-    /// Initialize a running hash. Returns an object that will be able to complete the rest.
+    /// Compute the information needed to sign data
     ///
-    /// Used for hashing multiple buffers that may not be in consecutive memory.
+    /// This is pre-hashing for classic signing algorithms, but this allows for computing external
+    /// mu for ML-DSA.
     ///
     /// # Arguments
     ///
-    /// * `algs` - Which length of algorithm to use.
+    /// * `bytes` - Raw bytes to be signed
+    fn precompute_sign_data(&mut self, bytes: &[u8]) -> Result<PrecomputedSignData, CryptoError>;
+
+    /// Initialize a running hash. Returns an object that will be able to complete the rest.
+    ///
+    /// Used for hashing multiple buffers that may not be in consecutive memory.
     fn hash_initialize(&mut self) -> Result<Self::Hasher<'_>, CryptoError>;
 
     /// Derive a CDI based on the current base CDI and measurements
     ///
     /// # Arguments
     ///
-    /// * `algs` - Which length of algorithms to use.
     /// * `measurement` - A digest of the measurements which should be used for CDI derivation
     /// * `info` - Caller-supplied info string to use in CDI derivation
     fn derive_cdi(&mut self, measurement: &Digest, info: &[u8]) -> Result<Self::Cdi, CryptoError>;
@@ -357,7 +483,6 @@ pub trait Crypto {
     ///
     /// # Arguments
     ///
-    /// * `algs` - Which length of algorithms to use.
     /// * `measurement` - A digest of the measurements which should be used for CDI derivation
     /// * `info` - Caller-supplied info string to use in CDI derivation
     fn derive_exported_cdi(
@@ -392,11 +517,9 @@ pub trait Crypto {
     ///
     /// # Arguments
     ///
-    /// * `algs` - Which length of algorithms to use.
     /// * `cdi` - Caller-supplied private key to use in public key derivation
     /// * `label` - Caller-supplied label to use in asymmetric key derivation
     /// * `info` - Caller-supplied info string to use in asymmetric key derivation
-    ///
     fn derive_key_pair(
         &mut self,
         cdi: &Self::Cdi,
@@ -408,12 +531,10 @@ pub trait Crypto {
     ///
     /// # Arguments
     ///
-    /// * `algs` - Which length of algorithms to use.
     /// * `exported_handle` - The handle associated with an existing CDI. Created by
     ///   `derive_cdi_exported`
     /// * `label` - Caller-supplied label to use in asymmetric key derivation
     /// * `info` - Caller-supplied info string to use in asymmetric key derivation
-    ///
     fn derive_key_pair_exported(
         &mut self,
         exported_handle: &ExportedCdiHandle,
@@ -449,22 +570,20 @@ pub trait Crypto {
     ///
     /// # Arguments
     ///
-    /// * `algs` - Which length of algorithms to use.
-    /// * `digest` - Digest of data to be signed.
-    fn sign_with_alias(&mut self, digest: &Digest) -> Result<Signature, CryptoError>;
+    /// * `data` - Data to be signed.
+    fn sign_with_alias(&mut self, data: &SignData) -> Result<Signature, CryptoError>;
 
     /// Sign `digest` with a derived key-pair from the CDI and caller-supplied private key
     ///
     /// # Arguments
     ///
-    /// * `algs` - Which length of algorithms to use.
-    /// * `digest` - Digest of data to be signed.
+    /// * `data` - Data to be signed.
     /// * `priv_key` - Caller-supplied private key to use in public key derivation
     /// * `pub_key` - The public key corresponding to `priv_key`. An implementation may
     ///    optionally use pub_key to validate any generated signatures.
     fn sign_with_derived(
         &mut self,
-        digest: &Digest,
+        data: &SignData,
         priv_key: &Self::PrivKey,
         pub_key: &PubKey,
     ) -> Result<Signature, CryptoError>;

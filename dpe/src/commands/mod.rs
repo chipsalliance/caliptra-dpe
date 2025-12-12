@@ -102,8 +102,9 @@ impl Command<'_> {
             Command::DeriveContext(cmd) => cmd.as_bytes(),
             Command::GetCertificateChain(cmd) => cmd.as_bytes(),
             Command::DestroyCtx(cmd) => cmd.as_bytes(),
-            Command::GetProfile => &[],
+            Command::GetProfile(cmd) => cmd.as_bytes(),
             Command::InitCtx(cmd) => cmd.as_bytes(),
+            #[cfg(not(feature = "disable_rotate_context"))]
             Command::RotateCtx(cmd) => cmd.as_bytes(),
             Command::Sign(cmd) => cmd.as_bytes(),
         }
