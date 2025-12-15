@@ -3106,6 +3106,7 @@ pub(crate) mod tests {
         );
     }
 
+    #[cfg(not(feature = "ml-dsa"))]
     #[test]
     fn test_subject_pubkey() {
         let mut cert = [0u8; 384];
@@ -3119,6 +3120,25 @@ pub(crate) mod tests {
         assert_eq!(
             CertWriter::new(&mut [], DPE_PROFILE, true)
                 .get_ecdsa_subject_pubkey_info_size(&test_key, true)
+                .unwrap(),
+            bytes_written
+        );
+    }
+
+    #[cfg(feature = "ml-dsa")]
+    #[test]
+    fn test_subject_pubkey() {
+        let mut cert = [0u8; 4096];
+        let test_key = MldsaPublicKey([0; MldsaAlgorithm::ExternalMu87.public_key_size()]);
+
+        let mut w = CertWriter::new(&mut cert, DPE_PROFILE, true);
+        let bytes_written = w.encode_mldsa_subject_pubkey_info(&test_key).unwrap();
+
+        SubjectPublicKeyInfo::from_der(&cert[..bytes_written]).unwrap();
+
+        assert_eq!(
+            CertWriter::new(&mut [], DPE_PROFILE, true)
+                .get_mldsa_subject_pubkey_info_size(&test_key, true)
                 .unwrap(),
             bytes_written
         );
