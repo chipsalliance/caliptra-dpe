@@ -514,11 +514,7 @@ impl CertWriter<'_> {
         sig: &MldsaSignature,
         tagged: bool,
     ) -> Result<usize, DpeErrorCode> {
-        let seq_size =
-            Self::get_structure_size(Self::get_integer_bytes_size(sig.as_slice(), true)?, true)?;
-
-        // Wrapping structure size
-        Self::get_structure_size(seq_size, tagged)
+        Self::get_structure_size(sig.as_slice().len(), tagged)
     }
 
     /// If `tagged`, include the tag and size fields
@@ -1057,6 +1053,10 @@ impl CertWriter<'_> {
     fn encode_bytes(&mut self, bytes: &[u8]) -> Result<usize, DpeErrorCode> {
         let size = bytes.len();
 
+        if self.offset >= self.certificate.len() || self.offset + size > self.certificate.len() {
+            return Err(DpeErrorCode::InternalError);
+        }
+
         self.certificate
             .get_mut(self.offset..self.offset + size)
             .ok_or(DpeErrorCode::InternalError)?
@@ -1451,16 +1451,11 @@ impl CertWriter<'_> {
         sig: &MldsaSignature,
     ) -> Result<usize, DpeErrorCode> {
         let sig = sig.as_bytes();
-        let seq_size = Self::get_integer_bytes_size(sig, true)?;
 
         // Encode OCTET STRING
         let mut bytes_written = self.encode_tag_field(Self::OCTET_STRING_TAG)?;
-        bytes_written += self.encode_size_field(Self::get_structure_size(seq_size, true)?)?;
-
-        // Encode SEQUENCE
-        bytes_written += self.encode_tag_field(Self::SEQUENCE_TAG)?;
-        bytes_written += self.encode_size_field(seq_size)?;
-        bytes_written += self.encode_integer_bytes(sig, true)?;
+        bytes_written += self.encode_size_field(sig.len())?;
+        bytes_written += self.encode_bytes(sig)?;
 
         Ok(bytes_written)
     }
@@ -3420,28 +3415,12 @@ pub(crate) mod tests {
         };
 
         let pub_key = match DPE_PROFILE.alg() {
-            #[cfg(feature = "dpe_profile_p256_sha256")]
-            SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit256) => {
-                PubKey::Ecdsa(EcdsaPubKey::Ecdsa256(test_pub))
-            }
-            #[cfg(feature = "dpe_profile_p384_sha384")]
-            SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384) => {
-                PubKey::Ecdsa(EcdsaPubKey::Ecdsa384(test_pub))
-            }
             #[cfg(feature = "ml-dsa")]
             SignatureAlgorithm::MlDsa(MldsaAlgorithm::ExternalMu87) => PubKey::MlDsa(test_pub),
             _ => panic!("Missing signature"),
         };
 
         let test_sig: Signature = match DPE_PROFILE.alg() {
-            #[cfg(feature = "dpe_profile_p256_sha256")]
-            SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit256) => Signature::Ecdsa(
-                EcdsaSig::from_slice(&[0xCC; ECC_INT_SIZE], &[0xDD; ECC_INT_SIZE]).into(),
-            ),
-            #[cfg(feature = "dpe_profile_p384_sha384")]
-            SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384) => Signature::Ecdsa(
-                EcdsaSig::from_slice(&[0xCC; ECC_INT_SIZE], &[0xDD; ECC_INT_SIZE]).into(),
-            ),
             #[cfg(feature = "ml-dsa")]
             SignatureAlgorithm::MlDsa(MldsaAlgorithm::ExternalMu87) => {
                 Signature::MlDsa(MldsaSignature([0xBB; ALGORITHM.signature_size()]))
@@ -3486,9 +3465,9 @@ pub(crate) mod tests {
 
     #[test]
     fn test_full_leaf() {
-        #[cfg(feature = "dpe_profile_p256_sha256")]
+        #[cfg(not(feature = "ml-dsa"))]
         let mut cert_buf = [0u8; 1024];
-        #[cfg(feature = "dpe_profile_p256_sha256")]
+        #[cfg(not(feature = "ml-dsa"))]
         let (_, cert) = build_test_cert_ecdsa(false, &mut cert_buf);
         #[cfg(feature = "ml-dsa")]
         let mut cert_buf = [0u8; 8192];
@@ -3556,9 +3535,9 @@ pub(crate) mod tests {
 
     #[test]
     fn test_full_ca() {
-        #[cfg(feature = "dpe_profile_p256_sha256")]
+        #[cfg(not(feature = "ml-dsa"))]
         let mut cert_buf = [0u8; 1024];
-        #[cfg(feature = "dpe_profile_p256_sha256")]
+        #[cfg(not(feature = "ml-dsa"))]
         let (_, cert) = build_test_cert_ecdsa(true, &mut cert_buf);
         #[cfg(feature = "ml-dsa")]
         let mut cert_buf = [0u8; 8192];

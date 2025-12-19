@@ -803,7 +803,7 @@ mod tests {
             if let x509_parser::public_key::PublicKey::Unknown(key) = pub_key {
                 ml_dsa::VerifyingKey::<ml_dsa::MlDsa87>::decode(key.try_into().unwrap())
             } else {
-                panic!();
+                panic!("unexpected public key in cert");
             }
         };
 

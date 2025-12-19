@@ -238,7 +238,7 @@ impl<S: SignatureType, D: DigestType, SD: SignDataType> RustCryptoImpl<S, D, SD>
             #[cfg(feature = "ml-dsa")]
             alg @ SignatureAlgorithm::MlDsa(MldsaAlgorithm::ExternalMu87) => {
                 let secret = hkdf_get_priv_key(alg, cdi, label, info)?;
-                let kp = MlDsa87::key_gen_internal(
+                let kp = MlDsa87::from_seed(
                     secret
                         .as_slice()
                         .try_into()
@@ -435,8 +435,7 @@ impl<S: SignatureType, D: DigestType, SD: SignDataType> Crypto for RustCryptoImp
             }
             #[cfg(feature = "ml-dsa")]
             SignatureAlgorithm::MlDsa(MldsaAlgorithm::ExternalMu87) => {
-                let ml_dsa_secret =
-                    MlDsa87::key_gen_internal(priv_key.0.as_slice().try_into().unwrap());
+                let ml_dsa_secret = MlDsa87::from_seed(priv_key.0.as_slice().try_into().unwrap());
                 self.mldsa_sign_data(&ml_dsa_secret, data)
             }
         }

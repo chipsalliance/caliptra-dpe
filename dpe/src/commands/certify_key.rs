@@ -464,7 +464,6 @@ mod tests {
     #[test]
     // TODO https://github.com/chipsalliance/caliptra-dpe/issues/450
     fn test_certify_key_csr() {
-        crate::tests::logger_init();
         // Verify that certify_key csr DICE extensions criticality matches the dpe_instance.
         for mark_dice_extensions_critical in [true, false] {
             CfiCounter::reset_for_test();
@@ -654,24 +653,14 @@ mod tests {
                         "CSR signature length: {}",
                         signer_info.signature.as_bytes().len()
                     );
-                    let sig = signer_info
-                        .signature
-                        // clundin: I would expect `as_bytes` to drop the ASN.1 Octet String
-                        // information, since it claims to return the raw inner string.
-                        .as_bytes()
-                        // slice away the DER tag and length bytes to get the raw signature.
-                        .get(8..)
-                        .unwrap();
+                    let sig = signer_info.signature.as_bytes();
                     let sig_bytes = EncodedSignature::<ml_dsa::MlDsa87>::try_from(sig).unwrap();
                     let csr_sig: ml_dsa::Signature<ml_dsa::MlDsa87> =
                         ml_dsa::Signature::decode(&sig_bytes).expect("Error decoding signature");
 
                     // Verify the csr signature
                     use ml_dsa::signature::Verifier;
-                    assert!(key
-                        .verifying_key()
-                        .verify(csr_digest.as_slice(), &csr_sig)
-                        .is_ok());
+                    assert!(key.verifying_key().verify(econtent, &csr_sig).is_ok());
 
                     // validate certification request info signature
                     let sig_bytes = EncodedSignature::<ml_dsa::MlDsa87>::try_from(
@@ -693,9 +682,7 @@ mod tests {
                     let subject_pki: ml_dsa::VerifyingKey<ml_dsa::MlDsa87> =
                         ml_dsa::VerifyingKey::decode(&encoded_ver_key);
 
-                    let cri_digest = env.crypto.hash(cri.raw).unwrap();
-                    assert!(subject_pki.verify(cri_digest.as_slice(), &cri_sig).is_ok());
-                    info!("Ok");
+                    assert!(subject_pki.verify(cri.raw, &cri_sig).is_ok());
                 }
             }
 

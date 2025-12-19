@@ -85,7 +85,23 @@ fn main() {
                         .as_bytes()
                         .to_vec()
                 } else {
-                    let ml_dsa_secret = MlDsa87::key_gen(&mut StdRng::from_entropy());
+                    use rand::RngCore;
+                    struct RngWrapper(StdRng);
+                    impl ml_dsa::signature::rand_core::RngCore for RngWrapper {
+                        fn next_u32(&mut self) -> u32 {
+                            self.0.next_u32()
+                        }
+                        fn next_u64(&mut self) -> u64 {
+                            self.0.next_u64()
+                        }
+                        fn fill_bytes(&mut self, dest: &mut [u8]) {
+                            self.0.fill_bytes(dest)
+                        }
+                    }
+                    impl ml_dsa::signature::rand_core::CryptoRng for RngWrapper {}
+
+                    let mut rng = RngWrapper(StdRng::from_entropy());
+                    let ml_dsa_secret = MlDsa87::key_gen(&mut rng);
                     ml_dsa_secret
                         .to_pkcs8_pem(Pkcs8LineEnding::default())
                         .unwrap()
