@@ -76,14 +76,83 @@ impl CommandExecution for SignCommand<'_> {
         env: &mut DpeEnv<impl DpeTypes>,
         locality: u32,
     ) -> Result<Response, DpeErrorCode> {
-        match self {
+        let (handle, label, data) = match *self {
             #[cfg(feature = "p256")]
-            SignCommand::P256(cmd) => cmd.execute(dpe, env, locality),
+            SignCommand::P256(cmd) => (&cmd.handle, &cmd.label, &cmd.digest),
             #[cfg(feature = "p384")]
-            SignCommand::P384(cmd) => cmd.execute(dpe, env, locality),
+            SignCommand::P384(cmd) => (&cmd.handle, &cmd.label, &cmd.digest),
             #[cfg(feature = "ml-dsa")]
-            SignCommand::Mldsa87(cmd) => cmd.execute(dpe, env, locality),
+            SignCommand::Mldsa87(cmd) => (&cmd.handle, &cmd.label, &cmd.digest),
+        };
+        let idx = env.state.get_active_context_pos(handle, locality)?;
+        let context = &env.state.contexts[idx];
+
+        if context.context_type == ContextType::Simulation {
+            return Err(DpeErrorCode::InvalidArgument);
         }
+
+        cfg_if! {
+            if #[cfg(not(feature = "no-cfi"))] {
+                cfi_assert_ne(context.context_type, ContextType::Simulation);
+            }
+        }
+
+        let data = match dpe.profile {
+            #[cfg(feature = "p256")]
+            crate::DpeProfile::P256Sha256 => SignData::Digest(Digest::Sha256(
+                crypto::Sha256::read_from_bytes(data)
+                    .map_err(|_| DpeErrorCode::Crypto(crypto::CryptoError::Size))?,
+            )),
+            #[cfg(feature = "p384")]
+            crate::DpeProfile::P384Sha384 => SignData::Digest(Digest::Sha384(
+                crypto::Sha384::read_from_bytes(data)
+                    .map_err(|_| DpeErrorCode::Crypto(crypto::CryptoError::Size))?,
+            )),
+            #[cfg(feature = "ml-dsa")]
+            crate::DpeProfile::Mldsa87 => SignData::Raw(data),
+            _ => Err(DpeErrorCode::InvalidArgument)?,
+        };
+
+        let mut response: SignResp = match sign(dpe, env, idx, label, &data)? {
+            #[cfg(feature = "p256")]
+            Signature::Ecdsa(EcdsaSignature::Ecdsa256(sig)) => {
+                use crate::response::SignP256Resp;
+                let (&sig_r, &sig_s) = sig.as_slice();
+                SignResp::P256(SignP256Resp {
+                    new_context_handle: ContextHandle::new_invalid(),
+                    sig_r,
+                    sig_s,
+                    resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
+                })
+            }
+            #[cfg(feature = "p384")]
+            Signature::Ecdsa(EcdsaSignature::Ecdsa384(sig)) => {
+                use crate::response::SignP384Resp;
+                let (&sig_r, &sig_s) = sig.as_slice();
+                SignResp::P384(SignP384Resp {
+                    new_context_handle: ContextHandle::new_invalid(),
+                    sig_r,
+                    sig_s,
+                    resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
+                })
+            }
+            #[cfg(feature = "ml-dsa")]
+            Signature::MlDsa(crypto::ml_dsa::MldsaSignature(sig)) => {
+                SignResp::MlDsa(crate::response::SignMlDsaResp {
+                    new_context_handle: ContextHandle::new_invalid(),
+                    sig,
+                    _padding: [0; 1],
+                    resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
+                })
+            }
+            _ => Err(DpeErrorCode::InvalidArgument)?,
+        };
+
+        // Rotate the handle if it isn't the default context.
+        dpe.roll_onetime_use_handle(env, idx)?;
+        response.set_handle(&env.state.contexts[idx].handle);
+
+        Ok(Response::Sign(response))
     }
 }
 
@@ -104,7 +173,9 @@ fn sign(
 ) -> Result<Signature, DpeErrorCode> {
     let cdi_digest = dpe.compute_measurement_hash(env, idx)?;
     let cdi = env.crypto.derive_cdi(&cdi_digest, b"DPE")?;
-    let key_pair = env.crypto.derive_key_pair(&cdi, label, b"ECC");
+    let profile = dpe.profile;
+    let context = profile.key_context();
+    let key_pair = env.crypto.derive_key_pair(&cdi, label, context);
     if cfi_launder(key_pair.is_ok()) {
         #[cfg(not(feature = "no-cfi"))]
         cfi_assert!(key_pair.is_ok());
@@ -117,85 +188,6 @@ fn sign(
     Ok(env.crypto.sign_with_derived(data, &priv_key, &pub_key)?)
 }
 
-fn execute(
-    dpe: &mut DpeInstance,
-    env: &mut DpeEnv<impl DpeTypes>,
-    handle: &ContextHandle,
-    label: &[u8],
-    data: &[u8],
-    locality: u32,
-) -> Result<Response, DpeErrorCode> {
-    let idx = env.state.get_active_context_pos(handle, locality)?;
-    let context = &env.state.contexts[idx];
-
-    if context.context_type == ContextType::Simulation {
-        return Err(DpeErrorCode::InvalidArgument);
-    }
-
-    cfg_if! {
-        if #[cfg(not(feature = "no-cfi"))] {
-            cfi_assert_ne(context.context_type, ContextType::Simulation);
-        }
-    }
-
-    let data = match dpe.profile {
-        #[cfg(feature = "p256")]
-        crate::DpeProfile::P256Sha256 => SignData::Digest(Digest::Sha256(
-            crypto::Sha256::read_from_bytes(data)
-                .map_err(|_| DpeErrorCode::Crypto(crypto::CryptoError::Size))?,
-        )),
-        #[cfg(feature = "p384")]
-        crate::DpeProfile::P384Sha384 => SignData::Digest(Digest::Sha384(
-            crypto::Sha384::read_from_bytes(data)
-                .map_err(|_| DpeErrorCode::Crypto(crypto::CryptoError::Size))?,
-        )),
-        #[cfg(feature = "ml-dsa")]
-        crate::DpeProfile::Mldsa87 => SignData::Raw(data),
-        _ => Err(DpeErrorCode::InvalidArgument)?,
-    };
-
-    let mut response: SignResp = match sign(dpe, env, idx, label, &data)? {
-        #[cfg(feature = "p256")]
-        Signature::Ecdsa(EcdsaSignature::Ecdsa256(sig)) => {
-            use crate::response::SignP256Resp;
-            let (&sig_r, &sig_s) = sig.as_slice();
-            SignResp::P256(SignP256Resp {
-                new_context_handle: ContextHandle::new_invalid(),
-                sig_r,
-                sig_s,
-                resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
-            })
-        }
-        #[cfg(feature = "p384")]
-        Signature::Ecdsa(EcdsaSignature::Ecdsa384(sig)) => {
-            use crate::response::SignP384Resp;
-            let (&sig_r, &sig_s) = sig.as_slice();
-            SignResp::P384(SignP384Resp {
-                new_context_handle: ContextHandle::new_invalid(),
-                sig_r,
-                sig_s,
-                resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
-            })
-        }
-        #[cfg(feature = "ml-dsa")]
-        Signature::MlDsa(crypto::ml_dsa::MldsaSignature(sig)) => {
-            SignResp::MlDsa(crate::response::SignMlDsaResp {
-                new_context_handle: ContextHandle::new_invalid(),
-                sig,
-                _padding: [0; 1],
-                resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
-            })
-        }
-        _ => Err(DpeErrorCode::InvalidArgument)?,
-    };
-
-    // Rotate the handle if it isn't the default context.
-    dpe.roll_onetime_use_handle(env, idx)?;
-    response.set_handle(&env.state.contexts[idx].handle);
-
-    Ok(Response::Sign(response))
-}
-
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, IntoBytes, FromBytes, Immutable, KnownLayout)]
 pub struct SignP256Cmd {
@@ -205,6 +197,7 @@ pub struct SignP256Cmd {
     pub digest: [u8; 32],
 }
 
+#[cfg(feature = "p256")]
 impl CommandExecution for SignP256Cmd {
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     fn execute(
@@ -213,7 +206,7 @@ impl CommandExecution for SignP256Cmd {
         env: &mut DpeEnv<impl DpeTypes>,
         locality: u32,
     ) -> Result<Response, DpeErrorCode> {
-        execute(dpe, env, &self.handle, &self.label, &self.digest, locality)
+        SignCommand::P256(self).execute(dpe, env, locality)
     }
 }
 
@@ -226,6 +219,7 @@ pub struct SignP384Cmd {
     pub digest: [u8; 48],
 }
 
+#[cfg(feature = "p384")]
 impl CommandExecution for SignP384Cmd {
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     fn execute(
@@ -234,7 +228,7 @@ impl CommandExecution for SignP384Cmd {
         env: &mut DpeEnv<impl DpeTypes>,
         locality: u32,
     ) -> Result<Response, DpeErrorCode> {
-        execute(dpe, env, &self.handle, &self.label, &self.digest, locality)
+        SignCommand::P384(self).execute(dpe, env, locality)
     }
 }
 
@@ -247,6 +241,7 @@ pub struct SignMldsa87Cmd {
     pub digest: [u8; 48],
 }
 
+#[cfg(feature = "ml-dsa")]
 impl CommandExecution for SignMldsa87Cmd {
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     fn execute(
@@ -255,7 +250,7 @@ impl CommandExecution for SignMldsa87Cmd {
         env: &mut DpeEnv<impl DpeTypes>,
         locality: u32,
     ) -> Result<Response, DpeErrorCode> {
-        execute(dpe, env, &self.handle, &self.label, &self.digest, locality)
+        SignCommand::Mldsa87(self).execute(dpe, env, locality)
     }
 }
 
