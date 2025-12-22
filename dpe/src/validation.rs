@@ -38,7 +38,8 @@ pub enum ValidationError {
     InactiveParent = 0x16,
     InactiveChild = 0x17,
     DpeNotMarkedInitialized = 0x18,
-    VersionMismatch = 0x19,
+    InvalidMarker = 0x19,
+    VersionMismatch = 0x1A,
 }
 
 impl ValidationError {
@@ -65,6 +66,9 @@ impl DpeValidator<'_> {
     /// Returns an error if there is any illegal state or inconsistencies
     /// present within the DPE instance.
     fn validate_dpe_state(&self) -> Result<(), ValidationError> {
+        if self.dpe.marker != State::MAGIC {
+            return Err(ValidationError::InvalidMarker);
+        }
         if self.dpe.version != State::VERSION {
             return Err(ValidationError::VersionMismatch);
         }
@@ -526,6 +530,22 @@ pub mod tests {
         assert_eq!(
             dpe_validator.validate_dpe_state(),
             Err(ValidationError::MixedContextLocality)
+        );
+    }
+
+    #[test]
+    fn test_invalid_marker() {
+        CfiCounter::reset_for_test();
+        let dpe_validator = DpeValidator {
+            dpe: &mut State::default(),
+        };
+        assert_eq!(Ok(()), dpe_validator.validate_dpe_state());
+
+        // Changing the marker magic value should cause an error
+        dpe_validator.dpe.marker = 0;
+        assert_eq!(
+            dpe_validator.validate_dpe_state(),
+            Err(ValidationError::InvalidMarker)
         );
     }
 
