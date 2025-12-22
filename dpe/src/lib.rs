@@ -117,6 +117,13 @@ impl DpeProfile {
             }
         }
     }
+    pub fn key_context(&self) -> &[u8] {
+        match self {
+            DpeProfile::P256Sha256 | DpeProfile::P384Sha384 => b"ECC",
+            #[cfg(feature = "ml-dsa")]
+            DpeProfile::Mldsa87 => b"MLDSA",
+        }
+    }
 }
 
 impl From<DpeProfile> for u32 {

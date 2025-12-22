@@ -159,12 +159,13 @@ impl CommandExecution for CertifyKeyCommand<'_> {
             }
         }
 
+        let profile = dpe.profile;
         let args = CreateDpeCertArgs {
             handle,
             locality,
             cdi_label: b"DPE",
             key_label: label,
-            context: b"ECC",
+            context: profile.key_context(),
             ueid: label,
             dice_extensions_are_critical: env
                 .state
@@ -355,15 +356,16 @@ mod tests {
     use caliptra_cfi_lib_git::CfiCounter;
     use cms::{
         content_info::{CmsVersion, ContentInfo},
-        signed_data::{SignedData, SignerIdentifier, SignerInfo},
+        signed_data::{SignedData, SignerIdentifier},
     };
     #[cfg(feature = "ml-dsa")]
     use crypto::ml_dsa::{MldsaAlgorithm, MldsaPublicKey};
     use crypto::{
         ecdsa::{EcdsaAlgorithm, EcdsaPub},
-        Crypto, CryptoSuite, Digest, PubKey, SignatureAlgorithm,
+        Crypto, CryptoSuite, PubKey, SignatureAlgorithm,
     };
     use der::{Decode, Encode};
+    #[cfg(feature = "ml-dsa")]
     use ml_dsa::EncodedSignature;
     use openssl::{
         bn::BigNum,
