@@ -10,12 +10,45 @@ use zeroize::ZeroizeOnDrop;
 
 #[derive(Clone, FromBytes, IntoBytes, KnownLayout, Immutable, ZeroizeOnDrop)]
 #[repr(C)]
-pub struct EcdsaBuf<const K: usize> {
+pub struct EcdsaPub<const K: usize> {
+    pub x: [u8; K],
+    pub y: [u8; K],
+}
+
+impl<const K: usize> EcdsaPub<K> {
+    pub fn from_slice(x: &[u8; K], y: &[u8; K]) -> Self {
+        let mut key = Self::default();
+        key.x.clone_from_slice(x);
+        key.y.clone_from_slice(y);
+        key
+    }
+
+    pub fn as_slice(&self) -> (&[u8; K], &[u8; K]) {
+        (&self.x, &self.y)
+    }
+
+    pub const fn curve_size(&self) -> usize {
+        K
+    }
+}
+
+impl<const K: usize> Default for EcdsaPub<K> {
+    fn default() -> Self {
+        Self {
+            x: [0; K],
+            y: [0; K],
+        }
+    }
+}
+
+#[derive(Clone, FromBytes, IntoBytes, KnownLayout, Immutable, ZeroizeOnDrop)]
+#[repr(C)]
+pub struct EcdsaSig<const K: usize> {
     pub r: [u8; K],
     pub s: [u8; K],
 }
 
-impl<const K: usize> EcdsaBuf<K> {
+impl<const K: usize> EcdsaSig<K> {
     pub fn from_slice(r: &[u8; K], s: &[u8; K]) -> Self {
         let mut key = Self::default();
         key.r.clone_from_slice(r);
@@ -32,7 +65,7 @@ impl<const K: usize> EcdsaBuf<K> {
     }
 }
 
-impl<const K: usize> Default for EcdsaBuf<K> {
+impl<const K: usize> Default for EcdsaSig<K> {
     fn default() -> Self {
         Self {
             r: [0; K],
@@ -40,9 +73,6 @@ impl<const K: usize> Default for EcdsaBuf<K> {
         }
     }
 }
-
-pub type EcdsaPub<const K: usize> = EcdsaBuf<K>;
-pub type EcdsaSig<const K: usize> = EcdsaBuf<K>;
 
 pub mod curve_256 {
 
