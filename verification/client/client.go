@@ -70,7 +70,7 @@ func NewClient(t Transport, p Profile) (DPEClient, error) {
 		return NewDPEABI256(t)
 	case ProfileP384SHA384:
 		return NewDPEABI384(t)
-	case ProfileMldsa87ExternalMu:
+	case ProfileMldsa87:
 		return NewDPEABIMldsa87(t)
 	default:
 		return nil, fmt.Errorf("cannot create a DPE client for profile %d", p)

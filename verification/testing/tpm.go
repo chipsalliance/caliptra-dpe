@@ -75,7 +75,7 @@ func TestTpmPolicySigning(d dpe.TestDPEInstance, c dpe.DPEClient, t *testing.T) 
 	if err != nil {
 		t.Fatalf("Could not get profile: %v", err)
 	}
-	if profile == dpe.ProfileMldsa87ExternalMu {
+	if profile == dpe.ProfileMldsa87 {
 		// TODO(clundin): Add Test support for ML-DSA.
 		t.Skip("TPM Policy Signing test not supported for ML-DSA")
 	}

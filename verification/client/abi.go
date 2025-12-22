@@ -296,7 +296,7 @@ type DPEABI256 = DPEABI[NISTP256Parameter, SHA256Digest, DPEFullCertificate, ECD
 // DPEABI384 is a client that implements DPE_PROFILE_IROT_P384_SHA384
 type DPEABI384 = DPEABI[NISTP384Parameter, SHA384Digest, DPEFullCertificate, ECDSASignature[SHA384Digest]]
 
-// DPEABIMldsa87 is a client that implements DPE_PROFILE_IROT_MLDSA_87_EXTERNAL_MU
+// DPEABIMldsa87 is a client that implements DPE_PROFILE_IROT_MLDSA_87
 type DPEABIMldsa87 = DPEABI[Mldsa87Parameter, SHA384Digest, DPEMldsaCertificate, Mldsa87Signature]
 
 // dpeProfileImplementsTypeConstraints checks that the requested DPEABI type constraints are compatible with the DPE profile.
@@ -328,7 +328,7 @@ func dpeProfileImplementsTypeConstraints[C Curve, D DigestAlgorithm, Cert DPECer
 	} else if isP384 && isSHA384 && !isMin && isEcdsa384Sig {
 		targetProfile = ProfileP384SHA384
 	} else if isMldsa87Param && isSHA384 && isMldsaCert && isMldsa87Sig {
-		targetProfile = ProfileMldsa87ExternalMu
+		targetProfile = ProfileMldsa87
 	} else {
 		return fmt.Errorf("client requested (Curve = %v, Digest = %v, Certificate = %v, Signature = %v), this is an invalid DPE profile",
 			reflect.TypeOf(c), reflect.TypeOf(d), reflect.TypeOf(cert), reflect.TypeOf(s))
@@ -476,7 +476,7 @@ func (c *DPEABI[_, _, _, _]) DestroyContextABI(cmd *DestroyCtxCmd) error {
 func (c *DPEABI[CurveParameter, Digest, Cert, _]) CertifyKeyABI(cmd *CertifyKeyReq[Digest]) (*CertifyKeyResp[CurveParameter, Digest], error) {
 	// Define an anonymous struct for the response, because we have to accept the variable-sized certificate.
 	// ML-DSA has a different ABI.
-	if c.Profile == ProfileMldsa87ExternalMu {
+	if c.Profile == ProfileMldsa87 {
 		respStruct := struct {
 			NewContextHandle [16]byte
 			DerivedPublicKey CurveParameter // Bad type name but just the size of an ML-DSA 87 pub key.
@@ -775,7 +775,7 @@ func (c *DPEABI[_, Digest, _, Signature]) Sign(handle *ContextHandle, label []by
 
 	// Handle Signature extraction based on type
 	var signedResp *DPESignedHash
-	if c.Profile == ProfileMldsa87ExternalMu {
+	if c.Profile == ProfileMldsa87 {
 		// For ML-DSA, Signature is Mldsa87Signature
 		sig, ok := any(resp.Signature).(Mldsa87Signature)
 		if !ok {

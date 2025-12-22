@@ -19,8 +19,8 @@ const (
 	ProfileP256SHA256 Profile = 3
 	// ProfileP384SHA384 is NIST P-384, SHA-384 "minimal" profile
 	ProfileP384SHA384 Profile = 4
-	// ProfileMldsa87ExternalMu is ML-DSA-87, SHA-384 profile
-	ProfileMldsa87ExternalMu Profile = 5
+	// ProfileMldsa87 is ML-DSA-87, SHA-384 profile
+	ProfileMldsa87 Profile = 5
 )
 
 // GetDigestSize gets the digest size of the profile's supported hash algorithm
@@ -34,7 +34,7 @@ func (p Profile) GetDigestSize() int {
 		fallthrough
 	case ProfileP384SHA384:
 		fallthrough
-	case ProfileMldsa87ExternalMu:
+	case ProfileMldsa87:
 		return 48
 	}
 	return 0
@@ -51,7 +51,7 @@ func (p Profile) GetECCIntSize() int {
 		fallthrough
 	case ProfileP384SHA384:
 		return 48
-	case ProfileMldsa87ExternalMu:
+	case ProfileMldsa87:
 		return 2592
 	}
 	return 0
@@ -67,8 +67,8 @@ func (p Profile) String() string {
 		return "DPE_PROFILE_IROT_MIN_P384_SHA384"
 	case ProfileP384SHA384:
 		return "DPE_PROFILE_IROT_P384_SHA384"
-	case ProfileMldsa87ExternalMu:
-		return "DPE_PROFILE_IROT_MLDSA_87_EXTERNAL_MU"
+	case ProfileMldsa87:
+		return "DPE_PROFILE_IROT_MLDSA_87"
 	}
 	return fmt.Sprintf("unrecognized DPE profile: 0x%0x", uint32(p))
 }

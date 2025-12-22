@@ -32,7 +32,7 @@ mod ec {
 #[cfg(feature = "ml-dsa")]
 mod ml_dsa {
     pub use crypto::MldsaRustCrypto;
-    pub use dpe::commands::CertifyKeyMldsaExternalMu87Cmd as CertifyKeyMldsaCmd;
+    pub use dpe::commands::CertifyKeyMldsa87Cmd as CertifyKeyMldsaCmd;
 
     pub struct SimTypesMldsa;
     impl dpe::dpe_instance::DpeTypes for SimTypesMldsa {
@@ -67,7 +67,7 @@ impl From<Algorithm> for DefaultPlatformProfile {
             #[cfg(feature = "p384")]
             Algorithm::Ec => DefaultPlatformProfile::P384,
             #[cfg(feature = "ml-dsa")]
-            Algorithm::Mldsa => DefaultPlatformProfile::Mldsa87ExternalMu,
+            Algorithm::Mldsa => DefaultPlatformProfile::Mldsa87,
             #[allow(unreachable_patterns)]
             _ => panic!("Unsupported algorithm"),
         }
@@ -82,7 +82,7 @@ impl From<Algorithm> for DpeProfile {
             #[cfg(feature = "p384")]
             Algorithm::Ec => DpeProfile::P384Sha384,
             #[cfg(feature = "ml-dsa")]
-            Algorithm::Mldsa => DpeProfile::Mldsa87ExternalMu,
+            Algorithm::Mldsa => DpeProfile::Mldsa87,
             #[allow(unreachable_patterns)]
             _ => panic!("Unsupported algorithm"),
         }
@@ -213,7 +213,7 @@ fn main() -> Result<()> {
         Algorithm::Mldsa => run(
             &mut DpeEnv::<SimTypesMldsa> {
                 crypto: MldsaRustCrypto::new(),
-                platform: DefaultPlatform(DefaultPlatformProfile::Mldsa87ExternalMu),
+                platform: DefaultPlatform(DefaultPlatformProfile::Mldsa87),
                 state: &mut state,
             },
             &args,
