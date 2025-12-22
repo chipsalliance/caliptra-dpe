@@ -30,6 +30,8 @@ bitflags! {
 #[repr(C, align(4))]
 #[derive(IntoBytes, TryFromBytes, KnownLayout, Immutable, Zeroize)]
 pub struct State {
+    /// Magic marker indicating the data is a DPE state. This is just a quick sanity check.
+    pub marker: u32,
     /// Layout version of this structure. If the layout of this structure changes, Self::VERSION
     /// must be updated.
     pub version: u32,
@@ -48,6 +50,7 @@ impl Default for State {
     fn default() -> Self {
         const CONTEXT_INITIALIZER: Context = Context::new();
         State {
+            marker: Self::MAGIC,
             version: Self::VERSION,
             contexts: [CONTEXT_INITIALIZER; MAX_HANDLES],
             support: Support::default(),
@@ -59,12 +62,14 @@ impl Default for State {
 }
 
 impl State {
+    pub const MAGIC: u32 = u32::from_be_bytes(*b"DPES");
     pub const VERSION: u32 = 1;
 
     pub fn new(support: Support, flags: DpeFlags) -> Self {
         let updated_support = support.preprocess_support();
         const CONTEXT_INITIALIZER: Context = Context::new();
         State {
+            marker: Self::MAGIC,
             version: Self::VERSION,
             contexts: [CONTEXT_INITIALIZER; MAX_HANDLES],
             support: updated_support,
