@@ -199,7 +199,7 @@ func TestCertifyKeyCsr(d client.TestDPEInstance, c client.DPEClient, t *testing.
 	}
 	_, err = wrappedCSR.Verify(x509.VerifyOptions{Roots: certPool})
 	if err != nil {
-		if profile == client.ProfileMldsa87ExternalMu {
+		if profile == client.ProfileMldsa87 {
 			// TODO(clundin): Verify the CMS wrapper for ML-DSA.
 			t.Logf("[WARN]: Skipping CMS wrapper signature verification for ML-DSA (not supported): %v", err)
 		} else {
@@ -224,7 +224,7 @@ func TestCertifyKeyCsr(d client.TestDPEInstance, c client.DPEClient, t *testing.
 	// Check that CSR is self-signed
 	err = csr.CheckSignature()
 	if err != nil {
-		if profile == client.ProfileMldsa87ExternalMu {
+		if profile == client.ProfileMldsa87 {
 			var pk mldsa87.PublicKey
 			// certifyKeyResp.Pub.X contains the raw public key bytes for ML-DSA
 			if err := pk.UnmarshalBinary(certifyKeyResp.Pub.X); err != nil {
@@ -649,7 +649,7 @@ func validateLeafCertChain(t *testing.T, certChain []*x509.Certificate, leafCert
 	removeTcgDiceCriticalExtensions(t, certsToProcess)
 	removeTcgDiceExtendedKeyUsages(t, certsToProcess)
 
-	if profile == client.ProfileMldsa87ExternalMu {
+	if profile == client.ProfileMldsa87 {
 		// Manual verification for ML-DSA
 		if len(certChain) == 0 {
 			t.Errorf("[ERROR]: Certificate chain is empty")
@@ -762,7 +762,7 @@ func getKeyUsageNames(keyUsage x509.KeyUsage) []string {
 }
 
 func checkPubKey(t *testing.T, p client.Profile, pubkey any, response client.CertifiedKey) {
-	if p == client.ProfileMldsa87ExternalMu {
+	if p == client.ProfileMldsa87 {
 		// TODO(clundin): Check ML-DSA Pub key.
 		return
 	}

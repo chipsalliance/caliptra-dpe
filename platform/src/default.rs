@@ -11,7 +11,7 @@ use core::cmp::min;
 pub enum DefaultPlatformProfile {
     P256,
     P384,
-    Mldsa87ExternalMu,
+    Mldsa87,
 }
 
 // Run ./generate.sh to generate all test certs and test private keys
@@ -20,7 +20,7 @@ impl DefaultPlatformProfile {
         match self {
             DefaultPlatformProfile::P256 => include_bytes!("test_data/cert_256.pem"),
             DefaultPlatformProfile::P384 => include_bytes!("test_data/cert_384.pem"),
-            DefaultPlatformProfile::Mldsa87ExternalMu => {
+            DefaultPlatformProfile::Mldsa87 => {
                 include_bytes!("test_data/cert_mldsa_87.pem")
             }
         }
@@ -30,7 +30,7 @@ impl DefaultPlatformProfile {
         match self {
             DefaultPlatformProfile::P256 => include_bytes!("test_data/cert_256.der"),
             DefaultPlatformProfile::P384 => include_bytes!("test_data/cert_384.der"),
-            DefaultPlatformProfile::Mldsa87ExternalMu => {
+            DefaultPlatformProfile::Mldsa87 => {
                 include_bytes!("test_data/cert_mldsa_87.der")
             }
         }

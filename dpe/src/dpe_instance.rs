@@ -408,7 +408,7 @@ pub mod tests {
     pub const DPE_PROFILE: DpeProfile = DpeProfile::P384Sha384;
 
     #[cfg(feature = "ml-dsa")]
-    pub const DPE_PROFILE: DpeProfile = DpeProfile::Mldsa87ExternalMu;
+    pub const DPE_PROFILE: DpeProfile = DpeProfile::Mldsa87;
 
     #[cfg(feature = "p256")]
     use crypto::Ecdsa256RustCrypto;

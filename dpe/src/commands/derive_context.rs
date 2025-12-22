@@ -432,9 +432,7 @@ impl Default for DeriveContextCmd {
 mod tests {
     use super::*;
     #[cfg(feature = "ml-dsa")]
-    use crate::commands::{
-        sign::SignMldsaExternalMu87Cmd as SignCmd, CertifyKeyMldsaExternalMu87Cmd as CertifyKeyCmd,
-    };
+    use crate::commands::{sign::SignMldsa87Cmd as SignCmd, CertifyKeyMldsa87Cmd as CertifyKeyCmd};
     #[cfg(feature = "p256")]
     use crate::commands::{sign::SignP256Cmd as SignCmd, CertifyKeyP256Cmd as CertifyKeyCmd};
     #[cfg(feature = "p384")]
@@ -1715,9 +1713,7 @@ mod tests {
                             OpenSSLHasher::new(MessageDigest::sha384()).unwrap()
                         }
                         #[cfg(feature = "ml-dsa")]
-                        DpeProfile::Mldsa87ExternalMu => {
-                            OpenSSLHasher::new(MessageDigest::sha384()).unwrap()
-                        }
+                        DpeProfile::Mldsa87 => OpenSSLHasher::new(MessageDigest::sha384()).unwrap(),
                     };
                     hasher.update(pub_key).unwrap();
                     let expected_ski: &[u8] = &hasher.finish().unwrap();

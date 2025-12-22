@@ -38,9 +38,9 @@ mod profile {
 mod profile {
     use super::*;
     pub use crypto::Ecdsa256RustCrypto as RustCrypto;
-    pub use dpe::commands::CertifyKeyMldsaExternalMu87Cmd as CertifyKeyCmd;
-    pub const DPE_PROFILE: dpe::DpeProfile = dpe::DpeProfile::Mldsa87ExternalMu;
-    pub const PLATFORM_PROFILE: DefaultPlatformProfile = DefaultPlatformProfile::Mldsa87ExternalMu;
+    pub use dpe::commands::CertifyKeyMldsa87Cmd as CertifyKeyCmd;
+    pub const DPE_PROFILE: dpe::DpeProfile = dpe::DpeProfile::Mldsa87;
+    pub const PLATFORM_PROFILE: DefaultPlatformProfile = DefaultPlatformProfile::Mldsa87;
 }
 
 pub struct TestTypes {}

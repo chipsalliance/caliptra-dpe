@@ -34,12 +34,12 @@ pub fn hkdf_derive_cdi(
             Ok(cdi.to_vec())
         }
         #[cfg(feature = "ml-dsa")]
-        SignatureAlgorithm::MlDsa(MldsaAlgorithm::ExternalMu87) => {
+        SignatureAlgorithm::MlDsa(MldsaAlgorithm::Mldsa87) => {
             // This block assumes that the size of `xi` is the same as `SHA256`.
-            const _: () = assert!(MldsaAlgorithm::ExternalMu87.seed_size() == 256 / 8);
+            const _: () = assert!(MldsaAlgorithm::Mldsa87.seed_size() == 256 / 8);
 
             let hk = Hkdf::<Sha256>::new(Some(info), measurement.as_slice());
-            let mut cdi = [0u8; MldsaAlgorithm::ExternalMu87.seed_size()];
+            let mut cdi = [0u8; MldsaAlgorithm::Mldsa87.seed_size()];
             hk.expand(measurement.as_slice(), &mut cdi)?;
 
             Ok(cdi.to_vec())
@@ -69,9 +69,9 @@ pub fn hkdf_get_priv_key(
             Ok(priv_key.into())
         }
         #[cfg(feature = "ml-dsa")]
-        SignatureAlgorithm::MlDsa(MldsaAlgorithm::ExternalMu87) => {
+        SignatureAlgorithm::MlDsa(MldsaAlgorithm::Mldsa87) => {
             let hk = Hkdf::<Sha256>::new(Some(info), cdi);
-            let mut priv_key = [0u8; MldsaAlgorithm::ExternalMu87.seed_size()];
+            let mut priv_key = [0u8; MldsaAlgorithm::Mldsa87.seed_size()];
             hk.expand(label, &mut priv_key)?;
 
             Ok(priv_key.into())

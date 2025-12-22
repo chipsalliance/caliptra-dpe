@@ -178,7 +178,7 @@ pub enum CertifyKeyResp {
     #[cfg(feature = "p384")]
     P384(CertifyKeyP384Resp),
     #[cfg(feature = "ml-dsa")]
-    MldsaExternalMu87(CertifyKeyMldsaExternalMu87Resp),
+    Mldsa87(CertifyKeyMldsa87Resp),
 }
 
 impl CertifyKeyResp {
@@ -189,7 +189,7 @@ impl CertifyKeyResp {
             #[cfg(feature = "p384")]
             CertifyKeyResp::P384(resp) => resp.new_context_handle = *handle,
             #[cfg(feature = "ml-dsa")]
-            CertifyKeyResp::MldsaExternalMu87(resp) => resp.new_context_handle = *handle,
+            CertifyKeyResp::Mldsa87(resp) => resp.new_context_handle = *handle,
         }
     }
 
@@ -200,7 +200,7 @@ impl CertifyKeyResp {
             #[cfg(feature = "p384")]
             CertifyKeyResp::P384(resp) => &resp.resp_hdr,
             #[cfg(feature = "ml-dsa")]
-            CertifyKeyResp::MldsaExternalMu87(resp) => &resp.resp_hdr,
+            CertifyKeyResp::Mldsa87(resp) => &resp.resp_hdr,
         }
     }
 
@@ -211,7 +211,7 @@ impl CertifyKeyResp {
             #[cfg(feature = "p384")]
             CertifyKeyResp::P384(resp) => resp.as_bytes(),
             #[cfg(feature = "ml-dsa")]
-            CertifyKeyResp::MldsaExternalMu87(resp) => resp.as_bytes(),
+            CertifyKeyResp::Mldsa87(resp) => resp.as_bytes(),
         }
     }
 
@@ -222,7 +222,7 @@ impl CertifyKeyResp {
             #[cfg(feature = "p384")]
             CertifyKeyResp::P384(r) => (&r.cert, r.cert_size),
             #[cfg(feature = "ml-dsa")]
-            CertifyKeyResp::MldsaExternalMu87(r) => (&r.cert, r.cert_size),
+            CertifyKeyResp::Mldsa87(r) => (&r.cert, r.cert_size),
         };
         buf.get(..size as usize).ok_or(DpeErrorCode::InternalError)
     }
@@ -253,10 +253,10 @@ pub struct CertifyKeyP384Resp {
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, IntoBytes, TryFromBytes, Immutable, KnownLayout)]
 #[cfg(feature = "ml-dsa")]
-pub struct CertifyKeyMldsaExternalMu87Resp {
+pub struct CertifyKeyMldsa87Resp {
     pub resp_hdr: ResponseHdr,
     pub new_context_handle: ContextHandle,
-    pub pubkey: [u8; MldsaAlgorithm::ExternalMu87.public_key_size()],
+    pub pubkey: [u8; MldsaAlgorithm::Mldsa87.public_key_size()],
     pub cert_size: u32,
     pub cert: [u8; MAX_CERT_SIZE],
 }
@@ -331,7 +331,7 @@ pub struct SignP384Resp {
 pub struct SignMlDsaResp {
     pub resp_hdr: ResponseHdr,
     pub new_context_handle: ContextHandle,
-    pub sig: [u8; crypto::ml_dsa::MldsaAlgorithm::ExternalMu87.signature_size()],
+    pub sig: [u8; crypto::ml_dsa::MldsaAlgorithm::Mldsa87.signature_size()],
     pub _padding: [u8; 1],
 }
 

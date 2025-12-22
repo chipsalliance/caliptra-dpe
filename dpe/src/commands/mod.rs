@@ -15,7 +15,7 @@ pub use self::initialize_context::InitCtxCmd;
 pub use self::sign::{SignCommand, SignFlags, SignP256Cmd, SignP384Cmd};
 
 #[cfg(feature = "ml-dsa")]
-pub use {self::certify_key::CertifyKeyMldsaExternalMu87Cmd, sign::SignMldsaExternalMu87Cmd};
+pub use {self::certify_key::CertifyKeyMldsa87Cmd, sign::SignMldsa87Cmd};
 
 #[cfg(not(feature = "disable_rotate_context"))]
 pub use self::rotate_context::{RotateCtxCmd, RotateCtxFlags};
@@ -172,9 +172,9 @@ impl<'a> From<&'a CertifyKeyP384Cmd> for Command<'a> {
 }
 
 #[cfg(feature = "ml-dsa")]
-impl<'a> From<&'a CertifyKeyMldsaExternalMu87Cmd> for Command<'a> {
-    fn from(cmd: &'a CertifyKeyMldsaExternalMu87Cmd) -> Command<'a> {
-        Command::CertifyKey(CertifyKeyCommand::ExternalMu87(cmd))
+impl<'a> From<&'a CertifyKeyMldsa87Cmd> for Command<'a> {
+    fn from(cmd: &'a CertifyKeyMldsa87Cmd) -> Command<'a> {
+        Command::CertifyKey(CertifyKeyCommand::Mldsa87(cmd))
     }
 }
 
@@ -199,9 +199,9 @@ impl<'a> From<&'a SignP384Cmd> for Command<'a> {
 }
 
 #[cfg(feature = "ml-dsa")]
-impl<'a> From<&'a SignMldsaExternalMu87Cmd> for Command<'a> {
-    fn from(cmd: &'a SignMldsaExternalMu87Cmd) -> Command<'a> {
-        Command::Sign(SignCommand::ExternalMu87(cmd))
+impl<'a> From<&'a SignMldsa87Cmd> for Command<'a> {
+    fn from(cmd: &'a SignMldsa87Cmd) -> Command<'a> {
+        Command::Sign(SignCommand::Mldsa87(cmd))
     }
 }
 
@@ -334,8 +334,7 @@ pub mod tests {
     #[cfg(feature = "p384")]
     pub const DEFAULT_PLATFORM: DefaultPlatform = DefaultPlatform(DefaultPlatformProfile::P384);
     #[cfg(feature = "ml-dsa")]
-    pub const DEFAULT_PLATFORM: DefaultPlatform =
-        DefaultPlatform(DefaultPlatformProfile::Mldsa87ExternalMu);
+    pub const DEFAULT_PLATFORM: DefaultPlatform = DefaultPlatform(DefaultPlatformProfile::Mldsa87);
 
     pub const PROFILES: [DpeProfile; 2] = [DpeProfile::P256Sha256, DpeProfile::P384Sha384];
 

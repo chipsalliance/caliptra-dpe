@@ -371,7 +371,7 @@ impl CertWriter<'_> {
             #[cfg(feature = "p384")]
             DpeProfile::P384Sha384 => Ok(profile_oids::ECDSA_WITH_SHA384_OID),
             #[cfg(feature = "ml-dsa")]
-            DpeProfile::Mldsa87ExternalMu => Ok(Self::MLDSA_OID),
+            DpeProfile::Mldsa87 => Ok(Self::MLDSA_OID),
             _ => Err(DpeErrorCode::X509AlgorithmMismatch),
         }
     }
@@ -383,7 +383,7 @@ impl CertWriter<'_> {
             #[cfg(feature = "p384")]
             DpeProfile::P384Sha384 => Ok(Self::HASH_SHA384_OID),
             #[cfg(feature = "ml-dsa")]
-            DpeProfile::Mldsa87ExternalMu => Ok(Self::HASH_SHA384_OID),
+            DpeProfile::Mldsa87 => Ok(Self::HASH_SHA384_OID),
             _ => Err(DpeErrorCode::X509AlgorithmMismatch),
         }
     }
@@ -3125,7 +3125,7 @@ pub(crate) mod tests {
     #[test]
     fn test_subject_pubkey() {
         let mut cert = [0u8; 4096];
-        let test_key = MldsaPublicKey([0; MldsaAlgorithm::ExternalMu87.public_key_size()]);
+        let test_key = MldsaPublicKey([0; MldsaAlgorithm::Mldsa87.public_key_size()]);
 
         let mut w = CertWriter::new(&mut cert, DPE_PROFILE, true);
         let bytes_written = w.encode_mldsa_subject_pubkey_info(&test_key).unwrap();
@@ -3259,7 +3259,7 @@ pub(crate) mod tests {
             DpeProfile::P256Sha256 => Hasher::new(MessageDigest::sha256()).unwrap(),
             DpeProfile::P384Sha384 => Hasher::new(MessageDigest::sha384()).unwrap(),
             #[cfg(feature = "ml-dsa")]
-            DpeProfile::Mldsa87ExternalMu => {
+            DpeProfile::Mldsa87 => {
                 unreachable!("tried to build ecdsa test cert for ml-dsa profile!")
             }
         };
@@ -3376,7 +3376,7 @@ pub(crate) mod tests {
         let node = TciNodeData::new();
 
         let mut hasher = match DPE_PROFILE {
-            DpeProfile::Mldsa87ExternalMu => Hasher::new(MessageDigest::sha384()).unwrap(),
+            DpeProfile::Mldsa87 => Hasher::new(MessageDigest::sha384()).unwrap(),
             _ => unreachable!("tried to build ml-dsa test cert for non ml-dsa profile!"),
         };
         hasher.update(test_pub.as_slice()).unwrap();
@@ -3416,13 +3416,13 @@ pub(crate) mod tests {
 
         let pub_key = match DPE_PROFILE.alg() {
             #[cfg(feature = "ml-dsa")]
-            SignatureAlgorithm::MlDsa(MldsaAlgorithm::ExternalMu87) => PubKey::MlDsa(test_pub),
+            SignatureAlgorithm::MlDsa(MldsaAlgorithm::Mldsa87) => PubKey::MlDsa(test_pub),
             _ => panic!("Missing signature"),
         };
 
         let test_sig: Signature = match DPE_PROFILE.alg() {
             #[cfg(feature = "ml-dsa")]
-            SignatureAlgorithm::MlDsa(MldsaAlgorithm::ExternalMu87) => {
+            SignatureAlgorithm::MlDsa(MldsaAlgorithm::Mldsa87) => {
                 Signature::MlDsa(MldsaSignature([0xBB; ALGORITHM.signature_size()]))
             }
             _ => panic!("Missing signature"),
@@ -3579,7 +3579,7 @@ pub(crate) mod tests {
             DpeProfile::P256Sha256 => Hasher::new(MessageDigest::sha256()).unwrap(),
             DpeProfile::P384Sha384 => Hasher::new(MessageDigest::sha384()).unwrap(),
             #[cfg(feature = "ml-dsa")]
-            DpeProfile::Mldsa87ExternalMu => Hasher::new(MessageDigest::sha384()).unwrap(),
+            DpeProfile::Mldsa87 => Hasher::new(MessageDigest::sha384()).unwrap(),
         };
         hasher.update(pub_key).unwrap();
         let expected_key_identifier: &[u8] = &hasher.finish().unwrap();

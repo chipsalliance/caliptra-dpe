@@ -52,7 +52,7 @@ func TestAsymmetricSigning(d client.TestDPEInstance, c client.DPEClient, t *test
 		t.Fatalf("[FATAL]: Could not CertifyKey: %v", err)
 	}
 
-	if profile == client.ProfileMldsa87ExternalMu {
+	if profile == client.ProfileMldsa87 {
 		if len(signResp.Signature) != mldsa87.SignatureSize {
 			t.Errorf("Incorrect signature length for ML-DSA-87: got %d, want %d", len(signResp.Signature), mldsa87.SignatureSize)
 		}

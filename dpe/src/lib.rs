@@ -88,8 +88,8 @@ pub enum DpeProfile {
     P256Sha256 = 3,
     P384Sha384 = 4,
     #[cfg(feature = "ml-dsa")]
-    Mldsa87ExternalMu = 5, // TODO(clundin): Added this to get past compiler / feature flags. We
-                           // will want a real solution here.
+    Mldsa87 = 5, // TODO(clundin): Added this to get past compiler / feature flags. We
+                 // will want a real solution here.
 }
 
 impl DpeProfile {
@@ -98,7 +98,7 @@ impl DpeProfile {
             DpeProfile::P256Sha256 => 32,
             DpeProfile::P384Sha384 => 48,
             #[cfg(feature = "ml-dsa")]
-            DpeProfile::Mldsa87ExternalMu => 48,
+            DpeProfile::Mldsa87 => 48,
         }
     }
     pub const fn ecc_int_size(&self) -> usize {
@@ -112,8 +112,8 @@ impl DpeProfile {
             DpeProfile::P256Sha256 => crypto::SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit256),
             DpeProfile::P384Sha384 => crypto::SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384),
             #[cfg(feature = "ml-dsa")]
-            DpeProfile::Mldsa87ExternalMu => {
-                crypto::SignatureAlgorithm::MlDsa(crypto::ml_dsa::MldsaAlgorithm::ExternalMu87)
+            DpeProfile::Mldsa87 => {
+                crypto::SignatureAlgorithm::MlDsa(crypto::ml_dsa::MldsaAlgorithm::Mldsa87)
             }
         }
     }

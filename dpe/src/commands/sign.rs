@@ -33,7 +33,7 @@ pub enum SignCommand<'a> {
     #[cfg(feature = "p384")]
     P384(&'a SignP384Cmd),
     #[cfg(feature = "ml-dsa")]
-    ExternalMu87(&'a SignMldsaExternalMu87Cmd),
+    Mldsa87(&'a SignMldsa87Cmd),
 }
 
 impl SignCommand<'_> {
@@ -44,9 +44,7 @@ impl SignCommand<'_> {
             #[cfg(feature = "p384")]
             DpeProfile::P384Sha384 => SignCommand::parse_command(SignCommand::P384, bytes),
             #[cfg(feature = "ml-dsa")]
-            DpeProfile::Mldsa87ExternalMu => {
-                SignCommand::parse_command(SignCommand::ExternalMu87, bytes)
-            }
+            DpeProfile::Mldsa87 => SignCommand::parse_command(SignCommand::Mldsa87, bytes),
             _ => Err(DpeErrorCode::InvalidArgument)?,
         }
     }
@@ -65,7 +63,7 @@ impl SignCommand<'_> {
             #[cfg(feature = "p384")]
             SignCommand::P384(cmd) => cmd.as_bytes(),
             #[cfg(feature = "ml-dsa")]
-            SignCommand::ExternalMu87(cmd) => cmd.as_bytes(),
+            SignCommand::Mldsa87(cmd) => cmd.as_bytes(),
         }
     }
 }
@@ -84,7 +82,7 @@ impl CommandExecution for SignCommand<'_> {
             #[cfg(feature = "p384")]
             SignCommand::P384(cmd) => cmd.execute(dpe, env, locality),
             #[cfg(feature = "ml-dsa")]
-            SignCommand::ExternalMu87(cmd) => cmd.execute(dpe, env, locality),
+            SignCommand::Mldsa87(cmd) => cmd.execute(dpe, env, locality),
         }
     }
 }
@@ -152,7 +150,7 @@ fn execute(
                 .map_err(|_| DpeErrorCode::Crypto(crypto::CryptoError::Size))?,
         )),
         #[cfg(feature = "ml-dsa")]
-        crate::DpeProfile::Mldsa87ExternalMu => SignData::Raw(data),
+        crate::DpeProfile::Mldsa87 => SignData::Raw(data),
         _ => Err(DpeErrorCode::InvalidArgument)?,
     };
 
@@ -242,14 +240,14 @@ impl CommandExecution for SignP384Cmd {
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, IntoBytes, FromBytes, Immutable, KnownLayout)]
-pub struct SignMldsaExternalMu87Cmd {
+pub struct SignMldsa87Cmd {
     pub handle: ContextHandle,
     pub label: [u8; 48],
     pub flags: SignFlags,
     pub digest: [u8; 48],
 }
 
-impl CommandExecution for SignMldsaExternalMu87Cmd {
+impl CommandExecution for SignMldsa87Cmd {
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     fn execute(
         &self,
@@ -265,9 +263,7 @@ impl CommandExecution for SignMldsaExternalMu87Cmd {
 mod tests {
     use super::*;
     #[cfg(feature = "ml-dsa")]
-    use crate::commands::{
-        sign::SignMldsaExternalMu87Cmd as SignCmd, CertifyKeyMldsaExternalMu87Cmd as CertifyKeyCmd,
-    };
+    use crate::commands::{sign::SignMldsa87Cmd as SignCmd, CertifyKeyMldsa87Cmd as CertifyKeyCmd};
     #[cfg(feature = "p256")]
     use crate::commands::{sign::SignP256Cmd as SignCmd, CertifyKeyP256Cmd as CertifyKeyCmd};
     #[cfg(feature = "p384")]
@@ -309,7 +305,7 @@ mod tests {
         #[cfg(feature = "p384")]
         let expected = Command::Sign(SignCommand::P384(&TEST_SIGN_CMD));
         #[cfg(feature = "ml-dsa")]
-        let expected = Command::Sign(SignCommand::ExternalMu87(&TEST_SIGN_CMD));
+        let expected = Command::Sign(SignCommand::Mldsa87(&TEST_SIGN_CMD));
         assert_eq!(Ok(expected), Command::deserialize(DPE_PROFILE, &command));
     }
 
@@ -440,7 +436,7 @@ mod tests {
                 assert!(sig.verify(&TEST_DIGEST, &pub_key).unwrap());
             }
             #[cfg(feature = "ml-dsa")]
-            DpeProfile::Mldsa87ExternalMu => {
+            DpeProfile::Mldsa87 => {
                 use ml_dsa::signature::Verifier;
                 use ml_dsa::{EncodedSignature, EncodedVerifyingKey, VerifyingKey};
                 use x509_parser::nom::Parser;
