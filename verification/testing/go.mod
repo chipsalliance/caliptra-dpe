@@ -1,6 +1,8 @@
 module github.com/chipsalliance/caliptra-dpe/verification/testing
 
-go 1.20
+go 1.22.0
+
+toolchain go1.24.8
 
 replace github.com/chipsalliance/caliptra-dpe/verification/client => ../client
 
@@ -18,6 +20,7 @@ require (
 )
 
 require (
+	github.com/cloudflare/circl v1.6.1 // indirect
 	github.com/golang/protobuf v1.5.3 // indirect
 	github.com/google/go-configfs-tsm v0.2.2 // indirect
 	github.com/google/go-sev-guest v0.11.0 // indirect

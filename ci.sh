@@ -76,6 +76,7 @@ format_go_targets
 build_rust_targets ml-dsa
 lint_rust_targets ml-dsa
 test_rust_targets ml-dsa
+run_verification_tests ml-dsa rustcrypto
 
 # Build check for P384/ML-DSA hybrid
 cargo build --release --manifest-path dpe/Cargo.toml --features=hybrid,no-cfi --no-default-features

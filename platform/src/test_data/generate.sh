@@ -21,7 +21,7 @@ openssl x509 -in cert_384.pem -outform DER -out cert_384.der
 
 # We only output the seed so the PEM file can be de-serialized by Rust Crypto's pkcs8 crate.
 # You can construct everything you need from just the seed.
-openssl genpkey -algorithm ML-DSA-87 -out key_mldsa_87.pem
+openssl genpkey -algorithm ML-DSA-87 -provparam ml-dsa.output_formats=seed-only -out key_mldsa_87.pem
 openssl req -new -key key_mldsa_87.pem -x509 -nodes -days 365000 -out cert_mldsa_87.pem \
   -addext keyUsage=critical,keyCertSign \
   -subj /CN="DPE Test Alias"/

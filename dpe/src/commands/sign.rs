@@ -14,9 +14,7 @@ use caliptra_cfi_lib_git::cfi_launder;
 use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq, cfi_assert_ne};
 use cfg_if::cfg_if;
 #[cfg(any(feature = "p256", feature = "p384"))]
-use crypto::ecdsa::EcdsaSignature;
-#[cfg(any(feature = "p256", feature = "p384"))]
-use crypto::Digest;
+use crypto::{ecdsa::EcdsaSignature, Digest};
 use crypto::{Crypto, SignData, Signature};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
@@ -86,12 +84,7 @@ impl CommandExecution for SignCommand<'_> {
             #[cfg(feature = "p384")]
             SignCommand::P384(cmd) => cmd.execute(dpe, env, locality),
             #[cfg(feature = "ml-dsa")]
-            _ => {
-                let _ = dpe;
-                let _ = env;
-                let _ = locality;
-                todo!("Add ML-DSA sign support")
-            }
+            SignCommand::ExternalMu87(cmd) => cmd.execute(dpe, env, locality),
         }
     }
 }
@@ -159,10 +152,7 @@ fn execute(
                 .map_err(|_| DpeErrorCode::Crypto(crypto::CryptoError::Size))?,
         )),
         #[cfg(feature = "ml-dsa")]
-        crate::DpeProfile::Mldsa87ExternalMu => {
-            let _ = data;
-            todo!("Add ML-DSA sign support")
-        }
+        crate::DpeProfile::Mldsa87ExternalMu => SignData::Raw(data),
         _ => Err(DpeErrorCode::InvalidArgument)?,
     };
 
@@ -186,6 +176,15 @@ fn execute(
                 new_context_handle: ContextHandle::new_invalid(),
                 sig_r,
                 sig_s,
+                resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
+            })
+        }
+        #[cfg(feature = "ml-dsa")]
+        Signature::MlDsa(crypto::ml_dsa::MldsaSignature(sig)) => {
+            SignResp::MlDsa(crate::response::SignMlDsaResp {
+                new_context_handle: ContextHandle::new_invalid(),
+                sig,
+                _padding: [0; 1],
                 resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
             })
         }
@@ -370,7 +369,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(not(feature = "ml-dsa"))] // TODO https://github.com/chipsalliance/caliptra-dpe/issues/450
     fn test_asymmetric() {
         CfiCounter::reset_for_test();
         let mut state = test_state();
@@ -390,51 +388,91 @@ mod tests {
             .unwrap();
         }
 
-        let sig = {
+        let sign_resp = {
             let cmd = SignCmd {
                 handle: ContextHandle::default(),
                 label: TEST_LABEL,
                 flags: SignFlags::empty(),
                 digest: TEST_DIGEST,
             };
-            let resp = match cmd.execute(&mut dpe, &mut env, TEST_LOCALITIES[0]).unwrap() {
+            match cmd.execute(&mut dpe, &mut env, TEST_LOCALITIES[0]).unwrap() {
                 Response::Sign(resp) => resp,
                 _ => panic!("Incorrect response type"),
-            };
-
-            let (r, s) = match resp {
-                #[cfg(feature = "p256")]
-                SignResp::P256(resp) => (resp.sig_r, resp.sig_s),
-                #[cfg(feature = "p384")]
-                SignResp::P384(resp) => (resp.sig_r, resp.sig_s),
-                _ => todo!(),
-            };
-
-            EcdsaSig::from_private_components(
-                BigNum::from_slice(&r).unwrap(),
-                BigNum::from_slice(&s).unwrap(),
-            )
-            .unwrap()
+            }
         };
 
-        let ec_pub_key = {
+        let certify_resp = {
             let cmd = CertifyKeyCmd {
                 handle: ContextHandle::default(),
                 flags: CertifyKeyFlags::empty(),
                 label: TEST_LABEL,
                 format: CertifyKeyCommand::FORMAT_X509,
             };
-            let certify_resp = match CertifyKeyCommand::from(&cmd)
+            match CertifyKeyCommand::from(&cmd)
                 .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
                 .unwrap()
             {
                 Response::CertifyKey(resp) => resp,
                 _ => panic!("Incorrect response type"),
-            };
-            let x509 = X509::from_der(&certify_resp.cert().unwrap()).unwrap();
-            x509.public_key().unwrap().ec_key().unwrap()
+            }
         };
+        let cert_bytes = certify_resp.cert().unwrap();
 
-        assert!(sig.verify(&TEST_DIGEST, &ec_pub_key).unwrap());
+        match DPE_PROFILE {
+            #[cfg(any(feature = "p256", feature = "p384"))]
+            DpeProfile::P256Sha256 | DpeProfile::P384Sha384 => {
+                let (r, s) = match sign_resp {
+                    #[cfg(feature = "p256")]
+                    SignResp::P256(resp) => (resp.sig_r.to_vec(), resp.sig_s.to_vec()),
+                    #[cfg(feature = "p384")]
+                    SignResp::P384(resp) => (resp.sig_r.to_vec(), resp.sig_s.to_vec()),
+                    _ => panic!("Incorrect response type"),
+                };
+                let sig = EcdsaSig::from_private_components(
+                    BigNum::from_slice(&r).unwrap(),
+                    BigNum::from_slice(&s).unwrap(),
+                )
+                .unwrap();
+
+                let x509 = X509::from_der(cert_bytes).unwrap();
+                let pub_key = x509.public_key().unwrap().ec_key().unwrap();
+
+                assert!(sig.verify(&TEST_DIGEST, &pub_key).unwrap());
+            }
+            #[cfg(feature = "ml-dsa")]
+            DpeProfile::Mldsa87ExternalMu => {
+                use ml_dsa::signature::Verifier;
+                use ml_dsa::{EncodedSignature, EncodedVerifyingKey, VerifyingKey};
+                use x509_parser::nom::Parser;
+                use x509_parser::prelude::*;
+                use x509_parser::public_key::PublicKey;
+
+                let sig_bytes = match sign_resp {
+                    SignResp::MlDsa(resp) => resp.sig,
+                    _ => panic!("Incorrect response type"),
+                };
+                let encoded_sig =
+                    EncodedSignature::<ml_dsa::MlDsa87>::try_from(sig_bytes.as_slice())
+                        .expect("Invalid signature length");
+                let sig =
+                    ml_dsa::Signature::decode(&encoded_sig).expect("Error decoding signature");
+
+                let mut parser = X509CertificateParser::new().with_deep_parse_extensions(true);
+                let (_, cert) = parser.parse(cert_bytes).expect("Failed to parse cert");
+
+                let pub_key_parsed = cert.public_key().parsed().unwrap();
+                let key_bytes = match pub_key_parsed {
+                    PublicKey::Unknown(k) => k,
+                    _ => panic!("Expected unknown key type for ML-DSA"),
+                };
+
+                let encoded_vk =
+                    EncodedVerifyingKey::<ml_dsa::MlDsa87>::try_from(key_bytes).unwrap();
+                let vk = VerifyingKey::<ml_dsa::MlDsa87>::decode(&encoded_vk);
+
+                assert!(vk.verify(&TEST_DIGEST, &sig).is_ok());
+            }
+            _ => panic!("Unsupported profile"),
+        }
     }
 }

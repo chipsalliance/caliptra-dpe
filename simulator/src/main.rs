@@ -39,7 +39,7 @@ mod profile {
 #[cfg(feature = "ml-dsa")]
 mod profile {
     use super::*;
-    pub use crypto::Ecdsa256RustCrypto as RustCrypto;
+    pub use crypto::MldsaRustCrypto as RustCrypto;
     pub const DPE_PROFILE: dpe::DpeProfile = dpe::DpeProfile::Mldsa87ExternalMu;
     pub const PLATFORM_PROFILE: DefaultPlatformProfile = DefaultPlatformProfile::Mldsa87ExternalMu;
 }

@@ -122,7 +122,7 @@ func TestDeriveContextCdiExport(d client.TestDPEInstance, c client.DPEClient, t 
 
 	// Ensure full certificate chain has valid signatures
 	// This also checks certificate lifetime, signatures as part of cert chain validation
-	validateLeafCertChain(t, certChain, leafCert)
+	validateLeafCertChain(t, certChain, leafCert, profile)
 }
 
 // TestDeriveContextDisallowedChildCdiExport tests calling DeriveContext with CdiExport flag set but the parent
@@ -206,7 +206,7 @@ func TestDeriveContextAllowedChildCdiExport(d client.TestDPEInstance, c client.D
 
 	// Ensure full certificate chain has valid signatures
 	// This also checks certificate lifetime, signatures as part of cert chain validation
-	validateLeafCertChain(t, certChain, leafCert)
+	validateLeafCertChain(t, certChain, leafCert, profile)
 }
 
 // TestChangeLocality validates DerivedChild command with ChangeLocality flag.

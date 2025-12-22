@@ -19,6 +19,8 @@ const (
 	ProfileP256SHA256 Profile = 3
 	// ProfileP384SHA384 is NIST P-384, SHA-384 "minimal" profile
 	ProfileP384SHA384 Profile = 4
+	// ProfileMldsa87ExternalMu is ML-DSA-87, SHA-384 profile
+	ProfileMldsa87ExternalMu Profile = 5
 )
 
 // GetDigestSize gets the digest size of the profile's supported hash algorithm
@@ -31,6 +33,8 @@ func (p Profile) GetDigestSize() int {
 	case ProfileMinP384SHA384:
 		fallthrough
 	case ProfileP384SHA384:
+		fallthrough
+	case ProfileMldsa87ExternalMu:
 		return 48
 	}
 	return 0
@@ -47,6 +51,8 @@ func (p Profile) GetECCIntSize() int {
 		fallthrough
 	case ProfileP384SHA384:
 		return 48
+	case ProfileMldsa87ExternalMu:
+		return 2592
 	}
 	return 0
 }
@@ -61,13 +67,15 @@ func (p Profile) String() string {
 		return "DPE_PROFILE_IROT_MIN_P384_SHA384"
 	case ProfileP384SHA384:
 		return "DPE_PROFILE_IROT_P384_SHA384"
+	case ProfileMldsa87ExternalMu:
+		return "DPE_PROFILE_IROT_MLDSA_87_EXTERNAL_MU"
 	}
 	return fmt.Sprintf("unrecognized DPE profile: 0x%0x", uint32(p))
 }
 
 // Curve is a type constraint enumerating the supported ECC curves for DPE profiles.
 type Curve interface {
-	NISTP256Parameter | NISTP384Parameter
+	NISTP256Parameter | NISTP384Parameter | Mldsa87Parameter
 
 	Bytes() []byte
 }
@@ -93,6 +101,22 @@ func (p NISTP384Parameter) Bytes() []byte {
 	return p[:]
 }
 
+// Mldsa87Parameter represents an ML-DSA-87 public key
+type Mldsa87Parameter [2592]byte
+
+// Bytes returns a byte slice of an ML-DSA-87 public key
+func (p Mldsa87Parameter) Bytes() []byte {
+	return p[:]
+}
+
+// Mldsa87Signature represents an ML-DSA-87 signature
+type Mldsa87Signature [4627]byte
+
+// Bytes returns a byte slice of an ML-DSA-87 signature
+func (p Mldsa87Signature) Bytes() []byte {
+	return p[:]
+}
+
 // DigestAlgorithm is a type constraint enumerating the supported hashing algorithms for DPE profiles.
 type DigestAlgorithm interface {
 	SHA256Digest | SHA384Digest
@@ -106,9 +130,12 @@ type DPEMinCertificate [2048]byte
 // DPEFullCertificate represents a certificate for the DPE full iRoT profiles
 type DPEFullCertificate [6144]byte
 
+// DPEMldsaCertificate represents a certificate for the DPE ML-DSA profile
+type DPEMldsaCertificate [17408]byte
+
 // DPECertificate is a type constraint for DPE certificates.
 type DPECertificate interface {
-	DPEMinCertificate | DPEFullCertificate
+	DPEMinCertificate | DPEFullCertificate | DPEMldsaCertificate
 
 	Bytes() []byte
 }
@@ -125,6 +152,11 @@ func (c DPEMinCertificate) Bytes() []byte {
 
 // Bytes returns a byte slice of the DPE full certificate
 func (c DPEFullCertificate) Bytes() []byte {
+	return c[:]
+}
+
+// Bytes returns a byte slice of the DPE ML-DSA certificate
+func (c DPEMldsaCertificate) Bytes() []byte {
 	return c[:]
 }
 
