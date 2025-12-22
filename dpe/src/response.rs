@@ -280,10 +280,7 @@ impl SignResp {
             #[cfg(feature = "p384")]
             SignResp::P384(resp) => resp.new_context_handle = *handle,
             #[cfg(feature = "ml-dsa")]
-            SignResp::MlDsa(_) => {
-                let _ = handle;
-                todo!("clundin: Add ML-DSA variant")
-            }
+            SignResp::MlDsa(resp) => resp.new_context_handle = *handle,
         }
     }
 
@@ -294,7 +291,7 @@ impl SignResp {
             #[cfg(feature = "p384")]
             SignResp::P384(resp) => &resp.resp_hdr,
             #[cfg(feature = "ml-dsa")]
-            _ => todo!("clundin: Add ML-DSA variant"),
+            SignResp::MlDsa(resp) => &resp.resp_hdr,
         }
     }
 
@@ -305,7 +302,7 @@ impl SignResp {
             #[cfg(feature = "p384")]
             SignResp::P384(resp) => resp.as_bytes(),
             #[cfg(feature = "ml-dsa")]
-            _ => todo!("clundin: Add ML-DSA variant"),
+            SignResp::MlDsa(resp) => resp.as_bytes(),
         }
     }
 }
@@ -335,7 +332,7 @@ pub struct SignMlDsaResp {
     pub resp_hdr: ResponseHdr,
     pub new_context_handle: ContextHandle,
     pub sig: [u8; crypto::ml_dsa::MldsaAlgorithm::ExternalMu87.signature_size()],
-    _padding: [u8; 1],
+    pub _padding: [u8; 1],
 }
 
 #[repr(C)]

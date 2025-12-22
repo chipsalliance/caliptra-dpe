@@ -44,6 +44,7 @@ type DPESignedHash struct {
 	Handle     ContextHandle
 	SignatureR []byte
 	SignatureS []byte
+	Signature  []byte
 }
 
 // DPEClient is a generic interface to a DPE instance
@@ -69,6 +70,8 @@ func NewClient(t Transport, p Profile) (DPEClient, error) {
 		return NewDPEABI256(t)
 	case ProfileP384SHA384:
 		return NewDPEABI384(t)
+	case ProfileMldsa87ExternalMu:
+		return NewDPEABIMldsa87(t)
 	default:
 		return nil, fmt.Errorf("cannot create a DPE client for profile %d", p)
 	}

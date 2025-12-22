@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/chipsalliance/caliptra-dpe/verification/client"
+	"github.com/cloudflare/circl/sign/mldsa/mldsa87"
 )
 
 // TestAsymmetricSigning obtains and validates signature of asymmetric signing.
@@ -49,6 +50,22 @@ func TestAsymmetricSigning(d client.TestDPEInstance, c client.DPEClient, t *test
 	certifiedKey, err := c.CertifyKey(handle, seqLabel, client.CertifyKeyX509, client.CertifyKeyFlags(0))
 	if err != nil {
 		t.Fatalf("[FATAL]: Could not CertifyKey: %v", err)
+	}
+
+	if profile == client.ProfileMldsa87ExternalMu {
+		if len(signResp.Signature) != mldsa87.SignatureSize {
+			t.Errorf("Incorrect signature length for ML-DSA-87: got %d, want %d", len(signResp.Signature), mldsa87.SignatureSize)
+		}
+
+		var pk mldsa87.PublicKey
+		if err := pk.UnmarshalBinary(certifiedKey.Pub.X); err != nil {
+			t.Fatalf("Failed to parse ML-DSA public key: %v", err)
+		}
+
+		if !mldsa87.Verify(&pk, tbs, nil, signResp.Signature) {
+			t.Error("ML-DSA Signature Verification failed")
+		}
+		return
 	}
 
 	// Check certificate structure

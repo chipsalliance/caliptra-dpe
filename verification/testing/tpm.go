@@ -75,6 +75,10 @@ func TestTpmPolicySigning(d dpe.TestDPEInstance, c dpe.DPEClient, t *testing.T) 
 	if err != nil {
 		t.Fatalf("Could not get profile: %v", err)
 	}
+	if profile == dpe.ProfileMldsa87ExternalMu {
+		// TODO(clundin): Add Test support for ML-DSA.
+		t.Skip("TPM Policy Signing test not supported for ML-DSA")
+	}
 	digestLen := profile.GetDigestSize()
 
 	if digestLen == len(dpe.SHA256Digest{0}) {

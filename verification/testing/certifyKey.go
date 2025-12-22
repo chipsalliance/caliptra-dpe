@@ -21,6 +21,7 @@ import (
 	cms "github.com/github/smimesign/ietf-cms"
 
 	"github.com/chipsalliance/caliptra-dpe/verification/client"
+	"github.com/cloudflare/circl/sign/mldsa/mldsa87"
 	zx509 "github.com/zmap/zcrypto/x509"
 	zlint "github.com/zmap/zlint/v3"
 	"github.com/zmap/zlint/v3/lint"
@@ -198,7 +199,12 @@ func TestCertifyKeyCsr(d client.TestDPEInstance, c client.DPEClient, t *testing.
 	}
 	_, err = wrappedCSR.Verify(x509.VerifyOptions{Roots: certPool})
 	if err != nil {
-		t.Errorf("[ERROR]: Failed to verify CMS wrapper signature: %v", err)
+		if profile == client.ProfileMldsa87ExternalMu {
+			// TODO(clundin): Verify the CMS wrapper for ML-DSA.
+			t.Logf("[WARN]: Skipping CMS wrapper signature verification for ML-DSA (not supported): %v", err)
+		} else {
+			t.Errorf("[ERROR]: Failed to verify CMS wrapper signature: %v", err)
+		}
 	}
 
 	content, err := wrappedCSR.GetData()
@@ -218,7 +224,21 @@ func TestCertifyKeyCsr(d client.TestDPEInstance, c client.DPEClient, t *testing.
 	// Check that CSR is self-signed
 	err = csr.CheckSignature()
 	if err != nil {
-		t.Errorf("[ERROR] CSR is not self-signed: %v", err)
+		if profile == client.ProfileMldsa87ExternalMu {
+			var pk mldsa87.PublicKey
+			// certifyKeyResp.Pub.X contains the raw public key bytes for ML-DSA
+			if err := pk.UnmarshalBinary(certifyKeyResp.Pub.X); err != nil {
+				t.Errorf("Failed to parse ML-DSA public key from response: %v", err)
+			} else {
+				if !mldsa87.Verify(&pk, csr.RawTBSCertificateRequest, nil, csr.Signature) {
+					t.Errorf("ML-DSA CSR Signature Verification failed")
+				} else {
+					t.Log("ML-DSA CSR Signature Verified manually")
+				}
+			}
+		} else {
+			t.Errorf("[ERROR] CSR is not self-signed: %v", err)
+		}
 	}
 }
 
@@ -416,12 +436,22 @@ func checkSubjectKeyIdentifierExtension(t *testing.T, extensions []pkix.Extensio
 		var hasher hash.Hash
 		if len(pubkey.X) == 32 {
 			hasher = sha256.New()
-		} else {
+			hasher.Write([]byte{0x04})
+			hasher.Write(pubkey.X)
+			hasher.Write(pubkey.Y)
+		} else if len(pubkey.X) == 48 {
 			hasher = sha512.New384()
+			hasher.Write([]byte{0x04})
+			hasher.Write(pubkey.X)
+			hasher.Write(pubkey.Y)
+		} else if len(pubkey.X) == 2592 {
+			hasher = sha512.New384()
+			hasher.Write(pubkey.X)
+		} else {
+			t.Errorf("[ERROR]: Unsupported public key length %d", len(pubkey.X))
+			return
 		}
-		hasher.Write([]byte{0x04})
-		hasher.Write(pubkey.X)
-		hasher.Write(pubkey.Y)
+
 		expectedKeyIdentifier := hasher.Sum(nil)[:20]
 		if !reflect.DeepEqual(ski, expectedKeyIdentifier) {
 			t.Errorf("[ERROR]: The value of the subject key identifier %v is not equal to the hash of the public key %v", ski, expectedKeyIdentifier)
@@ -600,7 +630,7 @@ func testCertifyKey(d client.TestDPEInstance, c client.DPEClient, t *testing.T, 
 
 		// Ensure full certificate chain has valid signatures
 		// This also checks certificate lifetime, signatures as part of cert chain validation
-		validateLeafCertChain(t, certChain, leafCert)
+		validateLeafCertChain(t, certChain, leafCert, profile)
 
 		// Reassign handle for simulation mode.
 		// However, this does not impact in default mode because
@@ -611,13 +641,44 @@ func testCertifyKey(d client.TestDPEInstance, c client.DPEClient, t *testing.T, 
 }
 
 // Builds and verifies certificate chain.
-func validateLeafCertChain(t *testing.T, certChain []*x509.Certificate, leafCert *x509.Certificate) {
+func validateLeafCertChain(t *testing.T, certChain []*x509.Certificate, leafCert *x509.Certificate, profile client.Profile) {
 	t.Helper()
 	certsToProcess := []*x509.Certificate{leafCert}
 
 	// Remove unhandled critical extensions and EKUs by x509 but defined in spec
 	removeTcgDiceCriticalExtensions(t, certsToProcess)
 	removeTcgDiceExtendedKeyUsages(t, certsToProcess)
+
+	if profile == client.ProfileMldsa87ExternalMu {
+		// Manual verification for ML-DSA
+		if len(certChain) == 0 {
+			t.Errorf("[ERROR]: Certificate chain is empty")
+			return
+		}
+		issuer := certChain[len(certChain)-1]
+
+		var spki struct {
+			Algorithm        pkix.AlgorithmIdentifier
+			SubjectPublicKey asn1.BitString
+		}
+		if _, err := asn1.Unmarshal(issuer.RawSubjectPublicKeyInfo, &spki); err != nil {
+			t.Errorf("[ERROR]: Failed to parse issuer SPKI: %v", err)
+			return
+		}
+
+		var pk mldsa87.PublicKey
+		if err := pk.UnmarshalBinary(spki.SubjectPublicKey.Bytes); err != nil {
+			t.Errorf("[ERROR]: Failed to parse issuer ML-DSA public key: %v", err)
+			return
+		}
+
+		if !mldsa87.Verify(&pk, leafCert.RawTBSCertificate, nil, leafCert.Signature) {
+			t.Error("[ERROR]: ML-DSA Leaf Certificate Signature Verification failed")
+		} else {
+			t.Log("ML-DSA Leaf Certificate Signature Verified manually")
+		}
+		return
+	}
 
 	// Certificate chain validation for leaf
 	opts := buildVerifyOptions(t, certChain)
@@ -701,6 +762,11 @@ func getKeyUsageNames(keyUsage x509.KeyUsage) []string {
 }
 
 func checkPubKey(t *testing.T, p client.Profile, pubkey any, response client.CertifiedKey) {
+	if p == client.ProfileMldsa87ExternalMu {
+		// TODO(clundin): Check ML-DSA Pub key.
+		return
+	}
+
 	var pubKeyInResponse ecdsa.PublicKey
 	switch p {
 	case client.ProfileMinP256SHA256:
