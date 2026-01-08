@@ -109,11 +109,9 @@ impl Command<'_> {
             Command::Sign(cmd) => cmd.as_bytes(),
         }
     }
-}
 
-impl From<&Command<'_>> for u32 {
-    fn from(cmd: &Command) -> u32 {
-        match cmd {
+    pub fn id(&self) -> u32 {
+        match self {
             Command::GetProfile(_) => Command::GET_PROFILE,
             Command::InitCtx(_) => Command::INITIALIZE_CONTEXT,
             Command::DeriveContext(_) => Command::DERIVE_CONTEXT,
@@ -127,15 +125,21 @@ impl From<&Command<'_>> for u32 {
     }
 }
 
+impl From<&Command<'_>> for u32 {
+    fn from(cmd: &Command) -> u32 {
+        cmd.id()
+    }
+}
+
 impl From<&mut Command<'_>> for u32 {
     fn from(cmd: &mut Command) -> u32 {
-        (&*cmd).into()
+        cmd.id()
     }
 }
 
 impl From<Command<'_>> for u32 {
     fn from(cmd: Command) -> u32 {
-        (&cmd).into()
+        cmd.id()
     }
 }
 
