@@ -2449,7 +2449,10 @@ impl CertWriter<'_> {
         )?;
 
         let sig = {
-            let tbs = &self.certificate[offset..tbs_bytes_written + offset];
+            let tbs = self
+                .certificate
+                .get(offset..tbs_bytes_written + offset)
+                .ok_or(DpeErrorCode::InternalError)?;
             sign_cb(tbs, false)?
         };
 
@@ -2558,7 +2561,10 @@ impl CertWriter<'_> {
             self.encode_certification_request_info(pub_key, subject_name, measurements)?;
 
         let sig = {
-            let tbs = &self.certificate[offset..cert_req_size + offset];
+            let tbs = self
+                .certificate
+                .get(offset..cert_req_size + offset)
+                .ok_or(DpeErrorCode::InternalError)?;
             sign_cb(tbs, true)?
         };
 
@@ -2637,7 +2643,9 @@ impl CertWriter<'_> {
             let Some(csr_range) = self.csr_range else {
                 Err(DpeErrorCode::X509CsrUnset)?
             };
-            &self.certificate[csr_range.0..csr_range.1]
+            self.certificate
+                .get(csr_range.0..csr_range.1)
+                .ok_or(DpeErrorCode::InternalError)?
         };
 
         let sig = sign_cb(csr, false)?;
