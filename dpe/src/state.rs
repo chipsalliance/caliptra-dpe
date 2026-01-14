@@ -1,14 +1,12 @@
 // Licensed under the Apache-2.0 license.
 use crate::{
-    context::{ChildToRootIter, Context, ContextHandle, ContextState},
-    dpe_instance::flags_iter,
+    context::{ChildToRootIter, Children, Context, ContextHandle, ContextState},
     response::DpeErrorCode,
     support::Support,
     tci::TciNodeData,
     U8Bool, MAX_HANDLES,
 };
 use bitflags::bitflags;
-use caliptra_cfi_lib_git::cfi_launder;
 use core::mem::align_of;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes};
 use zeroize::Zeroize;
@@ -153,17 +151,17 @@ impl State {
     /// * `context` - context to get descendants for
     ///
     /// Returns a u32 representing a bitmap of the node indices.
-    pub(crate) fn get_descendants(&self, context: &Context) -> Result<u32, DpeErrorCode> {
+    pub(crate) fn get_descendants(&self, context: &Context) -> Result<Children, DpeErrorCode> {
         if context.state == ContextState::Inactive {
             return Err(DpeErrorCode::InvalidHandle);
         }
 
         let mut descendants = context.children;
-        for idx in flags_iter(context.children, MAX_HANDLES) {
+        for idx in context.children.iter() {
             if idx >= self.contexts.len() {
                 return Err(DpeErrorCode::InternalError);
             }
-            descendants |= cfi_launder(self.get_descendants(&self.contexts[idx])?);
+            descendants.add_children(self.get_descendants(&self.contexts[idx])?);
         }
         Ok(descendants)
     }
@@ -276,10 +274,13 @@ mod tests {
 
         // No children.
         state.contexts[root].state = ContextState::Active;
-        assert_eq!(state.get_descendants(&state.contexts[root]).unwrap(), 0);
+        assert!(state
+            .get_descendants(&state.contexts[root])
+            .unwrap()
+            .is_empty());
 
         // Child not active.
-        state.contexts[root].children = 1 << child_1;
+        state.contexts[root].children = Children::from(1 << child_1);
         assert_eq!(
             state.get_descendants(&state.contexts[root]),
             Err(DpeErrorCode::InvalidHandle)
@@ -297,8 +298,9 @@ mod tests {
         state.contexts[child_1_1].state = ContextState::Active;
         state.contexts[child_1_2].state = ContextState::Active;
         state.contexts[child_1_3].state = ContextState::Active;
-        state.contexts[child_1].children = (1 << child_1_1) | (1 << child_1_2) | (1 << child_1_3);
-        children |= state.contexts[child_1].children;
+        state.contexts[child_1].children =
+            Children::from((1 << child_1_1) | (1 << child_1_2) | (1 << child_1_3));
+        children.add_children(state.contexts[child_1].children);
         assert_eq!(
             children,
             state.get_descendants(&state.contexts[root]).unwrap()
@@ -306,8 +308,8 @@ mod tests {
 
         // Add great-grandchildren.
         state.contexts[child_1_2_1].state = ContextState::Active;
-        state.contexts[child_1_2].children = 1 << child_1_2_1;
-        children |= state.contexts[child_1_2].children;
+        state.contexts[child_1_2].children = Children::from(1 << child_1_2_1);
+        children.add_children(state.contexts[child_1_2].children);
         assert_eq!(
             state.contexts[child_1_2].children,
             state.get_descendants(&state.contexts[child_1_2]).unwrap()

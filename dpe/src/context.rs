@@ -1,5 +1,11 @@
 // Licensed under the Apache-2.0 license.
-use crate::{response::DpeErrorCode, tci::TciNodeData, U8Bool, MAX_HANDLES};
+use crate::{
+    dpe_instance::{flags_iter, FlagsIter},
+    response::DpeErrorCode,
+    tci::TciNodeData,
+    U8Bool, MAX_HANDLES,
+};
+use caliptra_cfi_lib_git::cfi_launder;
 use constant_time_eq::constant_time_eq_16;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes};
 use zeroize::Zeroize;
@@ -13,7 +19,7 @@ pub struct Context {
     pub handle: ContextHandle,
     pub tci: TciNodeData,
     /// Bitmap of the node indices that are children of this node
-    pub children: u32,
+    pub children: Children,
 
     /// Which hardware locality owns the context.
     pub locality: u32,
@@ -49,7 +55,7 @@ impl Debug for Context {
         f.debug_struct("Context")
             .field("handle", &self.handle.0.get(0..2).unwrap())
             .field("state", &self.state)
-            .field("chilren", &self.children)
+            .field("chilren", &self.children.bits())
             .field("locality", &self.locality)
             .field("parent_idx", &self.parent_idx)
             .finish()
@@ -69,7 +75,7 @@ impl Context {
         Context {
             handle: ContextHandle::default(),
             tci: TciNodeData::new(),
-            children: 0,
+            children: Children::empty(),
             parent_idx: Self::ROOT_INDEX,
             context_type: ContextType::Normal,
             state: ContextState::Inactive,
@@ -104,7 +110,7 @@ impl Context {
         self.tci.tci_type = args.tci_type;
         self.tci.locality = args.locality;
         self.tci.svn = args.svn;
-        self.children = 0;
+        self.children = Children::empty();
         self.parent_idx = args.parent_idx;
         self.context_type = args.context_type;
         self.state = ContextState::Active;
@@ -125,23 +131,24 @@ impl Context {
         self.allow_x509 = false.into();
         self.parent_idx = Self::ROOT_INDEX;
         self.locality = 0;
-        self.children = 0;
+        self.children = Children::empty();
         self.handle = ContextHandle::new_invalid();
     }
 
     /// Return the list of children of the context with idx added.
     /// This function does not mutate DPE state.
-    pub fn add_child(&mut self, idx: usize) -> Result<u32, DpeErrorCode> {
+    pub fn add_child(&mut self, idx: usize) -> Result<Children, DpeErrorCode> {
         if idx >= MAX_HANDLES {
             return Err(DpeErrorCode::InternalError);
         }
-        let children_with_idx = self.children | (1 << idx);
+        let mut children_with_idx = self.children;
+        children_with_idx.add_child(idx)?;
         Ok(children_with_idx)
     }
 
     /// Check if `Self` has any children.
     pub fn has_children(&self) -> bool {
-        self.children != 0
+        self.children.has_children()
     }
 }
 
@@ -184,6 +191,91 @@ impl ContextHandle {
     #[inline(never)]
     pub fn equals(&self, other: &ContextHandle) -> bool {
         constant_time_eq_16(&self.0, &other.0)
+    }
+}
+
+#[repr(C, align(4))]
+#[derive(
+    Default, Debug, IntoBytes, TryFromBytes, KnownLayout, Immutable, Copy, Clone, PartialEq, Eq,
+)]
+pub struct Children(u32);
+
+impl Children {
+    /// Create an empty children bitmap.
+    pub const fn empty() -> Children {
+        Children(0)
+    }
+
+    /// Add a child to the bitmap.
+    pub fn add_child(&mut self, idx: usize) -> Result<(), DpeErrorCode> {
+        if idx >= MAX_HANDLES {
+            return Err(DpeErrorCode::InternalError);
+        }
+        self.0 |= 1 << idx;
+        Ok(())
+    }
+
+    /// Check if `Self` has no children.
+    pub fn is_empty(&self) -> bool {
+        self == &Self::empty()
+    }
+
+    /// Check if `Self` has any children.
+    pub fn has_children(&self) -> bool {
+        !self.is_empty()
+    }
+
+    /// Check if `Self` has a child at bit position `idx`.
+    pub fn has_child(&self, idx: usize) -> bool {
+        if idx >= MAX_HANDLES {
+            return false;
+        }
+        let bitfield = self.0;
+        bitfield & (1 << idx) != 0
+    }
+
+    /// Union of two children bitmaps.
+    pub fn add_children(&mut self, other: Children) {
+        self.0 |= cfi_launder(other.0);
+    }
+
+    /// Remove all children in `other` from `self`.
+    pub fn remove_children(&mut self, other: Children) {
+        self.0 &= !cfi_launder(other.0);
+    }
+
+    /// Get an iterator over the children.
+    pub(crate) fn iter(&self) -> FlagsIter {
+        flags_iter(self.0, MAX_HANDLES)
+    }
+
+    /// Get the u32 bit representation of the children.
+    pub fn bits(&self) -> u32 {
+        self.0
+    }
+}
+
+impl Zeroize for Children {
+    fn zeroize(&mut self) {
+        *self = Children::empty()
+    }
+}
+
+impl From<Children> for u32 {
+    fn from(children: Children) -> Self {
+        children.bits()
+    }
+}
+
+impl From<&Children> for u32 {
+    fn from(children: &Children) -> Self {
+        children.bits()
+    }
+}
+
+impl From<u32> for Children {
+    fn from(value: u32) -> Self {
+        Children(value)
     }
 }
 

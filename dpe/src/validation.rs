@@ -90,7 +90,7 @@ impl DpeValidator<'_> {
                 ContextState::Retired => {
                     self.check_children_and_parent(i)?;
                     // retired contexts must have at least one child context
-                    let child_context_count = flags_iter(context.children, MAX_HANDLES).count();
+                    let child_context_count = context.children.iter().count();
                     if child_context_count == 0 {
                         return Err(ValidationError::DanglingRetiredContext);
                     }
@@ -139,7 +139,7 @@ impl DpeValidator<'_> {
     fn validate_inactive_context(&self, context: &Context) -> Result<(), ValidationError> {
         if context.parent_idx != Context::ROOT_INDEX {
             Err(ValidationError::InactiveContextInvalidParent)
-        } else if context.children != 0 {
+        } else if context.children.has_children() {
             Err(ValidationError::InactiveContextWithChildren)
         } else if context.tci != TciNodeData::default() {
             Err(ValidationError::InactiveContextWithMeasurement)
@@ -165,12 +165,15 @@ impl DpeValidator<'_> {
                 return Err(ValidationError::InactiveParent);
             }
             // Check that parent's children contains idx
-            if self.dpe.contexts[context.parent_idx as usize].children & (1 << idx) == 0 {
+            if !self.dpe.contexts[context.parent_idx as usize]
+                .children
+                .has_child(idx)
+            {
                 return Err(ValidationError::ParentChildLinksCorrupted);
             }
         }
         // Check if any children do not exist
-        for child in flags_iter(context.children, 32) {
+        for child in flags_iter(context.children.into(), 32) {
             if child >= MAX_HANDLES {
                 return Err(ValidationError::ChildDoesNotExist);
             }
@@ -219,7 +222,7 @@ impl DpeValidator<'_> {
 
         // count in degree of each node
         for context in self.dpe.contexts.iter() {
-            for child in flags_iter(context.children, MAX_HANDLES) {
+            for child in context.children.iter() {
                 if child >= MAX_HANDLES {
                     return Err(ValidationError::ChildDoesNotExist);
                 }
@@ -279,7 +282,7 @@ impl DpeValidator<'_> {
         }
         seen[curr_idx] = true;
         // dfs on all child nodes
-        for child_idx in flags_iter(self.dpe.contexts[curr_idx].children, MAX_HANDLES) {
+        for child_idx in self.dpe.contexts[curr_idx].children.iter() {
             self.detect_invalid_subtree(child_idx, seen, context_type)?;
         }
         Ok(())
@@ -289,7 +292,7 @@ impl DpeValidator<'_> {
 #[cfg(test)]
 pub mod tests {
     use crate::{
-        context::{Context, ContextHandle, ContextState, ContextType},
+        context::{Children, Context, ContextHandle, ContextState, ContextType},
         dpe_instance::tests::test_state,
         support::Support,
         tci::TciMeasurement,
@@ -307,9 +310,9 @@ pub mod tests {
 
         // validation fails on graph where child has multiple parents
         dpe_validator.dpe.contexts[0].state = ContextState::Active;
-        dpe_validator.dpe.contexts[0].children = 0b100;
+        dpe_validator.dpe.contexts[0].children = 0b100.into();
         dpe_validator.dpe.contexts[1].state = ContextState::Active;
-        dpe_validator.dpe.contexts[1].children = 0b100;
+        dpe_validator.dpe.contexts[1].children = 0b100.into();
         dpe_validator.dpe.contexts[2].state = ContextState::Active;
         assert_eq!(
             dpe_validator.validate_context_forest(),
@@ -317,25 +320,27 @@ pub mod tests {
         );
 
         // validation passes on a tree in the shape of a linked-list
-        dpe_validator.dpe.contexts[0].children = 0b10;
+        dpe_validator.dpe.contexts[0].children = 0b10.into();
         assert_eq!(dpe_validator.validate_context_forest(), Ok(()));
 
         // validation fails on circle graph with a simple cycle
-        dpe_validator.dpe.contexts[2].children = 0b1;
+        dpe_validator.dpe.contexts[2].children = 0b1.into();
         assert_eq!(
             dpe_validator.validate_context_forest(),
             Err(ValidationError::CyclesInTree)
         );
 
         // validation passes on a complete binary tree of size 2
-        dpe_validator.dpe.contexts[0].children |= 0b100;
-        dpe_validator.dpe.contexts[1].children = 0;
-        dpe_validator.dpe.contexts[2].children = 0;
+        dpe_validator.dpe.contexts[0]
+            .children
+            .add_children(0b100.into());
+        dpe_validator.dpe.contexts[1].children = Children::empty();
+        dpe_validator.dpe.contexts[2].children = Children::empty();
         assert_eq!(dpe_validator.validate_context_forest(), Ok(()));
 
         // validation fails on multiple normal trees in forest
         dpe_validator.dpe.contexts[10].state = ContextState::Active;
-        dpe_validator.dpe.contexts[10].children = (1 << 11) | (1 << 12);
+        dpe_validator.dpe.contexts[10].children = Children::from((1 << 11) | (1 << 12));
         dpe_validator.dpe.contexts[11].state = ContextState::Active;
         dpe_validator.dpe.contexts[12].state = ContextState::Active;
         assert_eq!(
@@ -415,13 +420,13 @@ pub mod tests {
         );
 
         dpe_validator.dpe.contexts[0].parent_idx = Context::ROOT_INDEX;
-        dpe_validator.dpe.contexts[0].children = u32::MAX;
+        dpe_validator.dpe.contexts[0].children = u32::MAX.into();
         assert_eq!(
             dpe_validator.validate_dpe_state(),
             Err(ValidationError::InactiveContextWithChildren)
         );
 
-        dpe_validator.dpe.contexts[0].children = 0;
+        dpe_validator.dpe.contexts[0].children = Children::empty();
         dpe_validator.dpe.contexts[0].tci.tci_current = TciMeasurement([1; TCI_SIZE]);
         assert_eq!(
             dpe_validator.validate_dpe_state(),
@@ -445,19 +450,19 @@ pub mod tests {
         );
 
         dpe_validator.dpe.contexts[0].parent_idx = Context::ROOT_INDEX;
-        dpe_validator.dpe.contexts[0].children = 1 << 30;
+        dpe_validator.dpe.contexts[0].children = Children::from(1 << 30);
         assert_eq!(
             dpe_validator.validate_dpe_state(),
             Err(ValidationError::ChildDoesNotExist)
         );
 
-        dpe_validator.dpe.contexts[0].children = 1 << 10;
+        dpe_validator.dpe.contexts[0].children = Children::from(1 << 10);
         assert_eq!(
             dpe_validator.validate_dpe_state(),
             Err(ValidationError::InactiveChild)
         );
 
-        dpe_validator.dpe.contexts[0].children = 0;
+        dpe_validator.dpe.contexts[0].children = Children::empty();
         dpe_validator.dpe.contexts[0].parent_idx = 10;
         assert_eq!(
             dpe_validator.validate_dpe_state(),
@@ -465,13 +470,13 @@ pub mod tests {
         );
 
         dpe_validator.dpe.contexts[10].state = ContextState::Active;
-        dpe_validator.dpe.contexts[0].children = 1 << 10;
+        dpe_validator.dpe.contexts[0].children = Children::from(1 << 10);
         assert_eq!(
             dpe_validator.validate_dpe_state(),
             Err(ValidationError::ParentChildLinksCorrupted)
         );
 
-        dpe_validator.dpe.contexts[0].children = 0;
+        dpe_validator.dpe.contexts[0].children = Children::empty();
         dpe_validator.dpe.contexts[0].parent_idx = 10;
         assert_eq!(
             dpe_validator.validate_dpe_state(),

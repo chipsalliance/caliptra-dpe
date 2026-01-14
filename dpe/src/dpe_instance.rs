@@ -736,7 +736,7 @@ pub mod tests {
             auto_init_measurement
         );
         assert_eq!(env.state.contexts[idx].parent_idx, Context::ROOT_INDEX);
-        assert_eq!(env.state.contexts[idx].children, 0);
+        assert!(env.state.contexts[idx].children.is_empty());
         assert_eq!(env.state.contexts[idx].state, ContextState::Active);
         assert_eq!(env.state.contexts[idx].handle, ContextHandle::default());
         assert!(env.state.has_initialized());

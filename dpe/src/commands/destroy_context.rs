@@ -1,10 +1,10 @@
 // Licensed under the Apache-2.0 license.
 use super::CommandExecution;
 use crate::{
-    context::{Context, ContextHandle, ContextState},
-    dpe_instance::{flags_iter, DpeEnv, DpeInstance, DpeTypes},
+    context::{Children, Context, ContextHandle, ContextState},
+    dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
     response::{DpeErrorCode, Response},
-    State, MAX_HANDLES,
+    State,
 };
 #[cfg(not(feature = "no-cfi"))]
 use caliptra_cfi_derive_git::cfi_impl_fn;
@@ -42,7 +42,7 @@ pub(crate) fn destroy_context(
     }
 
     // mark consecutive retired parent contexts without active children to be destroyed
-    let mut retired_contexts = 0u32;
+    let mut retired_contexts = Children::empty();
     let mut parent_idx = context.parent_idx as usize;
     loop {
         if parent_idx == Context::ROOT_INDEX as usize {
@@ -52,9 +52,9 @@ pub(crate) fn destroy_context(
         }
         let parent_context = &state.contexts[parent_idx];
         // make sure the retired context does not have other active child contexts
-        let child_context_count = flags_iter(parent_context.children, MAX_HANDLES).count();
+        let child_context_count = parent_context.children.iter().count();
         if parent_context.state == ContextState::Retired && cfi_launder(child_context_count) == 1 {
-            retired_contexts |= 1 << parent_idx;
+            retired_contexts.add_child(parent_idx)?;
         } else {
             #[cfg(not(feature = "no-cfi"))]
             cfi_assert!(parent_context.state != ContextState::Retired || child_context_count != 1);
@@ -66,16 +66,18 @@ pub(crate) fn destroy_context(
 
     // create a bitmask indicating that the current context, all its descendants, and its consecutive
     // retired parent contexts should be destroyed
-    let to_destroy = (1 << idx) | state.get_descendants(context)? | retired_contexts;
+    let mut to_destroy = state.get_descendants(context)?;
+    to_destroy.add_child(idx)?;
+    to_destroy.add_children(retired_contexts);
 
     for (idx, c) in state.contexts.iter_mut().enumerate() {
         // Clears all the to_destroy bits in the children of every context
-        c.children &= !cfi_launder(to_destroy);
-        if to_destroy & (1 << idx) != 0 {
+        c.children.remove_children(to_destroy);
+        if to_destroy.has_child(idx) {
             c.destroy();
         } else {
             #[cfg(not(feature = "no-cfi"))]
-            cfi_assert_eq(to_destroy & (1 << idx), 0);
+            cfi_assert_eq(to_destroy.has_child(idx), false);
         }
     }
     Ok(())
@@ -164,7 +166,7 @@ mod tests {
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         );
         assert_eq!(env.state.contexts[1].state, ContextState::Inactive);
-        assert_eq!(env.state.contexts[0].children, 0);
+        assert!(env.state.contexts[0].children.is_empty());
         // destroy context[0]
         assert_eq!(
             Ok(Response::DestroyCtx(
@@ -244,10 +246,10 @@ mod tests {
         assert_eq!(env.state.contexts[4].state, ContextState::Inactive);
         assert_eq!(env.state.contexts[5].state, ContextState::Inactive);
         assert_eq!(env.state.contexts[6].state, ContextState::Inactive);
-        assert_eq!(env.state.contexts[0].children, 0);
-        assert_eq!(env.state.contexts[1].children, 0);
-        assert_eq!(env.state.contexts[2].children, 0);
-        assert_eq!(env.state.contexts[3].children, 0);
+        assert!(env.state.contexts[0].children.is_empty());
+        assert!(env.state.contexts[1].children.is_empty());
+        assert!(env.state.contexts[2].children.is_empty());
+        assert!(env.state.contexts[3].children.is_empty());
 
         activate_dummy_context(
             &mut env.state,
@@ -282,7 +284,7 @@ mod tests {
         );
         assert_eq!(env.state.contexts[1].state, ContextState::Inactive);
         // check that context[2] is still a child of context[0]
-        assert_eq!(env.state.contexts[0].children, 1 << 2);
+        assert_eq!(env.state.contexts[0].children.bits(), 1 << 2);
     }
 
     #[test]

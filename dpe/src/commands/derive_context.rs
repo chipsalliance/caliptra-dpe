@@ -609,7 +609,10 @@ mod tests {
         assert_eq!(parent_idx, child.parent_idx as usize);
         assert_eq!(
             child_idx,
-            env.state.contexts[parent_idx].children.trailing_zeros() as usize
+            env.state.contexts[parent_idx]
+                .children
+                .bits()
+                .trailing_zeros() as usize
         );
         assert_eq!(7, child.tci.tci_type);
         assert_eq!(TEST_LOCALITIES[1], child.locality);
