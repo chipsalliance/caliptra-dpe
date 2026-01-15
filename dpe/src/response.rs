@@ -5,8 +5,11 @@ Abstract:
     DPE reponses and serialization.
 --*/
 use crate::{
-    context::ContextHandle, validation::ValidationError, DpeProfile, CURRENT_PROFILE_MAJOR_VERSION,
-    CURRENT_PROFILE_MINOR_VERSION, MAX_CERT_SIZE, MAX_EXPORTED_CDI_SIZE, MAX_HANDLES,
+    commands::{CertifyKeyCommand, Command, DeriveContextCmd, SignCommand},
+    context::ContextHandle,
+    validation::ValidationError,
+    DpeProfile, CURRENT_PROFILE_MAJOR_VERSION, CURRENT_PROFILE_MINOR_VERSION, MAX_CERT_SIZE,
+    MAX_EXPORTED_CDI_SIZE, MAX_HANDLES,
 };
 use crypto::{ecdsa::EcdsaAlgorithm, CryptoError};
 use platform::{PlatformError, MAX_CHUNK_SIZE};
@@ -22,6 +25,7 @@ pub enum Response {
     InitCtx(NewHandleResp),
     DeriveContext(DeriveContextResp),
     DeriveContextExportedCdi(DeriveContextExportedCdiResp),
+    #[cfg(not(feature = "disable_rotate_context"))]
     RotateCtx(NewHandleResp),
     CertifyKey(CertifyKeyResp),
     Sign(SignResp),
@@ -37,6 +41,7 @@ impl Response {
             Response::InitCtx(res) => res.as_bytes(),
             Response::DeriveContext(res) => res.as_bytes(),
             Response::DeriveContextExportedCdi(res) => res.as_bytes(),
+            #[cfg(not(feature = "disable_rotate_context"))]
             Response::RotateCtx(res) => res.as_bytes(),
             Response::CertifyKey(res) => res.as_bytes(),
             Response::Sign(res) => res.as_bytes(),
@@ -44,6 +49,79 @@ impl Response {
             Response::GetCertificateChain(res) => res.as_bytes(),
             Response::Error(res) => res.as_bytes(),
         }
+    }
+
+    pub fn try_read_from_bytes(cmd: &Command, bytes: &[u8]) -> Result<Response, DpeErrorCode> {
+        let r = match cmd {
+            #[cfg(feature = "p256")]
+            Command::CertifyKey(CertifyKeyCommand::P256(_)) => {
+                Response::CertifyKey(CertifyKeyResp::P256(
+                    CertifyKeyP256Resp::try_read_from_bytes(bytes)
+                        .map_err(|_| DpeErrorCode::InvalidArgument)?,
+                ))
+            }
+            #[cfg(feature = "p384")]
+            Command::CertifyKey(CertifyKeyCommand::P384(_)) => {
+                Response::CertifyKey(CertifyKeyResp::P384(
+                    CertifyKeyP384Resp::try_read_from_bytes(bytes)
+                        .map_err(|_| DpeErrorCode::InvalidArgument)?,
+                ))
+            }
+            #[cfg(feature = "ml-dsa")]
+            Command::CertifyKey(CertifyKeyCommand::Mldsa87(_)) => {
+                Response::CertifyKey(CertifyKeyResp::Mldsa87(
+                    CertifyKeyMldsa87Resp::try_read_from_bytes(bytes)
+                        .map_err(|_| DpeErrorCode::InvalidArgument)?,
+                ))
+            }
+            Command::DeriveContext(DeriveContextCmd { flags, .. }) if flags.exports_cdi() => {
+                Response::DeriveContextExportedCdi(
+                    DeriveContextExportedCdiResp::try_read_from_bytes(bytes)
+                        .map_err(|_| DpeErrorCode::InvalidArgument)?,
+                )
+            }
+            Command::DeriveContext(_) => Response::DeriveContext(
+                DeriveContextResp::try_read_from_bytes(bytes)
+                    .map_err(|_| DpeErrorCode::InvalidArgument)?,
+            ),
+            Command::GetCertificateChain(_) => Response::GetCertificateChain(
+                GetCertificateChainResp::try_read_from_bytes(bytes)
+                    .map_err(|_| DpeErrorCode::InvalidArgument)?,
+            ),
+            Command::DestroyCtx(_) => Response::DestroyCtx(
+                ResponseHdr::try_read_from_bytes(bytes)
+                    .map_err(|_| DpeErrorCode::InvalidArgument)?,
+            ),
+            Command::GetProfile(_) => Response::GetProfile(
+                GetProfileResp::try_read_from_bytes(bytes)
+                    .map_err(|_| DpeErrorCode::InvalidArgument)?,
+            ),
+            Command::InitCtx(_) => Response::InitCtx(
+                NewHandleResp::try_read_from_bytes(bytes)
+                    .map_err(|_| DpeErrorCode::InvalidArgument)?,
+            ),
+            #[cfg(not(feature = "disable_rotate_context"))]
+            Command::RotateCtx(_) => Response::RotateCtx(
+                NewHandleResp::try_read_from_bytes(bytes)
+                    .map_err(|_| DpeErrorCode::InvalidArgument)?,
+            ),
+            #[cfg(feature = "p256")]
+            Command::Sign(SignCommand::P256(_)) => Response::Sign(SignResp::P256(
+                SignP256Resp::try_read_from_bytes(bytes)
+                    .map_err(|_| DpeErrorCode::InvalidArgument)?,
+            )),
+            #[cfg(feature = "p384")]
+            Command::Sign(SignCommand::P384(_)) => Response::Sign(SignResp::P384(
+                SignP384Resp::try_read_from_bytes(bytes)
+                    .map_err(|_| DpeErrorCode::InvalidArgument)?,
+            )),
+            #[cfg(feature = "ml-dsa")]
+            Command::Sign(SignCommand::Mldsa87(_)) => Response::Sign(SignResp::MlDsa(
+                SignMlDsaResp::try_read_from_bytes(bytes)
+                    .map_err(|_| DpeErrorCode::InvalidArgument)?,
+            )),
+        };
+        Ok(r)
     }
 }
 
