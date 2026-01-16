@@ -463,7 +463,11 @@ mod tests {
     };
     use platform::{Platform, MAX_KEY_IDENTIFIER_SIZE};
     use std::str::FromStr;
-    use x509_parser::{nom::Parser, oid_registry::asn1_rs::{oid, Oid}, prelude::*};
+    use x509_parser::{
+        nom::Parser,
+        oid_registry::asn1_rs::{oid, Oid},
+        prelude::*,
+    };
     use zerocopy::IntoBytes;
 
     const TEST_DERIVE_CONTEXT_CMD: DeriveContextCmd = DeriveContextCmd {
