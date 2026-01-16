@@ -40,7 +40,10 @@ use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes};
 pub use crypto::{ecdsa::EcdsaAlgorithm, ExportedCdiHandle, MAX_EXPORTED_CDI_SIZE};
 
 // Max cert size returned by CertifyKey
+#[cfg(feature = "ml-dsa")]
 const MAX_CERT_SIZE: usize = 17 * 1024;
+#[cfg(not(feature = "ml-dsa"))]
+const MAX_CERT_SIZE: usize = 7872;
 #[cfg(not(feature = "arbitrary_max_handles"))]
 pub const MAX_HANDLES: usize = 32;
 #[cfg(feature = "arbitrary_max_handles")]
