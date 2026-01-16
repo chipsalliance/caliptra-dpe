@@ -6,7 +6,7 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = ["p256", "no-cfi"]
+default = ["p384"]
 p256 = []
 p384 = []
 ml-dsa = ["crypto/ml-dsa"]

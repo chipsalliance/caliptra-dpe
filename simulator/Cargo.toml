@@ -6,7 +6,7 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = ["p256", "rustcrypto"]
+default = ["p384", "rustcrypto"]
 p256 = ["dpe/p256"]
 p384 = ["dpe/p384"]
 # TODO(clundin): Placeholder name until we decide pattern for DPE profiles and feature flags.
