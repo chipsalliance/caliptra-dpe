@@ -279,9 +279,20 @@ mod tests {
         tci::TciMeasurement,
     };
     use caliptra_cfi_lib_git::CfiCounter;
+    #[cfg(any(feature = "p256", feature = "p384"))]
     use openssl::x509::X509;
+    #[cfg(any(feature = "p256", feature = "p384"))]
     use openssl::{bn::BigNum, ecdsa::EcdsaSig};
     use zerocopy::IntoBytes;
+
+    #[cfg(feature = "ml-dsa")]
+    const TEST_MLDSA_SIGN_DIGEST: [u8; 64] = [
+        0x0, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, 0xa, 0xb, 0xc, 0xd, 0xe, 0xf, 0x10, 0x11,
+        0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20,
+        0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e, 0x2f,
+        0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3a, 0x3b, 0x3c, 0x3d, 0x3e,
+        0x3f,
+    ];
 
     #[cfg(not(feature = "ml-dsa"))]
     const TEST_SIGN_CMD: SignCmd = SignCmd {
@@ -296,7 +307,7 @@ mod tests {
         handle: SIMULATION_HANDLE,
         label: TEST_LABEL,
         flags: SignFlags(0x1234_5678),
-        digest: [0; 64],
+        digest: TEST_MLDSA_SIGN_DIGEST,
     };
 
     #[test]
@@ -330,7 +341,10 @@ mod tests {
                 handle: ContextHandle([0xff; ContextHandle::SIZE]),
                 label: TEST_LABEL,
                 flags: SignFlags::empty(),
-                digest: TEST_DIGEST
+                #[cfg(not(feature = "ml-dsa"))]
+                digest: TEST_DIGEST,
+                #[cfg(feature = "ml-dsa")]
+                digest: TEST_MLDSA_SIGN_DIGEST
             }
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         );
@@ -346,7 +360,10 @@ mod tests {
                 handle: ContextHandle::default(),
                 label: TEST_LABEL,
                 flags: SignFlags::empty(),
-                digest: TEST_DIGEST
+                #[cfg(not(feature = "ml-dsa"))]
+                digest: TEST_DIGEST,
+                #[cfg(feature = "ml-dsa")]
+                digest: TEST_MLDSA_SIGN_DIGEST
             }
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[1])
         );
@@ -365,7 +382,10 @@ mod tests {
                 handle: RANDOM_HANDLE,
                 label: TEST_LABEL,
                 flags: SignFlags::empty(),
-                digest: TEST_DIGEST
+                #[cfg(not(feature = "ml-dsa"))]
+                digest: TEST_DIGEST,
+                #[cfg(feature = "ml-dsa")]
+                digest: TEST_MLDSA_SIGN_DIGEST
             }
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         );
@@ -396,7 +416,10 @@ mod tests {
                 handle: ContextHandle::default(),
                 label: TEST_LABEL,
                 flags: SignFlags::empty(),
+                #[cfg(not(feature = "ml-dsa"))]
                 digest: TEST_DIGEST,
+                #[cfg(feature = "ml-dsa")]
+                digest: TEST_MLDSA_SIGN_DIGEST,
             };
             match cmd.execute(&mut dpe, &mut env, TEST_LOCALITIES[0]).unwrap() {
                 Response::Sign(resp) => resp,
@@ -473,7 +496,7 @@ mod tests {
                     EncodedVerifyingKey::<ml_dsa::MlDsa87>::try_from(key_bytes).unwrap();
                 let vk = VerifyingKey::<ml_dsa::MlDsa87>::decode(&encoded_vk);
 
-                assert!(vk.verify(&TEST_DIGEST, &sig).is_ok());
+                assert!(vk.verify_mu(&TEST_MLDSA_SIGN_DIGEST.into(), &sig));
             }
             _ => panic!("Unsupported profile"),
         }

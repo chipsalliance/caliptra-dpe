@@ -8,8 +8,8 @@ use crate::{
     },
     hkdf::*,
     Crypto, CryptoError, CryptoSuite, Digest, DigestAlgorithm, DigestType, ExportedCdiHandle,
-    Hasher, PrecomputedSignData, PubKey, SignData, SignDataAlgorithm, SignDataType,
-    SignatureAlgorithm, SignatureType, MAX_EXPORTED_CDI_SIZE,
+    Hasher, PubKey, SignData, SignDataAlgorithm, SignDataType, SignatureAlgorithm, SignatureType,
+    MAX_EXPORTED_CDI_SIZE,
 };
 
 #[cfg(feature = "ml-dsa")]
@@ -277,7 +277,7 @@ impl<S: SignatureType, D: DigestType, SD: SignDataType> RustCryptoImpl<S, D, SD>
         data: &SignData,
     ) -> Result<super::Signature, CryptoError> {
         let sig = match data {
-            SignData::Mu(mu) => key.signing_key().sign_mu_deterministic(&mu.0, &[]),
+            SignData::Mu(mu) => key.signing_key().sign_mu_deterministic(&mu.0.into()),
             SignData::Raw(raw) => key.signing_key().sign(raw),
             SignData::Digest(_) => return Err(CryptoError::MismatchedAlgorithm),
         };

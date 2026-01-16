@@ -10,7 +10,7 @@ default = ["p256", "rustcrypto"]
 p256 = ["dpe/p256"]
 p384 = ["dpe/p384"]
 # TODO(clundin): Placeholder name until we decide pattern for DPE profiles and feature flags.
-ml-dsa = ["dpe/ml-dsa"]
+ml-dsa = ["dpe/ml-dsa", "rustcrypto"]
 rustcrypto = ["crypto/rustcrypto", "platform/rustcrypto"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

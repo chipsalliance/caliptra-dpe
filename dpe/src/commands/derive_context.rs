@@ -431,17 +431,18 @@ impl Default for DeriveContextCmd {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[cfg(feature = "ml-dsa")]
-    use crate::commands::{sign::SignMldsa87Cmd as SignCmd, CertifyKeyMldsa87Cmd as CertifyKeyCmd};
+
     #[cfg(feature = "p256")]
     use crate::commands::{sign::SignP256Cmd as SignCmd, CertifyKeyP256Cmd as CertifyKeyCmd};
     #[cfg(feature = "p384")]
     use crate::commands::{sign::SignP384Cmd as SignCmd, CertifyKeyP384Cmd as CertifyKeyCmd};
     use crate::{
         commands::{
+            certify_key::{CertifyKeyCommand, CertifyKeyFlags},
             rotate_context::{RotateCtxCmd, RotateCtxFlags},
+            sign::SignFlags,
             tests::{PROFILES, TEST_DIGEST, TEST_LABEL},
-            CertifyKeyCommand, CertifyKeyFlags, Command, CommandHdr, InitCtxCmd, SignFlags,
+            Command, CommandHdr, InitCtxCmd,
         },
         context::ContextType,
         dpe_instance::tests::{
@@ -461,8 +462,8 @@ mod tests {
         x509::X509,
     };
     use platform::{Platform, MAX_KEY_IDENTIFIER_SIZE};
-    use public_key::PublicKey;
-    use x509_parser::{nom::Parser, oid_registry::asn1_rs::oid, prelude::*};
+    use std::str::FromStr;
+    use x509_parser::{nom::Parser, oid_registry::asn1_rs::{oid, Oid}, prelude::*};
     use zerocopy::IntoBytes;
 
     const TEST_DERIVE_CONTEXT_CMD: DeriveContextCmd = DeriveContextCmd {
@@ -1720,7 +1721,8 @@ mod tests {
                     };
                     hasher.update(pub_key).unwrap();
                     let expected_ski: &[u8] = &hasher.finish().unwrap();
-                    match cert.get_extension_unique(&oid!(2.5.29 .14)) {
+                    let ski_oid = Oid::from_str("2.5.29.14").unwrap();
+                    match cert.get_extension_unique(&ski_oid) {
                         Ok(Some(subject_key_identifier_ext)) => {
                             if let ParsedExtension::SubjectKeyIdentifier(key_identifier) =
                                 subject_key_identifier_ext.parsed_extension()
@@ -1740,7 +1742,8 @@ mod tests {
                     env.platform
                         .get_issuer_key_identifier(&mut expected_aki)
                         .unwrap();
-                    match cert.get_extension_unique(&oid!(2.5.29 .35)) {
+                    let aki_oid = Oid::from_str("2.5.29.35").unwrap();
+                    match cert.get_extension_unique(&aki_oid) {
                         Ok(Some(extension)) => {
                             if let ParsedExtension::AuthorityKeyIdentifier(aki) =
                                 extension.parsed_extension()
