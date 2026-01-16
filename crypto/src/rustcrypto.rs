@@ -277,7 +277,7 @@ impl<S: SignatureType, D: DigestType, SD: SignDataType> RustCryptoImpl<S, D, SD>
         data: &SignData,
     ) -> Result<super::Signature, CryptoError> {
         let sig = match data {
-            SignData::Mu(_mu) => todo!("Add ML-DSA external mu support"),
+            SignData::Mu(mu) => key.signing_key().sign_with_mu(&mu.0, &[]),
             SignData::Raw(raw) => key.signing_key().sign(raw),
             SignData::Digest(_) => return Err(CryptoError::MismatchedAlgorithm),
         };
@@ -310,18 +310,6 @@ impl<S: SignatureType, D: DigestType, SD: SignDataType> Crypto for RustCryptoImp
             },
         };
         Ok(hasher)
-    }
-
-    fn precompute_sign_data(&mut self, bytes: &[u8]) -> Result<PrecomputedSignData, CryptoError> {
-        match SD::SIGN_DATA_ALGORITHM {
-            SignDataAlgorithm::Sha256 | SignDataAlgorithm::Sha384 => {
-                let digest = self.hash(bytes)?;
-                Ok(PrecomputedSignData::Digest(digest))
-            }
-            SignDataAlgorithm::Mu => {
-                todo!("Add ML-DSA external mu support")
-            }
-        }
     }
 
     fn rand_bytes(&mut self, dst: &mut [u8]) -> Result<(), CryptoError> {
