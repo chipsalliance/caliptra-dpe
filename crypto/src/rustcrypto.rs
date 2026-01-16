@@ -277,7 +277,7 @@ impl<S: SignatureType, D: DigestType, SD: SignDataType> RustCryptoImpl<S, D, SD>
         data: &SignData,
     ) -> Result<super::Signature, CryptoError> {
         let sig = match data {
-            SignData::Mu(mu) => key.signing_key().sign_with_mu(&mu.0, &[]),
+            SignData::Mu(mu) => key.signing_key().sign_mu_deterministic(&mu.0, &[]),
             SignData::Raw(raw) => key.signing_key().sign(raw),
             SignData::Digest(_) => return Err(CryptoError::MismatchedAlgorithm),
         };

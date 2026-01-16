@@ -109,7 +109,10 @@ impl CommandExecution for SignCommand<'_> {
                     .map_err(|_| DpeErrorCode::Crypto(crypto::CryptoError::Size))?,
             )),
             #[cfg(feature = "ml-dsa")]
-            crate::DpeProfile::Mldsa87 => SignData::Raw(data),
+            crate::DpeProfile::Mldsa87 => SignData::Mu(
+                crypto::Mu::read_from_bytes(data)
+                    .map_err(|_| DpeErrorCode::Crypto(crypto::CryptoError::Size))?,
+            ),
             _ => Err(DpeErrorCode::InvalidArgument)?,
         };
 
@@ -238,7 +241,7 @@ pub struct SignMldsa87Cmd {
     pub handle: ContextHandle,
     pub label: [u8; 48],
     pub flags: SignFlags,
-    pub digest: [u8; 48],
+    pub digest: [u8; 64],
 }
 
 #[cfg(feature = "ml-dsa")]
@@ -280,11 +283,20 @@ mod tests {
     use openssl::{bn::BigNum, ecdsa::EcdsaSig};
     use zerocopy::IntoBytes;
 
+    #[cfg(not(feature = "ml-dsa"))]
     const TEST_SIGN_CMD: SignCmd = SignCmd {
         handle: SIMULATION_HANDLE,
         label: TEST_LABEL,
         flags: SignFlags(0x1234_5678),
         digest: TEST_DIGEST,
+    };
+
+    #[cfg(feature = "ml-dsa")]
+    const TEST_SIGN_CMD: SignCmd = SignCmd {
+        handle: SIMULATION_HANDLE,
+        label: TEST_LABEL,
+        flags: SignFlags(0x1234_5678),
+        digest: [0; 64],
     };
 
     #[test]
