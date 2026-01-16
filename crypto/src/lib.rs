@@ -456,16 +456,6 @@ pub trait Crypto {
         hasher.finish()
     }
 
-    /// Compute the information needed to sign data
-    ///
-    /// This is pre-hashing for classic signing algorithms, but this allows for computing external
-    /// mu for ML-DSA.
-    ///
-    /// # Arguments
-    ///
-    /// * `bytes` - Raw bytes to be signed
-    fn precompute_sign_data(&mut self, bytes: &[u8]) -> Result<PrecomputedSignData, CryptoError>;
-
     /// Initialize a running hash. Returns an object that will be able to complete the rest.
     ///
     /// Used for hashing multiple buffers that may not be in consecutive memory.

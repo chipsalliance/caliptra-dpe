@@ -375,9 +375,9 @@ mod tests {
     };
     use platform::Platform;
     use spki::ObjectIdentifier;
-    use std::str;
+    use std::str::{self, FromStr};
     use x509_parser::nom::Parser;
-    use x509_parser::oid_registry::asn1_rs::oid;
+    use x509_parser::oid_registry::asn1_rs::{oid, Oid};
     use x509_parser::prelude::public_key::PublicKey;
     use x509_parser::prelude::X509CertificateParser;
     use x509_parser::prelude::X509CertificationRequest;
@@ -736,12 +736,15 @@ mod tests {
                     }
                     ParsedExtension::ExtendedKeyUsage(extended_key_usage) => {
                         // Expect tcg-dice-kp-eca OID (2.23.133.5.4.100.9)
-                        assert_eq!(extended_key_usage.other, [oid!(2.23.133 .5 .4 .100 .9)]);
+                        let expected = Oid::from_str("2.23.133.5.4.100.9").unwrap();
+                        assert_eq!(extended_key_usage.other, [expected]);
                         assert!(extension.critical);
                     }
                     ParsedExtension::UnsupportedExtension { oid } => {
                         // Must be a UEID or MultiTcbInfo extension
-                        if *oid != oid!(2.23.133 .5 .4 .5) && *oid != oid!(2.23.133 .5 .4 .4) {
+                        let multi = Oid::from_str("2.23.133.5.4.5").unwrap();
+                        let ueid = Oid::from_str("2.23.133.5.4.4").unwrap();
+                        if *oid != multi && *oid != ueid {
                             panic!("Error: Unparsed extension has unexpected OID: {:?}", oid);
                         }
                         assert_eq!(extension.critical, mark_dice_extensions_critical);
@@ -794,8 +797,9 @@ mod tests {
         let mut parser = X509CertificateParser::new().with_deep_parse_extensions(true);
         let (_, cert) = parser.parse(certify_resp.cert().unwrap()).unwrap();
 
+        let multi_tcb_info_oid = Oid::from_str("2.23.133.5.4.5").unwrap();
         let multi_tcb_info = cert
-            .get_extension_unique(&oid!(2.23.133 .5 .4 .5))
+            .get_extension_unique(&multi_tcb_info_oid)
             .unwrap()
             .unwrap();
         let mut parsed_tcb_infos =
