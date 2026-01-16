@@ -6,7 +6,7 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = ["p256"]
+default = ["p384"]
 # Run ARBITRARY_MAX_HANDLES=n cargo build --features arbitrary_max_handles to use this feature
 arbitrary_max_handles = ["dpe/arbitrary_max_handles"]
 p256 = ["dpe/p256"]

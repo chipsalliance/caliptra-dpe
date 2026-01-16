@@ -453,7 +453,7 @@ pub mod tests {
         dpe_validator.dpe.contexts[0].children = Children::from(1 << 30);
         assert_eq!(
             dpe_validator.validate_dpe_state(),
-            Err(ValidationError::ChildDoesNotExist)
+            Err(ValidationError::InactiveChild)
         );
 
         dpe_validator.dpe.contexts[0].children = Children::from(1 << 10);
