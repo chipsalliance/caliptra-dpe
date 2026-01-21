@@ -9,7 +9,10 @@ use crate::{
 use caliptra_cfi_derive::Launder;
 #[cfg(feature = "cfi")]
 use caliptra_cfi_lib::cfi_launder;
+
+#[cfg(not(miri))]
 use constant_time_eq::constant_time_eq_16;
+
 use zerocopy::{little_endian::U64, FromBytes, FromZeros, Immutable, IntoBytes, KnownLayout};
 use zeroize::Zeroize;
 
