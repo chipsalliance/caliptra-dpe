@@ -24,7 +24,7 @@ publish = false
 caliptra-cfi-lib = { git = "https://github.com/chipsalliance/caliptra-cfi.git", package = "caliptra-cfi-lib", rev = "aa96c53073ce7f298f7482c1ac57f5f65ffc115e", default-features = false }
 caliptra-cfi-derive = { git = "https://github.com/chipsalliance/caliptra-cfi.git", package = "caliptra-cfi-derive", rev = "aa96c53073ce7f298f7482c1ac57f5f65ffc115e"}
 zerocopy = { version = "0.8.17", features = ["derive"] }
-constant_time_eq = "0.3.0"
+constant_time_eq = "0.4.2"
 arrayvec = { version = "0.7.4", default-features = false, features = ["zeroize"] }
 x509-cert = "0.2.4"
 caliptra-dpe-platform = { path = "platform", default-features = false }
