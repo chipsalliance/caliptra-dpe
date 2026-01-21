@@ -203,7 +203,14 @@ impl ContextHandle {
 
     #[inline(never)]
     pub fn equals(&self, other: &ContextHandle) -> bool {
-        constant_time_eq_16(&self.0, &other.0)
+        #[cfg(not(miri))]
+        {
+            constant_time_eq_16(&self.0, &other.0)
+        }
+        #[cfg(miri)]
+        {
+            self.0 == other.0
+        }
     }
 }
 

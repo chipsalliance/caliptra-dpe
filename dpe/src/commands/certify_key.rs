@@ -537,6 +537,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     // TODO https://github.com/chipsalliance/caliptra-dpe/issues/450
     fn test_certify_key_csr() {
         // Verify that certify_key csr DICE extensions criticality matches the dpe_instance.

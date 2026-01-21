@@ -470,6 +470,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_asymmetric() {
         CfiCounter::reset_for_test();
         let mut state = test_state();

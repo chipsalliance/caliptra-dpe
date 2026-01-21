@@ -734,6 +734,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     #[cfg(not(feature = "ml-dsa"))] // TODO https://github.com/chipsalliance/caliptra-dpe/issues/450
     fn test_full_attestation_flow() {
         CfiCounter::reset_for_test();
@@ -1743,6 +1744,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_create_ca() {
         for mark_dice_extensions_critical in [true, false] {
             CfiCounter::reset_for_test();
