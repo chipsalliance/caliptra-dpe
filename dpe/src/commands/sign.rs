@@ -3,8 +3,8 @@ use super::CommandExecution;
 use crate::{
     context::{ContextHandle, ContextType},
     dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
-    okref,
-    response::{DpeErrorCode, Response, SignResp},
+    mutresp, okref,
+    response::DpeErrorCode,
     DpeProfile,
 };
 use bitflags::bitflags;
@@ -72,12 +72,13 @@ impl SignCommand<'_> {
 impl CommandExecution for SignCommand<'_> {
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     #[inline(never)]
-    fn execute(
+    fn execute_serialized(
         &self,
         dpe: &mut DpeInstance,
         env: &mut DpeEnv<impl DpeTypes>,
         locality: u32,
-    ) -> Result<Response, DpeErrorCode> {
+        out: &mut [u8],
+    ) -> Result<usize, DpeErrorCode> {
         let (handle, label, data) = match *self {
             #[cfg(feature = "p256")]
             SignCommand::P256(cmd) => (&cmd.handle, cmd.label.as_slice(), cmd.digest.as_slice()),
@@ -116,46 +117,56 @@ impl CommandExecution for SignCommand<'_> {
         };
 
         let sig = sign(dpe, env, idx, label, &data);
-        let mut response: SignResp = match okref(&sig)? {
+        match okref(&sig)? {
             #[cfg(feature = "p256")]
             Signature::Ecdsa(EcdsaSignature::Ecdsa256(sig)) => {
                 use crate::response::SignP256Resp;
+                let response = mutresp::<SignP256Resp>(dpe.profile, out)?;
+
+                // Rotate the handle if it isn't the default context.
+                dpe.roll_onetime_use_handle(env, idx)?;
                 let (&sig_r, &sig_s) = sig.as_slice();
-                SignResp::P256(SignP256Resp {
-                    new_context_handle: ContextHandle::new_invalid(),
+                *response = SignP256Resp {
+                    new_context_handle: env.state.contexts[idx].handle,
                     sig_r,
                     sig_s,
                     resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
-                })
+                };
+                Ok(size_of_val(response))
             }
             #[cfg(feature = "p384")]
             Signature::Ecdsa(EcdsaSignature::Ecdsa384(sig)) => {
                 use crate::response::SignP384Resp;
+                let response = mutresp::<SignP384Resp>(dpe.profile, out)?;
+
+                // Rotate the handle if it isn't the default context.
+                dpe.roll_onetime_use_handle(env, idx)?;
                 let (&sig_r, &sig_s) = sig.as_slice();
-                SignResp::P384(SignP384Resp {
-                    new_context_handle: ContextHandle::new_invalid(),
+                *response = SignP384Resp {
+                    new_context_handle: env.state.contexts[idx].handle,
                     sig_r,
                     sig_s,
                     resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
-                })
+                };
+                Ok(size_of_val(response))
             }
             #[cfg(feature = "ml-dsa")]
             Signature::MlDsa(crypto::ml_dsa::MldsaSignature(sig)) => {
-                SignResp::MlDsa(crate::response::SignMlDsaResp {
-                    new_context_handle: ContextHandle::new_invalid(),
+                use crate::response::SignMlDsaResp;
+                let response = mutresp::<SignMlDsaResp>(dpe.profile, out)?;
+
+                // Rotate the handle if it isn't the default context.
+                dpe.roll_onetime_use_handle(env, idx)?;
+                *response = SignMlDsaResp {
+                    new_context_handle: env.state.contexts[idx].handle,
                     sig: *sig,
                     _padding: [0; 1],
                     resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
-                })
+                };
+                Ok(size_of_val(response))
             }
             _ => Err(DpeErrorCode::InvalidArgument)?,
-        };
-
-        // Rotate the handle if it isn't the default context.
-        dpe.roll_onetime_use_handle(env, idx)?;
-        response.set_handle(&env.state.contexts[idx].handle);
-
-        Ok(Response::Sign(response))
+        }
     }
 }
 
@@ -203,13 +214,14 @@ pub struct SignP256Cmd {
 #[cfg(feature = "p256")]
 impl CommandExecution for SignP256Cmd {
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
-    fn execute(
+    fn execute_serialized(
         &self,
         dpe: &mut DpeInstance,
         env: &mut DpeEnv<impl DpeTypes>,
         locality: u32,
-    ) -> Result<Response, DpeErrorCode> {
-        SignCommand::P256(self).execute(dpe, env, locality)
+        out: &mut [u8],
+    ) -> Result<usize, DpeErrorCode> {
+        SignCommand::P256(self).execute_serialized(dpe, env, locality, out)
     }
 }
 
@@ -225,13 +237,14 @@ pub struct SignP384Cmd {
 #[cfg(feature = "p384")]
 impl CommandExecution for SignP384Cmd {
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
-    fn execute(
+    fn execute_serialized(
         &self,
         dpe: &mut DpeInstance,
         env: &mut DpeEnv<impl DpeTypes>,
         locality: u32,
-    ) -> Result<Response, DpeErrorCode> {
-        SignCommand::P384(self).execute(dpe, env, locality)
+        out: &mut [u8],
+    ) -> Result<usize, DpeErrorCode> {
+        SignCommand::P384(self).execute_serialized(dpe, env, locality, out)
     }
 }
 
@@ -247,13 +260,14 @@ pub struct SignMldsa87Cmd {
 #[cfg(feature = "ml-dsa")]
 impl CommandExecution for SignMldsa87Cmd {
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
-    fn execute(
+    fn execute_serialized(
         &self,
         dpe: &mut DpeInstance,
         env: &mut DpeEnv<impl DpeTypes>,
         locality: u32,
-    ) -> Result<Response, DpeErrorCode> {
-        SignCommand::Mldsa87(self).execute(dpe, env, locality)
+        out: &mut [u8],
+    ) -> Result<usize, DpeErrorCode> {
+        SignCommand::Mldsa87(self).execute_serialized(dpe, env, locality, out)
     }
 }
 
@@ -276,6 +290,7 @@ mod tests {
         dpe_instance::tests::{
             test_env, test_state, DPE_PROFILE, RANDOM_HANDLE, SIMULATION_HANDLE, TEST_LOCALITIES,
         },
+        response::{Response, SignResp},
         tci::TciMeasurement,
     };
     use caliptra_cfi_lib_git::CfiCounter;

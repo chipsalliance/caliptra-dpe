@@ -3,7 +3,8 @@ use super::CommandExecution;
 use crate::{
     context::{ContextHandle, ContextState},
     dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
-    response::{DpeErrorCode, NewHandleResp, Response},
+    mutresp,
+    response::{DpeErrorCode, NewHandleResp},
     State,
 };
 use bitflags::bitflags;
@@ -80,18 +81,20 @@ impl RotateCtxCmd {
 impl CommandExecution for RotateCtxCmd {
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     #[inline(never)]
-    fn execute(
+    fn execute_serialized(
         &self,
         dpe: &mut DpeInstance,
         env: &mut DpeEnv<impl DpeTypes>,
         locality: u32,
-    ) -> Result<Response, DpeErrorCode> {
+        out: &mut [u8],
+    ) -> Result<usize, DpeErrorCode> {
         if !env.state.support.rotate_context() {
             return Err(DpeErrorCode::InvalidCommand);
         } else {
             #[cfg(not(feature = "no-cfi"))]
             cfi_assert!(env.state.support.rotate_context());
         }
+        let response = mutresp::<NewHandleResp>(dpe.profile, out)?;
         let idx = env.state.get_active_context_pos(&self.handle, locality)?;
 
         // Make sure caller's locality does not already have a default context.
@@ -119,10 +122,11 @@ impl CommandExecution for RotateCtxCmd {
         };
         env.state.contexts[idx].handle = new_handle;
 
-        Ok(Response::RotateCtx(NewHandleResp {
+        *response = NewHandleResp {
             handle: new_handle,
             resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
-        }))
+        };
+        Ok(size_of_val(response))
     }
 }
 
@@ -134,6 +138,7 @@ mod tests {
         dpe_instance::tests::{
             test_env, DPE_PROFILE, RANDOM_HANDLE, SIMULATION_HANDLE, TEST_HANDLE, TEST_LOCALITIES,
         },
+        response::Response,
         support::Support,
         DpeFlags,
     };

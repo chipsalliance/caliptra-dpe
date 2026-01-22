@@ -3,7 +3,8 @@ use super::CommandExecution;
 use crate::{
     context::{Children, Context, ContextHandle, ContextState},
     dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
-    response::{DpeErrorCode, Response},
+    mutresp,
+    response::{DpeErrorCode, ResponseHdr},
     State,
 };
 #[cfg(not(feature = "no-cfi"))]
@@ -86,16 +87,17 @@ pub(crate) fn destroy_context(
 impl CommandExecution for DestroyCtxCmd {
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     #[inline(never)]
-    fn execute(
+    fn execute_serialized(
         &self,
         dpe: &mut DpeInstance,
         env: &mut DpeEnv<impl DpeTypes>,
         locality: u32,
-    ) -> Result<Response, DpeErrorCode> {
+        out: &mut [u8],
+    ) -> Result<usize, DpeErrorCode> {
+        let response = mutresp::<ResponseHdr>(dpe.profile, out)?;
         destroy_context(&self.handle, env.state, locality)?;
-        Ok(Response::DestroyCtx(
-            dpe.response_hdr(DpeErrorCode::NoError),
-        ))
+        *response = dpe.response_hdr(DpeErrorCode::NoError);
+        Ok(size_of_val(response))
     }
 }
 
@@ -110,6 +112,7 @@ mod tests {
         dpe_instance::tests::{
             test_env, test_state, DPE_PROFILE, SIMULATION_HANDLE, TEST_HANDLE, TEST_LOCALITIES,
         },
+        response::Response,
     };
     use caliptra_cfi_lib_git::CfiCounter;
     use zerocopy::IntoBytes;

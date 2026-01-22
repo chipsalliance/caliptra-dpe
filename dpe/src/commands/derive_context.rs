@@ -4,10 +4,11 @@ use crate::{
     commands::destroy_context,
     context::{ActiveContextArgs, Context, ContextHandle, ContextState, ContextType},
     dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
-    response::{DeriveContextExportedCdiResp, DeriveContextResp, DpeErrorCode, Response},
+    mutresp, okref,
+    response::{DeriveContextExportedCdiResp, DeriveContextResp, DpeErrorCode},
     tci::TciMeasurement,
     x509::{create_exported_dpe_cert, CreateDpeCertArgs, CreateDpeCertResult},
-    DpeFlags, State, MAX_CERT_SIZE,
+    DpeFlags, State,
 };
 use bitflags::bitflags;
 #[cfg(not(feature = "no-cfi"))]
@@ -187,12 +188,13 @@ impl DeriveContextCmd {
 impl CommandExecution for DeriveContextCmd {
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     #[inline(never)]
-    fn execute(
+    fn execute_serialized(
         &self,
         dpe: &mut DpeInstance,
         env: &mut DpeEnv<impl DpeTypes>,
         locality: u32,
-    ) -> Result<Response, DpeErrorCode> {
+        out: &mut [u8],
+    ) -> Result<usize, DpeErrorCode> {
         let support = env.state.support;
         let DeriveContextCmd {
             ref handle,
@@ -252,6 +254,7 @@ impl CommandExecution for DeriveContextCmd {
         if flags.is_recursive() {
             cfg_if! {
                 if #[cfg(not(feature = "disable_recursive"))] {
+                    let response = mutresp::<DeriveContextResp>(dpe.profile, out)?;
                     let mut tmp_context = env.state.contexts[parent_idx];
                     if tmp_context.tci.tci_type != tci_type {
                         return Err(DpeErrorCode::InvalidArgument);
@@ -275,12 +278,13 @@ impl CommandExecution for DeriveContextCmd {
                     };
 
                     // Return new handle in new_context_handle
-                    return Ok(Response::DeriveContext(DeriveContextResp {
+                    *response = DeriveContextResp {
                         handle: env.state.contexts[parent_idx].handle,
                         // Should be ignored since retain_parent cannot be true
                         parent_handle: ContextHandle::default(),
                         resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
-                    }));
+                    };
+                    return Ok(size_of_val(response));
                 } else {
                     Err(DpeErrorCode::ArgumentNotSupported)?
                 }
@@ -310,6 +314,7 @@ impl CommandExecution for DeriveContextCmd {
         if flags.creates_certificate() && flags.exports_cdi() {
             cfg_if! {
                 if #[cfg(not(feature = "disable_export_cdi"))] {
+                    let response = mutresp::<DeriveContextExportedCdiResp>(dpe.profile, out)?;
                     let ueid = &env.platform.get_ueid()?;
                     let ueid = ueid.get()?;
                     let args = CreateDpeCertArgs {
@@ -321,13 +326,13 @@ impl CommandExecution for DeriveContextCmd {
                         ueid,
                         dice_extensions_are_critical: env.state.flags.contains(DpeFlags::MARK_DICE_EXTENSIONS_CRITICAL),
                     };
-                    let mut cert = [0; MAX_CERT_SIZE];
-                    let CreateDpeCertResult { cert_size, exported_cdi_handle, .. } = create_exported_dpe_cert(
+                    let result = create_exported_dpe_cert(
                         &args,
                         dpe,
                         env,
-                        &mut cert,
-                    )?;
+                        &mut response.new_certificate,
+                    );
+                    let CreateDpeCertResult { cert_size, exported_cdi_handle, .. } = okref(&result)?;
 
                     if !flags.retains_parent() && !env.state.contexts[parent_idx].has_children() {
                         // When the parent is not retained and there are no other children,
@@ -341,19 +346,18 @@ impl CommandExecution for DeriveContextCmd {
                     }
 
 
-                    return Ok(Response::DeriveContextExportedCdi(DeriveContextExportedCdiResp {
-                        handle: ContextHandle::new_invalid(),
-                        parent_handle: env.state.contexts[parent_idx].handle,
-                        resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
-                        exported_cdi: exported_cdi_handle,
-                        certificate_size: cert_size,
-                        new_certificate: cert,
-                    }))
+                    response.handle = ContextHandle::new_invalid();
+                    response.parent_handle = env.state.contexts[parent_idx].handle;
+                    response.resp_hdr = dpe.response_hdr(DpeErrorCode::NoError);
+                    response.exported_cdi = *exported_cdi_handle;
+                    response.certificate_size = *cert_size;
+                    return Ok(size_of_val(response));
                 } else {
                     Err(DpeErrorCode::ArgumentNotSupported)?
                 }
             }
         }
+        let response = mutresp::<DeriveContextResp>(dpe.profile, out)?;
 
         let child_idx = env
             .state
@@ -408,11 +412,12 @@ impl CommandExecution for DeriveContextCmd {
         env.state.contexts[child_idx] = tmp_child_context;
         env.state.contexts[parent_idx] = tmp_parent_context;
 
-        Ok(Response::DeriveContext(DeriveContextResp {
+        *response = DeriveContextResp {
             handle: child_handle,
             parent_handle: env.state.contexts[parent_idx].handle,
             resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
-        }))
+        };
+        Ok(size_of_val(response))
     }
 }
 
@@ -448,10 +453,10 @@ mod tests {
         dpe_instance::tests::{
             test_env, TestTypes, DPE_PROFILE, RANDOM_HANDLE, SIMULATION_HANDLE, TEST_LOCALITIES,
         },
-        response::{NewHandleResp, SignResp},
+        response::{NewHandleResp, Response, SignResp},
         support::Support,
         validation::DpeValidator,
-        DpeProfile, MAX_EXPORTED_CDI_SIZE, MAX_HANDLES, TCI_SIZE,
+        DpeProfile, MAX_CERT_SIZE, MAX_EXPORTED_CDI_SIZE, MAX_HANDLES, TCI_SIZE,
     };
     use caliptra_cfi_lib_git::CfiCounter;
     use crypto::{Crypto, Hasher};

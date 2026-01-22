@@ -3,10 +3,10 @@ use super::CommandExecution;
 use crate::{
     context::ContextHandle,
     dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
-    okref,
-    response::{CertifyKeyResp, DpeErrorCode, Response},
+    mutresp, okref,
+    response::DpeErrorCode,
     x509::{create_dpe_cert, CreateDpeCertArgs, CreateDpeCertResult},
-    DpeFlags, DpeProfile, MAX_CERT_SIZE,
+    DpeFlags, DpeProfile,
 };
 use bitflags::bitflags;
 #[cfg(not(feature = "no-cfi"))]
@@ -93,6 +93,22 @@ impl CertifyKeyCommand<'_> {
             CertifyKeyCommand::Mldsa87(cmd) => cmd.format,
         }
     }
+
+    fn response_bytes<'a>(
+        &self,
+        p: DpeProfile,
+        out: &'a mut [u8],
+    ) -> Result<CertifyKeyResponseBytes<'a>, DpeErrorCode> {
+        let r = match self {
+            #[cfg(feature = "p256")]
+            CertifyKeyCommand::P256(_) => CertifyKeyResponseBytes::P256(mutresp(p, out)?),
+            #[cfg(feature = "p384")]
+            CertifyKeyCommand::P384(_) => CertifyKeyResponseBytes::P384(mutresp(p, out)?),
+            #[cfg(feature = "ml-dsa")]
+            CertifyKeyCommand::Mldsa87(_) => CertifyKeyResponseBytes::Mldsa87(mutresp(p, out)?),
+        };
+        Ok(r)
+    }
 }
 
 #[cfg(feature = "p256")]
@@ -119,12 +135,13 @@ impl<'a> From<&'a CertifyKeyMldsa87Cmd> for CertifyKeyCommand<'a> {
 impl CommandExecution for CertifyKeyCommand<'_> {
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     #[inline(never)]
-    fn execute(
+    fn execute_serialized(
         &self,
         dpe: &mut DpeInstance,
         env: &mut DpeEnv<impl DpeTypes>,
         locality: u32,
-    ) -> Result<Response, DpeErrorCode> {
+        out: &mut [u8],
+    ) -> Result<usize, DpeErrorCode> {
         let (handle, format, label) = match *self {
             #[cfg(feature = "p256")]
             CertifyKeyCommand::P256(cmd) => (&cmd.handle, cmd.format, cmd.label.as_slice()),
@@ -174,7 +191,9 @@ impl CommandExecution for CertifyKeyCommand<'_> {
                 .flags
                 .contains(DpeFlags::MARK_DICE_EXTENSIONS_CRITICAL),
         };
-        let mut cert = [0; MAX_CERT_SIZE];
+
+        let mut response = self.response_bytes(dpe.profile, out)?;
+        let cert = response.cert_mut();
 
         let result = match format {
             Self::FORMAT_X509 => {
@@ -182,7 +201,7 @@ impl CommandExecution for CertifyKeyCommand<'_> {
                     if #[cfg(not(feature = "disable_x509"))] {
                         #[cfg(not(feature = "no-cfi"))]
                         cfi_assert_eq(format, Self::FORMAT_X509);
-                        create_dpe_cert(&args, dpe, env, &mut cert)
+                        create_dpe_cert(&args, dpe, env, cert)
                     } else {
                         Err(DpeErrorCode::ArgumentNotSupported)
                     }
@@ -193,7 +212,7 @@ impl CommandExecution for CertifyKeyCommand<'_> {
                     if #[cfg(not(feature = "disable_csr"))] {
                         #[cfg(not(feature = "no-cfi"))]
                         cfi_assert_eq(format, Self::FORMAT_CSR);
-                        crate::x509::create_dpe_csr(&args, dpe, env, &mut cert)
+                        crate::x509::create_dpe_csr(&args, dpe, env, cert)
                     } else {
                         Err(DpeErrorCode::ArgumentNotSupported)
                     }
@@ -208,49 +227,50 @@ impl CommandExecution for CertifyKeyCommand<'_> {
             ..
         } = *okref(&result)?;
 
-        let mut response = match pub_key {
+        match (&mut response, pub_key) {
             #[cfg(feature = "p256")]
-            PubKey::Ecdsa(EcdsaPubKey::Ecdsa256(pub_key)) => {
+            (
+                CertifyKeyResponseBytes::P256(resp),
+                PubKey::Ecdsa(EcdsaPubKey::Ecdsa256(pub_key)),
+            ) => {
                 let (x, y) = pub_key.as_slice();
-                CertifyKeyResp::P256(crate::response::CertifyKeyP256Resp {
-                    new_context_handle: ContextHandle::new_invalid(),
-                    derived_pubkey_x: *x,
-                    derived_pubkey_y: *y,
-                    cert_size,
-                    cert,
-                    resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
-                })
+                resp.new_context_handle = ContextHandle::new_invalid();
+                resp.derived_pubkey_x = *x;
+                resp.derived_pubkey_y = *y;
+                resp.cert_size = cert_size;
+                resp.resp_hdr = dpe.response_hdr(DpeErrorCode::NoError);
             }
             #[cfg(feature = "p384")]
-            PubKey::Ecdsa(EcdsaPubKey::Ecdsa384(pub_key)) => {
+            (
+                CertifyKeyResponseBytes::P384(resp),
+                PubKey::Ecdsa(EcdsaPubKey::Ecdsa384(pub_key)),
+            ) => {
                 let (x, y) = pub_key.as_slice();
-                CertifyKeyResp::P384(crate::response::CertifyKeyP384Resp {
-                    new_context_handle: ContextHandle::new_invalid(),
-                    derived_pubkey_x: *x,
-                    derived_pubkey_y: *y,
-                    cert_size,
-                    cert,
-                    resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
-                })
+                resp.new_context_handle = ContextHandle::new_invalid();
+                resp.derived_pubkey_x = *x;
+                resp.derived_pubkey_y = *y;
+                resp.cert_size = cert_size;
+                resp.resp_hdr = dpe.response_hdr(DpeErrorCode::NoError);
             }
             #[cfg(feature = "ml-dsa")]
-            PubKey::MlDsa(crypto::ml_dsa::MldsaPublicKey(pubkey)) => {
-                CertifyKeyResp::Mldsa87(crate::response::CertifyKeyMldsa87Resp {
-                    new_context_handle: ContextHandle::new_invalid(),
-                    pubkey: *pubkey,
-                    cert_size,
-                    cert,
-                    resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
-                })
+            (
+                CertifyKeyResponseBytes::Mldsa87(resp),
+                PubKey::MlDsa(crypto::ml_dsa::MldsaPublicKey(pubkey)),
+            ) => {
+                resp.new_context_handle = ContextHandle::new_invalid();
+                resp.pubkey = *pubkey;
+                resp.cert_size = cert_size;
+                resp.resp_hdr = dpe.response_hdr(DpeErrorCode::NoError);
             }
             _ => Err(DpeErrorCode::InvalidArgument)?,
         };
 
+        let len = response.size()?;
         // Rotate handle if it isn't the default
         dpe.roll_onetime_use_handle(env, idx)?;
-        response.set_handle(&env.state.contexts[idx].handle);
+        response.set_handle(env.state.contexts[idx].handle);
 
-        Ok(Response::CertifyKey(response))
+        Ok(len)
     }
 }
 
@@ -266,13 +286,14 @@ pub struct CertifyKeyP256Cmd {
 #[cfg(feature = "p256")]
 impl CommandExecution for CertifyKeyP256Cmd {
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
-    fn execute(
+    fn execute_serialized(
         &self,
         dpe: &mut DpeInstance,
         env: &mut DpeEnv<impl DpeTypes>,
         locality: u32,
-    ) -> Result<Response, DpeErrorCode> {
-        CertifyKeyCommand::from(self).execute(dpe, env, locality)
+        out: &mut [u8],
+    ) -> Result<usize, DpeErrorCode> {
+        CertifyKeyCommand::from(self).execute_serialized(dpe, env, locality, out)
     }
 }
 
@@ -299,13 +320,14 @@ impl Default for CertifyKeyP384Cmd {
 #[cfg(feature = "p384")]
 impl CommandExecution for CertifyKeyP384Cmd {
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
-    fn execute(
+    fn execute_serialized(
         &self,
         dpe: &mut DpeInstance,
         env: &mut DpeEnv<impl DpeTypes>,
         locality: u32,
-    ) -> Result<Response, DpeErrorCode> {
-        CertifyKeyCommand::from(self).execute(dpe, env, locality)
+        out: &mut [u8],
+    ) -> Result<usize, DpeErrorCode> {
+        CertifyKeyCommand::from(self).execute_serialized(dpe, env, locality, out)
     }
 }
 
@@ -332,13 +354,58 @@ impl Default for CertifyKeyMldsa87Cmd {
 #[cfg(feature = "ml-dsa")]
 impl CommandExecution for CertifyKeyMldsa87Cmd {
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
-    fn execute(
+    fn execute_serialized(
         &self,
         dpe: &mut DpeInstance,
         env: &mut DpeEnv<impl DpeTypes>,
         locality: u32,
-    ) -> Result<Response, DpeErrorCode> {
-        CertifyKeyCommand::from(self).execute(dpe, env, locality)
+        out: &mut [u8],
+    ) -> Result<usize, DpeErrorCode> {
+        CertifyKeyCommand::from(self).execute_serialized(dpe, env, locality, out)
+    }
+}
+
+enum CertifyKeyResponseBytes<'a> {
+    #[cfg(feature = "p256")]
+    P256(&'a mut crate::response::CertifyKeyP256Resp),
+    #[cfg(feature = "p384")]
+    P384(&'a mut crate::response::CertifyKeyP384Resp),
+    #[cfg(feature = "ml-dsa")]
+    Mldsa87(&'a mut crate::response::CertifyKeyMldsa87Resp),
+}
+
+impl CertifyKeyResponseBytes<'_> {
+    fn cert_mut(&mut self) -> &mut [u8] {
+        match self {
+            #[cfg(feature = "p256")]
+            CertifyKeyResponseBytes::P256(resp) => &mut resp.cert,
+            #[cfg(feature = "p384")]
+            CertifyKeyResponseBytes::P384(resp) => &mut resp.cert,
+            #[cfg(feature = "ml-dsa")]
+            CertifyKeyResponseBytes::Mldsa87(resp) => &mut resp.cert,
+        }
+    }
+
+    fn set_handle(&mut self, handle: ContextHandle) {
+        match self {
+            #[cfg(feature = "p256")]
+            CertifyKeyResponseBytes::P256(resp) => resp.new_context_handle = handle,
+            #[cfg(feature = "p384")]
+            CertifyKeyResponseBytes::P384(resp) => resp.new_context_handle = handle,
+            #[cfg(feature = "ml-dsa")]
+            CertifyKeyResponseBytes::Mldsa87(resp) => resp.new_context_handle = handle,
+        }
+    }
+
+    fn size(&self) -> Result<usize, DpeErrorCode> {
+        match self {
+            #[cfg(feature = "p256")]
+            CertifyKeyResponseBytes::P256(resp) => Ok(resp.as_bytes_partial()?.len()),
+            #[cfg(feature = "p384")]
+            CertifyKeyResponseBytes::P384(resp) => Ok(resp.as_bytes_partial()?.len()),
+            #[cfg(feature = "ml-dsa")]
+            CertifyKeyResponseBytes::Mldsa87(resp) => Ok(resp.as_bytes_partial()?.len()),
+        }
     }
 }
 
@@ -354,6 +421,7 @@ mod tests {
     use crate::{
         commands::{Command, CommandHdr, DeriveContextCmd, DeriveContextFlags, InitCtxCmd},
         dpe_instance::tests::{test_env, DPE_PROFILE, SIMULATION_HANDLE, TEST_LOCALITIES},
+        response::{CertifyKeyResp, Response},
         support::Support,
         tci::TciMeasurement,
         x509::{tests::TcbInfo, DirectoryString, Name},

@@ -3,7 +3,8 @@ use super::CommandExecution;
 use crate::{
     context::{ActiveContextArgs, Context, ContextHandle, ContextType},
     dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
-    response::{DpeErrorCode, NewHandleResp, Response},
+    mutresp,
+    response::{DpeErrorCode, NewHandleResp},
 };
 use bitflags::bitflags;
 #[cfg(not(feature = "no-cfi"))]
@@ -52,12 +53,15 @@ impl InitCtxCmd {
 impl CommandExecution for InitCtxCmd {
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     #[inline(never)]
-    fn execute(
+    fn execute_serialized(
         &self,
         dpe: &mut DpeInstance,
         env: &mut DpeEnv<impl DpeTypes>,
         locality: u32,
-    ) -> Result<Response, DpeErrorCode> {
+        out: &mut [u8],
+    ) -> Result<usize, DpeErrorCode> {
+        let response = mutresp::<NewHandleResp>(dpe.profile, out)?;
+
         // This function can only be called once for non-simulation contexts.
         if (self.flag_is_default() && env.state.has_initialized())
             || (self.flag_is_simulation() && !env.state.support.simulation())
@@ -104,10 +108,11 @@ impl CommandExecution for InitCtxCmd {
             allow_export_cdi: true,
             svn: 0,
         });
-        Ok(Response::InitCtx(NewHandleResp {
+        *response = NewHandleResp {
             handle,
             resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
-        }))
+        };
+        Ok(size_of_val(response))
     }
 }
 
@@ -118,6 +123,7 @@ mod tests {
         commands::{tests::PROFILES, Command, CommandHdr},
         context::ContextState,
         dpe_instance::tests::{test_env, DPE_PROFILE, TEST_LOCALITIES},
+        response::Response,
         support::Support,
         DpeFlags, State,
     };
