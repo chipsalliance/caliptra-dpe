@@ -13,6 +13,8 @@ pub use self::get_certificate_chain::GetCertificateChainCmd;
 pub use self::get_profile::GetProfileCmd;
 pub use self::initialize_context::InitCtxCmd;
 pub use self::sign::{SignCommand, SignFlags, SignP256Cmd, SignP384Cmd};
+#[cfg(not(feature = "no-cfi"))]
+use caliptra_cfi_derive_git::cfi_impl_fn;
 
 #[cfg(feature = "ml-dsa")]
 pub use {self::certify_key::CertifyKeyMldsa87Cmd, sign::SignMldsa87Cmd};
@@ -225,6 +227,28 @@ impl<'a> From<&'a DestroyCtxCmd> for Command<'a> {
 impl<'a> From<&'a GetCertificateChainCmd> for Command<'a> {
     fn from(cmd: &'a GetCertificateChainCmd) -> Command<'a> {
         Command::GetCertificateChain(cmd)
+    }
+}
+
+impl CommandExecution for Command<'_> {
+    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    fn execute(
+        &self,
+        dpe: &mut DpeInstance,
+        env: &mut DpeEnv<impl DpeTypes>,
+        locality: u32,
+    ) -> Result<Response, DpeErrorCode> {
+        match self {
+            Command::CertifyKey(cmd) => cmd.execute(dpe, env, locality),
+            Command::DeriveContext(cmd) => cmd.execute(dpe, env, locality),
+            Command::GetCertificateChain(cmd) => cmd.execute(dpe, env, locality),
+            Command::DestroyCtx(cmd) => cmd.execute(dpe, env, locality),
+            Command::GetProfile(cmd) => cmd.execute(dpe, env, locality),
+            Command::InitCtx(cmd) => cmd.execute(dpe, env, locality),
+            #[cfg(not(feature = "disable_rotate_context"))]
+            Command::RotateCtx(cmd) => cmd.execute(dpe, env, locality),
+            Command::Sign(cmd) => cmd.execute(dpe, env, locality),
+        }
     }
 }
 
