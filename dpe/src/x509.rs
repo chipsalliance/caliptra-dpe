@@ -16,6 +16,7 @@ use bitflags::bitflags;
 use caliptra_cfi_lib_git::cfi_launder;
 #[cfg(not(feature = "no-cfi"))]
 use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq};
+use caliptra_okref::okref;
 use crypto::{
     ecdsa::{EcdsaPubKey, EcdsaSignature},
     Crypto, CryptoError, CryptoSuite, Digest, Hasher, PubKey, SignData, Signature,
@@ -2445,10 +2446,11 @@ impl CertWriter<'_> {
                 .certificate
                 .get(offset..tbs_bytes_written + offset)
                 .ok_or(DpeErrorCode::InternalError)?;
-            sign_cb(tbs, false)?
+            sign_cb(tbs, false)
         };
+        let sig = okref(&sig)?;
 
-        let sig_bytes_written = self.encode_signature_bit_string(&sig)?;
+        let sig_bytes_written = self.encode_signature_bit_string(sig)?;
 
         let cert_size = tbs_bytes_written + sig_bytes_written;
 
@@ -2557,11 +2559,12 @@ impl CertWriter<'_> {
                 .certificate
                 .get(offset..cert_req_size + offset)
                 .ok_or(DpeErrorCode::InternalError)?;
-            sign_cb(tbs, true)?
+            sign_cb(tbs, true)
         };
+        let sig = okref(&sig)?;
 
         // Signature
-        let sig_bytes_written = self.encode_signature_bit_string(&sig)?;
+        let sig_bytes_written = self.encode_signature_bit_string(sig)?;
 
         let csr_size = cert_req_size + sig_bytes_written;
 
@@ -2870,16 +2873,16 @@ fn create_dpe_cert_or_csr(
         #[cfg(not(feature = "no-cfi"))]
         cfi_assert!(key_pair.is_err());
     }
-    let (priv_key, pub_key) = key_pair?;
+    let (priv_key, pub_key) = okref(&key_pair)?;
     let mut subj_serial = [0u8; MAX_HASH_SIZE * 2];
-    let subject_name = get_subject_name(env, &pub_key, &mut subj_serial)?;
+    let subject_name = get_subject_name(env, pub_key, &mut subj_serial)?;
 
     const INITIALIZER: TciNodeData = TciNodeData::new();
     let mut nodes = [INITIALIZER; MAX_HANDLES];
     let tci_nodes = get_tci_nodes(env.state, args.handle, args.locality, &mut nodes)?;
 
     let mut subject_key_identifier = [0u8; MAX_KEY_IDENTIFIER_SIZE];
-    get_subject_key_identifier(env, &pub_key, &mut subject_key_identifier)?;
+    get_subject_key_identifier(env, pub_key, &mut subject_key_identifier)?;
 
     let mut authority_key_identifier = [0u8; MAX_KEY_IDENTIFIER_SIZE];
     env.platform
@@ -2914,7 +2917,7 @@ fn create_dpe_cert_or_csr(
     let mut sign_cb = |data: &[u8], use_derived: bool| {
         if use_derived {
             env.crypto
-                .sign_with_derived(&SignData::Raw(data), &priv_key, &pub_key)
+                .sign_with_derived(&SignData::Raw(data), priv_key, pub_key)
         } else {
             env.crypto.sign_with_alias(&SignData::Raw(data))
         }
@@ -2939,7 +2942,7 @@ fn create_dpe_cert_or_csr(
                 &subject_name.serial.bytes()[..20], // Serial number must be truncated to 20 bytes
                 &issuer_name[..issuer_len],
                 &subject_name,
-                &pub_key,
+                pub_key,
                 &measurements,
                 &cert_validity,
             )?;
@@ -2953,13 +2956,8 @@ fn create_dpe_cert_or_csr(
                 dpe.profile,
                 args.dice_extensions_are_critical,
             );
-            let bytes_written = cms_writer.encode_cms(
-                &mut sign_cb,
-                &pub_key,
-                &subject_name,
-                &measurements,
-                &sid,
-            )?;
+            let bytes_written =
+                cms_writer.encode_cms(&mut sign_cb, pub_key, &subject_name, &measurements, &sid)?;
             u32::try_from(bytes_written).map_err(|_| DpeErrorCode::InternalError)?
         }
     };
@@ -2972,7 +2970,7 @@ fn create_dpe_cert_or_csr(
 
     Ok(CreateDpeCertResult {
         cert_size,
-        pub_key,
+        pub_key: pub_key.clone(),
         exported_cdi_handle,
     })
 }

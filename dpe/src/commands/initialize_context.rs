@@ -51,6 +51,7 @@ impl InitCtxCmd {
 
 impl CommandExecution for InitCtxCmd {
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    #[inline(never)]
     fn execute(
         &self,
         dpe: &mut DpeInstance,

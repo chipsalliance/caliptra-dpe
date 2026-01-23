@@ -30,6 +30,7 @@ log = ["dep:log"]
 bitflags = "2.4.0"
 caliptra-cfi-lib-git = { workspace = true, default-features = false, features = ["cfi", "cfi-counter" ] }
 caliptra-cfi-derive-git.workspace = true
+caliptra-okref = { git = "https://github.com/chipsalliance/caliptra-sw", rev = "fc971ba5f7435be68964ae49b3a759287c0e34e7" }
 constant_time_eq.workspace = true
 crypto = {path = "../crypto", default-features = false}
 platform = {path = "../platform", default-features = false}

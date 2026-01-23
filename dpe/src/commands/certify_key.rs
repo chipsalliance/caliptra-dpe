@@ -12,6 +12,7 @@ use bitflags::bitflags;
 use caliptra_cfi_derive_git::cfi_impl_fn;
 #[cfg(not(feature = "no-cfi"))]
 use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq};
+use caliptra_okref::okref;
 use cfg_if::cfg_if;
 #[cfg(any(feature = "p256", feature = "p384"))]
 use crypto::ecdsa::EcdsaPubKey;
@@ -117,6 +118,7 @@ impl<'a> From<&'a CertifyKeyMldsa87Cmd> for CertifyKeyCommand<'a> {
 
 impl CommandExecution for CertifyKeyCommand<'_> {
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    #[inline(never)]
     fn execute(
         &self,
         dpe: &mut DpeInstance,
@@ -174,9 +176,7 @@ impl CommandExecution for CertifyKeyCommand<'_> {
         };
         let mut cert = [0; MAX_CERT_SIZE];
 
-        let CreateDpeCertResult {
-            cert_size, pub_key, ..
-        } = match format {
+        let result = match format {
             Self::FORMAT_X509 => {
                 cfg_if! {
                     if #[cfg(not(feature = "disable_x509"))] {
@@ -200,7 +200,13 @@ impl CommandExecution for CertifyKeyCommand<'_> {
                 }
             }
             _ => return Err(DpeErrorCode::InvalidArgument),
-        }?;
+        };
+
+        let CreateDpeCertResult {
+            cert_size,
+            ref pub_key,
+            ..
+        } = *okref(&result)?;
 
         let mut response = match pub_key {
             #[cfg(feature = "p256")]
@@ -231,7 +237,7 @@ impl CommandExecution for CertifyKeyCommand<'_> {
             PubKey::MlDsa(crypto::ml_dsa::MldsaPublicKey(pubkey)) => {
                 CertifyKeyResp::Mldsa87(crate::response::CertifyKeyMldsa87Resp {
                     new_context_handle: ContextHandle::new_invalid(),
-                    pubkey,
+                    pubkey: *pubkey,
                     cert_size,
                     cert,
                     resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
