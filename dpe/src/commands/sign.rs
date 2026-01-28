@@ -12,6 +12,7 @@ use caliptra_cfi_derive_git::cfi_impl_fn;
 use caliptra_cfi_lib_git::cfi_launder;
 #[cfg(not(feature = "no-cfi"))]
 use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq, cfi_assert_ne};
+use caliptra_okref::okref;
 use cfg_if::cfg_if;
 #[cfg(any(feature = "p256", feature = "p384"))]
 use crypto::{ecdsa::EcdsaSignature, Digest};
@@ -70,6 +71,7 @@ impl SignCommand<'_> {
 
 impl CommandExecution for SignCommand<'_> {
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    #[inline(never)]
     fn execute(
         &self,
         dpe: &mut DpeInstance,
@@ -113,7 +115,8 @@ impl CommandExecution for SignCommand<'_> {
             _ => Err(DpeErrorCode::InvalidArgument)?,
         };
 
-        let mut response: SignResp = match sign(dpe, env, idx, label, &data)? {
+        let sig = sign(dpe, env, idx, label, &data);
+        let mut response: SignResp = match okref(&sig)? {
             #[cfg(feature = "p256")]
             Signature::Ecdsa(EcdsaSignature::Ecdsa256(sig)) => {
                 use crate::response::SignP256Resp;
@@ -140,7 +143,7 @@ impl CommandExecution for SignCommand<'_> {
             Signature::MlDsa(crypto::ml_dsa::MldsaSignature(sig)) => {
                 SignResp::MlDsa(crate::response::SignMlDsaResp {
                     new_context_handle: ContextHandle::new_invalid(),
-                    sig,
+                    sig: *sig,
                     _padding: [0; 1],
                     resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
                 })

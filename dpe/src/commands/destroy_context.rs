@@ -85,6 +85,7 @@ pub(crate) fn destroy_context(
 
 impl CommandExecution for DestroyCtxCmd {
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    #[inline(never)]
     fn execute(
         &self,
         dpe: &mut DpeInstance,

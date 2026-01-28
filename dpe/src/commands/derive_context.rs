@@ -186,6 +186,7 @@ impl DeriveContextCmd {
 
 impl CommandExecution for DeriveContextCmd {
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    #[inline(never)]
     fn execute(
         &self,
         dpe: &mut DpeInstance,
