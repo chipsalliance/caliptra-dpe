@@ -8,6 +8,7 @@
 use crate::{
     context::ContextHandle,
     dpe_instance::{DpeEnv, DpeTypes},
+    okref,
     response::DpeErrorCode,
     tci::{TciMeasurement, TciNodeData},
     DpeInstance, DpeProfile, State, MAX_HANDLES,
@@ -16,7 +17,6 @@ use bitflags::bitflags;
 use caliptra_cfi_lib_git::cfi_launder;
 #[cfg(not(feature = "no-cfi"))]
 use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq};
-use caliptra_okref::okref;
 use crypto::{
     ecdsa::{EcdsaPubKey, EcdsaSignature},
     Crypto, CryptoError, CryptoSuite, Digest, Hasher, PubKey, SignData, Signature,
