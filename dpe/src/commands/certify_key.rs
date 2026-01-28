@@ -3,6 +3,7 @@ use super::CommandExecution;
 use crate::{
     context::ContextHandle,
     dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
+    okref,
     response::{CertifyKeyResp, DpeErrorCode, Response},
     x509::{create_dpe_cert, CreateDpeCertArgs, CreateDpeCertResult},
     DpeFlags, DpeProfile, MAX_CERT_SIZE,
@@ -12,7 +13,6 @@ use bitflags::bitflags;
 use caliptra_cfi_derive_git::cfi_impl_fn;
 #[cfg(not(feature = "no-cfi"))]
 use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq};
-use caliptra_okref::okref;
 use cfg_if::cfg_if;
 #[cfg(any(feature = "p256", feature = "p384"))]
 use crypto::ecdsa::EcdsaPubKey;

@@ -152,6 +152,23 @@ macro_rules! bitflags_join {
     ($x: expr, $($z: expr),+) => ($x.union(bitflags_join!($($z),*)));
 }
 
+// Copied from https://github.com/chipsalliance/caliptra-sw/tree/main/common/okref
+// unfortunately we cannot depend on caliptra-okref directly due to dependency
+// cycles. So we copy the relevant code here.
+pub fn okref<T, E: Copy>(r: &Result<T, E>) -> Result<&T, E> {
+    match r {
+        Ok(r) => Ok(r),
+        Err(e) => Err(*e),
+    }
+}
+
+pub fn okmutref<T, E: Copy>(r: &mut Result<T, E>) -> Result<&mut T, E> {
+    match r {
+        Ok(r) => Ok(r),
+        Err(e) => Err(*e),
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     /// Convenience function to initialize logging for unit tests
