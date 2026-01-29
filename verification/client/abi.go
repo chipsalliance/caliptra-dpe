@@ -252,11 +252,11 @@ type DeriveContextResp struct {
 type SignFlags uint32
 
 // SignReq is the input request to Sign
-type SignReq[Digest DigestAlgorithm] struct {
+type SignReq[Digest DigestAlgorithm, SignData DigestAlgorithm] struct {
 	ContextHandle ContextHandle
 	Label         Digest
 	Flags         SignFlags
-	ToBeSigned    Digest
+	ToBeSigned    SignData
 }
 
 // ECDSASignature represents an ECDSA signature with R and S values
@@ -620,7 +620,7 @@ func (c *DPEABI[_, Digest, _, _]) RotateContextABI(cmd *RotateContextHandleCmd) 
 }
 
 // SignABI calls the DPE Sign command.
-func (c *DPEABI[_, Digest, _, Signature]) SignABI(cmd *SignReq[Digest]) (*SignResp[Signature], error) {
+func (c *DPEABI[_, Digest, _, Signature]) SignABI(cmd any) (*SignResp[Signature], error) {
 	var respStruct SignResp[Signature]
 
 	_, err := execCommand(c.transport, c.constants.Codes.Sign, c.Profile, cmd, &respStruct)
@@ -748,29 +748,57 @@ func (c *DPEABI[_, Digest, _, Signature]) Sign(handle *ContextHandle, label []by
 		return nil, fmt.Errorf("invalid label length")
 	}
 
-	if len(toBeSigned) != dLen {
-		return nil, fmt.Errorf("invalid toBeSigned length")
-	}
-
 	l, err := NewDigest[Digest](label)
 	if err != nil {
 		return nil, err
 	}
 
-	tbs, err := NewDigest[Digest](toBeSigned)
-	if err != nil {
-		return nil, err
+	var resp *SignResp[Signature]
+	var signErr error
+
+	switch len(toBeSigned) {
+	case 32:
+		tbs, err := NewDigest[SHA256Digest](toBeSigned)
+		if err != nil {
+			return nil, err
+		}
+		cmd := SignReq[Digest, SHA256Digest]{
+			ContextHandle: *handle,
+			Label:         l,
+			Flags:         flags,
+			ToBeSigned:    tbs,
+		}
+		resp, signErr = c.SignABI(&cmd)
+	case 48:
+		tbs, err := NewDigest[SHA384Digest](toBeSigned)
+		if err != nil {
+			return nil, err
+		}
+		cmd := SignReq[Digest, SHA384Digest]{
+			ContextHandle: *handle,
+			Label:         l,
+			Flags:         flags,
+			ToBeSigned:    tbs,
+		}
+		resp, signErr = c.SignABI(&cmd)
+	case 64:
+		tbs, err := NewDigest[MldsaDigest](toBeSigned)
+		if err != nil {
+			return nil, err
+		}
+		cmd := SignReq[Digest, MldsaDigest]{
+			ContextHandle: *handle,
+			Label:         l,
+			Flags:         flags,
+			ToBeSigned:    tbs,
+		}
+		resp, signErr = c.SignABI(&cmd)
+	default:
+		return nil, fmt.Errorf("unsupported digest size for signing: %d", len(toBeSigned))
 	}
 
-	cmd := SignReq[Digest]{
-		ContextHandle: *handle,
-		Label:         l,
-		Flags:         flags,
-		ToBeSigned:    tbs,
-	}
-	resp, err := c.SignABI(&cmd)
-	if err != nil {
-		return nil, err
+	if signErr != nil {
+		return nil, signErr
 	}
 
 	// Handle Signature extraction based on type
