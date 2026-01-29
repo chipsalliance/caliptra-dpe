@@ -252,11 +252,11 @@ type DeriveContextResp struct {
 type SignFlags uint32
 
 // SignReq is the input request to Sign
-type SignReq[Digest DigestAlgorithm] struct {
+type SignReq[Digest DigestAlgorithm, SignData DigestAlgorithm] struct {
 	ContextHandle ContextHandle
 	Label         Digest
 	Flags         SignFlags
-	ToBeSigned    Digest
+	ToBeSigned    SignData
 }
 
 // ECDSASignature represents an ECDSA signature with R and S values
@@ -299,6 +299,9 @@ type DPEABI384 = DPEABI[NISTP384Parameter, SHA384Digest, DPEFullCertificate, ECD
 // DPEABIMldsa87 is a client that implements DPE_PROFILE_IROT_MLDSA_87
 type DPEABIMldsa87 = DPEABI[Mldsa87Parameter, SHA384Digest, DPEMldsaCertificate, Mldsa87Signature]
 
+// DPEABIMldsa87Mu is a client that implements DPE_PROFILE_IROT_MLDSA_87
+type DPEABIMldsa87Mu = DPEABI[Mldsa87Parameter, MldsaDigest, DPEMldsaCertificate, Mldsa87Signature]
+
 // dpeProfileImplementsTypeConstraints checks that the requested DPEABI type constraints are compatible with the DPE profile.
 func dpeProfileImplementsTypeConstraints[C Curve, D DigestAlgorithm, Cert DPECertificate, S any](profile Profile) error {
 	// Test that the expected value types produced by each DPE profile can be assigned to variables of type C and D
@@ -312,6 +315,7 @@ func dpeProfileImplementsTypeConstraints[C Curve, D DigestAlgorithm, Cert DPECer
 	_, isSHA256 := any(d).(SHA256Digest)
 	_, isP384 := any(c).(NISTP384Parameter)
 	_, isSHA384 := any(d).(SHA384Digest)
+	_, isMldsaDigest := any(d).(MldsaDigest)
 	_, isMldsa87Param := any(c).(Mldsa87Parameter)
 	_, isMin := any(cert).(DPEMinCertificate)
 	_, isMldsaCert := any(cert).(DPEMldsaCertificate)
@@ -327,7 +331,7 @@ func dpeProfileImplementsTypeConstraints[C Curve, D DigestAlgorithm, Cert DPECer
 		targetProfile = ProfileP256SHA256
 	} else if isP384 && isSHA384 && !isMin && isEcdsa384Sig {
 		targetProfile = ProfileP384SHA384
-	} else if isMldsa87Param && isSHA384 && isMldsaCert && isMldsa87Sig {
+	} else if isMldsa87Param && (isSHA384 || isMldsaDigest) && isMldsaCert && isMldsa87Sig {
 		targetProfile = ProfileMldsa87
 	} else {
 		return fmt.Errorf("client requested (Curve = %v, Digest = %v, Certificate = %v, Signature = %v), this is an invalid DPE profile",
@@ -397,6 +401,11 @@ func NewDPEABI384Min(t Transport) (*DPEABI384Min, error) {
 // NewDPEABIMldsa87 is a convenience wrapper for NewDPEABI[Mldsa87Parameter, SHA384Digest, DPEMldsaCertificate, Mldsa87Signature].
 func NewDPEABIMldsa87(t Transport) (*DPEABIMldsa87, error) {
 	return newDPEABI[Mldsa87Parameter, SHA384Digest, DPEMldsaCertificate, Mldsa87Signature](t)
+}
+
+// NewDPEABIMldsa87Mu is a convenience wrapper for NewDPEABI[Mldsa87Parameter, MldsaDigest, DPEMldsaCertificate, Mldsa87Signature].
+func NewDPEABIMldsa87Mu(t Transport) (*DPEABIMldsa87Mu, error) {
+	return newDPEABI[Mldsa87Parameter, MldsaDigest, DPEMldsaCertificate, Mldsa87Signature](t)
 }
 
 // InitializeContextABI calls InitializeContext
@@ -620,7 +629,7 @@ func (c *DPEABI[_, Digest, _, _]) RotateContextABI(cmd *RotateContextHandleCmd) 
 }
 
 // SignABI calls the DPE Sign command.
-func (c *DPEABI[_, Digest, _, Signature]) SignABI(cmd *SignReq[Digest]) (*SignResp[Signature], error) {
+func (c *DPEABI[_, Digest, _, Signature]) SignABI(cmd any) (*SignResp[Signature], error) {
 	var respStruct SignResp[Signature]
 
 	_, err := execCommand(c.transport, c.constants.Codes.Sign, c.Profile, cmd, &respStruct)
@@ -748,29 +757,57 @@ func (c *DPEABI[_, Digest, _, Signature]) Sign(handle *ContextHandle, label []by
 		return nil, fmt.Errorf("invalid label length")
 	}
 
-	if len(toBeSigned) != dLen {
-		return nil, fmt.Errorf("invalid toBeSigned length")
-	}
-
 	l, err := NewDigest[Digest](label)
 	if err != nil {
 		return nil, err
 	}
 
-	tbs, err := NewDigest[Digest](toBeSigned)
-	if err != nil {
-		return nil, err
+	var resp *SignResp[Signature]
+	var signErr error
+
+	switch len(toBeSigned) {
+	case 32:
+		tbs, err := NewDigest[SHA256Digest](toBeSigned)
+		if err != nil {
+			return nil, err
+		}
+		cmd := SignReq[Digest, SHA256Digest]{
+			ContextHandle: *handle,
+			Label:         l,
+			Flags:         flags,
+			ToBeSigned:    tbs,
+		}
+		resp, signErr = c.SignABI(&cmd)
+	case 48:
+		tbs, err := NewDigest[SHA384Digest](toBeSigned)
+		if err != nil {
+			return nil, err
+		}
+		cmd := SignReq[Digest, SHA384Digest]{
+			ContextHandle: *handle,
+			Label:         l,
+			Flags:         flags,
+			ToBeSigned:    tbs,
+		}
+		resp, signErr = c.SignABI(&cmd)
+	case 64:
+		tbs, err := NewDigest[MldsaDigest](toBeSigned)
+		if err != nil {
+			return nil, err
+		}
+		cmd := SignReq[Digest, MldsaDigest]{
+			ContextHandle: *handle,
+			Label:         l,
+			Flags:         flags,
+			ToBeSigned:    tbs,
+		}
+		resp, signErr = c.SignABI(&cmd)
+	default:
+		return nil, fmt.Errorf("unsupported digest size for signing: %d", len(toBeSigned))
 	}
 
-	cmd := SignReq[Digest]{
-		ContextHandle: *handle,
-		Label:         l,
-		Flags:         flags,
-		ToBeSigned:    tbs,
-	}
-	resp, err := c.SignABI(&cmd)
-	if err != nil {
-		return nil, err
+	if signErr != nil {
+		return nil, signErr
 	}
 
 	// Handle Signature extraction based on type
