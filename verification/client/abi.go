@@ -299,9 +299,6 @@ type DPEABI384 = DPEABI[NISTP384Parameter, SHA384Digest, DPEFullCertificate, ECD
 // DPEABIMldsa87 is a client that implements DPE_PROFILE_IROT_MLDSA_87
 type DPEABIMldsa87 = DPEABI[Mldsa87Parameter, SHA384Digest, DPEMldsaCertificate, Mldsa87Signature]
 
-// DPEABIMldsa87Mu is a client that implements DPE_PROFILE_IROT_MLDSA_87
-type DPEABIMldsa87Mu = DPEABI[Mldsa87Parameter, MldsaDigest, DPEMldsaCertificate, Mldsa87Signature]
-
 // dpeProfileImplementsTypeConstraints checks that the requested DPEABI type constraints are compatible with the DPE profile.
 func dpeProfileImplementsTypeConstraints[C Curve, D DigestAlgorithm, Cert DPECertificate, S any](profile Profile) error {
 	// Test that the expected value types produced by each DPE profile can be assigned to variables of type C and D
@@ -315,7 +312,6 @@ func dpeProfileImplementsTypeConstraints[C Curve, D DigestAlgorithm, Cert DPECer
 	_, isSHA256 := any(d).(SHA256Digest)
 	_, isP384 := any(c).(NISTP384Parameter)
 	_, isSHA384 := any(d).(SHA384Digest)
-	_, isMldsaDigest := any(d).(MldsaDigest)
 	_, isMldsa87Param := any(c).(Mldsa87Parameter)
 	_, isMin := any(cert).(DPEMinCertificate)
 	_, isMldsaCert := any(cert).(DPEMldsaCertificate)
@@ -331,7 +327,7 @@ func dpeProfileImplementsTypeConstraints[C Curve, D DigestAlgorithm, Cert DPECer
 		targetProfile = ProfileP256SHA256
 	} else if isP384 && isSHA384 && !isMin && isEcdsa384Sig {
 		targetProfile = ProfileP384SHA384
-	} else if isMldsa87Param && (isSHA384 || isMldsaDigest) && isMldsaCert && isMldsa87Sig {
+	} else if isMldsa87Param && isSHA384 && isMldsaCert && isMldsa87Sig {
 		targetProfile = ProfileMldsa87
 	} else {
 		return fmt.Errorf("client requested (Curve = %v, Digest = %v, Certificate = %v, Signature = %v), this is an invalid DPE profile",
@@ -401,11 +397,6 @@ func NewDPEABI384Min(t Transport) (*DPEABI384Min, error) {
 // NewDPEABIMldsa87 is a convenience wrapper for NewDPEABI[Mldsa87Parameter, SHA384Digest, DPEMldsaCertificate, Mldsa87Signature].
 func NewDPEABIMldsa87(t Transport) (*DPEABIMldsa87, error) {
 	return newDPEABI[Mldsa87Parameter, SHA384Digest, DPEMldsaCertificate, Mldsa87Signature](t)
-}
-
-// NewDPEABIMldsa87Mu is a convenience wrapper for NewDPEABI[Mldsa87Parameter, MldsaDigest, DPEMldsaCertificate, Mldsa87Signature].
-func NewDPEABIMldsa87Mu(t Transport) (*DPEABIMldsa87Mu, error) {
-	return newDPEABI[Mldsa87Parameter, MldsaDigest, DPEMldsaCertificate, Mldsa87Signature](t)
 }
 
 // InitializeContextABI calls InitializeContext
