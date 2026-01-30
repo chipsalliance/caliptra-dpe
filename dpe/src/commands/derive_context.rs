@@ -741,7 +741,7 @@ mod tests {
                 .unwrap(),
             ),
             #[cfg(feature = "ml-dsa")]
-            Ok(Response::Sign(SignResp::MlDsa(resp))) => {
+            Ok(Response::Sign(SignResp::Mldsa87(resp))) => {
                 let enc_sig =
                     ml_dsa::EncodedSignature::<ml_dsa::MlDsa87>::try_from(resp.sig).unwrap();
                 let sig: ml_dsa::Signature<ml_dsa::MlDsa87> =

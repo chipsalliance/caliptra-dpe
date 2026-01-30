@@ -118,7 +118,7 @@ impl DpeProfile {
             DpeProfile::P384Sha384 => crypto::SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384),
             #[cfg(feature = "ml-dsa")]
             DpeProfile::Mldsa87 => {
-                crypto::SignatureAlgorithm::MlDsa(crypto::ml_dsa::MldsaAlgorithm::Mldsa87)
+                crypto::SignatureAlgorithm::Mldsa(crypto::ml_dsa::MldsaAlgorithm::Mldsa87)
             }
         }
     }
