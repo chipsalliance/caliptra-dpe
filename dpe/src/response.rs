@@ -157,7 +157,7 @@ impl Response {
                     .0,
             )),
             #[cfg(feature = "ml-dsa")]
-            Command::Sign(SignCommand::Mldsa87(_)) => Response::Sign(SignResp::MlDsa(
+            Command::Sign(SignCommand::Mldsa87(_)) => Response::Sign(SignResp::Mldsa87(
                 SignMlDsaResp::try_read_from_prefix(bytes)
                     .map_err(|_| DpeErrorCode::InvalidArgument)?
                     .0,
@@ -397,7 +397,7 @@ pub enum SignResp {
     #[cfg(feature = "p384")]
     P384(SignP384Resp),
     #[cfg(feature = "ml-dsa")]
-    MlDsa(SignMlDsaResp),
+    Mldsa87(SignMlDsaResp),
 }
 
 impl SignResp {
@@ -408,7 +408,7 @@ impl SignResp {
             #[cfg(feature = "p384")]
             SignResp::P384(resp) => resp.new_context_handle = *handle,
             #[cfg(feature = "ml-dsa")]
-            SignResp::MlDsa(resp) => resp.new_context_handle = *handle,
+            SignResp::Mldsa87(resp) => resp.new_context_handle = *handle,
         }
     }
 
@@ -419,7 +419,7 @@ impl SignResp {
             #[cfg(feature = "p384")]
             SignResp::P384(resp) => &resp.resp_hdr,
             #[cfg(feature = "ml-dsa")]
-            SignResp::MlDsa(resp) => &resp.resp_hdr,
+            SignResp::Mldsa87(resp) => &resp.resp_hdr,
         }
     }
 
@@ -430,7 +430,7 @@ impl SignResp {
             #[cfg(feature = "p384")]
             SignResp::P384(resp) => resp.as_bytes(),
             #[cfg(feature = "ml-dsa")]
-            SignResp::MlDsa(resp) => resp.as_bytes(),
+            SignResp::Mldsa87(resp) => resp.as_bytes(),
         }
     }
 }
