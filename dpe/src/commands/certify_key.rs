@@ -234,7 +234,7 @@ impl CommandExecution for CertifyKeyCommand<'_> {
                 })
             }
             #[cfg(feature = "ml-dsa")]
-            PubKey::MlDsa(crypto::ml_dsa::MldsaPublicKey(pubkey)) => {
+            PubKey::Mldsa(crypto::ml_dsa::MldsaPublicKey(pubkey)) => {
                 CertifyKeyResp::Mldsa87(crate::response::CertifyKeyMldsa87Resp {
                     new_context_handle: ContextHandle::new_invalid(),
                     pubkey: *pubkey,
@@ -528,7 +528,7 @@ mod tests {
                 SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit256) => "2.16.840.1.101.3.4.2.1",
                 SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384) => "2.16.840.1.101.3.4.2.2",
                 #[cfg(feature = "ml-dsa")]
-                SignatureAlgorithm::MlDsa(MldsaAlgorithm::Mldsa87) => "2.16.840.1.101.3.4.2.2",
+                SignatureAlgorithm::Mldsa(MldsaAlgorithm::Mldsa87) => "2.16.840.1.101.3.4.2.2",
             };
             assert_eq!(digest_alg.oid, ObjectIdentifier::new_unwrap(hash_alg_oid));
 
@@ -556,7 +556,7 @@ mod tests {
                 SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit256) => "1.2.840.10045.4.3.2",
                 SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384) => "1.2.840.10045.4.3.3",
                 #[cfg(feature = "ml-dsa")]
-                SignatureAlgorithm::MlDsa(MldsaAlgorithm::Mldsa87) => "2.16.840.1.101.3.4.3.19",
+                SignatureAlgorithm::Mldsa(MldsaAlgorithm::Mldsa87) => "2.16.840.1.101.3.4.3.19",
             };
             assert_eq!(
                 signer_info.signature_algorithm.oid,
@@ -643,7 +643,7 @@ mod tests {
                     assert!(cri_sig.verify(cri_digest.as_slice(), &pub_key).unwrap());
                 }
                 #[cfg(feature = "ml-dsa")]
-                SignatureAlgorithm::MlDsa(MldsaAlgorithm::Mldsa87) => {
+                SignatureAlgorithm::Mldsa(MldsaAlgorithm::Mldsa87) => {
                     // TODO Replace RustCrypto with OpenSSL.
                     //      See https://github.com/rust-openssl/rust-openssl/pull/2405
                     //      for the current state of ml-dsa OpenSSL bindings.
@@ -702,7 +702,7 @@ mod tests {
                     EcdsaPub::from_slice(&r.derived_pubkey_x, &r.derived_pubkey_y).into(),
                 ),
                 #[cfg(feature = "ml-dsa")]
-                CertifyKeyResp::Mldsa87(r) => PubKey::MlDsa(MldsaPublicKey::from_slice(&r.pubkey)),
+                CertifyKeyResp::Mldsa87(r) => PubKey::Mldsa(MldsaPublicKey::from_slice(&r.pubkey)),
             };
             env.crypto
                 .get_pubkey_serial(&pub_key, &mut subj_serial)
