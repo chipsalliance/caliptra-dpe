@@ -40,6 +40,7 @@ var TcgDiceCriticalExtensions = [...]string{
 var TcgDiceExtendedKeyUsages = [...]string{
 	OidExtensionTcgDiceKpIdentityLoc.String(),
 	OidExtensionTcgDiceKpAttestLoc.String(),
+	OidExtensionTcgDiceKpEca.String(),
 }
 
 // TcgUeidExtension is tcg-dice-Ueid OBJECT IDENTIFIER ::= {tcg-dice 4}
@@ -198,7 +199,12 @@ func TestCertifyKeyCsr(d client.TestDPEInstance, c client.DPEClient, t *testing.
 	for _, cert := range certChain {
 		certPool.AddCert(cert)
 	}
-	_, err = wrappedCSR.Verify(x509.VerifyOptions{Roots: certPool})
+
+	// Use ExtKeyUsageAny to bypass EKU validation. The standard x509 library doesn't recognize
+	// TCG DICE EKUs (tcg-dice-kp-eca, tcg-dice-kp-attestLoc) and provides no mechanism to
+	// whitelist custom OIDs. EKU validation is performed separately via removeTcgDiceExtendedKeyUsages(),
+	// which ensures only standard x509 EKU values and TCG DICE EKU OIDs are permitted.
+	_, err = wrappedCSR.Verify(x509.VerifyOptions{Roots: certPool, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageAny}})
 	if err != nil {
 		t.Errorf("[ERROR]: Failed to verify CMS wrapper signature: %v", err)
 	}
