@@ -16,6 +16,7 @@ mod log_stub;
 extern crate log;
 
 pub use dpe_instance::DpeInstance;
+pub use operation_handle::OperationHandle;
 pub use state::{DpeFlags, State};
 
 use zeroize::Zeroize;
@@ -23,6 +24,7 @@ use zeroize::Zeroize;
 pub mod commands;
 pub mod context;
 pub mod dpe_instance;
+mod operation_handle;
 pub mod response;
 mod state;
 pub mod support;
@@ -140,6 +142,12 @@ pub const TCI_SIZE: usize = 32;
 
 #[cfg(any(feature = "p384", feature = "ml-dsa"))]
 pub const TCI_SIZE: usize = 48;
+
+#[cfg(feature = "p256")]
+pub const HASH_SIZE: usize = 32;
+
+#[cfg(any(feature = "p384", feature = "ml-dsa"))]
+pub const HASH_SIZE: usize = 48;
 
 // Recursive macro that does a union of all the flags passed to it. This is
 // const and looks about as nice as using the | operator.
