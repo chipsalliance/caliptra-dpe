@@ -480,7 +480,7 @@ impl CertWriter<'_> {
                     + self.get_ecdsa_subject_pubkey_info_size(pubkey, tagged)?
             }
             #[cfg(feature = "ml-dsa")]
-            PubKey::MlDsa(pubkey) => {
+            PubKey::Mldsa(pubkey) => {
                 self.get_mldsa_sig_alg_id_size(tagged)?
                     + self.get_mldsa_subject_pubkey_info_size(pubkey, tagged)?
             }
@@ -501,7 +501,7 @@ impl CertWriter<'_> {
                     + Self::get_ecdsa_signature_octet_string_size(sig, tagged)?
             }
             #[cfg(feature = "ml-dsa")]
-            Signature::MlDsa(sig) => {
+            Signature::Mldsa(sig) => {
                 self.get_mldsa_sig_alg_id_size(tagged)?
                     + Self::get_mldsa_signature_octet_string_size(sig, tagged)?
             }
@@ -846,7 +846,7 @@ impl CertWriter<'_> {
         let pubkey_size = match pubkey {
             PubKey::Ecdsa(pubkey) => self.get_ecdsa_subject_pubkey_info_size(pubkey, true)?,
             #[cfg(feature = "ml-dsa")]
-            PubKey::MlDsa(pubkey) => self.get_mldsa_subject_pubkey_info_size(pubkey, true)?,
+            PubKey::Mldsa(pubkey) => self.get_mldsa_subject_pubkey_info_size(pubkey, true)?,
         };
         let cert_req_info_size = Self::get_integer_size(Self::CSR_V0, true)?
             + Self::get_rdn_size(subject_name, /*tagged=*/ true)?
@@ -1383,7 +1383,7 @@ impl CertWriter<'_> {
                 self.encode_ecdsa_signature_bit_string(sig)?
             }
             #[cfg(feature = "ml-dsa")]
-            Signature::MlDsa(sig) => {
+            Signature::Mldsa(sig) => {
                 // Alg ID
                 self.encode_mldsa_sig_alg_id()? +
                 // Signature
@@ -1404,7 +1404,7 @@ impl CertWriter<'_> {
                 self.encode_ecdsa_signature_octet_string(sig)?
             }
             #[cfg(feature = "ml-dsa")]
-            Signature::MlDsa(sig) => {
+            Signature::Mldsa(sig) => {
                 // Alg ID
                 self.encode_mldsa_sig_alg_id()? +
                 // Signature
@@ -2384,7 +2384,7 @@ impl CertWriter<'_> {
         bytes_written += match pubkey {
             PubKey::Ecdsa(_) => self.encode_ecdsa_sig_alg_id()?,
             #[cfg(feature = "ml-dsa")]
-            PubKey::MlDsa(_) => self.encode_mldsa_sig_alg_id()?,
+            PubKey::Mldsa(_) => self.encode_mldsa_sig_alg_id()?,
         };
 
         // issuer
@@ -2400,7 +2400,7 @@ impl CertWriter<'_> {
         bytes_written += match pubkey {
             PubKey::Ecdsa(pub_key) => self.encode_ecdsa_subject_pubkey_info(pub_key)?,
             #[cfg(feature = "ml-dsa")]
-            PubKey::MlDsa(pub_key) => self.encode_mldsa_subject_pubkey_info(pub_key)?,
+            PubKey::Mldsa(pub_key) => self.encode_mldsa_subject_pubkey_info(pub_key)?,
         };
 
         // extensions
@@ -2518,7 +2518,7 @@ impl CertWriter<'_> {
                 bytes_written += self.encode_ecdsa_subject_pubkey_info(pub_key)?;
             }
             #[cfg(feature = "ml-dsa")]
-            PubKey::MlDsa(pub_key) => {
+            PubKey::Mldsa(pub_key) => {
                 bytes_written += self.encode_mldsa_subject_pubkey_info(pub_key)?;
             }
         }
@@ -2778,7 +2778,7 @@ fn get_subject_key_identifier(
             hasher.update(y)?;
         }
         #[cfg(feature = "ml-dsa")]
-        PubKey::MlDsa(pub_key) => {
+        PubKey::Mldsa(pub_key) => {
             hasher.update(pub_key.as_slice())?;
         }
     }
@@ -3373,7 +3373,7 @@ pub(crate) mod tests {
         let issuer_len = issuer_writer.encode_rdn(&TEST_ISSUER_NAME).unwrap();
 
         const ALGORITHM: MldsaAlgorithm = match DPE_PROFILE.alg() {
-            SignatureAlgorithm::MlDsa(mldsa_algorithm) => mldsa_algorithm,
+            SignatureAlgorithm::Mldsa(mldsa_algorithm) => mldsa_algorithm,
             _ => panic!("tried to build ml-dsa test cert for non ml-dsa profile!"),
         };
 
@@ -3422,14 +3422,14 @@ pub(crate) mod tests {
 
         let pub_key = match DPE_PROFILE.alg() {
             #[cfg(feature = "ml-dsa")]
-            SignatureAlgorithm::MlDsa(MldsaAlgorithm::Mldsa87) => PubKey::MlDsa(test_pub),
+            SignatureAlgorithm::Mldsa(MldsaAlgorithm::Mldsa87) => PubKey::Mldsa(test_pub),
             _ => panic!("Missing signature"),
         };
 
         let test_sig: Signature = match DPE_PROFILE.alg() {
             #[cfg(feature = "ml-dsa")]
-            SignatureAlgorithm::MlDsa(MldsaAlgorithm::Mldsa87) => {
-                Signature::MlDsa(MldsaSignature([0xBB; ALGORITHM.signature_size()]))
+            SignatureAlgorithm::Mldsa(MldsaAlgorithm::Mldsa87) => {
+                Signature::Mldsa(MldsaSignature([0xBB; ALGORITHM.signature_size()]))
             }
             _ => panic!("Missing signature"),
         };
