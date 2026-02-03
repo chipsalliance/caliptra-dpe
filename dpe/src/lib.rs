@@ -41,11 +41,11 @@ pub use crypto::{ecdsa::EcdsaAlgorithm, ExportedCdiHandle, MAX_EXPORTED_CDI_SIZE
 
 // Max cert size returned by CertifyKey
 #[cfg(feature = "ml-dsa")]
-const MAX_CERT_SIZE: usize = 17 * 1024;
+const MAX_CERT_SIZE: usize = 22 * 1024;
 #[cfg(not(feature = "ml-dsa"))]
-const MAX_CERT_SIZE: usize = 7872;
+const MAX_CERT_SIZE: usize = 11 * 1024;
 #[cfg(not(feature = "arbitrary_max_handles"))]
-pub const MAX_HANDLES: usize = 32;
+pub const MAX_HANDLES: usize = 64;
 #[cfg(feature = "arbitrary_max_handles")]
 include!(concat!(env!("OUT_DIR"), "/arbitrary_max_handles.rs"));
 

@@ -7,7 +7,7 @@ use crate::{
 };
 use caliptra_cfi_lib_git::cfi_launder;
 use constant_time_eq::constant_time_eq_16;
-use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes};
+use zerocopy::{little_endian::U64, FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes};
 use zeroize::Zeroize;
 
 #[cfg(test)]
@@ -45,8 +45,8 @@ pub struct Context {
 
 // As long as a `u32` is used for the children bit map the MAX_HANDLES upper bound is 32.
 const _: () = assert!(
-    MAX_HANDLES <= 32,
-    "More than 32 MAX_HANDLES will cause an arithmatic overflow."
+    MAX_HANDLES <= 64,
+    "More than 64 MAX_HANDLES will cause an arithmatic overflow."
 );
 
 #[cfg(test)]
@@ -198,12 +198,12 @@ impl ContextHandle {
 #[derive(
     Default, Debug, IntoBytes, TryFromBytes, KnownLayout, Immutable, Copy, Clone, PartialEq, Eq,
 )]
-pub struct Children(u32);
+pub struct Children(U64);
 
 impl Children {
     /// Create an empty children bitmap.
     pub const fn empty() -> Children {
-        Children(0)
+        Children(U64::ZERO)
     }
 
     /// Add a child to the bitmap.
@@ -230,7 +230,7 @@ impl Children {
         if idx >= MAX_HANDLES {
             return false;
         }
-        let bitfield = self.0;
+        let bitfield = self.0.get();
         bitfield & (1 << idx) != 0
     }
 
@@ -241,17 +241,17 @@ impl Children {
 
     /// Remove all children in `other` from `self`.
     pub fn remove_children(&mut self, other: Children) {
-        self.0 &= !cfi_launder(other.0);
+        self.0.set(self.0.get() & !cfi_launder(other.0.get()));
     }
 
     /// Get an iterator over the children.
     pub(crate) fn iter(&self) -> FlagsIter {
-        flags_iter(self.0, MAX_HANDLES)
+        flags_iter(self.0.get(), MAX_HANDLES)
     }
 
     /// Get the u32 bit representation of the children.
-    pub fn bits(&self) -> u32 {
-        self.0
+    pub fn bits(&self) -> u64 {
+        self.0.get()
     }
 }
 
@@ -261,21 +261,21 @@ impl Zeroize for Children {
     }
 }
 
-impl From<Children> for u32 {
+impl From<Children> for u64 {
     fn from(children: Children) -> Self {
         children.bits()
     }
 }
 
-impl From<&Children> for u32 {
+impl From<&Children> for u64 {
     fn from(children: &Children) -> Self {
         children.bits()
     }
 }
 
-impl From<u32> for Children {
-    fn from(value: u32) -> Self {
-        Children(value)
+impl From<u64> for Children {
+    fn from(value: u64) -> Self {
+        Children(value.into())
     }
 }
 

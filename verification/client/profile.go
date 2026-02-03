@@ -128,10 +128,10 @@ type DigestAlgorithm interface {
 type DPEMinCertificate [2048]byte
 
 // DPEFullCertificate represents a certificate for the DPE full iRoT profiles
-type DPEFullCertificate [6144]byte
+type DPEFullCertificate [11 * 1024]byte
 
 // DPEMldsaCertificate represents a certificate for the DPE ML-DSA profile
-type DPEMldsaCertificate [17408]byte
+type DPEMldsaCertificate [22 * 1024]byte
 
 // DPECertificate is a type constraint for DPE certificates.
 type DPECertificate interface {

@@ -173,7 +173,7 @@ impl DpeValidator<'_> {
             }
         }
         // Check if any children do not exist
-        for child in flags_iter(context.children.into(), 32) {
+        for child in flags_iter(context.children.into(), 64) {
             if child >= MAX_HANDLES {
                 return Err(ValidationError::ChildDoesNotExist);
             }
@@ -420,7 +420,7 @@ pub mod tests {
         );
 
         dpe_validator.dpe.contexts[0].parent_idx = Context::ROOT_INDEX;
-        dpe_validator.dpe.contexts[0].children = u32::MAX.into();
+        dpe_validator.dpe.contexts[0].children = u64::MAX.into();
         assert_eq!(
             dpe_validator.validate_dpe_state(),
             Err(ValidationError::InactiveContextWithChildren)
