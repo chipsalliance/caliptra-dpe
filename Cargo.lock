@@ -222,11 +222,6 @@ version = "0.1.0"
 source = "git+https://github.com/chipsalliance/caliptra-cfi.git?rev=a98e499d279e81ae85881991b1e9eee354151189#a98e499d279e81ae85881991b1e9eee354151189"
 
 [[package]]
-name = "caliptra-okref"
-version = "0.1.0"
-source = "git+https://github.com/chipsalliance/caliptra-sw?rev=fc971ba5f7435be68964ae49b3a759287c0e34e7#fc971ba5f7435be68964ae49b3a759287c0e34e7"
-
-[[package]]
 name = "cc"
 version = "1.2.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -514,7 +509,6 @@ dependencies = [
  "bitflags",
  "caliptra-cfi-derive-git",
  "caliptra-cfi-lib-git",
- "caliptra-okref",
  "cfg-if",
  "cms",
  "constant_time_eq",

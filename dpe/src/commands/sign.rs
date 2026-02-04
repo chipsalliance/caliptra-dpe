@@ -3,6 +3,7 @@ use super::CommandExecution;
 use crate::{
     context::{ContextHandle, ContextType},
     dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
+    okref,
     response::{DpeErrorCode, Response, SignResp},
     DpeProfile,
 };
@@ -12,7 +13,6 @@ use caliptra_cfi_derive_git::cfi_impl_fn;
 use caliptra_cfi_lib_git::cfi_launder;
 #[cfg(not(feature = "no-cfi"))]
 use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq, cfi_assert_ne};
-use caliptra_okref::okref;
 use cfg_if::cfg_if;
 #[cfg(any(feature = "p256", feature = "p384"))]
 use crypto::{ecdsa::EcdsaSignature, Digest};

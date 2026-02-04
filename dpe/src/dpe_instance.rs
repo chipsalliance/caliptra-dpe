@@ -363,15 +363,15 @@ impl DpeInstance {
 ///
 /// * `flags` - bits to be iterated over
 /// * `max` - number of bits to be considered
-pub(crate) fn flags_iter(flags: u32, max: usize) -> FlagsIter {
-    assert!((1..=u32::BITS).contains(&(max as u32)));
+pub(crate) fn flags_iter(flags: u64, max: usize) -> FlagsIter {
+    assert!((1..=u64::BITS).contains(&(max as u32)));
     FlagsIter {
-        flags: flags & (u32::MAX >> (u32::BITS - max as u32)),
+        flags: flags & (u64::MAX >> (u64::BITS - max as u32)),
     }
 }
 
 pub(crate) struct FlagsIter {
-    flags: u32,
+    flags: u64,
 }
 
 impl Iterator for FlagsIter {

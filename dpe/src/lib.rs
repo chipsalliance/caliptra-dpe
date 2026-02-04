@@ -41,11 +41,11 @@ pub use crypto::{ecdsa::EcdsaAlgorithm, ExportedCdiHandle, MAX_EXPORTED_CDI_SIZE
 
 // Max cert size returned by CertifyKey
 #[cfg(feature = "ml-dsa")]
-const MAX_CERT_SIZE: usize = 17 * 1024;
+const MAX_CERT_SIZE: usize = 22 * 1024;
 #[cfg(not(feature = "ml-dsa"))]
-const MAX_CERT_SIZE: usize = 7872;
+const MAX_CERT_SIZE: usize = 11 * 1024;
 #[cfg(not(feature = "arbitrary_max_handles"))]
-pub const MAX_HANDLES: usize = 32;
+pub const MAX_HANDLES: usize = 64;
 #[cfg(feature = "arbitrary_max_handles")]
 include!(concat!(env!("OUT_DIR"), "/arbitrary_max_handles.rs"));
 
@@ -150,6 +150,23 @@ macro_rules! bitflags_join {
     // In input is 1 or more comma separated things, take the first one, and call
     // .union(bitflags_join!(remaining))
     ($x: expr, $($z: expr),+) => ($x.union(bitflags_join!($($z),*)));
+}
+
+// Copied from https://github.com/chipsalliance/caliptra-sw/tree/main/common/okref
+// unfortunately we cannot depend on caliptra-okref directly due to dependency
+// cycles. So we copy the relevant code here.
+pub fn okref<T, E: Copy>(r: &Result<T, E>) -> Result<&T, E> {
+    match r {
+        Ok(r) => Ok(r),
+        Err(e) => Err(*e),
+    }
+}
+
+pub fn okmutref<T, E: Copy>(r: &mut Result<T, E>) -> Result<&mut T, E> {
+    match r {
+        Ok(r) => Ok(r),
+        Err(e) => Err(*e),
+    }
 }
 
 #[cfg(test)]
