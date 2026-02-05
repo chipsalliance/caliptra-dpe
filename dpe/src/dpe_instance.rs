@@ -343,16 +343,48 @@ impl DpeInstance {
         if cfi_launder(uses_internal_input_dice) {
             let mut offset = 0;
             let mut cert_chunk = [0u8; MAX_CHUNK_SIZE];
-            while let Ok(len) =
-                env.platform
-                    .get_certificate_chain(offset, MAX_CHUNK_SIZE as u32, &mut cert_chunk)
-            {
+            let mut finished = false;
+            while !finished {
+                let (len, last) = env
+                    .platform
+                    .get_certificate_chain(offset, &mut cert_chunk)?;
                 hasher.update(&cert_chunk[..len as usize])?;
                 offset += len;
+                finished = last;
             }
         }
 
         Ok(hasher.finish()?)
+    }
+
+    #[cfg(test)]
+    pub fn get_certificate_chain(
+        &mut self,
+        env: &mut DpeEnv<impl DpeTypes>,
+        locality: u32,
+    ) -> Result<Vec<u8>, DpeErrorCode> {
+        use crate::commands::GetCertificateChainCmd;
+        use crate::OperationHandle;
+
+        let mut op_handle = OperationHandle::default();
+        let mut chain = vec![];
+        let mut finished = false;
+        while !finished {
+            let Response::GetCertificateChain(resp) =
+                GetCertificateChainCmd { op_handle }.execute(self, env, locality)?
+            else {
+                return Err(DpeErrorCode::InternalError);
+            };
+
+            let chunk = &resp
+                .chunk
+                .get(..resp.chunk_size as usize)
+                .ok_or(DpeErrorCode::InternalError)?;
+            chain.extend_from_slice(chunk);
+            op_handle = resp.op_handle;
+            finished = resp.op_handle.blank();
+        }
+        Ok(chain)
     }
 }
 

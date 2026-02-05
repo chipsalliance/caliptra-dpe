@@ -119,14 +119,17 @@ pub trait Platform {
     /// # Arguments
     ///
     /// * `offset` - Index where to start reading bytes from in the cert chain.
-    /// * `size` - The requested size of the chunk. Actual written number of bytes could be smaller, depending on size of chain.
     /// * `out` - Output buffer for cert chain chunk to be written to
+    ///
+    /// # Output
+    ///
+    /// The number of bytes written to the output buffer and whether it was the
+    /// last chunk.
     fn get_certificate_chain(
         &mut self,
         offset: u32,
-        size: u32,
         out: &mut [u8; MAX_CHUNK_SIZE],
-    ) -> Result<u32, PlatformError>;
+    ) -> Result<(u32, bool), PlatformError>;
 
     /// Retrieves the parent certificate's DER encoded issuer name.
     ///
@@ -179,4 +182,7 @@ pub trait Platform {
     ///
     /// This is encoded into certificates created by DPE.
     fn get_ueid(&mut self) -> Result<Ueid, PlatformError>;
+
+    /// Retrieves the correct multi-part operation state index for the given locality.
+    fn multipart_state_index_from_locality(&self, locality: u32) -> Result<usize, PlatformError>;
 }
