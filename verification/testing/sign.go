@@ -27,6 +27,10 @@ func TestAsymmetricSigning(d client.TestDPEInstance, c client.DPEClient, t *test
 	}
 
 	digestLen := profile.GetDigestSize()
+	tbsLen := digestLen
+	if profile == client.ProfileMldsa87 {
+		tbsLen = 64
+	}
 
 	// Validate asymmetric signature generated
 	flags := client.SignFlags(0)
@@ -36,7 +40,7 @@ func TestAsymmetricSigning(d client.TestDPEInstance, c client.DPEClient, t *test
 		seqLabel[i] = byte(i)
 	}
 
-	tbs := make([]byte, digestLen)
+	tbs := make([]byte, tbsLen)
 	for i := range tbs {
 		tbs[i] = byte(i)
 	}
@@ -113,8 +117,12 @@ func TestSignSimulation(d client.TestDPEInstance, c client.DPEClient, t *testing
 	}
 
 	digestLen := profile.GetDigestSize()
+	tbsLen := digestLen
+	if profile == client.ProfileMldsa87 {
+		tbsLen = 64
+	}
 
-	if _, err := c.Sign(handle, make([]byte, digestLen), client.SignFlags(0), make([]byte, digestLen)); err == nil {
+	if _, err := c.Sign(handle, make([]byte, digestLen), client.SignFlags(0), make([]byte, tbsLen)); err == nil {
 		t.Fatalf("[FATAL]: Should return %q, but returned no error", client.StatusInvalidArgument)
 	} else if !errors.Is(err, client.StatusInvalidArgument) {
 		t.Fatalf("[FATAL]: Incorrect error type. Should return %q, but returned %q", client.StatusInvalidArgument, err)
