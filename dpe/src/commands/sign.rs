@@ -80,11 +80,11 @@ impl CommandExecution for SignCommand<'_> {
     ) -> Result<Response, DpeErrorCode> {
         let (handle, label, data) = match *self {
             #[cfg(feature = "p256")]
-            SignCommand::P256(cmd) => (&cmd.handle, &cmd.label, &cmd.digest),
+            SignCommand::P256(cmd) => (&cmd.handle, cmd.label.as_slice(), cmd.digest.as_slice()),
             #[cfg(feature = "p384")]
-            SignCommand::P384(cmd) => (&cmd.handle, &cmd.label, &cmd.digest),
+            SignCommand::P384(cmd) => (&cmd.handle, cmd.label.as_slice(), cmd.digest.as_slice()),
             #[cfg(feature = "ml-dsa")]
-            SignCommand::Mldsa87(cmd) => (&cmd.handle, &cmd.label, &cmd.digest),
+            SignCommand::Mldsa87(cmd) => (&cmd.handle, cmd.label.as_slice(), cmd.digest.as_slice()),
         };
         let idx = env.state.get_active_context_pos(handle, locality)?;
         let context = &env.state.contexts[idx];
@@ -241,7 +241,7 @@ pub struct SignMldsa87Cmd {
     pub handle: ContextHandle,
     pub label: [u8; 48],
     pub flags: SignFlags,
-    pub digest: [u8; 48],
+    pub digest: [u8; 64],
 }
 
 #[cfg(feature = "ml-dsa")]
@@ -283,11 +283,20 @@ mod tests {
     use openssl::{bn::BigNum, ecdsa::EcdsaSig};
     use zerocopy::IntoBytes;
 
+    #[cfg(feature = "ml-dsa")]
+    const TEST_SIGN_DIGEST: [u8; 64] = [
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
+        26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48,
+        49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64,
+    ];
+    #[cfg(not(feature = "ml-dsa"))]
+    const TEST_SIGN_DIGEST: [u8; DPE_PROFILE.hash_size()] = TEST_DIGEST;
+
     const TEST_SIGN_CMD: SignCmd = SignCmd {
         handle: SIMULATION_HANDLE,
         label: TEST_LABEL,
         flags: SignFlags(0x1234_5678),
-        digest: TEST_DIGEST,
+        digest: TEST_SIGN_DIGEST,
     };
 
     #[test]
@@ -321,7 +330,7 @@ mod tests {
                 handle: ContextHandle([0xff; ContextHandle::SIZE]),
                 label: TEST_LABEL,
                 flags: SignFlags::empty(),
-                digest: TEST_DIGEST
+                digest: TEST_SIGN_DIGEST
             }
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         );
@@ -337,7 +346,7 @@ mod tests {
                 handle: ContextHandle::default(),
                 label: TEST_LABEL,
                 flags: SignFlags::empty(),
-                digest: TEST_DIGEST
+                digest: TEST_SIGN_DIGEST
             }
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[1])
         );
@@ -356,7 +365,7 @@ mod tests {
                 handle: RANDOM_HANDLE,
                 label: TEST_LABEL,
                 flags: SignFlags::empty(),
-                digest: TEST_DIGEST
+                digest: TEST_SIGN_DIGEST
             }
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         );
@@ -387,7 +396,7 @@ mod tests {
                 handle: ContextHandle::default(),
                 label: TEST_LABEL,
                 flags: SignFlags::empty(),
-                digest: TEST_DIGEST,
+                digest: TEST_SIGN_DIGEST,
             };
             match cmd.execute(&mut dpe, &mut env, TEST_LOCALITIES[0]).unwrap() {
                 Response::Sign(resp) => resp,
@@ -431,7 +440,7 @@ mod tests {
                 let x509 = X509::from_der(cert_bytes).unwrap();
                 let pub_key = x509.public_key().unwrap().ec_key().unwrap();
 
-                assert!(sig.verify(&TEST_DIGEST, &pub_key).unwrap());
+                assert!(sig.verify(&TEST_SIGN_DIGEST, &pub_key).unwrap());
             }
             #[cfg(feature = "ml-dsa")]
             DpeProfile::Mldsa87 => {
@@ -464,7 +473,7 @@ mod tests {
                     EncodedVerifyingKey::<ml_dsa::MlDsa87>::try_from(key_bytes).unwrap();
                 let vk = VerifyingKey::<ml_dsa::MlDsa87>::decode(&encoded_vk);
 
-                assert!(vk.verify(&TEST_DIGEST, &sig).is_ok());
+                assert!(vk.verify(&TEST_SIGN_DIGEST, &sig).is_ok());
             }
             _ => panic!("Unsupported profile"),
         }
