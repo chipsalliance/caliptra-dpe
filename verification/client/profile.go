@@ -40,6 +40,14 @@ func (p Profile) GetDigestSize() int {
 	return 0
 }
 
+// GetSignDataSize gets the sign data size of the profile
+func (p Profile) GetSignDataSize() int {
+	if p == ProfileMldsa87 {
+		return 64
+	}
+	return p.GetDigestSize()
+}
+
 // GetECCIntSize gets the ECC int size of the profile's supported ECC curve
 func (p Profile) GetECCIntSize() int {
 	switch p {

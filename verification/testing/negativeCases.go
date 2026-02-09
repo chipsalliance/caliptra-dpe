@@ -41,10 +41,7 @@ func TestInvalidHandle(d client.TestDPEInstance, c client.DPEClient, t *testing.
 	}
 
 	// Check Sign with invalid handle
-	tbsLen := digestLen
-	if profile == client.ProfileMldsa87 {
-		tbsLen = 64
-	}
+	tbsLen := profile.GetSignDataSize()
 	if _, err := c.Sign(&InvalidHandle, make([]byte, digestLen), 0, make([]byte, tbsLen)); err == nil {
 		t.Errorf("[ERROR]: Sign should return %q, but returned no error", client.StatusInvalidHandle)
 	} else if !errors.Is(err, client.StatusInvalidHandle) {
@@ -106,10 +103,7 @@ func TestWrongLocality(d client.TestDPEInstance, c client.DPEClient, t *testing.
 	}
 
 	// Check Sign from wrong locality
-	tbsLen := digestLen
-	if profile == client.ProfileMldsa87 {
-		tbsLen = 64
-	}
+	tbsLen := profile.GetSignDataSize()
 	if _, err := c.Sign(handle, make([]byte, digestLen), 0, make([]byte, tbsLen)); err == nil {
 		t.Errorf("[ERROR]: Sign should return %q, but returned no error", client.StatusInvalidLocality)
 	} else if !errors.Is(err, client.StatusInvalidLocality) {
