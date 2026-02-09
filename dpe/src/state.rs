@@ -4,10 +4,11 @@ use crate::{
     response::DpeErrorCode,
     support::Support,
     tci::TciNodeData,
-    U8Bool, MAX_HANDLES,
+    OperationHandle, U8Bool, HASH_SIZE, MAX_HANDLES,
 };
 use bitflags::bitflags;
 use core::mem::align_of;
+use crypto::Digest;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes};
 use zeroize::Zeroize;
 
@@ -22,6 +23,44 @@ bitflags! {
     impl DpeFlags: u16 {
         /// Mark DICE extensions as "Critical" in certificates.
         const MARK_DICE_EXTENSIONS_CRITICAL = 1u16 << 15;
+    }
+}
+
+#[repr(C, align(4))]
+#[derive(
+    Debug, IntoBytes, TryFromBytes, KnownLayout, Immutable, Zeroize, Clone, Copy, PartialEq, Eq,
+)]
+pub struct MultipartOperationState {
+    pub handle: OperationHandle,
+    pub digest: [u8; HASH_SIZE],
+    pub offset: u32,
+}
+
+impl Default for MultipartOperationState {
+    fn default() -> Self {
+        Self {
+            handle: OperationHandle::default(),
+            digest: [0; HASH_SIZE],
+            offset: 0,
+        }
+    }
+}
+
+impl MultipartOperationState {
+    pub fn clear(&mut self) {
+        *self = Self::default();
+    }
+
+    pub fn blank(&self) -> bool {
+        self.handle.blank() && self.offset == 0 && self.digest == [0; HASH_SIZE]
+    }
+
+    pub fn active(&self) -> bool {
+        !self.handle.blank() && self.offset != 0 && self.digest != [0; HASH_SIZE]
+    }
+
+    pub fn is_continued_operation(&self, handle: &OperationHandle, digest: &Digest) -> bool {
+        &self.handle == handle && self.offset != 0 && self.digest == digest.as_slice()
     }
 }
 
@@ -41,6 +80,7 @@ pub struct State {
     pub has_initialized: U8Bool,
     // unused buffer added to be word aligned and remove padding
     pub reserved: [u8; 1],
+    pub multipart_state: [MultipartOperationState; Self::MAX_MULTIPART_OPERATIONS],
 }
 const _: () = assert!(align_of::<State>() == 4);
 
@@ -55,6 +95,7 @@ impl Default for State {
             flags: DpeFlags::empty(),
             has_initialized: false.into(),
             reserved: [0; 1],
+            multipart_state: [MultipartOperationState::default(); Self::MAX_MULTIPART_OPERATIONS],
         }
     }
 }
@@ -62,18 +103,14 @@ impl Default for State {
 impl State {
     pub const MAGIC: u32 = u32::from_be_bytes(*b"DPES");
     pub const VERSION: u32 = 1;
+    pub const MAX_MULTIPART_OPERATIONS: usize = 2;
 
     pub fn new(support: Support, flags: DpeFlags) -> Self {
         let updated_support = support.preprocess_support();
-        const CONTEXT_INITIALIZER: Context = Context::new();
         State {
-            marker: Self::MAGIC,
-            version: Self::VERSION,
-            contexts: [CONTEXT_INITIALIZER; MAX_HANDLES],
             support: updated_support,
             flags,
-            has_initialized: false.into(),
-            reserved: [0; 1],
+            ..Default::default()
         }
     }
 
@@ -318,5 +355,98 @@ mod tests {
             children,
             state.get_descendants(&state.contexts[root]).unwrap()
         );
+    }
+
+    #[test]
+    fn test_op_handle_wrong_handle() {
+        // non-zero to make it look active
+        let handle = OperationHandle([1; OperationHandle::SIZE]);
+        let digest = [1; HASH_SIZE];
+        let offset = 1;
+        let state = MultipartOperationState {
+            handle,
+            digest,
+            offset,
+        };
+
+        let wrong_handle = OperationHandle::default();
+        assert!(!state.is_continued_operation(&wrong_handle, &digest.into()))
+    }
+
+    #[test]
+    fn test_op_handle_wrong_digest() {
+        let handle = OperationHandle::default();
+
+        let digest = [1; HASH_SIZE];
+        let offset = 1;
+        let state = MultipartOperationState {
+            handle,
+            digest,
+            offset,
+        };
+
+        let wrong_digest = [2; HASH_SIZE];
+        assert!(!state.is_continued_operation(&handle, &wrong_digest.into()))
+    }
+
+    #[test]
+    fn test_multiop_wrong_offset() {
+        let handle = OperationHandle::default();
+        let digest = [1; HASH_SIZE];
+        let state = MultipartOperationState {
+            handle,
+            digest,
+            offset: 0, // The offset should never be zero for a valid active state.
+        };
+
+        assert!(!state.is_continued_operation(&handle, &digest.into()))
+    }
+
+    #[test]
+    fn test_multiop_valid_active() {
+        let handle = OperationHandle::default();
+        let digest = [1; HASH_SIZE];
+        let offset = 1;
+
+        let state = MultipartOperationState {
+            handle,
+            digest,
+            offset,
+        };
+
+        assert!(state.is_continued_operation(&handle, &digest.into()))
+    }
+
+    #[test]
+    fn test_multiop_clear() {
+        let handle = OperationHandle::default();
+        let digest = [1; HASH_SIZE];
+        let offset = 1;
+
+        let mut state = MultipartOperationState {
+            handle,
+            digest,
+            offset,
+        };
+        assert_ne!(state, MultipartOperationState::default());
+
+        // Clear the state and make sure it becomes the default state.
+        state.clear();
+        assert_eq!(state, MultipartOperationState::default())
+    }
+
+    #[test]
+    fn test_new_has_correct_defaults() {
+        let state = State::new(Support::default(), DpeFlags::empty());
+        assert_eq!(state.marker, State::MAGIC);
+        assert_eq!(state.version, State::VERSION);
+        assert_eq!(state.has_initialized.get(), false);
+        assert_eq!(state.flags, DpeFlags::empty());
+        assert_eq!(state.reserved, [0; 1]);
+        assert_eq!(
+            state.multipart_state,
+            [MultipartOperationState::default(); 2]
+        );
+        assert_eq!(state.contexts, [Context::new(); MAX_HANDLES]);
     }
 }

@@ -40,6 +40,7 @@ pub enum ValidationError {
     DpeNotMarkedInitialized = 0x18,
     InvalidMarker = 0x19,
     VersionMismatch = 0x1A,
+    InvalidMultipartOperation = 0x1B,
 }
 
 impl ValidationError {
@@ -105,6 +106,13 @@ impl DpeValidator<'_> {
 
             if context.locality != context.tci.locality {
                 return Err(ValidationError::LocalityMismatch);
+            }
+        }
+
+        for multipart_state in self.dpe.multipart_state.iter() {
+            let valid_state = multipart_state.blank() || multipart_state.active();
+            if !valid_state {
+                return Err(ValidationError::InvalidMultipartOperation);
             }
         }
 
@@ -294,10 +302,11 @@ pub mod tests {
     use crate::{
         context::{Children, Context, ContextHandle, ContextState, ContextType},
         dpe_instance::tests::test_state,
+        state::MultipartOperationState,
         support::Support,
         tci::TciMeasurement,
         validation::{DpeValidator, ValidationError},
-        DpeFlags, State, U8Bool, TCI_SIZE,
+        DpeFlags, OperationHandle, State, U8Bool, HASH_SIZE, TCI_SIZE,
     };
     use caliptra_cfi_lib_git::CfiCounter;
 
@@ -567,6 +576,97 @@ pub mod tests {
         assert_eq!(
             dpe_validator.validate_dpe_state(),
             Err(ValidationError::VersionMismatch)
+        );
+    }
+
+    #[test]
+    fn test_inactive_multipart_state_valid() {
+        CfiCounter::reset_for_test();
+        let inactive = MultipartOperationState {
+            handle: OperationHandle::default(),
+            digest: [0; HASH_SIZE],
+            offset: 0,
+        };
+        assert!(inactive.blank());
+        assert!(!inactive.active());
+
+        let mut state = State {
+            multipart_state: [inactive; State::MAX_MULTIPART_OPERATIONS],
+            ..Default::default()
+        };
+
+        let dpe_validator = DpeValidator { dpe: &mut state };
+        assert_eq!(Ok(()), dpe_validator.validate_dpe_state());
+    }
+
+    #[test]
+    fn test_active_multipart_state_valid() {
+        CfiCounter::reset_for_test();
+        let active = MultipartOperationState {
+            handle: OperationHandle([1; OperationHandle::SIZE]),
+            digest: [1; HASH_SIZE],
+            offset: 1,
+        };
+        assert!(!active.blank());
+        assert!(active.active());
+
+        let mut state = State {
+            multipart_state: [active; State::MAX_MULTIPART_OPERATIONS],
+            ..Default::default()
+        };
+
+        let dpe_validator = DpeValidator { dpe: &mut state };
+        assert_eq!(Ok(()), dpe_validator.validate_dpe_state());
+    }
+
+    #[test]
+    fn test_invalid_multipart_state() {
+        CfiCounter::reset_for_test();
+        let mut state = State::default();
+
+        let dpe_validator = DpeValidator { dpe: &mut state };
+        assert_eq!(Ok(()), dpe_validator.validate_dpe_state());
+
+        // Should have an error if the state is not blank or possibly active. Blank is with
+        // everything zeroized. Possibly active is when all fields are non-zero.
+
+        // non-zero handle
+        let mp_state = &mut dpe_validator.dpe.multipart_state[0];
+        *mp_state = MultipartOperationState {
+            handle: OperationHandle([1; OperationHandle::SIZE]),
+            ..Default::default()
+        };
+        assert!(!mp_state.blank());
+        assert!(!mp_state.active());
+        assert_eq!(
+            Err(ValidationError::InvalidMultipartOperation),
+            dpe_validator.validate_dpe_state()
+        );
+
+        // non-zero digest
+        let mp_state = &mut dpe_validator.dpe.multipart_state[0];
+        *mp_state = MultipartOperationState {
+            digest: [1; HASH_SIZE],
+            ..Default::default()
+        };
+        assert!(!mp_state.blank());
+        assert!(!mp_state.active());
+        assert_eq!(
+            Err(ValidationError::InvalidMultipartOperation),
+            dpe_validator.validate_dpe_state()
+        );
+
+        // non-zero offset
+        let mp_state = &mut dpe_validator.dpe.multipart_state[0];
+        *mp_state = MultipartOperationState {
+            offset: 1,
+            ..Default::default()
+        };
+        assert!(!mp_state.blank());
+        assert!(!mp_state.active());
+        assert_eq!(
+            Err(ValidationError::InvalidMultipartOperation),
+            dpe_validator.validate_dpe_state()
         );
     }
 }

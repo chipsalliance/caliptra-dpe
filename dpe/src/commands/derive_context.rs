@@ -462,7 +462,6 @@ mod tests {
         x509::X509,
     };
     use platform::{Platform, MAX_KEY_IDENTIFIER_SIZE};
-    use public_key::PublicKey;
     use x509_parser::{nom::Parser, oid_registry::asn1_rs::oid, prelude::*};
     use zerocopy::IntoBytes;
 
