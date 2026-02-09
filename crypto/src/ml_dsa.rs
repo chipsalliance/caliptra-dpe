@@ -50,7 +50,7 @@ pub struct ExternalMu(pub [u8; MldsaAlgorithm::Mldsa87.external_mu_size()]);
 
 impl SignatureType for ExternalMu {
     const SIGNATURE_ALGORITHM: SignatureAlgorithm =
-        SignatureAlgorithm::MlDsa(MldsaAlgorithm::Mldsa87);
+        SignatureAlgorithm::Mldsa(MldsaAlgorithm::Mldsa87);
 }
 
 impl DigestType for ExternalMu {

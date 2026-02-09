@@ -140,8 +140,8 @@ impl CommandExecution for SignCommand<'_> {
                 })
             }
             #[cfg(feature = "ml-dsa")]
-            Signature::MlDsa(crypto::ml_dsa::MldsaSignature(sig)) => {
-                SignResp::MlDsa(crate::response::SignMlDsaResp {
+            Signature::Mldsa(crypto::ml_dsa::MldsaSignature(sig)) => {
+                SignResp::Mldsa87(crate::response::SignMlDsaResp {
                     new_context_handle: ContextHandle::new_invalid(),
                     sig: *sig,
                     _padding: [0; 1],
@@ -442,7 +442,7 @@ mod tests {
                 use x509_parser::public_key::PublicKey;
 
                 let sig_bytes = match sign_resp {
-                    SignResp::MlDsa(resp) => resp.sig,
+                    SignResp::Mldsa87(resp) => resp.sig,
                     _ => panic!("Incorrect response type"),
                 };
                 let encoded_sig =

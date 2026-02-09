@@ -88,7 +88,7 @@ impl DigestAlgorithm {
 pub enum SignatureAlgorithm {
     Ecdsa(ecdsa::EcdsaAlgorithm),
     #[cfg(feature = "ml-dsa")]
-    MlDsa(ml_dsa::MldsaAlgorithm),
+    Mldsa(ml_dsa::MldsaAlgorithm),
 }
 
 // For errors which come from lower layers, include the error code returned
@@ -328,7 +328,7 @@ impl From<PrecomputedSignData> for SignData<'_> {
 pub enum PubKey {
     Ecdsa(ecdsa::EcdsaPubKey),
     #[cfg(feature = "ml-dsa")]
-    MlDsa(ml_dsa::MldsaPublicKey),
+    Mldsa(ml_dsa::MldsaPublicKey),
 }
 
 impl From<ecdsa::EcdsaPubKey> for PubKey {
@@ -352,7 +352,7 @@ impl From<ecdsa::curve_384::EcdsaPub384> for PubKey {
 #[cfg(feature = "ml-dsa")]
 impl From<ml_dsa::MldsaPublicKey> for PubKey {
     fn from(pub_key: ml_dsa::MldsaPublicKey) -> Self {
-        PubKey::MlDsa(pub_key)
+        PubKey::Mldsa(pub_key)
     }
 }
 
@@ -361,7 +361,7 @@ impl From<ml_dsa::MldsaPublicKey> for PubKey {
 pub enum Signature {
     Ecdsa(EcdsaSignature),
     #[cfg(feature = "ml-dsa")]
-    MlDsa(ml_dsa::MldsaSignature),
+    Mldsa(ml_dsa::MldsaSignature),
 }
 
 impl From<ecdsa::EcdsaSignature> for Signature {
@@ -385,7 +385,7 @@ impl From<ecdsa::curve_384::EcdsaSignature384> for Signature {
 #[cfg(feature = "ml-dsa")]
 impl From<ml_dsa::MldsaSignature> for Signature {
     fn from(sig: ml_dsa::MldsaSignature) -> Self {
-        Signature::MlDsa(sig)
+        Signature::Mldsa(sig)
     }
 }
 
@@ -418,7 +418,7 @@ pub trait CryptoSuite: Crypto + SignatureType + DigestType {
                 hasher.update(y)?;
             }
             #[cfg(feature = "ml-dsa")]
-            (SignatureAlgorithm::MlDsa(_), PubKey::MlDsa(pub_key)) => {
+            (SignatureAlgorithm::Mldsa(_), PubKey::Mldsa(pub_key)) => {
                 hasher.update(pub_key.as_bytes())?;
             }
             // This can be reached when the "ml-dsa" feature is enabled.

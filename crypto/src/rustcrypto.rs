@@ -239,7 +239,7 @@ impl<S: SignatureType, D: DigestType, SD: SignDataType> RustCryptoImpl<S, D, SD>
                 ))
             }
             #[cfg(feature = "ml-dsa")]
-            alg @ SignatureAlgorithm::MlDsa(MldsaAlgorithm::Mldsa87) => {
+            alg @ SignatureAlgorithm::Mldsa(MldsaAlgorithm::Mldsa87) => {
                 let secret = hkdf_get_priv_key(alg, cdi, label, info)?;
                 let kp = MlDsa87::from_seed(
                     secret
@@ -251,7 +251,7 @@ impl<S: SignatureType, D: DigestType, SD: SignDataType> RustCryptoImpl<S, D, SD>
                 let encoded_key = verifying.encode();
                 Ok((
                     RustCryptoPrivKey(secret),
-                    PubKey::MlDsa(
+                    PubKey::Mldsa(
                         MldsaPublicKey::read_from_bytes(encoded_key.as_bytes())
                             .map_err(|_| RUSTCRYPTO_ML_DSA_ERROR)?,
                     ),
@@ -285,7 +285,7 @@ impl<S: SignatureType, D: DigestType, SD: SignDataType> RustCryptoImpl<S, D, SD>
             SignData::Digest(_) => return Err(CryptoError::MismatchedAlgorithm),
         };
         let sig = sig.encode();
-        Ok(super::Signature::MlDsa(MldsaSignature::read_from_bytes(
+        Ok(super::Signature::Mldsa(MldsaSignature::read_from_bytes(
             sig.as_slice(),
         )?))
     }
@@ -397,7 +397,7 @@ impl<S: SignatureType, D: DigestType, SD: SignDataType> Crypto for RustCryptoImp
                 Ok(EcdsaSig::from(sig).into())
             }
             #[cfg(feature = "ml-dsa")]
-            SignatureAlgorithm::MlDsa(MldsaAlgorithm::Mldsa87) => {
+            SignatureAlgorithm::Mldsa(MldsaAlgorithm::Mldsa87) => {
                 let ml_dsa_secret = KeyPair::<MlDsa87>::from_pkcs8_pem(include_str!(concat!(
                     env!("OUT_DIR"),
                     "/alias_priv_mldsa_87.pem"
@@ -425,7 +425,7 @@ impl<S: SignatureType, D: DigestType, SD: SignDataType> Crypto for RustCryptoImp
                 Ok(EcdsaSig::from(sig).into())
             }
             #[cfg(feature = "ml-dsa")]
-            SignatureAlgorithm::MlDsa(MldsaAlgorithm::Mldsa87) => {
+            SignatureAlgorithm::Mldsa(MldsaAlgorithm::Mldsa87) => {
                 let ml_dsa_secret = MlDsa87::from_seed(priv_key.0.as_slice().try_into().unwrap());
                 self.mldsa_sign_data(&ml_dsa_secret, data)
             }
