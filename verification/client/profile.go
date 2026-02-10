@@ -42,10 +42,19 @@ func (p Profile) GetDigestSize() int {
 
 // GetSignDataSize gets the sign data size of the profile
 func (p Profile) GetSignDataSize() int {
-	if p == ProfileMldsa87 {
+	switch p {
+	case ProfileMinP256SHA256:
+		fallthrough
+	case ProfileP256SHA256:
+		return 32
+	case ProfileMinP384SHA384:
+		fallthrough
+	case ProfileP384SHA384:
+		return 48
+	case ProfileMldsa87:
 		return 64
 	}
-	return p.GetDigestSize()
+	return 0
 }
 
 // GetECCIntSize gets the ECC int size of the profile's supported ECC curve
