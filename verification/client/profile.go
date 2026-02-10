@@ -40,6 +40,23 @@ func (p Profile) GetDigestSize() int {
 	return 0
 }
 
+// GetSignDataSize gets the sign data size of the profile
+func (p Profile) GetSignDataSize() int {
+	switch p {
+	case ProfileMinP256SHA256:
+		fallthrough
+	case ProfileP256SHA256:
+		return 32
+	case ProfileMinP384SHA384:
+		fallthrough
+	case ProfileP384SHA384:
+		return 48
+	case ProfileMldsa87:
+		return 64
+	}
+	return 0
+}
+
 // GetECCIntSize gets the ECC int size of the profile's supported ECC curve
 func (p Profile) GetECCIntSize() int {
 	switch p {
@@ -119,7 +136,7 @@ func (p Mldsa87Signature) Bytes() []byte {
 
 // DigestAlgorithm is a type constraint enumerating the supported hashing algorithms for DPE profiles.
 type DigestAlgorithm interface {
-	SHA256Digest | SHA384Digest
+	SHA256Digest | SHA384Digest | MldsaDigest
 
 	Bytes() []byte
 }
@@ -168,6 +185,8 @@ func NewDigest[D DigestAlgorithm](b []byte) (D, error) {
 		copy(tmp[:], b[:])
 	case *SHA384Digest:
 		copy(tmp[:], b[:])
+	case *MldsaDigest:
+		copy(tmp[:], b[:])
 	default:
 		return d, fmt.Errorf("Invalid digest type %v", reflect.TypeOf(tmp))
 	}
@@ -193,5 +212,13 @@ type SHA384Digest [48]byte
 
 // Bytes returns a byte slice of the SHA384 digest
 func (d SHA384Digest) Bytes() []byte {
+	return d[:]
+}
+
+// MldsaDigest represents a ML-DSA digest value.
+type MldsaDigest [64]byte
+
+// Bytes returns a byte slice of the MldsaDigest digest
+func (d MldsaDigest) Bytes() []byte {
 	return d[:]
 }
