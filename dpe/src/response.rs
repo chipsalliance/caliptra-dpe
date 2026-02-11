@@ -8,12 +8,13 @@ use crate::{
     commands::{CertifyKeyCommand, Command, DeriveContextCmd, SignCommand},
     context::ContextHandle,
     validation::ValidationError,
-    DpeProfile, CURRENT_PROFILE_MAJOR_VERSION, CURRENT_PROFILE_MINOR_VERSION, MAX_CERT_SIZE,
-    MAX_EXPORTED_CDI_SIZE, MAX_HANDLES,
+    DpeProfile, OperationHandle, CURRENT_PROFILE_MAJOR_VERSION, CURRENT_PROFILE_MINOR_VERSION,
+    MAX_CERT_SIZE, MAX_EXPORTED_CDI_SIZE, MAX_HANDLES,
 };
+use bitflags::bitflags;
 use crypto::{ecdsa::EcdsaAlgorithm, CryptoError};
 use platform::{PlatformError, MAX_CHUNK_SIZE};
-use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes};
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes};
 
 #[cfg(feature = "ml-dsa")]
 use crypto::ml_dsa::MldsaAlgorithm;
@@ -414,19 +415,22 @@ pub struct SignMlDsaResp {
 }
 
 #[repr(C)]
-#[derive(
-    Debug,
-    PartialEq,
-    Eq,
-    zerocopy::IntoBytes,
-    zerocopy::TryFromBytes,
-    zerocopy::Immutable,
-    zerocopy::KnownLayout,
-)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, FromBytes, IntoBytes, Immutable, KnownLayout)]
+pub struct GetCertificateChainRespFlags(pub u32);
+
+bitflags! {
+    impl GetCertificateChainRespFlags: u32 {
+    }
+}
+
+#[repr(C)]
+#[derive(Debug, PartialEq, Eq, IntoBytes, TryFromBytes, Immutable, KnownLayout)]
 pub struct GetCertificateChainResp {
     pub resp_hdr: ResponseHdr,
-    pub certificate_size: u32,
-    pub certificate_chain: [u8; MAX_CHUNK_SIZE],
+    pub flags: GetCertificateChainRespFlags,
+    pub op_handle: OperationHandle,
+    pub chunk_size: u32,
+    pub chunk: [u8; MAX_CHUNK_SIZE],
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -445,6 +449,7 @@ pub enum DpeErrorCode {
     InvalidHandle = 0x1000,
     InvalidLocality = 0x1001,
     MaxTcis = 0x1003,
+    InvalidOperationHandle = 0x1004,
     Platform(PlatformError) = 0x01000000,
     Crypto(CryptoError) = 0x02000000,
     Validation(ValidationError) = 0x03000000,

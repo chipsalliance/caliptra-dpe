@@ -10,6 +10,9 @@ import (
 // DefaultContextHandle is the default DPE context handle
 var DefaultContextHandle = ContextHandle{0}
 
+// DefaultOperationHandle is the default DPE multi-part operation handle
+var DefaultOperationHandle = OperationHandle{0}
+
 // Profile-defined constants
 const (
 	CmdMagic  uint32 = 0x44504543
@@ -132,6 +135,9 @@ type ContextHandle [16]byte
 // ExportedCdi is a handle to an exported CDI
 type ExportedCdi [32]byte
 
+// OperationHandle is a DPE multi-part operation handle
+type OperationHandle [16]byte
+
 // DestroyCtxCmd is input parameters to DestroyContext
 type DestroyCtxCmd struct {
 	handle ContextHandle
@@ -183,8 +189,7 @@ type CertifyKeyResp[CurveParameter Curve, Digest DigestAlgorithm] struct {
 
 // GetCertificateChainReq is the input request to GetCertificateChain
 type GetCertificateChainReq struct {
-	Offset uint32
-	Size   uint32
+	OperationHandle OperationHandle
 }
 
 // GetCertificateChainResp is the output response from GetCertificateChain
@@ -538,31 +543,28 @@ func (c *DPEABI[_, _, _, _, _]) GetCertificateChainABI() (*GetCertificateChainRe
 
 	// Initialize request input parameters
 	cmd := GetCertificateChainReq{
-		Offset: 0,
-		Size:   MaxChunkSize,
+		OperationHandle: DefaultOperationHandle,
 	}
 
 	for {
 		respStruct := struct {
+			Flags            uint32
+			OperationHandle  OperationHandle
 			CertificateSize  uint32
 			CertificateChain [2048]byte
 		}{}
 
 		_, err := execCommand(c.transport, c.constants.Codes.GetCertificateChain, c.Profile, cmd, &respStruct)
-		if err == StatusInvalidArgument {
-			// This indicates that there are no more bytes to be read in certificate chain
-			break
-		} else if err != nil {
+		if err != nil {
 			// This indicates error in processing GetCertificateChain command
 			return nil, err
 		}
 
 		certs.CertificateChain = append(certs.CertificateChain, respStruct.CertificateChain[:respStruct.CertificateSize]...)
-		if MaxChunkSize > respStruct.CertificateSize {
+		if respStruct.OperationHandle == DefaultOperationHandle {
 			break
 		}
-		// Increment offset in steps of 2048 bytes till end of cert chain
-		cmd.Offset += MaxChunkSize
+		cmd.OperationHandle = respStruct.OperationHandle
 	}
 
 	if len(certs.CertificateChain) == 0 {

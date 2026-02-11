@@ -88,13 +88,13 @@ impl Platform for DefaultPlatform {
     fn get_certificate_chain(
         &mut self,
         offset: u32,
-        size: u32,
         out: &mut [u8; MAX_CHUNK_SIZE],
-    ) -> Result<u32, PlatformError> {
+    ) -> Result<(u32, bool), PlatformError> {
         let len = self.0.cert_chain().len() as u32;
         if offset >= len {
             return Err(PlatformError::CertificateChainError);
         }
+        let size = out.len() as u32;
 
         let cert_chunk_range_end = min(offset + size, len);
         let bytes_written = cert_chunk_range_end - offset;
@@ -104,7 +104,8 @@ impl Platform for DefaultPlatform {
 
         out[..bytes_written as usize]
             .copy_from_slice(&self.0.cert_chain()[offset as usize..cert_chunk_range_end as usize]);
-        Ok(bytes_written)
+        let last_chunk = cert_chunk_range_end == len;
+        Ok((bytes_written, last_chunk))
     }
 
     fn get_issuer_name(
@@ -192,5 +193,9 @@ impl Platform for DefaultPlatform {
         ueid.buf_size = buf_size;
 
         Ok(ueid)
+    }
+
+    fn multipart_state_index_from_locality(&self, locality: u32) -> Result<usize, PlatformError> {
+        Ok(if locality == 0 { 0 } else { 1 })
     }
 }
