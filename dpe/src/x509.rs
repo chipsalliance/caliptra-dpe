@@ -723,7 +723,6 @@ impl CertWriter<'_> {
         // in tagging twice.
         let ext_size = Self::get_structure_size(aki_size, /*tagged=*/ true)?;
         let size = Self::get_structure_size(Self::AUTHORITY_KEY_IDENTIFIER_OID.len(), /*tagged=*/true)? // Extension OID
-            + Self::get_structure_size(Self::BOOL_SIZE, /*tagged=*/true)? // Critical bool
             + Self::get_structure_size(ext_size, /*tagged=*/true)?; // OCTET STRING
 
         Self::get_structure_size(size, tagged)
@@ -742,7 +741,6 @@ impl CertWriter<'_> {
                 // in tagging twice.
                 let ext_size = Self::get_structure_size(san_size, /*tagged=*/ true)?;
                 let size = Self::get_structure_size(Self::SUBJECT_ALTERNATIVE_NAME_OID.len(), /*tagged=*/true)? // Extension OID
-                    + Self::get_structure_size(Self::BOOL_SIZE, /*tagged=*/true)? // Critical bool
                     + Self::get_structure_size(ext_size, /*tagged=*/true)?; // OCTET STRING
 
                 Self::get_structure_size(size, tagged)
@@ -1923,11 +1921,6 @@ impl CertWriter<'_> {
                 bytes_written += self.encode_size_field(san_extension_size)?;
                 bytes_written += self.encode_oid(Self::SUBJECT_ALTERNATIVE_NAME_OID)?;
 
-                bytes_written += self.encode_byte(Self::BOOL_TAG)?;
-                bytes_written += self.encode_size_field(Self::BOOL_SIZE)?;
-                // authority key identifier extension must NOT be marked critical
-                bytes_written += self.encode_byte(0x00)?;
-
                 // Extension data is sequence -> octet string. To compute size, wrap
                 // in tagging once.
                 let other_name_size = Self::get_other_name_size(other_name, /*tagged=*/ true)?;
@@ -1970,11 +1963,6 @@ impl CertWriter<'_> {
         let mut bytes_written = self.encode_byte(Self::SEQUENCE_TAG)?;
         bytes_written += self.encode_size_field(aki_extension_size)?;
         bytes_written += self.encode_oid(Self::AUTHORITY_KEY_IDENTIFIER_OID)?;
-
-        bytes_written += self.encode_byte(Self::BOOL_TAG)?;
-        bytes_written += self.encode_size_field(Self::BOOL_SIZE)?;
-        // authority key identifier extension must NOT be marked critical
-        bytes_written += self.encode_byte(0x00)?;
 
         // Extension data is sequence -> octet string. To compute size, wrap
         // in tagging once.
