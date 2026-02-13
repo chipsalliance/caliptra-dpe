@@ -51,74 +51,116 @@ impl Response {
         }
     }
 
+    /// Returns a slice to only the relevant parts of the response.
+    ///
+    /// For example, in `CertifyKey` there will be empty bytes at the end of the certificate. This
+    /// will return the response bytes up until the end of the certificate.
+    pub fn as_bytes_partial(&self) -> Result<&[u8], DpeErrorCode> {
+        match self {
+            Response::GetProfile(res) => Ok(res.as_bytes()),
+            Response::InitCtx(res) => Ok(res.as_bytes()),
+            Response::DeriveContext(res) => Ok(res.as_bytes()),
+            Response::DeriveContextExportedCdi(res) => res.as_bytes_partial(),
+            #[cfg(not(feature = "disable_rotate_context"))]
+            Response::RotateCtx(res) => Ok(res.as_bytes()),
+            Response::CertifyKey(res) => res.as_bytes_partial(),
+            Response::Sign(res) => Ok(res.as_bytes()),
+            Response::DestroyCtx(res) => Ok(res.as_bytes()),
+            Response::GetCertificateChain(res) => Ok(res.as_bytes()),
+            Response::Error(res) => Ok(res.as_bytes()),
+        }
+    }
+
+    /// Return a valid Response given the command and bytes.
+    ///
+    /// This is useful for parsing the data as it was received "over the wire". This also works with
+    /// the output of `as_bytes_partial`.
     pub fn try_read_from_bytes(cmd: &Command, bytes: &[u8]) -> Result<Response, DpeErrorCode> {
+        // Use a u32 buffer to ensure alignment
+        let mut buf = [0u32; size_of::<Self>() / 4];
+        buf.as_mut_bytes()[..bytes.len()].copy_from_slice(bytes);
+        let bytes = buf.as_bytes();
+
         let r = match cmd {
             #[cfg(feature = "p256")]
             Command::CertifyKey(CertifyKeyCommand::P256(_)) => {
                 Response::CertifyKey(CertifyKeyResp::P256(
-                    CertifyKeyP256Resp::try_read_from_bytes(bytes)
-                        .map_err(|_| DpeErrorCode::InvalidArgument)?,
+                    CertifyKeyP256Resp::try_read_from_prefix(bytes)
+                        .map_err(|_| DpeErrorCode::InvalidArgument)?
+                        .0,
                 ))
             }
             #[cfg(feature = "p384")]
             Command::CertifyKey(CertifyKeyCommand::P384(_)) => {
                 Response::CertifyKey(CertifyKeyResp::P384(
-                    CertifyKeyP384Resp::try_read_from_bytes(bytes)
-                        .map_err(|_| DpeErrorCode::InvalidArgument)?,
+                    CertifyKeyP384Resp::try_read_from_prefix(bytes)
+                        .map_err(|_e| DpeErrorCode::InvalidArgument)?
+                        .0,
                 ))
             }
             #[cfg(feature = "ml-dsa")]
             Command::CertifyKey(CertifyKeyCommand::Mldsa87(_)) => {
                 Response::CertifyKey(CertifyKeyResp::Mldsa87(
-                    CertifyKeyMldsa87Resp::try_read_from_bytes(bytes)
-                        .map_err(|_| DpeErrorCode::InvalidArgument)?,
+                    CertifyKeyMldsa87Resp::try_read_from_prefix(bytes)
+                        .map_err(|_| DpeErrorCode::InvalidArgument)?
+                        .0,
                 ))
             }
             Command::DeriveContext(DeriveContextCmd { flags, .. }) if flags.exports_cdi() => {
                 Response::DeriveContextExportedCdi(
-                    DeriveContextExportedCdiResp::try_read_from_bytes(bytes)
-                        .map_err(|_| DpeErrorCode::InvalidArgument)?,
+                    DeriveContextExportedCdiResp::try_read_from_prefix(bytes)
+                        .map_err(|_| DpeErrorCode::InvalidArgument)?
+                        .0,
                 )
             }
             Command::DeriveContext(_) => Response::DeriveContext(
-                DeriveContextResp::try_read_from_bytes(bytes)
-                    .map_err(|_| DpeErrorCode::InvalidArgument)?,
+                DeriveContextResp::try_read_from_prefix(bytes)
+                    .map_err(|_| DpeErrorCode::InvalidArgument)?
+                    .0,
             ),
             Command::GetCertificateChain(_) => Response::GetCertificateChain(
-                GetCertificateChainResp::try_read_from_bytes(bytes)
-                    .map_err(|_| DpeErrorCode::InvalidArgument)?,
+                GetCertificateChainResp::try_read_from_prefix(bytes)
+                    .map_err(|_| DpeErrorCode::InvalidArgument)?
+                    .0,
             ),
             Command::DestroyCtx(_) => Response::DestroyCtx(
-                ResponseHdr::try_read_from_bytes(bytes)
-                    .map_err(|_| DpeErrorCode::InvalidArgument)?,
+                ResponseHdr::try_read_from_prefix(bytes)
+                    .map_err(|_| DpeErrorCode::InvalidArgument)?
+                    .0,
             ),
             Command::GetProfile(_) => Response::GetProfile(
-                GetProfileResp::try_read_from_bytes(bytes)
-                    .map_err(|_| DpeErrorCode::InvalidArgument)?,
+                GetProfileResp::try_read_from_prefix(bytes)
+                    .map_err(|_| DpeErrorCode::InvalidArgument)?
+                    .0,
             ),
             Command::InitCtx(_) => Response::InitCtx(
-                NewHandleResp::try_read_from_bytes(bytes)
-                    .map_err(|_| DpeErrorCode::InvalidArgument)?,
+                NewHandleResp::try_read_from_prefix(bytes)
+                    .map_err(|_| DpeErrorCode::InvalidArgument)?
+                    .0,
             ),
             #[cfg(not(feature = "disable_rotate_context"))]
             Command::RotateCtx(_) => Response::RotateCtx(
-                NewHandleResp::try_read_from_bytes(bytes)
-                    .map_err(|_| DpeErrorCode::InvalidArgument)?,
+                NewHandleResp::try_read_from_prefix(bytes)
+                    .map_err(|_| DpeErrorCode::InvalidArgument)?
+                    .0,
             ),
             #[cfg(feature = "p256")]
             Command::Sign(SignCommand::P256(_)) => Response::Sign(SignResp::P256(
-                SignP256Resp::try_read_from_bytes(bytes)
-                    .map_err(|_| DpeErrorCode::InvalidArgument)?,
+                SignP256Resp::try_read_from_prefix(bytes)
+                    .map_err(|_| DpeErrorCode::InvalidArgument)?
+                    .0,
             )),
             #[cfg(feature = "p384")]
             Command::Sign(SignCommand::P384(_)) => Response::Sign(SignResp::P384(
-                SignP384Resp::try_read_from_bytes(bytes)
-                    .map_err(|_| DpeErrorCode::InvalidArgument)?,
+                SignP384Resp::try_read_from_prefix(bytes)
+                    .map_err(|_| DpeErrorCode::InvalidArgument)?
+                    .0,
             )),
             #[cfg(feature = "ml-dsa")]
             Command::Sign(SignCommand::Mldsa87(_)) => Response::Sign(SignResp::MlDsa(
-                SignMlDsaResp::try_read_from_bytes(bytes)
-                    .map_err(|_| DpeErrorCode::InvalidArgument)?,
+                SignMlDsaResp::try_read_from_prefix(bytes)
+                    .map_err(|_| DpeErrorCode::InvalidArgument)?
+                    .0,
             )),
         };
         Ok(r)
@@ -128,15 +170,7 @@ impl Response {
 // ABI Response structures
 
 #[repr(C)]
-#[derive(
-    Debug,
-    PartialEq,
-    Eq,
-    zerocopy::IntoBytes,
-    zerocopy::TryFromBytes,
-    zerocopy::Immutable,
-    zerocopy::KnownLayout,
-)]
+#[derive(Debug, PartialEq, Eq, IntoBytes, TryFromBytes, Immutable, KnownLayout)]
 pub struct ResponseHdr {
     pub magic: u32,
     pub status: u32,
@@ -156,15 +190,7 @@ impl ResponseHdr {
 }
 
 #[repr(C)]
-#[derive(
-    Debug,
-    PartialEq,
-    Eq,
-    zerocopy::IntoBytes,
-    zerocopy::TryFromBytes,
-    zerocopy::Immutable,
-    zerocopy::KnownLayout,
-)]
+#[derive(Debug, PartialEq, Eq, IntoBytes, TryFromBytes, Immutable, KnownLayout)]
 pub struct GetProfileResp {
     pub resp_hdr: ResponseHdr,
     pub major_version: u16,
@@ -199,30 +225,14 @@ impl GetProfileResp {
 }
 
 #[repr(C)]
-#[derive(
-    Debug,
-    PartialEq,
-    Eq,
-    zerocopy::IntoBytes,
-    zerocopy::TryFromBytes,
-    zerocopy::KnownLayout,
-    zerocopy::Immutable,
-)]
+#[derive(Debug, PartialEq, Eq, IntoBytes, TryFromBytes, KnownLayout, Immutable)]
 pub struct NewHandleResp {
     pub resp_hdr: ResponseHdr,
     pub handle: ContextHandle,
 }
 
 #[repr(C)]
-#[derive(
-    Debug,
-    PartialEq,
-    Eq,
-    zerocopy::IntoBytes,
-    zerocopy::TryFromBytes,
-    zerocopy::Immutable,
-    zerocopy::KnownLayout,
-)]
+#[derive(Debug, PartialEq, Eq, IntoBytes, TryFromBytes, Immutable, KnownLayout)]
 pub struct DeriveContextResp {
     pub resp_hdr: ResponseHdr,
     pub handle: ContextHandle,
@@ -230,15 +240,7 @@ pub struct DeriveContextResp {
 }
 
 #[repr(C)]
-#[derive(
-    Debug,
-    PartialEq,
-    Eq,
-    zerocopy::IntoBytes,
-    zerocopy::TryFromBytes,
-    zerocopy::Immutable,
-    zerocopy::KnownLayout,
-)]
+#[derive(Debug, PartialEq, Eq, IntoBytes, TryFromBytes, Immutable, KnownLayout)]
 pub struct DeriveContextExportedCdiResp {
     pub resp_hdr: ResponseHdr,
     pub handle: ContextHandle,
@@ -246,6 +248,15 @@ pub struct DeriveContextExportedCdiResp {
     pub exported_cdi: [u8; MAX_EXPORTED_CDI_SIZE],
     pub certificate_size: u32,
     pub new_certificate: [u8; MAX_CERT_SIZE],
+}
+
+impl DeriveContextExportedCdiResp {
+    pub fn as_bytes_partial(&self) -> Result<&[u8], DpeErrorCode> {
+        let len = size_of::<Self>() - MAX_CERT_SIZE + self.certificate_size as usize;
+        self.as_bytes()
+            .get(..len)
+            .ok_or(DpeErrorCode::InternalError)
+    }
 }
 
 #[derive(PartialEq, Debug, Eq)]
@@ -293,6 +304,17 @@ impl CertifyKeyResp {
         }
     }
 
+    pub fn as_bytes_partial(&self) -> Result<&[u8], DpeErrorCode> {
+        match self {
+            #[cfg(feature = "p256")]
+            CertifyKeyResp::P256(resp) => resp.as_bytes_partial(),
+            #[cfg(feature = "p384")]
+            CertifyKeyResp::P384(resp) => resp.as_bytes_partial(),
+            #[cfg(feature = "ml-dsa")]
+            CertifyKeyResp::Mldsa87(resp) => resp.as_bytes_partial(),
+        }
+    }
+
     pub fn cert(&self) -> Result<&[u8], DpeErrorCode> {
         let (buf, size) = match self {
             #[cfg(feature = "p256")]
@@ -317,6 +339,15 @@ pub struct CertifyKeyP256Resp {
     pub cert: [u8; MAX_CERT_SIZE],
 }
 
+impl CertifyKeyP256Resp {
+    pub fn as_bytes_partial(&self) -> Result<&[u8], DpeErrorCode> {
+        let len = size_of::<Self>() - MAX_CERT_SIZE + self.cert_size as usize;
+        self.as_bytes()
+            .get(..len)
+            .ok_or(DpeErrorCode::InternalError)
+    }
+}
+
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, IntoBytes, TryFromBytes, Immutable, KnownLayout)]
 pub struct CertifyKeyP384Resp {
@@ -328,6 +359,15 @@ pub struct CertifyKeyP384Resp {
     pub cert: [u8; MAX_CERT_SIZE],
 }
 
+impl CertifyKeyP384Resp {
+    pub fn as_bytes_partial(&self) -> Result<&[u8], DpeErrorCode> {
+        let len = size_of::<Self>() - MAX_CERT_SIZE + self.cert_size as usize;
+        self.as_bytes()
+            .get(..len)
+            .ok_or(DpeErrorCode::InternalError)
+    }
+}
+
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, IntoBytes, TryFromBytes, Immutable, KnownLayout)]
 #[cfg(feature = "ml-dsa")]
@@ -337,6 +377,16 @@ pub struct CertifyKeyMldsa87Resp {
     pub pubkey: [u8; MldsaAlgorithm::Mldsa87.public_key_size()],
     pub cert_size: u32,
     pub cert: [u8; MAX_CERT_SIZE],
+}
+
+#[cfg(feature = "ml-dsa")]
+impl CertifyKeyMldsa87Resp {
+    pub fn as_bytes_partial(&self) -> Result<&[u8], DpeErrorCode> {
+        let len = size_of::<Self>() - MAX_CERT_SIZE + self.cert_size as usize;
+        self.as_bytes()
+            .get(..len)
+            .ok_or(DpeErrorCode::InternalError)
+    }
 }
 
 #[derive(PartialEq, Debug, Eq)]
@@ -414,15 +464,7 @@ pub struct SignMlDsaResp {
 }
 
 #[repr(C)]
-#[derive(
-    Debug,
-    PartialEq,
-    Eq,
-    zerocopy::IntoBytes,
-    zerocopy::TryFromBytes,
-    zerocopy::Immutable,
-    zerocopy::KnownLayout,
-)]
+#[derive(Debug, PartialEq, Eq, IntoBytes, TryFromBytes, Immutable, KnownLayout)]
 pub struct GetCertificateChainResp {
     pub resp_hdr: ResponseHdr,
     pub certificate_size: u32,
