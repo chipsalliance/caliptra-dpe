@@ -1253,13 +1253,13 @@ impl CertWriter<'_> {
         // Omit integrityRegisters from tcb_info if DPE_PROFILE does not support recursive
         if supports_recursive {
             // integrityRegisters SEQUENCE OF
-            // IMPLICIT [10] Constructed
+            // IMPLICIT [11] Constructed
             let fwid_size = Self::get_fwid_size(&node.tci_cumulative.0, /*tagged=*/ true)?;
             let fwid_list_size = Self::get_structure_size(fwid_size, /*tagged=*/ true)?;
             let integrity_register_size =
                 Self::get_structure_size(fwid_list_size, /*tagged=*/ true)?;
 
-            bytes_written += self.encode_byte(Self::CONTEXT_SPECIFIC | Self::CONSTRUCTED | 0xa)?;
+            bytes_written += self.encode_byte(Self::CONTEXT_SPECIFIC | Self::CONSTRUCTED | 11)?;
             bytes_written += self.encode_size_field(integrity_register_size)?;
 
             // integrityRegusters[0] SEQUENCE
@@ -2612,6 +2612,8 @@ pub(crate) mod tests {
         #[implicit(9)]
         pub tci_type: Option<&'a [u8]>,
         #[implicit(10)]
+        pub _operational_flags_mask: Option<asn1::BitString<'a>>,
+        #[implicit(11)]
         pub integrity_registers: Option<asn1::SequenceOf<'a, IntegrityRegister<'a>>>,
     }
 
