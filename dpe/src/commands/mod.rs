@@ -230,47 +230,115 @@ impl<'a> From<&'a GetCertificateChainCmd> for Command<'a> {
     }
 }
 
+impl<'a> From<&'a CertifyKeyCommand<'a>> for Command<'a> {
+    fn from(cmd: &'a CertifyKeyCommand<'a>) -> Command<'a> {
+        match cmd {
+            #[cfg(feature = "p256")]
+            CertifyKeyCommand::P256(cmd) => Command::CertifyKey(CertifyKeyCommand::P256(cmd)),
+            #[cfg(feature = "p384")]
+            CertifyKeyCommand::P384(cmd) => Command::CertifyKey(CertifyKeyCommand::P384(cmd)),
+            #[cfg(feature = "ml-dsa")]
+            CertifyKeyCommand::Mldsa87(cmd) => Command::CertifyKey(CertifyKeyCommand::Mldsa87(cmd)),
+        }
+    }
+}
+
+impl<'a> From<&'a GetProfileCmd> for Command<'a> {
+    fn from(cmd: &'a GetProfileCmd) -> Command<'a> {
+        Command::GetProfile(cmd)
+    }
+}
+
+impl<'a> From<&'a SignCommand<'a>> for Command<'a> {
+    fn from(cmd: &'a SignCommand<'a>) -> Command<'a> {
+        match cmd {
+            #[cfg(feature = "p256")]
+            SignCommand::P256(cmd) => Command::Sign(SignCommand::P256(cmd)),
+            #[cfg(feature = "p384")]
+            SignCommand::P384(cmd) => Command::Sign(SignCommand::P384(cmd)),
+            #[cfg(feature = "ml-dsa")]
+            SignCommand::Mldsa87(cmd) => Command::Sign(SignCommand::Mldsa87(cmd)),
+        }
+    }
+}
+
 impl CommandExecution for Command<'_> {
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
-    fn execute(
+    fn execute_serialized(
         &self,
         dpe: &mut DpeInstance,
         env: &mut DpeEnv<impl DpeTypes>,
         locality: u32,
-    ) -> Result<Response, DpeErrorCode> {
+        out: &mut [u8],
+    ) -> Result<usize, DpeErrorCode> {
         match self {
-            Command::CertifyKey(cmd) => cmd.execute(dpe, env, locality),
-            Command::DeriveContext(cmd) => cmd.execute(dpe, env, locality),
-            Command::GetCertificateChain(cmd) => cmd.execute(dpe, env, locality),
-            Command::DestroyCtx(cmd) => cmd.execute(dpe, env, locality),
-            Command::GetProfile(cmd) => cmd.execute(dpe, env, locality),
-            Command::InitCtx(cmd) => cmd.execute(dpe, env, locality),
+            Command::CertifyKey(cmd) => cmd.execute_serialized(dpe, env, locality, out),
+            Command::DeriveContext(cmd) => cmd.execute_serialized(dpe, env, locality, out),
+            Command::GetCertificateChain(cmd) => cmd.execute_serialized(dpe, env, locality, out),
+            Command::DestroyCtx(cmd) => cmd.execute_serialized(dpe, env, locality, out),
+            Command::GetProfile(cmd) => cmd.execute_serialized(dpe, env, locality, out),
+            Command::InitCtx(cmd) => cmd.execute_serialized(dpe, env, locality, out),
             #[cfg(not(feature = "disable_rotate_context"))]
-            Command::RotateCtx(cmd) => cmd.execute(dpe, env, locality),
-            Command::Sign(cmd) => cmd.execute(dpe, env, locality),
+            Command::RotateCtx(cmd) => cmd.execute_serialized(dpe, env, locality, out),
+            Command::Sign(cmd) => cmd.execute_serialized(dpe, env, locality, out),
         }
     }
 }
 
 pub trait CommandExecution {
-    fn execute(
-        &self,
+    fn execute<'a>(
+        &'a self,
         dpe: &mut DpeInstance,
         env: &mut DpeEnv<impl DpeTypes>,
         locality: u32,
-    ) -> Result<Response, DpeErrorCode>;
+    ) -> Result<Response, DpeErrorCode>
+    where
+        Command<'a>: From<&'a Self>,
+    {
+        let mut buf = [0u8; size_of::<Response>()];
+        self.execute_serialized(dpe, env, locality, &mut buf)?;
+        Response::try_read_from_bytes(&Command::from(self), &buf)
+    }
 
     /// CFI wrapper around execute
     ///
     /// To implement this function, you need to add the
     /// cfi_impl_fn proc_macro to execute.
     #[cfg(not(feature = "no-cfi"))]
-    fn __cfi_execute(
+    fn __cfi_execute<'a>(
+        &'a self,
+        dpe: &mut DpeInstance,
+        env: &mut DpeEnv<impl DpeTypes>,
+        locality: u32,
+    ) -> Result<Response, DpeErrorCode>
+    where
+        Command<'a>: From<&'a Self>,
+    {
+        let mut buf = [0u8; size_of::<Response>()];
+        self.execute_serialized(dpe, env, locality, &mut buf)?;
+        Response::try_read_from_bytes(&Command::from(self), &buf)
+    }
+
+    fn execute_serialized(
         &self,
         dpe: &mut DpeInstance,
         env: &mut DpeEnv<impl DpeTypes>,
         locality: u32,
-    ) -> Result<Response, DpeErrorCode>;
+        out: &mut [u8],
+    ) -> Result<usize, DpeErrorCode>;
+
+    /// CFI wrapper around execute
+    ///
+    /// To implement this function, you need to add the
+    /// cfi_impl_fn proc_macro to execute.
+    #[cfg(not(feature = "no-cfi"))]
+    fn __cfi_execute_serialized(
+        &self,
+        dpe: &mut DpeInstance,
+        env: &mut DpeEnv<impl DpeTypes>,
+        locality: u32,
+        out: &mut [u8],
+    ) -> Result<usize, DpeErrorCode>;
 }
 
 // ABI Command structures

@@ -37,6 +37,7 @@ use response::GetProfileResp;
 pub mod tci;
 pub mod x509;
 
+use crate::response::{DpeErrorCode, ResponseHdr};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes};
 
 pub use crypto::{ecdsa::EcdsaAlgorithm, ExportedCdiHandle, MAX_EXPORTED_CDI_SIZE};
@@ -163,18 +164,41 @@ macro_rules! bitflags_join {
 // Copied from https://github.com/chipsalliance/caliptra-sw/tree/main/common/okref
 // unfortunately we cannot depend on caliptra-okref directly due to dependency
 // cycles. So we copy the relevant code here.
-pub fn okref<T, E: Copy>(r: &Result<T, E>) -> Result<&T, E> {
+#[inline(always)]
+pub(crate) fn okref<T, E: Copy>(r: &Result<T, E>) -> Result<&T, E> {
     match r {
         Ok(r) => Ok(r),
         Err(e) => Err(*e),
     }
 }
 
-pub fn okmutref<T, E: Copy>(r: &mut Result<T, E>) -> Result<&mut T, E> {
+#[inline(always)]
+pub(crate) fn _okmutref<T, E: Copy>(r: &mut Result<T, E>) -> Result<&mut T, E> {
     match r {
         Ok(r) => Ok(r),
         Err(e) => Err(*e),
     }
+}
+
+#[inline(always)]
+pub(crate) fn mutrefbytes<R: TryFromBytes + IntoBytes + KnownLayout>(
+    resp: &mut [u8],
+) -> Result<&mut R, DpeErrorCode> {
+    let (resp, _) = R::try_mut_from_prefix(resp).map_err(|_| DpeErrorCode::InvalidMutRefBuf)?;
+    Ok(resp)
+}
+
+#[inline(always)]
+pub(crate) fn mutresp<R: TryFromBytes + IntoBytes + KnownLayout>(
+    p: DpeProfile,
+    resp: &mut [u8],
+) -> Result<&mut R, DpeErrorCode> {
+    // Give a default in the response header so it can parse correctly. More than likely the
+    // buffer will be zeroized, but `try_from_prefix` can't parse a DPE profile from zero.
+    resp.get_mut(..size_of::<ResponseHdr>())
+        .ok_or(DpeErrorCode::InvalidResponseBuf)?
+        .copy_from_slice(ResponseHdr::new(p, DpeErrorCode::UninitializedResponseHeader).as_bytes());
+    mutrefbytes(resp)
 }
 
 #[cfg(test)]

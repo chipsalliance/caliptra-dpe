@@ -2,7 +2,8 @@
 use super::CommandExecution;
 use crate::{
     dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
-    response::{DpeErrorCode, GetCertificateChainResp, Response},
+    mutresp,
+    response::{DpeErrorCode, GetCertificateChainResp},
 };
 #[cfg(not(feature = "no-cfi"))]
 use caliptra_cfi_derive_git::cfi_impl_fn;
@@ -26,26 +27,29 @@ pub struct GetCertificateChainCmd {
 impl CommandExecution for GetCertificateChainCmd {
     #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
     #[inline(never)]
-    fn execute(
+    fn execute_serialized(
         &self,
         dpe: &mut DpeInstance,
         env: &mut DpeEnv<impl DpeTypes>,
         _locality: u32,
-    ) -> Result<Response, DpeErrorCode> {
+        out: &mut [u8],
+    ) -> Result<usize, DpeErrorCode> {
         // Make sure the operation is supported.
         if self.size > MAX_CHUNK_SIZE as u32 {
             return Err(DpeErrorCode::InvalidArgument);
         }
+        let response = mutresp::<GetCertificateChainResp>(dpe.profile, out)?;
 
         let mut cert_chunk = [0u8; MAX_CHUNK_SIZE];
         let len = env
             .platform
             .get_certificate_chain(self.offset, self.size, &mut cert_chunk)?;
-        Ok(Response::GetCertificateChain(GetCertificateChainResp {
+        *response = GetCertificateChainResp {
             certificate_chain: cert_chunk,
             certificate_size: len,
             resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
-        }))
+        };
+        Ok(size_of_val(response))
     }
 }
 
