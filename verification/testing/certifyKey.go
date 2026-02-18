@@ -64,17 +64,18 @@ type Fwid struct {
 // tcg-dice-TcbInfo OBJECT IDENTIFIER ::= {tcg-dice 1}
 //
 //	DiceTcbInfo 	::== SEQUENCE {
-//			vendor		[0] IMPLICIT UTF8String OPTIONAL,
-//			model 		[1] IMPLICIT UTF8String OPTIONAL,
-//			version 	[2] IMPLICIT UTF8String OPTIONAL,
-//			svn 		[3] IMPLICIT INTEGER OPTIONAL,
-//			layer 		[4] IMPLICIT INTEGER OPTIONAL,
-//			index 		[5] IMPLICIT INTEGER OPTIONAL,
-//			fwids 		[6] IMPLICIT FWIDLIST OPTIONAL,
-//			flags 		[7] IMPLICIT OperationalFlags OPTIONAL,
-//			vendorInfo 	[8] IMPLICIT OCTET STRING OPTIONAL,
-//			type 		[9] IMPLICIT OCTET STRING OPTIONAL,
-//			integrityRegisters 	[10] IMPLICIT IrList OPTIONAL,
+//			vendor		          [ 0] IMPLICIT UTF8String OPTIONAL,
+//			model 		          [ 1] IMPLICIT UTF8String OPTIONAL,
+//			version 	          [ 2] IMPLICIT UTF8String OPTIONAL,
+//			svn 		          [ 3] IMPLICIT INTEGER OPTIONAL,
+//			layer 		          [ 4] IMPLICIT INTEGER OPTIONAL,
+//			index 		          [ 5] IMPLICIT INTEGER OPTIONAL,
+//			fwids 		          [ 6] IMPLICIT FWIDLIST OPTIONAL,
+//			flags 		          [ 7] IMPLICIT OperationalFlags OPTIONAL,
+//			vendorInfo 	          [ 8] IMPLICIT OCTET STRING OPTIONAL,
+//			type 		          [ 9] IMPLICIT OCTET STRING OPTIONAL,
+//			operationalFlagsMask  [10] IMPLICIT flags mask OPTIONAL,
+//			integrityRegisters 	  [11] IMPLICIT IrList OPTIONAL,
 //	}
 //
 // FWIDLIST ::== SEQUENCE SIZE (1..MAX) OF FWID
@@ -99,17 +100,18 @@ type Fwid struct {
 // }
 
 type DiceTcbInfo struct {
-	Vendor             string              `asn1:"optional,tag:0,utf8"`
-	Model              string              `asn1:"optional,tag:1,utf8"`
-	Version            string              `asn1:"optional,tag:2,utf8"`
-	SVN                int                 `asn1:"optional,tag:3"`
-	Layer              int                 `asn1:"optional,tag:4"`
-	Index              int                 `asn1:"optional,tag:5"`
-	Fwids              []Fwid              `asn1:"optional,tag:6"`
-	Flags              OperationalFlag     `asn1:"optional,tag:7"`
-	VendorInfo         []byte              `asn1:"optional,tag:8"`
-	Type               []byte              `asn1:"optional,tag:9"`
-	IntegrityRegisters []IntegrityRegister `asn1:"optional,tag:10"`
+	Vendor               string              `asn1:"optional,tag:0,utf8"`
+	Model                string              `asn1:"optional,tag:1,utf8"`
+	Version              string              `asn1:"optional,tag:2,utf8"`
+	SVN                  int                 `asn1:"optional,tag:3"`
+	Layer                int                 `asn1:"optional,tag:4"`
+	Index                int                 `asn1:"optional,tag:5"`
+	Fwids                []Fwid              `asn1:"optional,tag:6"`
+	Flags                OperationalFlag     `asn1:"optional,tag:7"`
+	VendorInfo           []byte              `asn1:"optional,tag:8"`
+	Type                 []byte              `asn1:"optional,tag:9"`
+	OperationalFlagsMask []byte              `asn1:"optional,tag:10"`
+	IntegrityRegisters   []IntegrityRegister `asn1:"optional,tag:11"`
 }
 
 type IntegrityRegister struct {
