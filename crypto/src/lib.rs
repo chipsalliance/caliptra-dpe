@@ -145,7 +145,7 @@ pub trait Hasher: Sized {
     fn finish(self) -> Result<Digest, CryptoError>;
 }
 
-#[derive(FromBytes, IntoBytes, KnownLayout, Immutable)]
+#[derive(Debug, FromBytes, IntoBytes, KnownLayout, Immutable, Clone)]
 #[repr(C)]
 pub struct Sha256(pub [u8; DigestAlgorithm::Sha256.size()]);
 
@@ -157,7 +157,7 @@ impl SignDataType for Sha256 {
     const SIGN_DATA_ALGORITHM: SignDataAlgorithm = SignDataAlgorithm::Sha256;
 }
 
-#[derive(FromBytes, IntoBytes, KnownLayout, Immutable)]
+#[derive(Debug, FromBytes, IntoBytes, KnownLayout, Immutable, Clone)]
 #[repr(C)]
 pub struct Sha384(pub [u8; DigestAlgorithm::Sha384.size()]);
 
@@ -169,6 +169,7 @@ impl SignDataType for Sha384 {
     const SIGN_DATA_ALGORITHM: SignDataAlgorithm = SignDataAlgorithm::Sha384;
 }
 
+#[derive(Debug, Clone)]
 pub enum Digest {
     Sha256(Sha256),
     Sha384(Sha384),
@@ -233,7 +234,7 @@ impl From<[u8; 48]> for Digest {
     }
 }
 
-#[derive(FromBytes, IntoBytes, KnownLayout, Immutable)]
+#[derive(Debug, FromBytes, IntoBytes, KnownLayout, Immutable, Clone)]
 #[repr(C)]
 pub struct Mu(pub [u8; 64]);
 
@@ -247,6 +248,7 @@ impl From<[u8; 64]> for Mu {
     }
 }
 
+#[derive(Debug, Clone)]
 pub enum PrecomputedSignData {
     Digest(Digest),
     Mu(Mu),
@@ -279,6 +281,7 @@ impl From<Mu> for PrecomputedSignData {
     }
 }
 
+#[derive(Debug)]
 pub enum SignData<'a> {
     Digest(Digest),
     Mu(Mu),
