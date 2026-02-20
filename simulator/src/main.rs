@@ -82,7 +82,8 @@ fn handle_request(dpe: &mut DpeInstance, env: &mut DpeEnv<impl DpeTypes>, stream
     trace!("| Response Code {response_code:#06x}");
     trace!("----------------------------------");
 
-    stream.write_all(response.as_bytes()).unwrap();
+    let bytes = response.as_bytes_partial().unwrap();
+    stream.write_all(bytes).unwrap();
 }
 
 fn cleanup() {

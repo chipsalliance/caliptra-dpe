@@ -3,6 +3,7 @@
 package client
 
 import (
+	"encoding/binary"
 	"fmt"
 	"reflect"
 )
@@ -407,7 +408,7 @@ func NewDPEABIMldsa87(t Transport) (*DPEABIMldsa87, error) {
 func (c *DPEABI[_, _, _, _, _]) InitializeContextABI(cmd *InitCtxCmd) (*InitCtxResp, error) {
 	var respStruct InitCtxResp
 
-	if _, err := execCommand(c.transport, c.constants.Codes.InitializeContext, c.Profile, cmd, &respStruct); err != nil {
+	if _, _, err := execCommand(c.transport, c.constants.Codes.InitializeContext, c.Profile, cmd, &respStruct); err != nil {
 		return nil, err
 	}
 
@@ -442,7 +443,7 @@ func getProfile(t Transport) (*GetProfileResp, error) {
 
 	// GetProfile command code is 1 in all revisions of the spec
 	getProfile := CommandCode(0x1)
-	respHdr, err := execCommand(t, getProfile, 0, cmd, &respStruct)
+	respHdr, _, err := execCommand(t, getProfile, 0, cmd, &respStruct)
 	if err != nil {
 		return nil, err
 	}
@@ -469,7 +470,7 @@ func (c *DPEABI[_, _, _, _, _]) DestroyContextABI(cmd *DestroyCtxCmd) error {
 	// DestroyContext does not return any parameters.
 	respStruct := struct{}{}
 
-	if _, err := execCommand(c.transport, c.constants.Codes.DestroyContext, c.Profile, cmd, &respStruct); err != nil {
+	if _, _, err := execCommand(c.transport, c.constants.Codes.DestroyContext, c.Profile, cmd, &respStruct); err != nil {
 		return err
 	}
 
@@ -485,10 +486,9 @@ func (c *DPEABI[CurveParameter, Digest, Cert, _, _]) CertifyKeyABI(cmd *CertifyK
 			NewContextHandle [16]byte
 			DerivedPublicKey CurveParameter // Bad type name but just the size of an ML-DSA 87 pub key.
 			CertificateSize  uint32
-			Certificate      Cert
 		}{}
 
-		_, err := execCommand(c.transport, c.constants.Codes.CertifyKey, c.Profile, cmd, &respStruct)
+		_, r, err := execCommand(c.transport, c.constants.Codes.CertifyKey, c.Profile, cmd, &respStruct)
 		if err != nil {
 			return nil, err
 		}
@@ -498,10 +498,15 @@ func (c *DPEABI[CurveParameter, Digest, Cert, _, _]) CertifyKeyABI(cmd *CertifyK
 			return nil, fmt.Errorf("DPE reported a %d-byte cert, which was larger than %d", respStruct.CertificateSize, CertLen[Cert]())
 		}
 
+		cert := make([]byte, respStruct.CertificateSize)
+		if err := binary.Read(r, binary.LittleEndian, &cert); err != nil {
+			return nil, err
+		}
+
 		return &CertifyKeyResp[CurveParameter, Digest]{
 			NewContextHandle:  respStruct.NewContextHandle,
 			DerivedPublicKeyX: respStruct.DerivedPublicKey,
-			Certificate:       respStruct.Certificate.Bytes()[:respStruct.CertificateSize],
+			Certificate:       cert,
 		}, nil
 	}
 
@@ -511,10 +516,9 @@ func (c *DPEABI[CurveParameter, Digest, Cert, _, _]) CertifyKeyABI(cmd *CertifyK
 		DerivedPublicKeyX CurveParameter
 		DerivedPublicKeyY CurveParameter
 		CertificateSize   uint32
-		Certificate       Cert
 	}{}
 
-	_, err := execCommand(c.transport, c.constants.Codes.CertifyKey, c.Profile, cmd, &respStruct)
+	_, r, err := execCommand(c.transport, c.constants.Codes.CertifyKey, c.Profile, cmd, &respStruct)
 	if err != nil {
 		return nil, err
 	}
@@ -524,11 +528,16 @@ func (c *DPEABI[CurveParameter, Digest, Cert, _, _]) CertifyKeyABI(cmd *CertifyK
 		return nil, fmt.Errorf("DPE reported a %d-byte cert, which was larger than %d", respStruct.CertificateSize, CertLen[Cert]())
 	}
 
+	cert := make([]byte, respStruct.CertificateSize)
+	if err := binary.Read(r, binary.LittleEndian, &cert); err != nil {
+		return nil, err
+	}
+
 	return &CertifyKeyResp[CurveParameter, Digest]{
 		NewContextHandle:  respStruct.NewContextHandle,
 		DerivedPublicKeyX: respStruct.DerivedPublicKeyX,
 		DerivedPublicKeyY: respStruct.DerivedPublicKeyY,
-		Certificate:       respStruct.Certificate.Bytes()[:respStruct.CertificateSize],
+		Certificate:       cert,
 	}, nil
 }
 
@@ -548,7 +557,7 @@ func (c *DPEABI[_, _, _, _, _]) GetCertificateChainABI() (*GetCertificateChainRe
 			CertificateChain [2048]byte
 		}{}
 
-		_, err := execCommand(c.transport, c.constants.Codes.GetCertificateChain, c.Profile, cmd, &respStruct)
+		_, _, err := execCommand(c.transport, c.constants.Codes.GetCertificateChain, c.Profile, cmd, &respStruct)
 		if err == StatusInvalidArgument {
 			// This indicates that there are no more bytes to be read in certificate chain
 			break
@@ -580,10 +589,14 @@ func (c *DPEABI[_, Digest, Cert, _, _]) DeriveContextABI(cmd *DeriveContextReq[D
 			ParentContextHandle [16]byte
 			ExportedCdi         [32]byte
 			CertificateSize     uint32
-			Certificate         Cert
 		}{}
-		_, err := execCommand(c.transport, c.constants.Codes.DeriveContext, c.Profile, cmd, &respStruct)
+		_, r, err := execCommand(c.transport, c.constants.Codes.DeriveContext, c.Profile, cmd, &respStruct)
 		if err != nil {
+			return nil, err
+		}
+
+		cert := make([]byte, respStruct.CertificateSize)
+		if err := binary.Read(r, binary.LittleEndian, &cert); err != nil {
 			return nil, err
 		}
 
@@ -592,14 +605,14 @@ func (c *DPEABI[_, Digest, Cert, _, _]) DeriveContextABI(cmd *DeriveContextReq[D
 			ParentContextHandle: respStruct.ParentContextHandle,
 			ExportedCdi:         respStruct.ExportedCdi,
 			CertificateSize:     respStruct.CertificateSize,
-			NewCertificate:      respStruct.Certificate.Bytes()[:respStruct.CertificateSize],
+			NewCertificate:      cert,
 		}, nil
 	} else {
 		respStruct := struct {
 			NewContextHandle    [16]byte
 			ParentContextHandle [16]byte
 		}{}
-		_, err := execCommand(c.transport, c.constants.Codes.DeriveContext, c.Profile, cmd, &respStruct)
+		_, _, err := execCommand(c.transport, c.constants.Codes.DeriveContext, c.Profile, cmd, &respStruct)
 		if err != nil {
 			return nil, err
 		}
@@ -615,7 +628,7 @@ func (c *DPEABI[_, Digest, Cert, _, _]) DeriveContextABI(cmd *DeriveContextReq[D
 func (c *DPEABI[_, Digest, _, _, _]) RotateContextABI(cmd *RotateContextHandleCmd) (*RotatedContextHandle, error) {
 	var respStruct RotatedContextHandle
 
-	_, err := execCommand(c.transport, c.constants.Codes.RotateContextHandle, c.Profile, cmd, &respStruct)
+	_, _, err := execCommand(c.transport, c.constants.Codes.RotateContextHandle, c.Profile, cmd, &respStruct)
 	if err != nil {
 		return nil, err
 	}
@@ -627,7 +640,7 @@ func (c *DPEABI[_, Digest, _, _, _]) RotateContextABI(cmd *RotateContextHandleCm
 func (c *DPEABI[_, Digest, _, SignData, Signature]) SignABI(cmd *SignReq[Digest, SignData]) (*SignResp[Signature], error) {
 	var respStruct SignResp[Signature]
 
-	_, err := execCommand(c.transport, c.constants.Codes.Sign, c.Profile, cmd, &respStruct)
+	_, _, err := execCommand(c.transport, c.constants.Codes.Sign, c.Profile, cmd, &respStruct)
 	if err != nil {
 		return nil, err
 	}

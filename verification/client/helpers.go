@@ -23,7 +23,7 @@ func checkRespHdr(hdr RespHdr) error {
 
 // execCommand executes the command. It returns the response header in the case of success, for internal use (i.e., GetProfile).
 // cmd must be a struct of fixed-size values (or pointer to such), and rsp must be a pointer to such a struct.
-func execCommand(t Transport, code CommandCode, profile Profile, cmd any, rsp any) (*RespHdr, error) {
+func execCommand(t Transport, code CommandCode, profile Profile, cmd any, rsp any) (*RespHdr, *bytes.Reader, error) {
 	hdr := CommandHdr{
 		magic:   CmdMagic,
 		cmd:     code,
@@ -36,22 +36,22 @@ func execCommand(t Transport, code CommandCode, profile Profile, cmd any, rsp an
 
 	resp, err := t.SendCmd(buf.Bytes())
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	respHdr := RespHdr{}
 
 	r := bytes.NewReader(resp)
 	if err = binary.Read(r, binary.LittleEndian, &respHdr); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if err = checkRespHdr(respHdr); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	if err = binary.Read(r, binary.LittleEndian, rsp); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	return &respHdr, nil
+	return &respHdr, r, nil
 }
