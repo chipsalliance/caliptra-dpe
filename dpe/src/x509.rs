@@ -2273,7 +2273,7 @@ impl CertWriter<'_> {
     #[allow(clippy::identity_op)]
     fn encode_encapsulated_content_info(
         &mut self,
-        sign_cb: &mut impl FnMut(&[u8], bool) -> Result<Signature, CryptoError>,
+        sign_cb: &mut (impl FnMut(&[u8], bool) -> Result<Signature, CryptoError> + ?Sized),
         pub_key: &PubKey,
         subject_name: &Name,
         measurements: &MeasurementData,
@@ -2421,7 +2421,7 @@ impl CertWriter<'_> {
     #[allow(clippy::too_many_arguments)]
     pub fn encode_certificate(
         &mut self,
-        sign_cb: &mut impl FnMut(&[u8], bool) -> Result<Signature, CryptoError>,
+        sign_cb: &mut (impl FnMut(&[u8], bool) -> Result<Signature, CryptoError> + ?Sized),
         serial_number: &[u8],
         issuer_name: &[u8],
         subject_name: &Name,
@@ -2541,7 +2541,7 @@ impl CertWriter<'_> {
     #[cfg(not(feature = "disable_csr"))]
     pub fn encode_csr(
         &mut self,
-        sign_cb: &mut impl FnMut(&[u8], bool) -> Result<Signature, CryptoError>,
+        sign_cb: &mut (impl FnMut(&[u8], bool) -> Result<Signature, CryptoError> + ?Sized),
         pub_key: &PubKey,
         subject_name: &Name,
         measurements: &MeasurementData,
@@ -2592,7 +2592,7 @@ impl CertWriter<'_> {
     #[allow(clippy::identity_op)]
     pub fn encode_cms(
         &mut self,
-        sign_cb: &mut impl FnMut(&[u8], bool) -> Result<Signature, CryptoError>,
+        sign_cb: &mut (impl FnMut(&[u8], bool) -> Result<Signature, CryptoError> + ?Sized),
         pub_key: &PubKey,
         subject_name: &Name,
         measurements: &MeasurementData,
@@ -2841,6 +2841,57 @@ pub(crate) fn create_dpe_csr(
     )
 }
 
+fn generate_cert_core(
+    cert_format: CertificateFormat,
+    dpe_profile: DpeProfile,
+    dice_extensions_are_critical: bool,
+    subject_name: &Name,
+    pub_key: &PubKey,
+    measurements: &MeasurementData,
+    issuer_name: Option<&[u8]>,
+    cert_validity: Option<&CertValidity>,
+    signer_identifier: Option<&SignerIdentifier>,
+    sign_cb: &mut dyn FnMut(&[u8], bool) -> Result<Signature, CryptoError>,
+    output_cert_or_csr: &mut [u8],
+) -> Result<u32, DpeErrorCode> {
+    match cert_format {
+        CertificateFormat::X509 => {
+            #[cfg(not(feature = "disable_x509"))]
+            {
+                let issuer_name = issuer_name.ok_or(DpeErrorCode::InternalError)?;
+                let cert_validity = cert_validity.ok_or(DpeErrorCode::InternalError)?;
+                let mut cert_writer = CertWriter::new(
+                    output_cert_or_csr,
+                    dpe_profile,
+                    dice_extensions_are_critical,
+                );
+                let bytes_written = cert_writer.encode_certificate(
+                    sign_cb,
+                    &subject_name.serial.bytes()[..20], // Serial number must be truncated to 20 bytes
+                    issuer_name,
+                    subject_name,
+                    pub_key,
+                    measurements,
+                    cert_validity,
+                )?;
+                u32::try_from(bytes_written).map_err(|_| DpeErrorCode::InternalError)
+            }
+        }
+        #[cfg(not(feature = "disable_csr"))]
+        CertificateFormat::Csr => {
+            let sid = signer_identifier.ok_or(DpeErrorCode::InternalError)?;
+            let mut cms_writer = CertWriter::new(
+                output_cert_or_csr,
+                dpe_profile,
+                dice_extensions_are_critical,
+            );
+            let bytes_written =
+                cms_writer.encode_cms(sign_cb, pub_key, subject_name, measurements, sid)?;
+            u32::try_from(bytes_written).map_err(|_| DpeErrorCode::InternalError)
+        }
+    }
+}
+
 fn create_dpe_cert_or_csr(
     args: &CreateDpeCertArgs,
     dpe: &mut DpeInstance,
@@ -2923,44 +2974,46 @@ fn create_dpe_cert_or_csr(
         }
     };
 
-    let cert_size = match cert_format {
-        CertificateFormat::X509 => {
-            let mut issuer_name = [0u8; MAX_ISSUER_NAME_SIZE];
-            let issuer_len = env.platform.get_issuer_name(&mut issuer_name)?;
-            if issuer_len > MAX_ISSUER_NAME_SIZE {
-                return Err(DpeErrorCode::InternalError);
-            }
-            let cert_validity = env.platform.get_cert_validity()?;
-
-            let mut cert_writer = CertWriter::new(
-                output_cert_or_csr,
-                dpe.profile,
-                args.dice_extensions_are_critical,
-            );
-            let bytes_written = cert_writer.encode_certificate(
-                &mut sign_cb,
-                &subject_name.serial.bytes()[..20], // Serial number must be truncated to 20 bytes
-                &issuer_name[..issuer_len],
-                &subject_name,
-                pub_key,
-                &measurements,
-                &cert_validity,
-            )?;
-            u32::try_from(bytes_written).map_err(|_| DpeErrorCode::InternalError)?
-        }
-        #[cfg(not(feature = "disable_csr"))]
-        CertificateFormat::Csr => {
-            let sid = env.platform.get_signer_identifier()?;
-            let mut cms_writer = CertWriter::new(
-                output_cert_or_csr,
-                dpe.profile,
-                args.dice_extensions_are_critical,
-            );
-            let bytes_written =
-                cms_writer.encode_cms(&mut sign_cb, pub_key, &subject_name, &measurements, &sid)?;
-            u32::try_from(bytes_written).map_err(|_| DpeErrorCode::InternalError)?
-        }
+    let mut issuer_name = [0u8; MAX_ISSUER_NAME_SIZE];
+    let issuer_len = if matches!(cert_format, CertificateFormat::X509) {
+        env.platform.get_issuer_name(&mut issuer_name)?
+    } else {
+        0
     };
+    if issuer_len > MAX_ISSUER_NAME_SIZE {
+        return Err(DpeErrorCode::InternalError);
+    }
+    let issuer_name_slice = if matches!(cert_format, CertificateFormat::X509) {
+        Some(&issuer_name[..issuer_len])
+    } else {
+        None
+    };
+
+    let cert_validity = if matches!(cert_format, CertificateFormat::X509) {
+        Some(env.platform.get_cert_validity()?)
+    } else {
+        None
+    };
+
+    let signer_identifier = if matches!(cert_format, CertificateFormat::Csr) {
+        Some(env.platform.get_signer_identifier()?)
+    } else {
+        None
+    };
+
+    let cert_size = generate_cert_core(
+        cert_format,
+        dpe.profile,
+        args.dice_extensions_are_critical,
+        &subject_name,
+        pub_key,
+        &measurements,
+        issuer_name_slice,
+        cert_validity.as_ref(),
+        signer_identifier.as_ref(),
+        &mut sign_cb,
+        output_cert_or_csr,
+    )?;
 
     let exported_cdi_handle = match cert_type {
         // If the `CertificateType::Exported` is set then we should have a valid exported_cdi_handle at this point.
