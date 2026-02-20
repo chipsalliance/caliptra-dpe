@@ -345,13 +345,13 @@ impl CommandExecution for DeriveContextCmd {
                         env.state.contexts[parent_idx] = tmp_parent_context;
                     }
 
-
                     response.handle = ContextHandle::new_invalid();
                     response.parent_handle = env.state.contexts[parent_idx].handle;
                     response.resp_hdr = dpe.response_hdr(DpeErrorCode::NoError);
                     response.exported_cdi = *exported_cdi_handle;
                     response.certificate_size = *cert_size;
-                    return Ok(size_of_val(response));
+                    let response_size = size_of_val(response) - size_of_val(&response.new_certificate) + *cert_size as usize;
+                    return Ok(response_size);
                 } else {
                     Err(DpeErrorCode::ArgumentNotSupported)?
                 }
