@@ -2261,7 +2261,7 @@ impl CertWriter<'_> {
     #[allow(clippy::identity_op)]
     fn encode_encapsulated_content_info(
         &mut self,
-        sign_cb: &mut impl FnMut(&[u8], bool) -> Result<Signature, CryptoError>,
+        sign_cb: &mut (impl FnMut(&[u8], bool) -> Result<Signature, CryptoError> + ?Sized),
         pub_key: &PubKey,
         subject_name: &Name,
         measurements: &MeasurementData,
@@ -2409,7 +2409,7 @@ impl CertWriter<'_> {
     #[allow(clippy::too_many_arguments)]
     pub fn encode_certificate(
         &mut self,
-        sign_cb: &mut impl FnMut(&[u8], bool) -> Result<Signature, CryptoError>,
+        sign_cb: &mut (impl FnMut(&[u8], bool) -> Result<Signature, CryptoError> + ?Sized),
         serial_number: &[u8],
         issuer_name: &[u8],
         subject_name: &Name,
@@ -2529,7 +2529,7 @@ impl CertWriter<'_> {
     #[cfg(not(feature = "disable_csr"))]
     pub fn encode_csr(
         &mut self,
-        sign_cb: &mut impl FnMut(&[u8], bool) -> Result<Signature, CryptoError>,
+        sign_cb: &mut (impl FnMut(&[u8], bool) -> Result<Signature, CryptoError> + ?Sized),
         pub_key: &PubKey,
         subject_name: &Name,
         measurements: &MeasurementData,
@@ -2580,7 +2580,7 @@ impl CertWriter<'_> {
     #[allow(clippy::identity_op)]
     pub fn encode_cms(
         &mut self,
-        sign_cb: &mut impl FnMut(&[u8], bool) -> Result<Signature, CryptoError>,
+        sign_cb: &mut (impl FnMut(&[u8], bool) -> Result<Signature, CryptoError> + ?Sized),
         pub_key: &PubKey,
         subject_name: &Name,
         measurements: &MeasurementData,
@@ -2829,6 +2829,74 @@ pub(crate) fn create_dpe_csr(
     )
 }
 
+enum CertOrCsrArgs<'a> {
+    Cert {
+        issuer_name: &'a [u8],
+        cert_validity: &'a CertValidity,
+    },
+    Csr {
+        signer_identifier: &'a SignerIdentifier,
+    },
+}
+
+/// DO NOT REFACTOR WITH `impl` PARAMTER
+///
+/// This function wraps the core x509 logic to prevent monomorphizing the x509 code for each
+/// `DpeEnv` used by Caliptra.
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+fn generate_cert_or_csr(
+    format_specific_args: CertOrCsrArgs,
+    dpe_profile: DpeProfile,
+    dice_extensions_are_critical: bool,
+    subject_name: &Name,
+    pub_key: &PubKey,
+    measurements: &MeasurementData,
+    sign_cb: &mut dyn FnMut(&[u8], bool) -> Result<Signature, CryptoError>,
+    output_cert_or_csr: &mut [u8],
+) -> Result<u32, DpeErrorCode> {
+    match format_specific_args {
+        CertOrCsrArgs::Cert {
+            issuer_name,
+            cert_validity,
+        } => {
+            #[cfg(not(feature = "disable_x509"))]
+            {
+                let mut cert_writer = CertWriter::new(
+                    output_cert_or_csr,
+                    dpe_profile,
+                    dice_extensions_are_critical,
+                );
+                let bytes_written = cert_writer.encode_certificate(
+                    sign_cb,
+                    &subject_name.serial.bytes()[..20], // Serial number must be truncated to 20 bytes
+                    issuer_name,
+                    subject_name,
+                    pub_key,
+                    measurements,
+                    cert_validity,
+                )?;
+                u32::try_from(bytes_written).map_err(|_| DpeErrorCode::InternalError)
+            }
+        }
+        #[cfg(not(feature = "disable_csr"))]
+        CertOrCsrArgs::Csr { signer_identifier } => {
+            let mut cms_writer = CertWriter::new(
+                output_cert_or_csr,
+                dpe_profile,
+                dice_extensions_are_critical,
+            );
+            let bytes_written = cms_writer.encode_cms(
+                sign_cb,
+                pub_key,
+                subject_name,
+                measurements,
+                signer_identifier,
+            )?;
+            u32::try_from(bytes_written).map_err(|_| DpeErrorCode::InternalError)
+        }
+    }
+}
+
 fn create_dpe_cert_or_csr(
     args: &CreateDpeCertArgs,
     dpe: &mut DpeInstance,
@@ -2911,44 +2979,38 @@ fn create_dpe_cert_or_csr(
         }
     };
 
-    let cert_size = match cert_format {
+    let mut issuer_name = [0u8; MAX_ISSUER_NAME_SIZE];
+    let cert_validity = env.platform.get_cert_validity()?;
+    let signer_identifier = env.platform.get_signer_identifier()?;
+    let format_specific_args = match cert_format {
         CertificateFormat::X509 => {
-            let mut issuer_name = [0u8; MAX_ISSUER_NAME_SIZE];
-            let issuer_len = env.platform.get_issuer_name(&mut issuer_name)?;
-            if issuer_len > MAX_ISSUER_NAME_SIZE {
-                return Err(DpeErrorCode::InternalError);
+            let issuer_name = {
+                let issuer_len = env.platform.get_issuer_name(&mut issuer_name)?;
+                if issuer_len > MAX_ISSUER_NAME_SIZE {
+                    return Err(DpeErrorCode::InternalError);
+                }
+                &issuer_name[..issuer_len]
+            };
+            CertOrCsrArgs::Cert {
+                issuer_name,
+                cert_validity: &cert_validity,
             }
-            let cert_validity = env.platform.get_cert_validity()?;
-
-            let mut cert_writer = CertWriter::new(
-                output_cert_or_csr,
-                dpe.profile,
-                args.dice_extensions_are_critical,
-            );
-            let bytes_written = cert_writer.encode_certificate(
-                &mut sign_cb,
-                &subject_name.serial.bytes()[..20], // Serial number must be truncated to 20 bytes
-                &issuer_name[..issuer_len],
-                &subject_name,
-                pub_key,
-                &measurements,
-                &cert_validity,
-            )?;
-            u32::try_from(bytes_written).map_err(|_| DpeErrorCode::InternalError)?
         }
-        #[cfg(not(feature = "disable_csr"))]
-        CertificateFormat::Csr => {
-            let sid = env.platform.get_signer_identifier()?;
-            let mut cms_writer = CertWriter::new(
-                output_cert_or_csr,
-                dpe.profile,
-                args.dice_extensions_are_critical,
-            );
-            let bytes_written =
-                cms_writer.encode_cms(&mut sign_cb, pub_key, &subject_name, &measurements, &sid)?;
-            u32::try_from(bytes_written).map_err(|_| DpeErrorCode::InternalError)?
-        }
+        CertificateFormat::Csr => CertOrCsrArgs::Csr {
+            signer_identifier: &signer_identifier,
+        },
     };
+
+    let cert_size = generate_cert_or_csr(
+        format_specific_args,
+        dpe.profile,
+        args.dice_extensions_are_critical,
+        &subject_name,
+        pub_key,
+        &measurements,
+        &mut sign_cb,
+        output_cert_or_csr,
+    )?;
 
     let exported_cdi_handle = match cert_type {
         // If the `CertificateType::Exported` is set then we should have a valid exported_cdi_handle at this point.
