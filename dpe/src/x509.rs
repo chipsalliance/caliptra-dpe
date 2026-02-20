@@ -2866,9 +2866,15 @@ fn generate_cert_or_csr(
                     dpe_profile,
                     dice_extensions_are_critical,
                 );
+                // Serial number must be truncated to 20 bytes
+                let serial_number = subject_name
+                    .serial
+                    .bytes()
+                    .get(..20)
+                    .ok_or(DpeErrorCode::InternalError)?;
                 let bytes_written = cert_writer.encode_certificate(
                     sign_cb,
-                    &subject_name.serial.bytes()[..20], // Serial number must be truncated to 20 bytes
+                    serial_number,
                     issuer_name,
                     subject_name,
                     pub_key,
