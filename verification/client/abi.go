@@ -6,6 +6,8 @@ import (
 	"encoding/binary"
 	"fmt"
 	"reflect"
+
+	"golang.org/x/crypto/sha3"
 )
 
 // DefaultContextHandle is the default DPE context handle
@@ -855,4 +857,16 @@ func (s *Support) ToFlags() uint32 {
 		flags |= (1 << 18)
 	}
 	return flags
+}
+
+func CalculateExternalMu(msg []byte, pubKey []byte) []byte {
+	tr := make([]byte, 64)
+	sha3.ShakeSum256(tr, pubKey)
+	mu := make([]byte, 64)
+	sh := sha3.NewShake256()
+	sh.Write(tr)
+	sh.Write([]byte{0, 0})
+	sh.Write(msg)
+	sh.Read(mu)
+	return mu
 }

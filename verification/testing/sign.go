@@ -42,15 +42,21 @@ func TestAsymmetricSigning(d client.TestDPEInstance, c client.DPEClient, t *test
 		tbs[i] = byte(i)
 	}
 
-	signResp, err := c.Sign(handle, seqLabel, flags, tbs)
-	if err != nil {
-		t.Fatalf("[FATAL]: Error while signing %v", err)
-	}
-
 	// Get signing key certificate using CertifyKey command
 	certifiedKey, err := c.CertifyKey(handle, seqLabel, client.CertifyKeyX509, client.CertifyKeyFlags(0))
 	if err != nil {
 		t.Fatalf("[FATAL]: Could not CertifyKey: %v", err)
+	}
+	handle = &certifiedKey.Handle
+
+	msg := tbs
+	if profile == client.ProfileMldsa87 {
+		tbs = client.CalculateExternalMu(msg, certifiedKey.Pub.X)
+	}
+
+	signResp, err := c.Sign(handle, seqLabel, flags, tbs)
+	if err != nil {
+		t.Fatalf("[FATAL]: Error while signing %v", err)
 	}
 
 	if profile == client.ProfileMldsa87 {
@@ -63,7 +69,7 @@ func TestAsymmetricSigning(d client.TestDPEInstance, c client.DPEClient, t *test
 			t.Fatalf("Failed to parse ML-DSA public key: %v", err)
 		}
 
-		if !mldsa87.Verify(&pk, tbs, nil, signResp.Signature) {
+		if !mldsa87.Verify(&pk, msg, nil, signResp.Signature) {
 			t.Error("ML-DSA Signature Verification failed")
 		}
 		return
