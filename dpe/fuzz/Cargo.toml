@@ -21,14 +21,16 @@ time = "=0.3.36"
 [dependencies.dpe]
 path = ".."
 default-features = false
-features = ["p256", "no-cfi"]
+features = ["p256"]
 
 [dependencies.crypto]
 path = "../../crypto"
+default-features = false
 features = ["rustcrypto"]
 
 [dependencies.platform]
 path = "../../platform"
+default-features = false
 features = ["rustcrypto"]
 
 # Prevent this from interfering with workspaces

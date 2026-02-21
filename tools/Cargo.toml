@@ -16,10 +16,11 @@ ml-dsa = [
   "dpe/ml-dsa"
 ]
 hybrid = ["p384", "ml-dsa"]
+cfi = ["dpe/cfi"]
 
 [dependencies]
 anyhow = "1.0.70"
-dpe = {path = "../dpe", default-features = false, features = ["no-cfi"]}
+dpe = {path = "../dpe", default-features = false}
 clap = { version = "4.1.8", features = ["derive"] }
 crypto = {path = "../crypto", default-features = false, features = ["deterministic_rand", "rustcrypto"]}
 pem = "2"

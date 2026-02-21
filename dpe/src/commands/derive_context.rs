@@ -11,10 +11,10 @@ use crate::{
     DpeFlags, State,
 };
 use bitflags::bitflags;
-#[cfg(not(feature = "no-cfi"))]
-use caliptra_cfi_derive_git::cfi_impl_fn;
-#[cfg(not(feature = "no-cfi"))]
-use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq};
+#[cfg(feature = "cfi")]
+use caliptra_cfi_derive::cfi_impl_fn;
+#[cfg(feature = "cfi")]
+use caliptra_cfi_lib::{cfi_assert, cfi_assert_bool, cfi_assert_eq};
 use cfg_if::cfg_if;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
@@ -186,7 +186,7 @@ impl DeriveContextCmd {
 }
 
 impl CommandExecution for DeriveContextCmd {
-    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    #[cfg_attr(feature = "cfi", cfi_impl_fn)]
     #[inline(never)]
     fn execute_serialized(
         &self,
@@ -231,17 +231,17 @@ impl CommandExecution for DeriveContextCmd {
         }
 
         let target_locality = if !flags.changes_locality() {
-            #[cfg(not(feature = "no-cfi"))]
+            #[cfg(feature = "cfi")]
             cfi_assert!(!flags.changes_locality());
             locality
         } else {
-            #[cfg(not(feature = "no-cfi"))]
+            #[cfg(feature = "cfi")]
             cfi_assert!(flags.changes_locality());
             target_locality
         };
 
         cfg_if! {
-            if #[cfg(not(feature = "no-cfi"))] {
+            if #[cfg(feature = "cfi")] {
                 cfi_assert!(support.internal_info() || !flags.uses_internal_info_input());
                 cfi_assert!(support.internal_dice() || !flags.uses_internal_dice_input());
                 cfi_assert!(support.retain_parent_context() || !flags.retains_parent());
@@ -259,7 +259,7 @@ impl CommandExecution for DeriveContextCmd {
                     if tmp_context.tci.tci_type != tci_type {
                         return Err(DpeErrorCode::InvalidArgument);
                     } else {
-                        #[cfg(not(feature = "no-cfi"))]
+                        #[cfg(feature = "cfi")]
                         cfi_assert_eq(tmp_context.tci.tci_type, tci_type);
                     }
                     dpe.add_tci_measurement(
@@ -298,14 +298,14 @@ impl CommandExecution for DeriveContextCmd {
                 tmp_parent_context.handle = dpe.generate_new_handle(env)?;
             } else {
                 cfg_if! {
-                    if #[cfg(not(feature = "no-cfi"))] {
+                    if #[cfg(feature = "cfi")] {
                         cfi_assert!(flags.retains_parent());
                         cfi_assert!(tmp_parent_context.handle.is_default());
                     }
                 }
             }
         } else {
-            #[cfg(not(feature = "no-cfi"))]
+            #[cfg(feature = "cfi")]
             cfi_assert!(!flags.retains_parent());
             tmp_parent_context.state = ContextState::Retired;
             tmp_parent_context.handle = ContextHandle::new_invalid();
@@ -368,16 +368,16 @@ impl CommandExecution for DeriveContextCmd {
         if !safe_to_make_child {
             return Err(DpeErrorCode::InvalidArgument);
         } else {
-            #[cfg(not(feature = "no-cfi"))]
+            #[cfg(feature = "cfi")]
             cfi_assert!(safe_to_make_child);
         }
 
         let child_handle = if flags.makes_default() {
-            #[cfg(not(feature = "no-cfi"))]
+            #[cfg(feature = "cfi")]
             cfi_assert!(flags.makes_default());
             ContextHandle::default()
         } else {
-            #[cfg(not(feature = "no-cfi"))]
+            #[cfg(feature = "cfi")]
             cfi_assert!(!flags.makes_default());
             dpe.generate_new_handle(env)?
         };
@@ -458,7 +458,7 @@ mod tests {
         validation::DpeValidator,
         DpeProfile, MAX_CERT_SIZE, MAX_EXPORTED_CDI_SIZE, MAX_HANDLES, TCI_SIZE,
     };
-    use caliptra_cfi_lib_git::CfiCounter;
+    use caliptra_cfi_lib::CfiCounter;
     use crypto::{Crypto, Hasher};
     use openssl::{
         bn::BigNum,

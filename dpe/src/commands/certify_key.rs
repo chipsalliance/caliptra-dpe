@@ -9,10 +9,10 @@ use crate::{
     DpeFlags, DpeProfile,
 };
 use bitflags::bitflags;
-#[cfg(not(feature = "no-cfi"))]
-use caliptra_cfi_derive_git::cfi_impl_fn;
-#[cfg(not(feature = "no-cfi"))]
-use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq};
+#[cfg(feature = "cfi")]
+use caliptra_cfi_derive::cfi_impl_fn;
+#[cfg(feature = "cfi")]
+use caliptra_cfi_lib::{cfi_assert, cfi_assert_bool, cfi_assert_eq};
 use cfg_if::cfg_if;
 #[cfg(any(feature = "p256", feature = "p384"))]
 use crypto::ecdsa::EcdsaPubKey;
@@ -133,7 +133,7 @@ impl<'a> From<&'a CertifyKeyMldsa87Cmd> for CertifyKeyCommand<'a> {
 }
 
 impl CommandExecution for CertifyKeyCommand<'_> {
-    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    #[cfg_attr(feature = "cfi", cfi_impl_fn)]
     #[inline(never)]
     fn execute_serialized(
         &self,
@@ -170,7 +170,7 @@ impl CommandExecution for CertifyKeyCommand<'_> {
         }
 
         cfg_if! {
-            if #[cfg(not(feature = "no-cfi"))] {
+            if #[cfg(feature = "cfi")] {
                 cfi_assert!(format != Self::FORMAT_X509 || env.state.support.x509());
                 cfi_assert!(format != Self::FORMAT_X509 || context.allow_x509());
                 cfi_assert!(format != Self::FORMAT_CSR || env.state.support.csr());
@@ -199,7 +199,7 @@ impl CommandExecution for CertifyKeyCommand<'_> {
             Self::FORMAT_X509 => {
                 cfg_if! {
                     if #[cfg(not(feature = "disable_x509"))] {
-                        #[cfg(not(feature = "no-cfi"))]
+                        #[cfg(feature = "cfi")]
                         cfi_assert_eq(format, Self::FORMAT_X509);
                         create_dpe_cert(&args, dpe, env, cert)
                     } else {
@@ -210,7 +210,7 @@ impl CommandExecution for CertifyKeyCommand<'_> {
             Self::FORMAT_CSR => {
                 cfg_if! {
                     if #[cfg(not(feature = "disable_csr"))] {
-                        #[cfg(not(feature = "no-cfi"))]
+                        #[cfg(feature = "cfi")]
                         cfi_assert_eq(format, Self::FORMAT_CSR);
                         crate::x509::create_dpe_csr(&args, dpe, env, cert)
                     } else {
@@ -285,7 +285,7 @@ pub struct CertifyKeyP256Cmd {
 
 #[cfg(feature = "p256")]
 impl CommandExecution for CertifyKeyP256Cmd {
-    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    #[cfg_attr(feature = "cfi", cfi_impl_fn)]
     fn execute_serialized(
         &self,
         dpe: &mut DpeInstance,
@@ -319,7 +319,7 @@ impl Default for CertifyKeyP384Cmd {
 
 #[cfg(feature = "p384")]
 impl CommandExecution for CertifyKeyP384Cmd {
-    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    #[cfg_attr(feature = "cfi", cfi_impl_fn)]
     fn execute_serialized(
         &self,
         dpe: &mut DpeInstance,
@@ -353,7 +353,7 @@ impl Default for CertifyKeyMldsa87Cmd {
 
 #[cfg(feature = "ml-dsa")]
 impl CommandExecution for CertifyKeyMldsa87Cmd {
-    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    #[cfg_attr(feature = "cfi", cfi_impl_fn)]
     fn execute_serialized(
         &self,
         dpe: &mut DpeInstance,
@@ -427,7 +427,7 @@ mod tests {
         x509::{tests::TcbInfo, DirectoryString, Name},
         State, MAX_HANDLES, TCI_SIZE,
     };
-    use caliptra_cfi_lib_git::CfiCounter;
+    use caliptra_cfi_lib::CfiCounter;
     use cms::{
         content_info::{CmsVersion, ContentInfo},
         signed_data::{SignedData, SignerIdentifier},

@@ -12,8 +12,8 @@ use crypto::Digest;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes};
 use zeroize::Zeroize;
 
-#[cfg(not(feature = "no-cfi"))]
-use caliptra_cfi_derive_git::cfi_impl_fn;
+#[cfg(feature = "cfi")]
+use caliptra_cfi_derive::cfi_impl_fn;
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, FromBytes, IntoBytes, Immutable, KnownLayout, Zeroize)]
@@ -213,7 +213,7 @@ impl State {
     /// * `nodes` - Array to write TCI nodes to
     ///
     /// Returns the number of TCIs written to `nodes`
-    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    #[cfg_attr(feature = "cfi", cfi_impl_fn)]
     pub(crate) fn get_tcb_nodes(
         &self,
         start_idx: usize,
@@ -251,7 +251,7 @@ impl State {
 
 #[cfg(test)]
 mod tests {
-    use caliptra_cfi_lib_git::CfiCounter;
+    use caliptra_cfi_lib::CfiCounter;
     use platform::default::AUTO_INIT_LOCALITY;
 
     use crate::dpe_instance::tests::SIMULATION_HANDLE;

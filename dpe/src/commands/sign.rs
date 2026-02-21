@@ -8,11 +8,11 @@ use crate::{
     DpeProfile,
 };
 use bitflags::bitflags;
-#[cfg(not(feature = "no-cfi"))]
-use caliptra_cfi_derive_git::cfi_impl_fn;
-use caliptra_cfi_lib_git::cfi_launder;
-#[cfg(not(feature = "no-cfi"))]
-use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq, cfi_assert_ne};
+#[cfg(feature = "cfi")]
+use caliptra_cfi_derive::cfi_impl_fn;
+use caliptra_cfi_lib::cfi_launder;
+#[cfg(feature = "cfi")]
+use caliptra_cfi_lib::{cfi_assert, cfi_assert_bool, cfi_assert_ne};
 use cfg_if::cfg_if;
 #[cfg(any(feature = "p256", feature = "p384"))]
 use crypto::ecdsa::EcdsaSignature;
@@ -70,7 +70,7 @@ impl SignCommand<'_> {
 }
 
 impl CommandExecution for SignCommand<'_> {
-    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    #[cfg_attr(feature = "cfi", cfi_impl_fn)]
     #[inline(never)]
     fn execute_serialized(
         &self,
@@ -107,7 +107,7 @@ impl CommandExecution for SignCommand<'_> {
         }
 
         cfg_if! {
-            if #[cfg(not(feature = "no-cfi"))] {
+            if #[cfg(feature = "cfi")] {
                 cfi_assert_ne(context.context_type, ContextType::Simulation);
             }
         }
@@ -187,10 +187,10 @@ fn sign(
     let context = profile.key_context();
     let key_pair = env.crypto.derive_key_pair(&cdi, label, context);
     if cfi_launder(key_pair.is_ok()) {
-        #[cfg(not(feature = "no-cfi"))]
+        #[cfg(feature = "cfi")]
         cfi_assert!(key_pair.is_ok());
     } else {
-        #[cfg(not(feature = "no-cfi"))]
+        #[cfg(feature = "cfi")]
         cfi_assert!(key_pair.is_err());
     }
     let (priv_key, pub_key) = key_pair?;
@@ -209,7 +209,7 @@ pub struct SignP256Cmd {
 
 #[cfg(feature = "p256")]
 impl CommandExecution for SignP256Cmd {
-    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    #[cfg_attr(feature = "cfi", cfi_impl_fn)]
     fn execute_serialized(
         &self,
         dpe: &mut DpeInstance,
@@ -232,7 +232,7 @@ pub struct SignP384Cmd {
 
 #[cfg(feature = "p384")]
 impl CommandExecution for SignP384Cmd {
-    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    #[cfg_attr(feature = "cfi", cfi_impl_fn)]
     fn execute_serialized(
         &self,
         dpe: &mut DpeInstance,
@@ -255,7 +255,7 @@ pub struct SignMldsa87Cmd {
 
 #[cfg(feature = "ml-dsa")]
 impl CommandExecution for SignMldsa87Cmd {
-    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    #[cfg_attr(feature = "cfi", cfi_impl_fn)]
     fn execute_serialized(
         &self,
         dpe: &mut DpeInstance,
@@ -289,7 +289,7 @@ mod tests {
         response::{Response, SignResp},
         tci::TciMeasurement,
     };
-    use caliptra_cfi_lib_git::CfiCounter;
+    use caliptra_cfi_lib::CfiCounter;
     use openssl::x509::X509;
     use openssl::{bn::BigNum, ecdsa::EcdsaSig};
     use zerocopy::IntoBytes;

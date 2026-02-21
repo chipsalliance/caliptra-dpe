@@ -6,8 +6,8 @@ use crate::{
     mutresp,
     response::{DpeErrorCode, GetProfileResp},
 };
-#[cfg(not(feature = "no-cfi"))]
-use caliptra_cfi_derive_git::cfi_impl_fn;
+#[cfg(feature = "cfi")]
+use caliptra_cfi_derive::cfi_impl_fn;
 
 #[repr(C)]
 #[derive(
@@ -23,7 +23,7 @@ use caliptra_cfi_derive_git::cfi_impl_fn;
 pub struct GetProfileCmd;
 
 impl CommandExecution for GetProfileCmd {
-    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    #[cfg_attr(feature = "cfi", cfi_impl_fn)]
     #[inline(never)]
     fn execute_serialized(
         &self,

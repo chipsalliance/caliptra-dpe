@@ -308,7 +308,7 @@ pub mod tests {
         validation::{DpeValidator, ValidationError},
         DpeFlags, OperationHandle, State, U8Bool, HASH_SIZE, TCI_SIZE,
     };
-    use caliptra_cfi_lib_git::CfiCounter;
+    use caliptra_cfi_lib::CfiCounter;
 
     #[test]
     fn test_validate_context_forest() {
