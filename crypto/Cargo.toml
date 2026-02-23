@@ -6,15 +6,16 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
+default = ["cfi"]
 rustcrypto = ["dep:hkdf", "dep:p256", "dep:p384", "dep:rand", "dep:sha2", "dep:base64ct", "dep:ecdsa", "dep:sec1", "dep:ml-dsa", "dep:pkcs8"]
 ml-dsa = []
 deterministic_rand = ["dep:rand"]
-no-cfi = []
+cfi = ["caliptra-cfi-lib/cfi", "caliptra-cfi-lib/cfi-counter"]
 
 [dependencies]
 arrayvec = { version = "0.7.4", default-features = false, features = ["zeroize"] }
-caliptra-cfi-lib-git = { workspace = true, default-features = false, features = ["cfi", "cfi-counter" ] }
-caliptra-cfi-derive-git.workspace = true
+caliptra-cfi-lib = { workspace = true, default-features = false }
+caliptra-cfi-derive.workspace = true
 constant_time_eq.workspace = true
 ecdsa = { version = "0.16.9", optional = true, features = ["pem"]}
 hkdf = { version = "0.12.3", optional = true }

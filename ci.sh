@@ -7,17 +7,17 @@ set -ex
 function build_rust_targets() {
   profile=$1
 
-  cargo build --release --manifest-path dpe/Cargo.toml --features=$profile,no-cfi --no-default-features
+  cargo build --release --manifest-path dpe/Cargo.toml --features=$profile --no-default-features
 
   cargo build --release --manifest-path crypto/Cargo.toml --no-default-features
   cargo build --release --manifest-path platform/Cargo.toml --no-default-features
-  cargo build --release --manifest-path dpe/Cargo.toml --features=$profile --no-default-features
+  cargo build --release --manifest-path dpe/Cargo.toml --features=$profile,cfi --no-default-features
   cargo build --release --manifest-path simulator/Cargo.toml --features=$profile,rustcrypto --no-default-features
   cargo build --release --manifest-path tools/Cargo.toml --features=$profile --no-default-features
 
   cargo build --manifest-path crypto/Cargo.toml --no-default-features
   cargo build --manifest-path platform/Cargo.toml --no-default-features
-  cargo build --manifest-path dpe/Cargo.toml --features=$profile --no-default-features
+  cargo build --manifest-path dpe/Cargo.toml --features=$profile,cfi --no-default-features
   cargo build --manifest-path simulator/Cargo.toml --features=$profile,rustcrypto --no-default-features
   cargo build --manifest-path tools/Cargo.toml --features=$profile --no-default-features
 }
@@ -27,7 +27,7 @@ function lint_rust_targets() {
 
   cargo clippy --manifest-path crypto/Cargo.toml --no-default-features -- --deny=warnings
   cargo clippy --manifest-path platform/Cargo.toml --no-default-features -- --deny=warnings
-  cargo clippy --manifest-path dpe/Cargo.toml --features=$profile --no-default-features -- --deny=warnings
+  cargo clippy --manifest-path dpe/Cargo.toml --features=$profile,cfi --no-default-features -- --deny=warnings
   cargo clippy --manifest-path simulator/Cargo.toml --features=$profile,rustcrypto --no-default-features -- --deny=warnings
   cargo clippy --manifest-path tools/Cargo.toml --features=$profile --no-default-features -- --deny=warnings
 }
@@ -53,7 +53,7 @@ function test_rust_targets() {
 
   cargo test --manifest-path platform/Cargo.toml --no-default-features
   cargo test --manifest-path crypto/Cargo.toml --no-default-features
-  cargo test --manifest-path dpe/Cargo.toml --features=$profile --no-default-features -- --test-threads=1
+  cargo test --manifest-path dpe/Cargo.toml --features=$profile,cfi --no-default-features -- --test-threads=1
   cargo test --manifest-path simulator/Cargo.toml --features=$profile,rustcrypto --no-default-features
 }
 
@@ -79,15 +79,15 @@ test_rust_targets ml-dsa
 run_verification_tests ml-dsa rustcrypto
 
 # Build check for P384/ML-DSA hybrid
-cargo build --release --manifest-path dpe/Cargo.toml --features=hybrid,no-cfi --no-default-features
-
 cargo build --release --manifest-path dpe/Cargo.toml --features=hybrid --no-default-features
+
+cargo build --release --manifest-path dpe/Cargo.toml --features=hybrid,cfi --no-default-features
 cargo build --release --bin cert-size --features=hybrid --no-default-features
 
-cargo build --manifest-path dpe/Cargo.toml --features=hybrid --no-default-features
+cargo build --manifest-path dpe/Cargo.toml --features=hybrid,cfi --no-default-features
 cargo build --bin cert-size --features=hybrid --no-default-features
 
-cargo clippy --manifest-path dpe/Cargo.toml --features=hybrid --no-default-features -- --deny=warnings
+cargo clippy --manifest-path dpe/Cargo.toml --features=hybrid,cfi --no-default-features -- --deny=warnings
 cargo clippy --bin cert-size --features=hybrid --no-default-features -- --deny=warnings
 
 # Run tests for P256 profile

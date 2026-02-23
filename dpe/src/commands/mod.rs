@@ -13,8 +13,8 @@ pub use self::get_certificate_chain::GetCertificateChainCmd;
 pub use self::get_profile::GetProfileCmd;
 pub use self::initialize_context::InitCtxCmd;
 pub use self::sign::{SignCommand, SignFlags, SignP256Cmd, SignP384Cmd};
-#[cfg(not(feature = "no-cfi"))]
-use caliptra_cfi_derive_git::cfi_impl_fn;
+#[cfg(feature = "cfi")]
+use caliptra_cfi_derive::{cfi_impl_fn, Launder};
 
 #[cfg(feature = "ml-dsa")]
 pub use {self::certify_key::CertifyKeyMldsa87Cmd, sign::SignMldsa87Cmd};
@@ -41,6 +41,7 @@ mod rotate_context;
 mod sign;
 
 #[derive(Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "cfi", derive(Launder))]
 pub enum Command<'a> {
     GetProfile(&'a GetProfileCmd),
     InitCtx(&'a InitCtxCmd),
@@ -263,7 +264,7 @@ impl<'a> From<&'a SignCommand<'a>> for Command<'a> {
 }
 
 impl CommandExecution for Command<'_> {
-    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    #[cfg_attr(feature = "cfi", cfi_impl_fn)]
     fn execute_serialized(
         &self,
         dpe: &mut DpeInstance,
@@ -304,7 +305,7 @@ pub trait CommandExecution {
     ///
     /// To implement this function, you need to add the
     /// cfi_impl_fn proc_macro to execute.
-    #[cfg(not(feature = "no-cfi"))]
+    #[cfg(feature = "cfi")]
     fn __cfi_execute<'a>(
         &'a self,
         dpe: &mut DpeInstance,
@@ -331,7 +332,7 @@ pub trait CommandExecution {
     ///
     /// To implement this function, you need to add the
     /// cfi_impl_fn proc_macro to execute.
-    #[cfg(not(feature = "no-cfi"))]
+    #[cfg(feature = "cfi")]
     fn __cfi_execute_serialized(
         &self,
         dpe: &mut DpeInstance,
@@ -399,7 +400,7 @@ pub mod tests {
     use super::*;
     use crate::dpe_instance::tests::DPE_PROFILE;
     use crate::DpeProfile;
-    use caliptra_cfi_lib_git::CfiCounter;
+    use caliptra_cfi_lib::CfiCounter;
     use platform::default::{DefaultPlatform, DefaultPlatformProfile};
     use zerocopy::IntoBytes;
 

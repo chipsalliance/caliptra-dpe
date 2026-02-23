@@ -5,7 +5,10 @@ use crate::{
     tci::TciNodeData,
     U8Bool, MAX_HANDLES,
 };
-use caliptra_cfi_lib_git::cfi_launder;
+#[cfg(feature = "cfi")]
+use caliptra_cfi_derive::Launder;
+#[cfg(feature = "cfi")]
+use caliptra_cfi_lib::cfi_launder;
 use constant_time_eq::constant_time_eq_16;
 use zerocopy::{little_endian::U64, FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes};
 use zeroize::Zeroize;
@@ -236,12 +239,12 @@ impl Children {
 
     /// Union of two children bitmaps.
     pub fn add_children(&mut self, other: Children) {
-        self.0 |= cfi_launder(other.0);
+        self.0 |= launder_u64(other.0.get());
     }
 
     /// Remove all children in `other` from `self`.
     pub fn remove_children(&mut self, other: Children) {
-        self.0.set(self.0.get() & !cfi_launder(other.0.get()));
+        self.0.set(self.0.get() & !launder_u64(other.0.get()));
     }
 
     /// Get an iterator over the children.
@@ -280,6 +283,7 @@ impl From<u64> for Children {
 }
 
 #[derive(Debug, PartialEq, Eq, IntoBytes, TryFromBytes, KnownLayout, Immutable, Copy, Clone, Zeroize)]
+#[cfg_attr(feature = "cfi", derive(Launder))]
 #[repr(u8, align(1))]
 #[rustfmt::skip]
 pub enum ContextState {
@@ -295,6 +299,7 @@ pub enum ContextState {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, IntoBytes, TryFromBytes, KnownLayout, Immutable, Zeroize)]
+#[cfg_attr(feature = "cfi", derive(Launder))]
 #[repr(u8, align(1))]
 #[rustfmt::skip]
 pub enum ContextType {
@@ -369,6 +374,18 @@ impl<'a> Iterator for ChildToRootIter<'a> {
         self.count += 1;
         Some(Ok(context))
     }
+}
+
+#[cfg(feature = "cfi")]
+fn launder_u64(val: u64) -> u64 {
+    let mut parts = [val as u32, (val >> 32) as u32];
+    parts = cfi_launder(parts);
+    (parts[0] as u64) | ((parts[1] as u64) << 32)
+}
+
+#[cfg(not(feature = "cfi"))]
+fn launder_u64(val: u64) -> u64 {
+    val
 }
 
 #[cfg(test)]

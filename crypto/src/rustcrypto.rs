@@ -35,8 +35,8 @@ use sha2::{digest::DynDigest, Sha256, Sha384};
 use std::boxed::Box;
 use zerocopy::FromBytes;
 
-#[cfg(not(feature = "no-cfi"))]
-use caliptra_cfi_derive_git::cfi_impl_fn;
+#[cfg(feature = "cfi")]
+use caliptra_cfi_derive::cfi_impl_fn;
 
 const RUSTCRYPTO_ECDSA_ERROR: CryptoError = CryptoError::CryptoLibError(1);
 const RUSTCRYPTO_SEC_ERROR: CryptoError = CryptoError::CryptoLibError(2);
@@ -320,12 +320,12 @@ impl<S: SignatureType, D: DigestType, SD: SignDataType> Crypto for RustCryptoImp
         Ok(())
     }
 
-    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    #[cfg_attr(feature = "cfi", cfi_impl_fn)]
     fn derive_cdi(&mut self, measurement: &Digest, info: &[u8]) -> Result<Self::Cdi, CryptoError> {
         hkdf_derive_cdi(S::SIGNATURE_ALGORITHM, measurement, info)
     }
 
-    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    #[cfg_attr(feature = "cfi", cfi_impl_fn)]
     fn derive_exported_cdi(
         &mut self,
         measurement: &Digest,
@@ -349,7 +349,7 @@ impl<S: SignatureType, D: DigestType, SD: SignDataType> Crypto for RustCryptoImp
         Ok(exported_cdi_handle)
     }
 
-    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    #[cfg_attr(feature = "cfi", cfi_impl_fn)]
     fn derive_key_pair(
         &mut self,
         cdi: &Self::Cdi,
@@ -359,7 +359,7 @@ impl<S: SignatureType, D: DigestType, SD: SignDataType> Crypto for RustCryptoImp
         self.derive_key_pair_inner(cdi, label, info)
     }
 
-    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    #[cfg_attr(feature = "cfi", cfi_impl_fn)]
     fn derive_key_pair_exported(
         &mut self,
         exported_handle: &ExportedCdiHandle,

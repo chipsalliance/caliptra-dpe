@@ -14,9 +14,9 @@ use crate::{
     DpeInstance, DpeProfile, State, MAX_HANDLES,
 };
 use bitflags::bitflags;
-use caliptra_cfi_lib_git::cfi_launder;
-#[cfg(not(feature = "no-cfi"))]
-use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq};
+use caliptra_cfi_lib::cfi_launder;
+#[cfg(feature = "cfi")]
+use caliptra_cfi_lib::{cfi_assert, cfi_assert_bool};
 use crypto::{
     ecdsa::{EcdsaPubKey, EcdsaSignature},
     Crypto, CryptoError, CryptoSuite, Digest, Hasher, PubKey, SignData, Signature,
@@ -2929,10 +2929,10 @@ fn create_dpe_cert_or_csr(
         }
     };
     if cfi_launder(key_pair.is_ok()) {
-        #[cfg(not(feature = "no-cfi"))]
+        #[cfg(feature = "cfi")]
         cfi_assert!(key_pair.is_ok());
     } else {
-        #[cfg(not(feature = "no-cfi"))]
+        #[cfg(feature = "cfi")]
         cfi_assert!(key_pair.is_err());
     }
     let (priv_key, pub_key) = okref(&key_pair)?;

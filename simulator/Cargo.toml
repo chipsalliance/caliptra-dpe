@@ -12,6 +12,7 @@ p384 = ["dpe/p384"]
 # TODO(clundin): Placeholder name until we decide pattern for DPE profiles and feature flags.
 ml-dsa = ["dpe/ml-dsa"]
 rustcrypto = ["crypto/rustcrypto", "platform/rustcrypto"]
+cfi = ["dpe/cfi"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -20,6 +21,6 @@ ctrlc = { version = "3.0", features = ["termination"] }
 clap = { version = "4.1.8", features = ["derive"] }
 log = "0.4.17"
 env_logger = "0.10.0"
-dpe = { path = "../dpe", default-features = false, features = ["no-cfi"] }
+dpe = { path = "../dpe", default-features = false }
 crypto = { path = "../crypto", default-features = false }
 platform = { path = "../platform", default-features = false}

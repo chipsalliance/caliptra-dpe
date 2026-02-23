@@ -7,10 +7,10 @@ use crate::{
     response::{DpeErrorCode, NewHandleResp},
 };
 use bitflags::bitflags;
-#[cfg(not(feature = "no-cfi"))]
-use caliptra_cfi_derive_git::cfi_impl_fn;
-#[cfg(not(feature = "no-cfi"))]
-use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq};
+#[cfg(feature = "cfi")]
+use caliptra_cfi_derive::cfi_impl_fn;
+#[cfg(feature = "cfi")]
+use caliptra_cfi_lib::{cfi_assert, cfi_assert_bool};
 use cfg_if::cfg_if;
 
 #[repr(C)]
@@ -51,7 +51,7 @@ impl InitCtxCmd {
 }
 
 impl CommandExecution for InitCtxCmd {
-    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    #[cfg_attr(feature = "cfi", cfi_impl_fn)]
     #[inline(never)]
     fn execute_serialized(
         &self,
@@ -77,7 +77,7 @@ impl CommandExecution for InitCtxCmd {
         }
 
         cfg_if! {
-            if #[cfg(not(feature = "no-cfi"))] {
+            if #[cfg(feature = "cfi")] {
                 cfi_assert!(!self.flag_is_default() || !env.state.has_initialized());
                 cfi_assert!(!self.flag_is_simulation() || env.state.support.simulation());
                 cfi_assert!(self.flag_is_default() ^ self.flag_is_simulation());
@@ -127,7 +127,7 @@ mod tests {
         support::Support,
         DpeFlags, State,
     };
-    use caliptra_cfi_lib_git::CfiCounter;
+    use caliptra_cfi_lib::CfiCounter;
     use zerocopy::IntoBytes;
 
     const TEST_INIT_CTX_CMD: InitCtxCmd = InitCtxCmd(0x1234_5678);

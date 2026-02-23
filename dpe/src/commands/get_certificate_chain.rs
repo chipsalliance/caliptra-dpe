@@ -5,8 +5,8 @@ use crate::{
     mutresp,
     response::{DpeErrorCode, GetCertificateChainResp},
 };
-#[cfg(not(feature = "no-cfi"))]
-use caliptra_cfi_derive_git::cfi_impl_fn;
+#[cfg(feature = "cfi")]
+use caliptra_cfi_derive::cfi_impl_fn;
 use platform::{Platform, MAX_CHUNK_SIZE};
 
 #[repr(C)]
@@ -25,7 +25,7 @@ pub struct GetCertificateChainCmd {
 }
 
 impl CommandExecution for GetCertificateChainCmd {
-    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    #[cfg_attr(feature = "cfi", cfi_impl_fn)]
     #[inline(never)]
     fn execute_serialized(
         &self,
@@ -60,7 +60,7 @@ mod tests {
         commands::{tests::PROFILES, Command, CommandHdr},
         dpe_instance::tests::{test_env, test_state, DPE_PROFILE, TEST_LOCALITIES},
     };
-    use caliptra_cfi_lib_git::CfiCounter;
+    use caliptra_cfi_lib::CfiCounter;
     use zerocopy::IntoBytes;
 
     const TEST_GET_CERTIFICATE_CHAIN_CMD: GetCertificateChainCmd = GetCertificateChainCmd {
