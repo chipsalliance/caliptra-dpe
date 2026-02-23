@@ -15,7 +15,7 @@ use caliptra_cfi_lib_git::cfi_launder;
 use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq, cfi_assert_ne};
 use cfg_if::cfg_if;
 #[cfg(any(feature = "p256", feature = "p384"))]
-use crypto::{ecdsa::EcdsaSignature, Digest};
+use crypto::ecdsa::EcdsaSignature;
 use crypto::{Crypto, SignData, Signature};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
@@ -81,11 +81,23 @@ impl CommandExecution for SignCommand<'_> {
     ) -> Result<usize, DpeErrorCode> {
         let (handle, label, data) = match *self {
             #[cfg(feature = "p256")]
-            SignCommand::P256(cmd) => (&cmd.handle, cmd.label.as_slice(), cmd.digest.as_slice()),
+            SignCommand::P256(cmd) => (
+                &cmd.handle,
+                cmd.label.as_slice(),
+                SignData::Digest(cmd.digest.into()),
+            ),
             #[cfg(feature = "p384")]
-            SignCommand::P384(cmd) => (&cmd.handle, cmd.label.as_slice(), cmd.digest.as_slice()),
+            SignCommand::P384(cmd) => (
+                &cmd.handle,
+                cmd.label.as_slice(),
+                SignData::Digest(cmd.digest.into()),
+            ),
             #[cfg(feature = "ml-dsa")]
-            SignCommand::Mldsa87(cmd) => (&cmd.handle, cmd.label.as_slice(), cmd.digest.as_slice()),
+            SignCommand::Mldsa87(cmd) => (
+                &cmd.handle,
+                cmd.label.as_slice(),
+                SignData::Mu(cmd.digest.into()),
+            ),
         };
         let idx = env.state.get_active_context_pos(handle, locality)?;
         let context = &env.state.contexts[idx];
@@ -99,22 +111,6 @@ impl CommandExecution for SignCommand<'_> {
                 cfi_assert_ne(context.context_type, ContextType::Simulation);
             }
         }
-
-        let data = match dpe.profile {
-            #[cfg(feature = "p256")]
-            crate::DpeProfile::P256Sha256 => SignData::Digest(Digest::Sha256(
-                crypto::Sha256::read_from_bytes(data)
-                    .map_err(|_| DpeErrorCode::Crypto(crypto::CryptoError::Size))?,
-            )),
-            #[cfg(feature = "p384")]
-            crate::DpeProfile::P384Sha384 => SignData::Digest(Digest::Sha384(
-                crypto::Sha384::read_from_bytes(data)
-                    .map_err(|_| DpeErrorCode::Crypto(crypto::CryptoError::Size))?,
-            )),
-            #[cfg(feature = "ml-dsa")]
-            crate::DpeProfile::Mldsa87 => SignData::Raw(data),
-            _ => Err(DpeErrorCode::InvalidArgument)?,
-        };
 
         let sig = sign(dpe, env, idx, label, &data);
         match okref(&sig)? {
@@ -488,7 +484,7 @@ mod tests {
                     EncodedVerifyingKey::<ml_dsa::MlDsa87>::try_from(key_bytes).unwrap();
                 let vk = VerifyingKey::<ml_dsa::MlDsa87>::decode(&encoded_vk);
 
-                assert!(vk.verify(&TEST_SIGN_DIGEST, &sig).is_ok());
+                assert!(vk.verify_mu((&TEST_SIGN_DIGEST).into(), &sig));
             }
             _ => panic!("Unsupported profile"),
         }
