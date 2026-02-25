@@ -102,6 +102,24 @@ impl State {
         Ok(idx)
     }
 
+    /// Finds the context having `handle` in `locality` and returns both context and index
+    ///
+    /// # Arguments
+    ///
+    /// * `handle` - handle to search
+    /// * `locality` - locality to search
+    pub fn get_active_context_and_idx(
+        &self,
+        handle: &ContextHandle,
+        locality: u32,
+    ) -> Result<(&Context, usize), DpeErrorCode> {
+        let idx = self.get_active_context_pos(handle, locality)?;
+        Ok((
+            self.contexts.get(idx).ok_or(DpeErrorCode::InternalError)?,
+            idx,
+        ))
+    }
+
     fn get_active_context_pos_internal(
         &self,
         handle: &ContextHandle,
@@ -158,10 +176,8 @@ impl State {
 
         let mut descendants = context.children;
         for idx in context.children.iter() {
-            if idx >= self.contexts.len() {
-                return Err(DpeErrorCode::InternalError);
-            }
-            descendants.add_children(self.get_descendants(&self.contexts[idx])?);
+            let ctx = self.contexts.get(idx).ok_or(DpeErrorCode::InternalError)?;
+            descendants.add_children(self.get_descendants(ctx)?);
         }
         Ok(descendants)
     }
@@ -186,18 +202,15 @@ impl State {
 
         for status in ChildToRootIter::new(start_idx, &self.contexts) {
             let curr = status?;
-            if out_idx >= nodes.len() {
-                return Err(DpeErrorCode::InternalError);
-            }
 
-            nodes[out_idx] = curr.tci;
+            *nodes.get_mut(out_idx).ok_or(DpeErrorCode::InternalError)? = curr.tci;
             out_idx += 1;
         }
 
-        if out_idx > nodes.len() {
-            return Err(DpeErrorCode::InternalError);
-        }
-        nodes[..out_idx].reverse();
+        nodes
+            .get_mut(..out_idx)
+            .ok_or(DpeErrorCode::InternalError)?
+            .reverse();
 
         Ok(out_idx)
     }

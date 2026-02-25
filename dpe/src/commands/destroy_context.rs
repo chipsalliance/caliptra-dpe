@@ -32,8 +32,7 @@ pub(crate) fn destroy_context(
     state: &mut State,
     locality: u32,
 ) -> Result<(), DpeErrorCode> {
-    let idx = state.get_active_context_pos(context_handle, locality)?;
-    let context = &state.contexts[idx];
+    let (context, idx) = state.get_active_context_and_idx(context_handle, locality)?;
     // Make sure the command is coming from the right locality.
     if context.locality != locality {
         return Err(DpeErrorCode::InvalidLocality);
@@ -48,10 +47,11 @@ pub(crate) fn destroy_context(
     loop {
         if parent_idx == Context::ROOT_INDEX as usize {
             break;
-        } else if parent_idx >= state.contexts.len() {
-            return Err(DpeErrorCode::InternalError);
         }
-        let parent_context = &state.contexts[parent_idx];
+        let parent_context = state
+            .contexts
+            .get(parent_idx)
+            .ok_or(DpeErrorCode::InternalError)?;
         // make sure the retired context does not have other active child contexts
         let child_context_count = parent_context.children.iter().count();
         if parent_context.state == ContextState::Retired && cfi_launder(child_context_count) == 1 {
