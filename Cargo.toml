@@ -8,6 +8,7 @@ members = [
     "platform",
     "simulator",
     "tools",
+    "ci-tools/panic-handler-check",
 ]
 
 [workspace.dependencies]
