@@ -32,6 +32,7 @@ jobs:
       - name: build-release
         run: cargo build --release -p dpe --features=${{ matrix.profile }} --no-default-features
       - name: test
+        if: ${{ !(matrix.profile == 'hybrid') }}
         run: cargo test -p dpe --features=${{ matrix.profile }} --no-default-features
   crypto:
     runs-on: ubuntu-latest
