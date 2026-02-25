@@ -29,8 +29,6 @@ jobs:
         run: cargo build -p dpe --features=${{ matrix.profile }} --no-default-features
       - name: build(cfi)
         run: cargo build -p dpe --features=${{ matrix.profile }},cfi --no-default-features
-      - name: build-release
-        run: cargo build --release -p dpe --features=${{ matrix.profile }} --no-default-features
       - name: test
         if: ${{ !(matrix.profile == 'hybrid') }}
         run: cargo test -p dpe --features=${{ matrix.profile }} --no-default-features
