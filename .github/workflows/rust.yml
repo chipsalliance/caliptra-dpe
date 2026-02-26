@@ -22,16 +22,16 @@ jobs:
       - name: Install clippy
         run: rustup component add clippy
       - name: rustfmt check
-        run: cargo fmt -p dpe -v --check
+        run: cargo fmt -p caliptra-dpe -v --check
       - name: clippy
-        run: cargo clippy -p dpe --features=${{ matrix.profile }} --no-default-features -- --deny=warnings
+        run: cargo clippy -p caliptra-dpe --features=${{ matrix.profile }} --no-default-features -- --deny=warnings
       - name: build
-        run: cargo build -p dpe --features=${{ matrix.profile }} --no-default-features
+        run: cargo build -p caliptra-dpe --features=${{ matrix.profile }} --no-default-features
       - name: build(cfi)
-        run: cargo build -p dpe --features=${{ matrix.profile }},cfi --no-default-features
+        run: cargo build -p caliptra-dpe --features=${{ matrix.profile }},cfi --no-default-features
       - name: test
         if: ${{ !(matrix.profile == 'hybrid') }}
-        run: cargo test -p dpe --features=${{ matrix.profile }} --no-default-features
+        run: cargo test -p caliptra-dpe --features=${{ matrix.profile }},cfi --no-default-features -- --test-threads=1
   crypto:
     runs-on: ubuntu-latest
     steps:
@@ -42,15 +42,15 @@ jobs:
       - name: Install clippy
         run: rustup component add clippy
       - name: rustfmt check
-        run: cargo fmt -p crypto -v --check
+        run: cargo fmt -p caliptra-dpe-crypto -v --check
       - name: clippy
-        run: cargo clippy -p crypto --no-default-features -- --deny=warnings
+        run: cargo clippy -p caliptra-dpe-crypto --no-default-features -- --deny=warnings
       - name: build
-        run: cargo build -p crypto --no-default-features
+        run: cargo build -p caliptra-dpe-crypto --no-default-features
       - name: build-release
-        run: cargo build --release -p crypto --no-default-features
+        run: cargo build --release -p caliptra-dpe-crypto --no-default-features
       - name: test
-        run: cargo test -p crypto --no-default-features
+        run: cargo test -p caliptra-dpe-crypto --no-default-features
   platform:
     runs-on: ubuntu-latest
     steps:
@@ -61,23 +61,23 @@ jobs:
       - name: Install clippy
         run: rustup component add clippy
       - name: rustfmt check
-        run: cargo fmt -p platform -v --check
+        run: cargo fmt -p caliptra-dpe-platform -v --check
       - name: clippy
-        run: cargo clippy -p platform --no-default-features -- --deny=warnings
+        run: cargo clippy -p caliptra-dpe-platform --no-default-features -- --deny=warnings
       - name: build
-        run: cargo build -p platform --no-default-features
+        run: cargo build -p caliptra-dpe-platform --no-default-features
       - name: build-release
-        run: cargo build --release -p platform --no-default-features
+        run: cargo build --release -p caliptra-dpe-platform --no-default-features
       - name: test
-        run: cargo test -p platform --no-default-features
+        run: cargo test -p caliptra-dpe-platform --no-default-features
   tools_and_simulator:
     runs-on: ubuntu-latest
     strategy:
       matrix:
         profile: [p256, p384, ml-dsa]
-        package: [tools, simulator]
+        package: [caliptra-dpe-tools, caliptra-dpe-simulator]
         include:
-          - package: simulator
+          - package: caliptra-dpe-simulator
             crypto: rustcrypto
     steps:
       - name: Checkout repo
