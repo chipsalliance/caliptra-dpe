@@ -1,0 +1,55 @@
+name: Verification tests
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  verification_testing:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        profile: [p256, p384, ml-dsa]
+        crypto: [rustcrypto]
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+      - name: Cache cargo registry and build
+        uses: Swatinem/rust-cache@v2
+      - name: build simulator
+        run: cargo build -p simulator --features=${{ matrix.profile }},${{ matrix.crypto }} --no-default-features
+      - name: run verification tests
+        run: |
+          cd verification/testing
+          go test -v
+  fuzzer_build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./dpe/fuzz
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+      - name: Cache cargo registry and build
+        uses: Swatinem/rust-cache@v2
+      - name: Install nightly toolchain
+        run: rustup toolchain install nightly-2025-07-08
+      - name: Install fuzzing tools
+        run: cargo +nightly-2025-07-08 install cargo-fuzz cargo-afl --locked
+      - name: Build afl config
+        run: cargo afl config --build
+      - name: cargo fmt
+        run: cargo fmt --check
+      - name: cargo clippy
+        run: |
+          cargo clippy --features libfuzzer-sys
+          cargo clippy --features afl
+      - name: fuzz build
+        run: cargo +nightly-2025-07-08 fuzz build --features libfuzzer-sys
+      - name: afl build
+        run: cargo +nightly-2025-07-08 afl build --features afl
+        
