@@ -40,6 +40,9 @@ jobs:
         run: rustup toolchain install nightly-2025-07-08
       - name: Install fuzzing tools
         run: cargo +nightly-2025-07-08 install cargo-fuzz cargo-afl --locked
+      - name: Build afl config
+        run: cargo +nightly-2025-07-08 afl config --build
+        continue-on-error: true
       - name: cargo fmt
         run: cargo fmt --check
       - name: cargo clippy
