@@ -1800,4 +1800,45 @@ mod tests {
             _ => panic!("expected to get a valid DeriveContext response"),
         }
     }
+
+    #[test]
+    fn test_correct_subject_name_for_exported_cdi() {
+        let mut state = State::new(Support::X509 | Support::CDI_EXPORT, DpeFlags::empty());
+        let mut env = test_env(&mut state);
+        let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
+
+        let init_resp = match InitCtxCmd::new_use_default()
+            .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
+            .unwrap()
+        {
+            Response::InitCtx(resp) => resp,
+            _ => panic!("Incorrect return type."),
+        };
+
+        let derive_cmd = DeriveContextCmd {
+            handle: init_resp.handle,
+            flags: DeriveContextFlags::EXPORT_CDI | DeriveContextFlags::CREATE_CERTIFICATE,
+            target_locality: TEST_LOCALITIES[0],
+            ..Default::default()
+        };
+
+        let derive_resp = match derive_cmd
+            .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
+            .unwrap()
+        {
+            Response::DeriveContextExportedCdi(resp) => resp,
+            _ => panic!("Wrong response type."),
+        };
+
+        let mut parser = X509CertificateParser::new().with_deep_parse_extensions(true);
+        match parser
+            .parse(&derive_resp.new_certificate[..derive_resp.certificate_size.try_into().unwrap()])
+        {
+            Ok((_, cert)) => {
+                let subject = cert.subject().to_string();
+                assert!(subject.contains("CN=DPE Exported CDI"));
+            }
+            Err(e) => panic!("x509 parsing failed: {:?}", e),
+        };
+    }
 }
