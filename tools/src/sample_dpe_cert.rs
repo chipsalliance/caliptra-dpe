@@ -1,9 +1,9 @@
 // Licensed under the Apache-2.0 license
 
+use clap::{Parser, ValueEnum};
 use dpe::{tci::TciMeasurement, DpeFlags};
 use platform::default::DefaultPlatformProfile;
 use profile::*;
-use std::env;
 use {
     crypto::RustCryptoImpl,
     dpe::commands::{self, CertifyKeyFlags, DeriveContextCmd, DeriveContextFlags},
@@ -37,7 +37,7 @@ mod profile {
 #[cfg(feature = "ml-dsa")]
 mod profile {
     use super::*;
-    pub use crypto::Ecdsa256RustCrypto as RustCrypto;
+    pub use crypto::MldsaRustCrypto as RustCrypto;
     pub use dpe::commands::CertifyKeyMldsa87Cmd as CertifyKeyCmd;
     pub const DPE_PROFILE: dpe::DpeProfile = dpe::DpeProfile::Mldsa87;
     pub const PLATFORM_PROFILE: DefaultPlatformProfile = DefaultPlatformProfile::Mldsa87;
@@ -113,26 +113,41 @@ fn certify_key(dpe: &mut DpeInstance, env: &mut DpeEnv<TestTypes>, format: u32) 
     certify_key_response.cert().unwrap().to_vec()
 }
 
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    #[arg(value_enum, default_value_t = Format::X509)]
+    format: Format,
+
+    #[arg(long)]
+    critical: bool,
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Debug)]
+enum Format {
+    X509,
+    Csr,
+}
+
 fn main() {
-    let args: Vec<String> = env::args().collect();
-    let (format, format_str) = if args.len() > 1 {
-        let arg = &args[1];
-        if arg == "csr" {
-            (commands::CertifyKeyCommand::FORMAT_CSR, "PKCS7")
-        } else if arg == "x509" {
-            (commands::CertifyKeyCommand::FORMAT_X509, "CERTIFICATE")
-        } else {
-            panic!("Unsupported format {}", arg)
-        }
-    } else {
-        (commands::CertifyKeyCommand::FORMAT_X509, "CERTIFICATE")
+    let args = Args::parse();
+
+    let (format, format_str) = match args.format {
+        Format::X509 => (commands::CertifyKeyCommand::FORMAT_X509, "CERTIFICATE"),
+        Format::Csr => (commands::CertifyKeyCommand::FORMAT_CSR, "PKCS7"),
     };
+
     let support = Support::AUTO_INIT | Support::X509 | Support::CSR;
+    let flags = if args.critical {
+        DpeFlags::MARK_DICE_EXTENSIONS_CRITICAL
+    } else {
+        DpeFlags::empty()
+    };
 
     let mut env = DpeEnv::<TestTypes> {
         crypto: RustCryptoImpl::new(),
         platform: DefaultPlatform(PLATFORM_PROFILE),
-        state: &mut dpe::State::new(support, DpeFlags::empty()),
+        state: &mut dpe::State::new(support, flags),
     };
 
     let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
