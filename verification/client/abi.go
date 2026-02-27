@@ -3,6 +3,7 @@
 package client
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"reflect"
@@ -253,6 +254,10 @@ type DeriveContextResp struct {
 
 // SignFlags is the input flags to Sign
 type SignFlags uint32
+
+const (
+	SignFlagIsRaw SignFlags = 1 << 0
+)
 
 // SignReq is the input request to Sign
 type SignReq[Digest DigestAlgorithm, SignData DigestAlgorithm] struct {
@@ -818,6 +823,96 @@ func (c *DPEABI[_, Digest, _, SignData, Signature]) Sign(handle *ContextHandle, 
 	}
 
 	return signedResp, nil
+}
+
+// SignRaw calls DPE Sign command with raw data
+// This is useful for ML-DSA when signing pre-computed external mu values
+func (c *DPEABI[_, Digest, _, _, Signature]) SignRaw(handle *ContextHandle, label []byte, rawData []byte) (*DPESignedHash, error) {
+	dLen := DigestLen[Digest]()
+	if len(label) != dLen {
+		return nil, fmt.Errorf("invalid label length")
+	}
+
+	// For ML-DSA, we manually build a buffer containing the fields
+	// needed by the raw-sign command. We don't declare a fixed struct
+	// because the last field is a variable-length slice.
+
+	// Manually construct the command buffer
+	buf := &bytes.Buffer{}
+
+	// Write handle
+	if err := binary.Write(buf, binary.LittleEndian, handle); err != nil {
+		return nil, err
+	}
+
+	// Write label (as fixed-size digest)
+	l, err := NewDigest[Digest](label)
+	if err != nil {
+		return nil, err
+	}
+	if err := binary.Write(buf, binary.LittleEndian, l); err != nil {
+		return nil, err
+	}
+
+	// Write flags with IS_RAW set
+	flags := SignFlagIsRaw
+	if err := binary.Write(buf, binary.LittleEndian, flags); err != nil {
+		return nil, err
+	}
+
+	// Write size of raw data (stored as 64-byte digest when serializing)
+	// But we need to handle this specially - for raw mode, the "digest" field becomes size + data
+	size := uint32(len(rawData))
+	if err := binary.Write(buf, binary.LittleEndian, size); err != nil {
+		return nil, err
+	}
+
+	// Write raw data
+	if _, err := buf.Write(rawData); err != nil {
+		return nil, err
+	}
+
+	// Send command
+	hdr := CommandHdr{
+		magic:   CmdMagic,
+		cmd:     c.constants.Codes.Sign,
+		profile: c.Profile,
+	}
+	cmdBuf := &bytes.Buffer{}
+	binary.Write(cmdBuf, binary.LittleEndian, hdr)
+	cmdBuf.Write(buf.Bytes())
+
+	resp, err := c.transport.SendCmd(cmdBuf.Bytes())
+	if err != nil {
+		return nil, err
+	}
+
+	respHdr := RespHdr{}
+	r := bytes.NewReader(resp)
+	if err := binary.Read(r, binary.LittleEndian, &respHdr); err != nil {
+		return nil, err
+	}
+	if err := checkRespHdr(respHdr); err != nil {
+		return nil, err
+	}
+
+	// Parse response based on profile
+	if c.Profile == ProfileMldsa87 {
+		respStruct := struct {
+			NewContextHandle [16]byte
+			Signature        Mldsa87Signature
+			Padding          [1]byte
+		}{}
+		if err := binary.Read(r, binary.LittleEndian, &respStruct); err != nil {
+			return nil, err
+		}
+		return &DPESignedHash{
+			Handle:    respStruct.NewContextHandle,
+			Signature: respStruct.Signature[:],
+		}, nil
+	}
+
+	return nil, fmt.Errorf("SignRaw not implemented for this profile")
 }
 
 // ToFlags converts support to the profile-defined support flags format
