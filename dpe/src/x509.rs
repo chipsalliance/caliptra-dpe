@@ -2733,6 +2733,7 @@ fn get_dpe_measurement_digest(
 
 fn get_subject_name<'a>(
     env: &mut DpeEnv<impl DpeTypes>,
+    cert_type: &CertificateType,
     pub_key: &'a PubKey,
     subj_serial: &'a mut [u8],
 ) -> Result<Name<'a>, DpeErrorCode> {
@@ -2741,8 +2742,13 @@ fn get_subject_name<'a>(
     // The serial number of the subject can be at most 64 bytes
     let truncated_subj_serial = &subj_serial[..64];
 
+    let cn: &[u8] = match cert_type {
+        CertificateType::Leaf => b"DPE Leaf",
+        CertificateType::Exported => b"DPE Exported CDI",
+    };
+
     let subject_name = Name {
-        cn: DirectoryString::PrintableString(b"DPE Leaf"),
+        cn: DirectoryString::PrintableString(cn),
         serial: DirectoryString::PrintableString(truncated_subj_serial),
     };
     Ok(subject_name)
@@ -2948,7 +2954,7 @@ fn create_dpe_cert_or_csr(
     }
     let (priv_key, pub_key) = okref(&key_pair)?;
     let mut subj_serial = [0u8; MAX_HASH_SIZE * 2];
-    let subject_name = get_subject_name(env, pub_key, &mut subj_serial)?;
+    let subject_name = get_subject_name(env, &cert_type, pub_key, &mut subj_serial)?;
 
     const INITIALIZER: TciNodeData = TciNodeData::new();
     let mut nodes = [INITIALIZER; MAX_HANDLES];
