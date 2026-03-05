@@ -4,11 +4,14 @@ package verification
 
 import (
 	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/asn1"
 	"encoding/pem"
 	"fmt"
 	"testing"
 
 	"github.com/chipsalliance/caliptra-dpe/verification/client"
+	"github.com/cloudflare/circl/sign/mldsa/mldsa87"
 	zx509 "github.com/zmap/zcrypto/x509"
 	zlint "github.com/zmap/zlint/v3"
 	"github.com/zmap/zlint/v3/lint"
@@ -127,7 +130,43 @@ func validateCertChain(t *testing.T, certChain []*x509.Certificate) {
 	opts := buildVerifyOptions(t, certChain)
 
 	// Certificate chain validation for each intermediate certificate
-	for _, cert := range certChain {
+	for i, cert := range certChain {
+		if cert.SignatureAlgorithm.String() == "2.16.840.1.101.3.4.3.19" || cert.PublicKeyAlgorithm == x509.UnknownPublicKeyAlgorithm {
+			t.Logf("[DEBUG]: Performing manual verification for ML-DSA Cert[%d]", i)
+			// Manual verification for ML-DSA
+			var issuer *x509.Certificate
+			if i == 0 {
+				if cert.Subject.String() == cert.Issuer.String() {
+					issuer = cert
+				} else {
+					t.Logf("[DEBUG]: Cert[0] is not self-signed (Issuer: %s), trusting as root anchor without signature verification", cert.Issuer)
+					continue
+				}
+			} else {
+				issuer = certChain[i-1]
+			}
+
+			var spki struct {
+				Algorithm        pkix.AlgorithmIdentifier
+				SubjectPublicKey asn1.BitString
+			}
+			if _, err := asn1.Unmarshal(issuer.RawSubjectPublicKeyInfo, &spki); err != nil {
+				t.Errorf("[ERROR]: Failed to parse issuer SPKI for Cert[%d]: %v", i, err)
+				continue
+			}
+
+			var pk mldsa87.PublicKey
+			if err := pk.UnmarshalBinary(spki.SubjectPublicKey.Bytes); err != nil {
+				t.Errorf("[ERROR]: Failed to parse issuer ML-DSA public key for Cert[%d]: %v", i, err)
+				continue
+			}
+
+			if !mldsa87.Verify(&pk, cert.RawTBSCertificate, nil, cert.Signature) {
+				t.Errorf("[ERROR]: ML-DSA Certificate Signature Verification failed for Cert[%d]", i)
+			}
+			continue
+		}
+
 		chains, err := cert.Verify(opts)
 		if err != nil {
 			t.Errorf("[ERROR]: Error in Certificate Chain of %s: %s", cert.Subject, err.Error())
