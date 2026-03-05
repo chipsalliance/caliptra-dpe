@@ -3511,6 +3511,10 @@ pub(crate) mod tests {
         let cert = match parser.parse(&cert_buf[..bytes_written]) {
             Ok((_, parsed_cert)) => {
                 assert_eq!(parsed_cert.version(), X509Version::V3);
+                assert_eq!(
+                    parsed_cert.tbs_certificate.signature.algorithm.as_bytes(),
+                    const_oid::db::fips204::ID_ML_DSA_87.as_bytes()
+                );
                 parsed_cert
             }
             Err(e) => panic!("x509 parsing failed: {:?}", e),
