@@ -14,6 +14,7 @@ use caliptra_cfi_lib::cfi_launder;
 #[cfg(feature = "cfi")]
 use caliptra_cfi_lib::{cfi_assert, cfi_assert_bool, cfi_assert_ne};
 use cfg_if::cfg_if;
+use core::mem::size_of_val;
 #[cfg(any(feature = "p256", feature = "p384"))]
 use crypto::ecdsa::EcdsaSignature;
 use crypto::{Crypto, SignData, Signature};
@@ -24,7 +25,9 @@ use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 pub struct SignFlags(pub u32);
 
 bitflags! {
-    impl SignFlags: u32 {}
+    impl SignFlags: u32 {
+        const IS_RAW = 1 << 0;
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -35,6 +38,12 @@ pub enum SignCommand<'a> {
     P384(&'a SignP384Cmd),
     #[cfg(feature = "ml-dsa")]
     Mldsa87(&'a SignMldsa87Cmd),
+    #[cfg(feature = "ml-dsa")]
+    Mldsa87Raw {
+        handle: &'a ContextHandle,
+        label: &'a [u8],
+        raw_data: &'a [u8],
+    },
 }
 
 impl SignCommand<'_> {
@@ -45,10 +54,61 @@ impl SignCommand<'_> {
             #[cfg(feature = "p384")]
             DpeProfile::P384Sha384 => SignCommand::parse_command(SignCommand::P384, bytes),
             #[cfg(feature = "ml-dsa")]
-            DpeProfile::Mldsa87 => SignCommand::parse_command(SignCommand::Mldsa87, bytes),
+            DpeProfile::Mldsa87 => SignCommand::deserialize_mldsa87(bytes),
             _ => Err(DpeErrorCode::InvalidArgument)?,
         }
     }
+
+    #[cfg(feature = "ml-dsa")]
+    fn deserialize_mldsa87(bytes: &[u8]) -> Result<SignCommand, DpeErrorCode> {
+        // We only need the first 68 bytes (handle + label + flags) to inspect the flag.
+        const FIXED_PREFIX_SIZE: usize = 16 + 48 + 4;
+
+        if bytes.len() < FIXED_PREFIX_SIZE {
+            return Err(DpeErrorCode::InvalidArgument);
+        }
+
+        // Read flags from buffer (little endian at offset 64).
+        let flags_bytes: &[u8; 4] = &bytes[16 + 48..FIXED_PREFIX_SIZE]
+            .try_into()
+            .map_err(|_| DpeErrorCode::InvalidArgument)?;
+        let flags = SignFlags(u32::from_le_bytes(*flags_bytes));
+
+        if flags.contains(SignFlags::IS_RAW) {
+            // Must have size field following the fixed prefix.
+            if bytes.len() < FIXED_PREFIX_SIZE + 4 {
+                return Err(DpeErrorCode::InvalidArgument);
+            }
+
+            let size_bytes: &[u8; 4] = &bytes[FIXED_PREFIX_SIZE..FIXED_PREFIX_SIZE + 4]
+                .try_into()
+                .map_err(|_| DpeErrorCode::InvalidArgument)?;
+            let size = u32::from_le_bytes(*size_bytes) as usize;
+
+            let data_start = FIXED_PREFIX_SIZE + 4;
+            if data_start + size > bytes.len() {
+                return Err(DpeErrorCode::InvalidArgument);
+            }
+
+            let handle_slice = &bytes[0..16];
+            let label_slice = &bytes[16..64];
+            let raw_data = &bytes[data_start..data_start + size];
+
+            let handle = <ContextHandle as FromBytes>::ref_from_prefix(handle_slice)
+                .map_err(|_| DpeErrorCode::InvalidArgument)?
+                .0;
+
+            Ok(SignCommand::Mldsa87Raw {
+                handle,
+                label: label_slice,
+                raw_data,
+            })
+        } else {
+            // Legacy fixed-size command, safe to parse normally.
+            SignCommand::parse_command(SignCommand::Mldsa87, bytes)
+        }
+    }
+
     pub fn parse_command<'a, T: FromBytes + KnownLayout + Immutable + 'a>(
         build: impl FnOnce(&'a T) -> SignCommand<'a>,
         bytes: &'a [u8],
@@ -57,6 +117,7 @@ impl SignCommand<'_> {
             T::ref_from_prefix(bytes).map_err(|_| DpeErrorCode::InvalidArgument)?;
         Ok(build(prefix))
     }
+
     pub fn as_bytes(&self) -> &[u8] {
         match self {
             #[cfg(feature = "p256")]
@@ -65,6 +126,8 @@ impl SignCommand<'_> {
             SignCommand::P384(cmd) => cmd.as_bytes(),
             #[cfg(feature = "ml-dsa")]
             SignCommand::Mldsa87(cmd) => cmd.as_bytes(),
+            #[cfg(feature = "ml-dsa")]
+            SignCommand::Mldsa87Raw { .. } => &[], // Raw variant doesn't have a fixed representation
         }
     }
 }
@@ -98,6 +161,12 @@ impl CommandExecution for SignCommand<'_> {
                 cmd.label.as_slice(),
                 SignData::Mu(cmd.digest.into()),
             ),
+            #[cfg(feature = "ml-dsa")]
+            SignCommand::Mldsa87Raw {
+                handle,
+                label,
+                raw_data,
+            } => (handle, label, SignData::Raw(raw_data)),
         };
         let idx = env.state.get_active_context_pos(handle, locality)?;
         let context = &env.state.contexts[idx];
@@ -487,6 +556,101 @@ mod tests {
                 assert!(vk.verify_mu((&TEST_SIGN_DIGEST).into(), &sig));
             }
             _ => panic!("Unsupported profile"),
+        }
+    }
+
+    #[cfg(feature = "ml-dsa")]
+    #[test]
+    fn test_deserialize_sign_raw_mode() {
+        CfiCounter::reset_for_test();
+        // Test raw mode deserialization
+        // Format: handle(16) + label(48) + flags(4) + size(4) + data(variable)
+        let mut cmd_bytes = Vec::new();
+
+        // Add handle
+        cmd_bytes.extend(SIMULATION_HANDLE.0.iter());
+
+        // Add label (48 bytes)
+        cmd_bytes.extend(&TEST_LABEL);
+
+        // Add flags with IS_RAW flag set (bit 0)
+        let flags_with_raw = SignFlags::IS_RAW;
+        cmd_bytes.extend(flags_with_raw.0.to_le_bytes().iter());
+
+        // Add size
+        let raw_data = b"test_raw_data_to_sign";
+        let size = (raw_data.len() as u32).to_le_bytes();
+        cmd_bytes.extend(size.iter());
+
+        // Add raw data
+        cmd_bytes.extend(raw_data.iter());
+
+        // Test deserialization
+        let cmd = SignCommand::deserialize(DPE_PROFILE, &cmd_bytes);
+        assert!(cmd.is_ok());
+
+        match cmd.unwrap() {
+            #[cfg(feature = "ml-dsa")]
+            SignCommand::Mldsa87Raw {
+                handle,
+                label,
+                raw_data: data,
+            } => {
+                assert_eq!(handle.0, SIMULATION_HANDLE.0);
+                assert_eq!(label, &TEST_LABEL);
+                assert_eq!(data, raw_data);
+            }
+            _ => panic!("Expected Mldsa87Raw variant"),
+        }
+    }
+
+    #[cfg(feature = "ml-dsa")]
+    #[test]
+    fn test_deserialize_sign_raw_mode_invalid_buffer() {
+        CfiCounter::reset_for_test();
+        // Test that invalid buffer size is caught
+        let mut cmd_bytes = Vec::new();
+
+        // Add handle
+        cmd_bytes.extend(SIMULATION_HANDLE.0.iter());
+
+        // Add label (48 bytes)
+        cmd_bytes.extend(&TEST_LABEL);
+
+        // Add flags with IS_RAW flag set
+        let flags_with_raw = SignFlags::IS_RAW;
+        cmd_bytes.extend(flags_with_raw.0.to_le_bytes().iter());
+
+        // Add size that exceeds buffer
+        cmd_bytes.extend([255, 0, 0, 0].iter()); // Size of 255
+
+        // Add only 10 bytes of data (less than promised)
+        cmd_bytes.extend(b"short_data".iter());
+
+        // Test deserialization should fail
+        let cmd = SignCommand::deserialize(DPE_PROFILE, &cmd_bytes);
+        assert!(cmd.is_err());
+        assert_eq!(cmd.unwrap_err(), DpeErrorCode::InvalidArgument);
+    }
+
+    #[cfg(feature = "ml-dsa")]
+    #[test]
+    fn test_deserialize_sign_non_raw_mode() {
+        CfiCounter::reset_for_test();
+        // Test that non-raw mode still works (backward compatibility)
+        let mut command = CommandHdr::new(DPE_PROFILE, Command::SIGN)
+            .as_bytes()
+            .to_vec();
+        command.extend(TEST_SIGN_CMD.as_bytes());
+
+        let cmd = Command::deserialize(DPE_PROFILE, &command);
+        assert!(cmd.is_ok());
+
+        match cmd.unwrap() {
+            Command::Sign(SignCommand::Mldsa87(_)) => {
+                // Expected
+            }
+            _ => panic!("Expected Mldsa87 variant for non-raw mode"),
         }
     }
 }

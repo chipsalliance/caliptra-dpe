@@ -162,6 +162,12 @@ impl Response {
                     .map_err(|_| DpeErrorCode::InvalidArgument)?
                     .0,
             )),
+            #[cfg(feature = "ml-dsa")]
+            Command::Sign(SignCommand::Mldsa87Raw { .. }) => Response::Sign(SignResp::MlDsa(
+                SignMlDsaResp::try_read_from_prefix(bytes)
+                    .map_err(|_| DpeErrorCode::InvalidArgument)?
+                    .0,
+            )),
         };
         Ok(r)
     }

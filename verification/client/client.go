@@ -57,6 +57,7 @@ type DPEClient interface {
 	DeriveContext(handle *ContextHandle, inputData []byte, flags DeriveContextFlags, tciType uint32, targetLocality uint32) (*DeriveContextResp, error)
 	RotateContextHandle(handle *ContextHandle, flags RotateContextHandleFlags) (*ContextHandle, error)
 	Sign(handle *ContextHandle, label []byte, flags SignFlags, toBeSigned []byte) (*DPESignedHash, error)
+	SignRaw(handle *ContextHandle, label []byte, rawData []byte) (*DPESignedHash, error)
 }
 
 // NewClient returns a new DPE client
