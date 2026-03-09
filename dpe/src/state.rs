@@ -214,12 +214,12 @@ impl State {
 
 #[cfg(test)]
 mod tests {
-    use caliptra_cfi_lib::CfiCounter;
-    use platform::default::AUTO_INIT_LOCALITY;
-
-    use crate::dpe_instance::tests::SIMULATION_HANDLE;
-
     use super::*;
+    use crate::dpe_instance::tests::SIMULATION_HANDLE;
+    use caliptra_cfi_lib::CfiCounter;
+    use core::mem::offset_of;
+    use core::mem::size_of;
+    use platform::default::AUTO_INIT_LOCALITY;
 
     #[test]
     fn test_get_active_context_index() {
@@ -318,5 +318,92 @@ mod tests {
             children,
             state.get_descendants(&state.contexts[root]).unwrap()
         );
+    }
+
+    #[test]
+    fn test_state_size() {
+        #[cfg(not(feature = "arbitrary_max_handles"))]
+        {
+            #[cfg(any(feature = "p384", feature = "ml-dsa"))]
+            const EXPECTED_SIZE: usize = 9232;
+            #[cfg(all(feature = "p256", not(any(feature = "p384", feature = "ml-dsa"))))]
+            const EXPECTED_SIZE: usize = 7184;
+
+            if size_of::<State>() != EXPECTED_SIZE {
+                panic!(
+                    "State size has changed from {} to {}. If this is intentional, update the \
+                    EXPECTED_SIZE in this test and CONSIDER BUMPING THE VERSION NUMBER (State::VERSION).",
+                    EXPECTED_SIZE,
+                    size_of::<State>()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_state_offsets() {
+        #[cfg(not(feature = "arbitrary_max_handles"))]
+        {
+            #[cfg(any(feature = "p384", feature = "ml-dsa"))]
+            let expected_offsets = (0, 4, 8, 9224, 9228, 9230, 9231);
+            #[cfg(all(feature = "p256", not(any(feature = "p384", feature = "ml-dsa"))))]
+            let expected_offsets = (0, 4, 8, 7176, 7180, 7182, 7183);
+
+            let actual_offsets = (
+                offset_of!(State, marker),
+                offset_of!(State, version),
+                offset_of!(State, contexts),
+                offset_of!(State, support),
+                offset_of!(State, flags),
+                offset_of!(State, has_initialized),
+                offset_of!(State, reserved),
+            );
+
+            if actual_offsets != expected_offsets {
+                panic!(
+                    "State field offsets have changed. Expected {:?}, got {:?}. \
+                    If this is intentional, update the EXPECTED_OFFSETS in this test and \
+                    CONSIDER BUMPING THE VERSION NUMBER (State::VERSION).",
+                    expected_offsets, actual_offsets
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_context_offsets() {
+        use core::mem::offset_of;
+
+        #[cfg(not(feature = "arbitrary_max_handles"))]
+        {
+            #[cfg(any(feature = "p384", feature = "ml-dsa"))]
+            let expected_offsets = (0, 16, 124, 132, 136, 137, 138, 139, 140, 141, 142, 143);
+            #[cfg(all(feature = "p256", not(any(feature = "p384", feature = "ml-dsa"))))]
+            let expected_offsets = (0, 16, 92, 100, 104, 105, 106, 107, 108, 109, 110, 111);
+
+            let actual_offsets = (
+                offset_of!(Context, handle),
+                offset_of!(Context, tci),
+                offset_of!(Context, children),
+                offset_of!(Context, locality),
+                offset_of!(Context, parent_idx),
+                offset_of!(Context, context_type),
+                offset_of!(Context, state),
+                offset_of!(Context, uses_internal_input_info),
+                offset_of!(Context, uses_internal_input_dice),
+                offset_of!(Context, allow_x509),
+                offset_of!(Context, allow_export_cdi),
+                offset_of!(Context, reserved),
+            );
+
+            if actual_offsets != expected_offsets {
+                panic!(
+                    "Context field offsets have changed. Expected {:?}, got {:?}. \
+                    If this is intentional, update the EXPECTED_OFFSETS in this test and \
+                    CONSIDER BUMPING THE VERSION NUMBER (State::VERSION).",
+                    expected_offsets, actual_offsets
+                );
+            }
+        }
     }
 }
