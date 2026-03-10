@@ -259,6 +259,16 @@ impl<'a> From<&'a SignCommand<'a>> for Command<'a> {
             SignCommand::P384(cmd) => Command::Sign(SignCommand::P384(cmd)),
             #[cfg(feature = "ml-dsa")]
             SignCommand::Mldsa87(cmd) => Command::Sign(SignCommand::Mldsa87(cmd)),
+            #[cfg(feature = "ml-dsa")]
+            SignCommand::Mldsa87Raw {
+                handle,
+                label,
+                raw_data,
+            } => Command::Sign(SignCommand::Mldsa87Raw {
+                handle,
+                label,
+                raw_data,
+            }),
         }
     }
 }
