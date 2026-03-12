@@ -13,6 +13,7 @@ members = [
     "test-artifacts",
     "ci-tools/panic-handler-check",
 ]
+resolver = "2"
 
 [workspace.package]
 version = "0.1.0"
