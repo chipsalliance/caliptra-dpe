@@ -30,7 +30,6 @@ zerocopy.workspace = true
 [[bin]]
 name = "sample_dpe_cert"
 path = "src/sample_dpe_cert.rs"
-target = 'cfg("test")'
 
 [[bin]]
 name = "cert-size"

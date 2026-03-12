@@ -10,6 +10,7 @@ members = [
     "tools",
     "ci-tools/panic-handler-check",
 ]
+resolver = "2"
 
 [workspace.dependencies]
 caliptra-cfi-lib = { git = "https://github.com/chipsalliance/caliptra-cfi.git", package = "caliptra-cfi-lib", rev = "767d4ef59a106aea683b883c07bd65456fb3ba6b", default-features = false }
