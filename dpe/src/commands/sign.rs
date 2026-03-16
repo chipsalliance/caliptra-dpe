@@ -216,7 +216,7 @@ impl CommandExecution for SignCommand<'_> {
                 Ok(size_of_val(response))
             }
             #[cfg(feature = "ml-dsa")]
-            Signature::MlDsa(crypto::ml_dsa::MldsaSignature(sig)) => {
+            Signature::Mldsa(crypto::ml_dsa::MldsaSignature(sig)) => {
                 use crate::response::SignMlDsaResp;
                 let response = mutresp::<SignMlDsaResp>(dpe.profile, out)?;
 
@@ -531,7 +531,7 @@ mod tests {
                 use x509_parser::public_key::PublicKey;
 
                 let sig_bytes = match sign_resp {
-                    SignResp::MlDsa(resp) => resp.sig,
+                    SignResp::Mldsa87(resp) => resp.sig,
                     _ => panic!("Incorrect response type"),
                 };
                 let encoded_sig =
