@@ -3,6 +3,7 @@
 package verification
 
 import (
+	"bytes"
 	"testing"
 
 	"github.com/chipsalliance/caliptra-dpe/verification/client"
@@ -44,11 +45,8 @@ func TestSignRawMode(d client.TestDPEInstance, c client.DPEClient, t *testing.T)
 	// Create a test message
 	testMessage := []byte("This is a test message for ML-DSA raw signing")
 
-	// Calculate external mu using the helper function
-	externalMu := client.CalculateExternalMu(testMessage, certifiedKey.Pub.X)
-
-	// Call SignRaw with the pre-computed mu
-	signResp, err := c.SignRaw(handle, seqLabel, externalMu)
+	// Call SignRaw with the message itself (DPE should handle hashing / mu calculation).
+	signResp, err := c.SignRaw(handle, seqLabel, testMessage)
 	if err != nil {
 		t.Fatalf("[FATAL]: Error while signing: %v", err)
 	}
@@ -63,7 +61,7 @@ func TestSignRawMode(d client.TestDPEInstance, c client.DPEClient, t *testing.T)
 		t.Fatalf("Failed to parse ML-DSA public key: %v", err)
 	}
 
-	// Verify using the external mu value
+	// Verify using the original message
 	if !mldsa87.Verify(&pk, testMessage, nil, signResp.Signature) {
 		t.Error("ML-DSA Signature Verification failed for raw signing")
 	}
@@ -104,22 +102,34 @@ func TestSignRawConsistencyWithNormalMu(d client.TestDPEInstance, c client.DPECl
 	// Create a test message
 	testMessage := []byte("Another test message for consistency check")
 
-	// Calculate external mu
-	externalMu := client.CalculateExternalMu(testMessage, certifiedKey.Pub.X)
-
-	// Sign using raw mode
-	signResp, err := c.SignRaw(handle, seqLabel, externalMu)
+	// Sign using raw mode (message is passed directly)
+	rawSignResp, err := c.SignRaw(handle, seqLabel, testMessage)
 	if err != nil {
 		t.Fatalf("[FATAL]: Error while signing raw: %v", err)
 	}
 
-	// Both signatures should verify against the same public key and message
+	// Sign using the normal Sign API (providing the externally computed mu)
+	externalMu := client.CalculateExternalMu(testMessage, certifiedKey.Pub.X)
+	normalSignResp, err := c.Sign(handle, seqLabel, 0, externalMu)
+	if err != nil {
+		t.Fatalf("[FATAL]: Error while signing normally: %v", err)
+	}
+
+	// Both signatures should match and verify against the same public key and message
 	var pk mldsa87.PublicKey
 	if err := pk.UnmarshalBinary(certifiedKey.Pub.X); err != nil {
 		t.Fatalf("Failed to parse ML-DSA public key: %v", err)
 	}
 
-	if !mldsa87.Verify(&pk, testMessage, nil, signResp.Signature) {
-		t.Error("ML-DSA Signature Verification failed")
+	if !mldsa87.Verify(&pk, testMessage, nil, rawSignResp.Signature) {
+		t.Error("ML-DSA Signature Verification failed for SignRaw")
+	}
+
+	if !mldsa87.Verify(&pk, testMessage, nil, normalSignResp.Signature) {
+		t.Error("ML-DSA Signature Verification failed for Sign")
+	}
+
+	if !bytes.Equal(rawSignResp.Signature, normalSignResp.Signature) {
+		t.Error("Raw and normal signatures do not match")
 	}
 }

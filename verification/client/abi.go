@@ -21,6 +21,9 @@ const (
 
 	CurrentProfileMajorVersion uint16 = 0
 	CurrentProfileMinorVersion uint16 = 13
+
+	// Max size for raw sign data (matches DPE fixed-size command layout).
+	SignRawMaxSize = 1024
 )
 
 // CommandCode is a DPE command code
@@ -828,15 +831,23 @@ func (c *DPEABI[_, Digest, _, SignData, Signature]) Sign(handle *ContextHandle, 
 // SignRaw calls DPE Sign command with raw data
 // This is useful for ML-DSA when signing pre-computed external mu values
 func (c *DPEABI[_, Digest, _, _, Signature]) SignRaw(handle *ContextHandle, label []byte, rawData []byte) (*DPESignedHash, error) {
+	// Only ML-DSA supports raw signing.
+	if c.Profile != ProfileMldsa87 {
+		return nil, fmt.Errorf("SignRaw not implemented for this profile")
+	}
+
 	dLen := DigestLen[Digest]()
 	if len(label) != dLen {
 		return nil, fmt.Errorf("invalid label length")
 	}
 
-	// For ML-DSA, we manually build a buffer containing the fields
-	// needed by the raw-sign command. We don't declare a fixed struct
-	// because the last field is a variable-length slice.
+	if len(rawData) > SignRawMaxSize {
+		return nil, fmt.Errorf("raw data too large")
+	}
 
+	// For ML-DSA, we manually build a buffer containing the fields
+	// needed by the raw-sign command. The command uses a fixed-size
+	// buffer on the wire to simplify parsing.
 	// Manually construct the command buffer
 	buf := &bytes.Buffer{}
 
@@ -860,15 +871,16 @@ func (c *DPEABI[_, Digest, _, _, Signature]) SignRaw(handle *ContextHandle, labe
 		return nil, err
 	}
 
-	// Write size of raw data (stored as 64-byte digest when serializing)
-	// But we need to handle this specially - for raw mode, the "digest" field becomes size + data
+	// Write size of raw data.
 	size := uint32(len(rawData))
 	if err := binary.Write(buf, binary.LittleEndian, size); err != nil {
 		return nil, err
 	}
 
-	// Write raw data
-	if _, err := buf.Write(rawData); err != nil {
+	// Write raw data as a fixed-size payload (padded with zeros).
+	var rawBuf [SignRawMaxSize]byte
+	copy(rawBuf[:], rawData)
+	if err := binary.Write(buf, binary.LittleEndian, rawBuf); err != nil {
 		return nil, err
 	}
 

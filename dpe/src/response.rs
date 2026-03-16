@@ -163,7 +163,7 @@ impl Response {
                     .0,
             )),
             #[cfg(feature = "ml-dsa")]
-            Command::Sign(SignCommand::Mldsa87Raw { .. }) => Response::Sign(SignResp::MlDsa(
+            Command::Sign(SignCommand::Mldsa87Raw(_)) => Response::Sign(SignResp::Mldsa87(
                 SignMlDsaResp::try_read_from_prefix(bytes)
                     .map_err(|_| DpeErrorCode::InvalidArgument)?
                     .0,
