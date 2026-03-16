@@ -130,7 +130,10 @@ impl CryptoError {
     }
 }
 
-pub trait Hasher: Sized {
+pub trait Hasher {
+    /// Initialize a running hash operation.
+    fn initialize(&mut self) -> Result<(), CryptoError>;
+
     /// Adds a chunk to the running hash.
     ///
     /// # Arguments
@@ -142,7 +145,7 @@ pub trait Hasher: Sized {
     ///
     /// Once this function has been called, the object can no longer be used and
     /// a new one must be created to hash more data.
-    fn finish(self) -> Result<Digest, CryptoError>;
+    fn finish(&mut self) -> Result<Digest, CryptoError>;
 }
 
 #[derive(Debug, FromBytes, IntoBytes, KnownLayout, Immutable, Clone)]
@@ -412,33 +415,30 @@ pub trait CryptoSuite: Crypto + SignatureType + DigestType {
         }
 
         let signature_alg = self.signature_algorithm();
-        let mut hasher = self.hash_initialize()?;
-        match (signature_alg, pub_key) {
-            (SignatureAlgorithm::Ecdsa(_), PubKey::Ecdsa(pub_key)) => {
-                let (x, y) = pub_key.as_slice();
-                hasher.update(&[0x4u8])?;
-                hasher.update(x)?;
-                hasher.update(y)?;
+        let digest = self.with_hasher(&mut |hasher| {
+            match (signature_alg, pub_key) {
+                (SignatureAlgorithm::Ecdsa(_), PubKey::Ecdsa(pub_key)) => {
+                    let (x, y) = pub_key.as_slice();
+                    hasher.update(&[0x4u8])?;
+                    hasher.update(x)?;
+                    hasher.update(y)?;
+                }
+                #[cfg(feature = "ml-dsa")]
+                (SignatureAlgorithm::Mldsa(_), PubKey::Mldsa(pub_key)) => {
+                    hasher.update(pub_key.as_bytes())?;
+                }
+                // This can be reached when the "ml-dsa" feature is enabled.
+                #[allow(unreachable_patterns)]
+                _ => Err(CryptoError::MismatchedAlgorithm)?,
             }
-            #[cfg(feature = "ml-dsa")]
-            (SignatureAlgorithm::Mldsa(_), PubKey::Mldsa(pub_key)) => {
-                hasher.update(pub_key.as_bytes())?;
-            }
-            // This can be reached when the "ml-dsa" feature is enabled.
-            #[allow(unreachable_patterns)]
-            _ => Err(CryptoError::MismatchedAlgorithm)?,
-        }
-
-        let digest = hasher.finish()?;
+            Ok(())
+        })?;
         digest.write_hex_str(serial)
     }
 }
 
 pub trait Crypto {
     type Cdi;
-    type Hasher<'c>: Hasher
-    where
-        Self: 'c;
     type PrivKey;
 
     /// Fills the buffer with random values.
@@ -454,15 +454,28 @@ pub trait Crypto {
     ///
     /// * `bytes` - Value to be hashed.
     fn hash(&mut self, bytes: &[u8]) -> Result<Digest, CryptoError> {
-        let mut hasher = self.hash_initialize()?;
-        hasher.update(bytes)?;
-        hasher.finish()
+        self.with_hasher(&mut |hasher| hasher.update(bytes))
     }
 
-    /// Initialize a running hash. Returns an object that will be able to complete the rest.
+    /// Returns an object that will be able to perform hash operations.
     ///
     /// Used for hashing multiple buffers that may not be in consecutive memory.
-    fn hash_initialize(&mut self) -> Result<Self::Hasher<'_>, CryptoError>;
+    fn hasher(&mut self) -> Result<&mut dyn Hasher, CryptoError>;
+
+    /// Initialize a running hash and call a closure with it.
+    ///
+    /// # Arguments
+    ///
+    /// * `f` - Closure to call with the hasher.
+    fn with_hasher(
+        &mut self,
+        f: &mut dyn FnMut(&mut dyn Hasher) -> Result<(), CryptoError>,
+    ) -> Result<Digest, CryptoError> {
+        let hasher = self.hasher()?;
+        hasher.initialize()?;
+        f(hasher)?;
+        hasher.finish()
+    }
 
     /// Derive a CDI based on the current base CDI and measurements
     ///

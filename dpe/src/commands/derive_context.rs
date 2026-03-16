@@ -459,7 +459,7 @@ mod tests {
         DpeProfile, MAX_CERT_SIZE, MAX_EXPORTED_CDI_SIZE, MAX_HANDLES, TCI_SIZE,
     };
     use caliptra_cfi_lib::CfiCounter;
-    use crypto::{Crypto, Hasher};
+    use crypto::Crypto;
     use openssl::{
         bn::BigNum,
         ecdsa::EcdsaSig,
@@ -1063,14 +1063,22 @@ mod tests {
         assert!(env.state.contexts[child_idx].allow_export_cdi());
 
         // check tci_cumulative correctly computed
-        let mut hasher = env.crypto.hash_initialize().unwrap();
-        hasher.update(&[0u8; DPE_PROFILE.hash_size()]).unwrap();
-        hasher.update(&[1u8; DPE_PROFILE.hash_size()]).unwrap();
-        let temp_digest = hasher.finish().unwrap();
-        let mut hasher_2 = env.crypto.hash_initialize().unwrap();
-        hasher_2.update(temp_digest.as_slice()).unwrap();
-        hasher_2.update(&[2u8; DPE_PROFILE.hash_size()]).unwrap();
-        let digest = hasher_2.finish().unwrap();
+        let temp_digest = env
+            .crypto
+            .with_hasher(&mut |hasher| {
+                hasher.update(&[0u8; DPE_PROFILE.hash_size()]).unwrap();
+                hasher.update(&[1u8; DPE_PROFILE.hash_size()]).unwrap();
+                Ok(())
+            })
+            .unwrap();
+        let digest = env
+            .crypto
+            .with_hasher(&mut |hasher| {
+                hasher.update(temp_digest.as_slice()).unwrap();
+                hasher.update(&[2u8; DPE_PROFILE.hash_size()]).unwrap();
+                Ok(())
+            })
+            .unwrap();
         assert_eq!(
             digest.as_slice(),
             env.state.contexts[child_idx].tci.tci_cumulative.0
