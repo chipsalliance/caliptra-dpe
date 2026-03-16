@@ -92,17 +92,41 @@ impl From<Signature<NistP384>> for EcdsaSignature384 {
 }
 
 pub struct RustCryptoHasher<D: DigestType> {
-    hasher: Box<dyn DynDigest>,
+    hasher: Option<Box<dyn DynDigest>>,
     _alg: PhantomData<D>,
 }
 
+impl<D: DigestType> RustCryptoHasher<D> {
+    fn new() -> Self {
+        Self {
+            hasher: Some(Self::new_hasher()),
+            _alg: Default::default(),
+        }
+    }
+
+    fn new_hasher() -> Box<dyn DynDigest> {
+        match D::DIGEST_ALGORITHM {
+            DigestAlgorithm::Sha256 => Box::new(Sha256::default()),
+            DigestAlgorithm::Sha384 => Box::new(Sha384::default()),
+        }
+    }
+}
+
 impl<D: DigestType> Hasher for RustCryptoHasher<D> {
-    fn update(&mut self, bytes: &[u8]) -> Result<(), CryptoError> {
-        self.hasher.update(bytes);
+    fn initialize(&mut self) -> Result<(), CryptoError> {
+        self.hasher = Some(Self::new_hasher());
         Ok(())
     }
-    fn finish(self) -> Result<Digest, CryptoError> {
-        let digest = &self.hasher.finalize();
+    fn update(&mut self, bytes: &[u8]) -> Result<(), CryptoError> {
+        let Some(hasher) = self.hasher.as_mut() else {
+            return Err(CryptoError::HashError(0));
+        };
+        hasher.update(bytes);
+        Ok(())
+    }
+    fn finish(&mut self) -> Result<Digest, CryptoError> {
+        let hasher = self.hasher.take().ok_or(CryptoError::HashError(1))?;
+        let digest = &hasher.finalize();
         let digest = match D::DIGEST_ALGORITHM {
             DigestAlgorithm::Sha256 => {
                 let sha256 =
@@ -165,6 +189,7 @@ impl SignDataType for MldsaRustCrypto {
 pub struct RustCryptoImpl<S: SignatureType, D: DigestType, SD: SignDataType> {
     rng: StdRng,
     export_cdi_slots: Vec<(<Self as Crypto>::Cdi, ExportedCdiHandle)>,
+    hasher: RustCryptoHasher<D>,
     _signature_alg: PhantomData<S>,
     _digest_alg: PhantomData<D>,
 }
@@ -181,6 +206,7 @@ impl<S: SignatureType, D: DigestType, SD: SignDataType> RustCryptoImpl<S, D, SD>
         Self {
             rng: StdRng::from_entropy(),
             export_cdi_slots: Vec::new(),
+            hasher: RustCryptoHasher::new(),
             _signature_alg: Default::default(),
             _digest_alg: Default::default(),
         }
@@ -193,6 +219,7 @@ impl<S: SignatureType, D: DigestType, SD: SignDataType> RustCryptoImpl<S, D, SD>
         Self {
             rng: seeded_rng,
             export_cdi_slots: Vec::new(),
+            hasher: RustCryptoHasher::new(),
             _signature_alg: Default::default(),
             _digest_alg: Default::default(),
         }
@@ -295,24 +322,10 @@ pub struct RustCryptoPrivKey(Vec<u8>);
 
 impl<S: SignatureType, D: DigestType, SD: SignDataType> Crypto for RustCryptoImpl<S, D, SD> {
     type Cdi = Vec<u8>;
-    type Hasher<'c>
-        = RustCryptoHasher<D>
-    where
-        Self: 'c;
     type PrivKey = RustCryptoPrivKey;
 
-    fn hash_initialize(&mut self) -> Result<Self::Hasher<'_>, CryptoError> {
-        let hasher = match D::DIGEST_ALGORITHM {
-            DigestAlgorithm::Sha256 => RustCryptoHasher {
-                hasher: Box::new(Sha256::default()),
-                _alg: Default::default(),
-            },
-            DigestAlgorithm::Sha384 => RustCryptoHasher {
-                hasher: Box::new(Sha384::default()),
-                _alg: Default::default(),
-            },
-        };
-        Ok(hasher)
+    fn hasher(&mut self) -> Result<&mut dyn Hasher, CryptoError> {
+        Ok(&mut self.hasher)
     }
 
     fn rand_bytes(&mut self, dst: &mut [u8]) -> Result<(), CryptoError> {
