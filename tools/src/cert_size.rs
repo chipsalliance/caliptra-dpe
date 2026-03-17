@@ -1,18 +1,18 @@
 // Licensed under the Apache-2.0 license
 
 use anyhow::{anyhow, Result};
-use clap::{Parser, ValueEnum};
-use dpe::{
+use caliptra_dpe::{
     commands::{CertifyKeyCommand, CommandExecution, DeriveContextCmd, DeriveContextFlags},
     DpeFlags, DpeProfile, MAX_HANDLES,
 };
-use dpe::{
+use caliptra_dpe::{
     dpe_instance::{DpeEnv, DpeTypes},
     response::Response,
     support::Support,
     DpeInstance,
 };
-use dpe_platform::default::{DefaultPlatform, DefaultPlatformProfile};
+use caliptra_dpe_platform::default::{DefaultPlatform, DefaultPlatformProfile};
+use clap::{Parser, ValueEnum};
 
 #[cfg(any(feature = "p256", feature = "p384"))]
 use self::ec::*;
@@ -21,23 +21,23 @@ use self::ml_dsa::*;
 
 #[cfg(feature = "p256")]
 mod ec {
-    pub use dpe::commands::CertifyKeyP256Cmd as CertifyKeyCmd;
-    pub use dpe_crypto::Ecdsa256RustCrypto as EcdsaRustCrypto;
+    pub use caliptra_dpe::commands::CertifyKeyP256Cmd as CertifyKeyCmd;
+    pub use caliptra_dpe_crypto::Ecdsa256RustCrypto as EcdsaRustCrypto;
 }
 #[cfg(feature = "p384")]
 mod ec {
-    pub use dpe::commands::CertifyKeyP384Cmd as CertifyKeyCmd;
-    pub use dpe_crypto::Ecdsa384RustCrypto as EcdsaRustCrypto;
+    pub use caliptra_dpe::commands::CertifyKeyP384Cmd as CertifyKeyCmd;
+    pub use caliptra_dpe_crypto::Ecdsa384RustCrypto as EcdsaRustCrypto;
 }
 #[cfg(feature = "ml-dsa")]
 mod ml_dsa {
-    pub use dpe::commands::CertifyKeyMldsa87Cmd as CertifyKeyMldsaCmd;
-    pub use dpe_crypto::MldsaRustCrypto;
+    pub use caliptra_dpe::commands::CertifyKeyMldsa87Cmd as CertifyKeyMldsaCmd;
+    pub use caliptra_dpe_crypto::MldsaRustCrypto;
 
     pub struct SimTypesMldsa;
-    impl dpe::dpe_instance::DpeTypes for SimTypesMldsa {
+    impl caliptra_dpe::dpe_instance::DpeTypes for SimTypesMldsa {
         type Crypto<'a> = MldsaRustCrypto;
-        type Platform<'a> = dpe_platform::default::DefaultPlatform;
+        type Platform<'a> = caliptra_dpe_platform::default::DefaultPlatform;
     }
 }
 
@@ -197,7 +197,7 @@ fn main() -> Result<()> {
     support.set(Support::CDI_EXPORT, true);
 
     let flags = DpeFlags::empty();
-    let mut state = dpe::State::new(support, flags);
+    let mut state = caliptra_dpe::State::new(support, flags);
 
     match args.algorithm {
         #[cfg(any(feature = "p256", feature = "p384"))]

@@ -1,17 +1,17 @@
 // Licensed under the Apache-2.0 license
 
+use caliptra_dpe::{tci::TciMeasurement, DpeFlags};
+use caliptra_dpe_platform::default::DefaultPlatformProfile;
 use clap::{Parser, ValueEnum};
-use dpe::{tci::TciMeasurement, DpeFlags};
-use dpe_platform::default::DefaultPlatformProfile;
 use profile::*;
 use {
-    dpe::commands::{self, CertifyKeyFlags, DeriveContextCmd, DeriveContextFlags},
-    dpe::context::ContextHandle,
-    dpe::dpe_instance::{DpeEnv, DpeTypes},
-    dpe::response::Response,
-    dpe::{support::Support, DpeInstance},
-    dpe_crypto::RustCryptoImpl,
-    dpe_platform::default::DefaultPlatform,
+    caliptra_dpe::commands::{self, CertifyKeyFlags, DeriveContextCmd, DeriveContextFlags},
+    caliptra_dpe::context::ContextHandle,
+    caliptra_dpe::dpe_instance::{DpeEnv, DpeTypes},
+    caliptra_dpe::response::Response,
+    caliptra_dpe::{support::Support, DpeInstance},
+    caliptra_dpe_crypto::RustCryptoImpl,
+    caliptra_dpe_platform::default::DefaultPlatform,
     pem::{encode_config, EncodeConfig, LineEnding, Pem},
     zerocopy::IntoBytes,
 };
@@ -19,27 +19,27 @@ use {
 #[cfg(feature = "p256")]
 mod profile {
     use super::*;
-    pub use dpe::commands::CertifyKeyP256Cmd as CertifyKeyCmd;
-    pub use dpe_crypto::Ecdsa256RustCrypto as RustCrypto;
-    pub const DPE_PROFILE: dpe::DpeProfile = dpe::DpeProfile::P256Sha256;
+    pub use caliptra_dpe::commands::CertifyKeyP256Cmd as CertifyKeyCmd;
+    pub use caliptra_dpe_crypto::Ecdsa256RustCrypto as RustCrypto;
+    pub const DPE_PROFILE: caliptra_dpe::DpeProfile = caliptra_dpe::DpeProfile::P256Sha256;
     pub const PLATFORM_PROFILE: DefaultPlatformProfile = DefaultPlatformProfile::P256;
 }
 
 #[cfg(feature = "p384")]
 mod profile {
     use super::*;
-    pub use dpe::commands::CertifyKeyP384Cmd as CertifyKeyCmd;
-    pub use dpe_crypto::Ecdsa384RustCrypto as RustCrypto;
-    pub const DPE_PROFILE: dpe::DpeProfile = dpe::DpeProfile::P384Sha384;
+    pub use caliptra_dpe::commands::CertifyKeyP384Cmd as CertifyKeyCmd;
+    pub use caliptra_dpe_crypto::Ecdsa384RustCrypto as RustCrypto;
+    pub const DPE_PROFILE: caliptra_dpe::DpeProfile = caliptra_dpe::DpeProfile::P384Sha384;
     pub const PLATFORM_PROFILE: DefaultPlatformProfile = DefaultPlatformProfile::P384;
 }
 
 #[cfg(feature = "ml-dsa")]
 mod profile {
     use super::*;
-    pub use dpe::commands::CertifyKeyMldsa87Cmd as CertifyKeyCmd;
-    pub use dpe_crypto::MldsaRustCrypto as RustCrypto;
-    pub const DPE_PROFILE: dpe::DpeProfile = dpe::DpeProfile::Mldsa87;
+    pub use caliptra_dpe::commands::CertifyKeyMldsa87Cmd as CertifyKeyCmd;
+    pub use caliptra_dpe_crypto::MldsaRustCrypto as RustCrypto;
+    pub const DPE_PROFILE: caliptra_dpe::DpeProfile = caliptra_dpe::DpeProfile::Mldsa87;
     pub const PLATFORM_PROFILE: DefaultPlatformProfile = DefaultPlatformProfile::Mldsa87;
 }
 
@@ -70,7 +70,7 @@ fn add_tcb_info(
     };
     let cmd_body = cmd.as_bytes().to_vec();
     let cmd_hdr = dpe
-        .command_hdr(dpe::commands::Command::DERIVE_CONTEXT)
+        .command_hdr(caliptra_dpe::commands::Command::DERIVE_CONTEXT)
         .as_bytes()
         .to_vec();
     let mut command = cmd_hdr;
@@ -95,7 +95,7 @@ fn certify_key(dpe: &mut DpeInstance, env: &mut DpeEnv<TestTypes>, format: u32) 
     };
     let cmd_body = certify_key_cmd.as_bytes().to_vec();
     let cmd_hdr = dpe
-        .command_hdr(dpe::commands::Command::CERTIFY_KEY)
+        .command_hdr(caliptra_dpe::commands::Command::CERTIFY_KEY)
         .as_bytes()
         .to_vec();
     let mut command = cmd_hdr;
@@ -147,7 +147,7 @@ fn main() {
     let mut env = DpeEnv::<TestTypes> {
         crypto: RustCryptoImpl::new(),
         platform: DefaultPlatform(PLATFORM_PROFILE),
-        state: &mut dpe::State::new(support, flags),
+        state: &mut caliptra_dpe::State::new(support, flags),
     };
 
     let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();

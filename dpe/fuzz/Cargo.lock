@@ -88,6 +88,54 @@ version = "0.1.0"
 source = "git+https://github.com/chipsalliance/caliptra-cfi.git?rev=767d4ef59a106aea683b883c07bd65456fb3ba6b#767d4ef59a106aea683b883c07bd65456fb3ba6b"
 
 [[package]]
+name = "caliptra-dpe"
+version = "0.1.0"
+dependencies = [
+ "bitflags",
+ "caliptra-cfi-derive",
+ "caliptra-cfi-lib",
+ "caliptra-dpe-crypto",
+ "caliptra-dpe-platform",
+ "cfg-if",
+ "constant_time_eq",
+ "ufmt",
+ "zerocopy",
+ "zeroize",
+]
+
+[[package]]
+name = "caliptra-dpe-crypto"
+version = "0.1.0"
+dependencies = [
+ "arrayvec",
+ "base64ct",
+ "caliptra-cfi-derive",
+ "caliptra-cfi-lib",
+ "constant_time_eq",
+ "ecdsa",
+ "hkdf",
+ "ml-dsa",
+ "p256",
+ "p384",
+ "pkcs8 0.11.0-rc.8",
+ "rand",
+ "sec1",
+ "sha2",
+ "zerocopy",
+ "zeroize",
+]
+
+[[package]]
+name = "caliptra-dpe-platform"
+version = "0.1.0"
+dependencies = [
+ "arrayvec",
+ "cfg-if",
+ "ufmt",
+ "x509-cert",
+]
+
+[[package]]
 name = "cc"
 version = "1.0.83"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -228,65 +276,17 @@ dependencies = [
 ]
 
 [[package]]
-name = "dpe"
-version = "0.1.0"
-dependencies = [
- "bitflags",
- "caliptra-cfi-derive",
- "caliptra-cfi-lib",
- "cfg-if",
- "constant_time_eq",
- "dpe-crypto",
- "dpe-platform",
- "ufmt",
- "zerocopy",
- "zeroize",
-]
-
-[[package]]
-name = "dpe-crypto"
-version = "0.1.0"
-dependencies = [
- "arrayvec",
- "base64ct",
- "caliptra-cfi-derive",
- "caliptra-cfi-lib",
- "constant_time_eq",
- "ecdsa",
- "hkdf",
- "ml-dsa",
- "p256",
- "p384",
- "pkcs8 0.11.0-rc.8",
- "rand",
- "sec1",
- "sha2",
- "zerocopy",
- "zeroize",
-]
-
-[[package]]
 name = "dpe-fuzz"
 version = "0.0.0"
 dependencies = [
  "afl",
- "dpe",
- "dpe-crypto",
- "dpe-platform",
+ "caliptra-dpe",
+ "caliptra-dpe-crypto",
+ "caliptra-dpe-platform",
  "libfuzzer-sys",
  "log",
  "simplelog",
  "time",
-]
-
-[[package]]
-name = "dpe-platform"
-version = "0.1.0"
-dependencies = [
- "arrayvec",
- "cfg-if",
- "ufmt",
- "x509-cert",
 ]
 
 [[package]]

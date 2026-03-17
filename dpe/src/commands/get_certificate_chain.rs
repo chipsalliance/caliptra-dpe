@@ -7,7 +7,7 @@ use crate::{
 };
 #[cfg(feature = "cfi")]
 use caliptra_cfi_derive::cfi_impl_fn;
-use dpe_platform::{Platform, MAX_CHUNK_SIZE};
+use caliptra_dpe_platform::{Platform, MAX_CHUNK_SIZE};
 
 #[repr(C)]
 #[derive(

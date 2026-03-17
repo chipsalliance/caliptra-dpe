@@ -38,7 +38,7 @@ pub mod x509;
 use crate::response::{DpeErrorCode, ResponseHdr};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes};
 
-pub use dpe_crypto::{ecdsa::EcdsaAlgorithm, ExportedCdiHandle, MAX_EXPORTED_CDI_SIZE};
+pub use caliptra_dpe_crypto::{ecdsa::EcdsaAlgorithm, ExportedCdiHandle, MAX_EXPORTED_CDI_SIZE};
 
 // Max cert size returned by CertifyKey
 #[cfg(feature = "ml-dsa")]
@@ -111,14 +111,18 @@ impl DpeProfile {
     pub const fn hash_size(&self) -> usize {
         self.tci_size()
     }
-    pub const fn alg(&self) -> dpe_crypto::SignatureAlgorithm {
+    pub const fn alg(&self) -> caliptra_dpe_crypto::SignatureAlgorithm {
         match self {
-            DpeProfile::P256Sha256 => dpe_crypto::SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit256),
-            DpeProfile::P384Sha384 => dpe_crypto::SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384),
-            #[cfg(feature = "ml-dsa")]
-            DpeProfile::Mldsa87 => {
-                dpe_crypto::SignatureAlgorithm::Mldsa(dpe_crypto::ml_dsa::MldsaAlgorithm::Mldsa87)
+            DpeProfile::P256Sha256 => {
+                caliptra_dpe_crypto::SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit256)
             }
+            DpeProfile::P384Sha384 => {
+                caliptra_dpe_crypto::SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384)
+            }
+            #[cfg(feature = "ml-dsa")]
+            DpeProfile::Mldsa87 => caliptra_dpe_crypto::SignatureAlgorithm::Mldsa(
+                caliptra_dpe_crypto::ml_dsa::MldsaAlgorithm::Mldsa87,
+            ),
         }
     }
     pub fn key_context(&self) -> &[u8] {

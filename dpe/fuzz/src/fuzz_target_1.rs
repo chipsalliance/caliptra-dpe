@@ -5,7 +5,7 @@
 #[cfg(all(not(feature = "libfuzzer-sys"), not(feature = "afl")))]
 compile_error!("Either feature \"libfuzzer-sys\" or \"afl\" must be enabled!");
 
-use dpe::{response::DpeErrorCode, DpeFlags};
+use caliptra_dpe::{response::DpeErrorCode, DpeFlags};
 #[cfg(feature = "libfuzzer-sys")]
 use libfuzzer_sys::fuzz_target;
 
@@ -16,15 +16,15 @@ use log::{trace, LevelFilter};
 use simplelog::{Config, WriteLogger};
 use std::fs::OpenOptions;
 
-use dpe::{
+use caliptra_dpe::{
     dpe_instance::{DpeEnv, DpeTypes},
     response::Response,
     support::Support,
     DpeInstance, DpeProfile,
 };
-use dpe_platform::default::{DefaultPlatform, DefaultPlatformProfile, AUTO_INIT_LOCALITY};
+use caliptra_dpe_platform::default::{DefaultPlatform, DefaultPlatformProfile, AUTO_INIT_LOCALITY};
 
-use dpe_crypto::Ecdsa256RustCrypto;
+use caliptra_dpe_crypto::Ecdsa256RustCrypto;
 
 // https://github.com/chipsalliance/caliptra-sw/issues/624 will consider matrix fuzzing.
 const SUPPORT: Support = Support::all();
@@ -54,7 +54,7 @@ fn harness(data: &[u8]) {
     let mut env = DpeEnv::<SimTypes> {
         crypto: Ecdsa256RustCrypto::new(),
         platform: DefaultPlatform(DefaultPlatformProfile::P256),
-        state: &mut dpe::State::new(SUPPORT, DpeFlags::empty()),
+        state: &mut caliptra_dpe::State::new(SUPPORT, DpeFlags::empty()),
     };
     let mut dpe = DpeInstance::new(&mut env, DpeProfile::P256Sha256).unwrap();
     trace!("----------------------------------");

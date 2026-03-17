@@ -11,12 +11,12 @@ use crate::{
     DpeProfile, CURRENT_PROFILE_MAJOR_VERSION, CURRENT_PROFILE_MINOR_VERSION, MAX_CERT_SIZE,
     MAX_EXPORTED_CDI_SIZE, MAX_HANDLES,
 };
-use dpe_crypto::{ecdsa::EcdsaAlgorithm, CryptoError};
-use dpe_platform::{PlatformError, MAX_CHUNK_SIZE};
+use caliptra_dpe_crypto::{ecdsa::EcdsaAlgorithm, CryptoError};
+use caliptra_dpe_platform::{PlatformError, MAX_CHUNK_SIZE};
 use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes};
 
 #[cfg(feature = "ml-dsa")]
-use dpe_crypto::ml_dsa::MldsaAlgorithm;
+use caliptra_dpe_crypto::ml_dsa::MldsaAlgorithm;
 
 #[cfg_attr(test, derive(PartialEq, Debug, Eq))]
 #[allow(clippy::large_enum_variant)]
@@ -459,7 +459,7 @@ pub struct SignP384Resp {
 pub struct SignMlDsaResp {
     pub resp_hdr: ResponseHdr,
     pub new_context_handle: ContextHandle,
-    pub sig: [u8; dpe_crypto::ml_dsa::MldsaAlgorithm::Mldsa87.signature_size()],
+    pub sig: [u8; caliptra_dpe_crypto::ml_dsa::MldsaAlgorithm::Mldsa87.signature_size()],
     pub _padding: [u8; 1],
 }
 

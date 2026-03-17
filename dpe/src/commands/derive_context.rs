@@ -18,7 +18,7 @@ use caliptra_cfi_lib::{cfi_assert, cfi_assert_bool, cfi_assert_eq};
 use cfg_if::cfg_if;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
-use dpe_platform::Platform;
+use caliptra_dpe_platform::Platform;
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, Clone, Copy, FromBytes, IntoBytes, Immutable, KnownLayout)]
@@ -459,8 +459,8 @@ mod tests {
         DpeProfile, MAX_CERT_SIZE, MAX_EXPORTED_CDI_SIZE, MAX_HANDLES, TCI_SIZE,
     };
     use caliptra_cfi_lib::CfiCounter;
-    use dpe_crypto::{Crypto, Hasher};
-    use dpe_platform::{Platform, MAX_KEY_IDENTIFIER_SIZE};
+    use caliptra_dpe_crypto::{Crypto, Hasher};
+    use caliptra_dpe_platform::{Platform, MAX_KEY_IDENTIFIER_SIZE};
     use openssl::{
         bn::BigNum,
         ecdsa::EcdsaSig,

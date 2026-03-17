@@ -13,10 +13,10 @@ use bitflags::bitflags;
 use caliptra_cfi_derive::cfi_impl_fn;
 #[cfg(feature = "cfi")]
 use caliptra_cfi_lib::{cfi_assert, cfi_assert_bool, cfi_assert_eq};
-use cfg_if::cfg_if;
 #[cfg(any(feature = "p256", feature = "p384"))]
-use dpe_crypto::ecdsa::EcdsaPubKey;
-use dpe_crypto::PubKey;
+use caliptra_dpe_crypto::ecdsa::EcdsaPubKey;
+use caliptra_dpe_crypto::PubKey;
+use cfg_if::cfg_if;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 #[cfg(not(feature = "disable_x509"))]
@@ -255,7 +255,7 @@ impl CommandExecution for CertifyKeyCommand<'_> {
             #[cfg(feature = "ml-dsa")]
             (
                 CertifyKeyResponseBytes::Mldsa87(resp),
-                PubKey::Mldsa(dpe_crypto::ml_dsa::MldsaPublicKey(pubkey)),
+                PubKey::Mldsa(caliptra_dpe_crypto::ml_dsa::MldsaPublicKey(pubkey)),
             ) => {
                 resp.new_context_handle = ContextHandle::new_invalid();
                 resp.pubkey = *pubkey;
@@ -428,18 +428,18 @@ mod tests {
         State, MAX_HANDLES, TCI_SIZE,
     };
     use caliptra_cfi_lib::CfiCounter;
+    #[cfg(feature = "ml-dsa")]
+    use caliptra_dpe_crypto::ml_dsa::{MldsaAlgorithm, MldsaPublicKey};
+    use caliptra_dpe_crypto::{
+        ecdsa::{EcdsaAlgorithm, EcdsaPub},
+        Crypto, CryptoSuite, PubKey, SignatureAlgorithm,
+    };
+    use caliptra_dpe_platform::Platform;
     use cms::{
         content_info::{CmsVersion, ContentInfo},
         signed_data::{SignedData, SignerIdentifier},
     };
     use der::{Decode, Encode};
-    #[cfg(feature = "ml-dsa")]
-    use dpe_crypto::ml_dsa::{MldsaAlgorithm, MldsaPublicKey};
-    use dpe_crypto::{
-        ecdsa::{EcdsaAlgorithm, EcdsaPub},
-        Crypto, CryptoSuite, PubKey, SignatureAlgorithm,
-    };
-    use dpe_platform::Platform;
     #[cfg(feature = "ml-dsa")]
     use ml_dsa::EncodedSignature;
     use openssl::{
@@ -638,7 +638,7 @@ mod tests {
                     let cert_serial_number = &issuer_and_serial_number.serial_number;
                     let cert_issuer_name = &issuer_and_serial_number.issuer.to_der().unwrap();
 
-                    let dpe_platform::SignerIdentifier::IssuerAndSerialNumber {
+                    let caliptra_dpe_platform::SignerIdentifier::IssuerAndSerialNumber {
                         issuer_name,
                         serial_number,
                     } = env.platform.get_signer_identifier().unwrap()
