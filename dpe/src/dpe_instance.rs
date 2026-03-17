@@ -12,7 +12,7 @@ use crate::{
     response::{DpeErrorCode, GetProfileResp, Response, ResponseHdr},
     support::Support,
     tci::TciMeasurement,
-    DpeProfile, State, MAX_HANDLES,
+    DpeProfile, State,
 };
 #[cfg(feature = "cfi")]
 use caliptra_cfi_derive::cfi_impl_fn;
@@ -120,7 +120,10 @@ impl DpeInstance {
         let mut tmp_context = env.state().contexts[idx];
         // add measurement to auto-initialized context
         dpe.add_tci_measurement(env, &mut tmp_context, auto_init_measurement, locality)?;
-        env.state().contexts[idx] = tmp_context;
+        *env.state()
+            .contexts
+            .get_mut(idx)
+            .ok_or(DpeErrorCode::InternalError)? = tmp_context;
         env.state().contexts[idx].tci.tci_type = tci_type;
         Ok(dpe)
     }
@@ -224,14 +227,21 @@ impl DpeInstance {
         env: &mut dyn DpeEnv,
         idx: usize,
     ) -> Result<(), DpeErrorCode> {
-        if idx >= MAX_HANDLES {
-            return Err(DpeErrorCode::MaxTcis);
-        }
-        if !env.state().contexts[idx].handle.is_default() {
-            env.state().contexts[idx].handle = self.generate_new_handle(env)?;
+        let handle = &env
+            .state
+            .contexts
+            .get(idx)
+            .ok_or(DpeErrorCode::MaxTcis)?
+            .handle;
+        if !handle.is_default() {
+            env.state()
+                .contexts
+                .get_mut(idx)
+                .ok_or(DpeErrorCode::InternalError)?
+                .handle = self.generate_new_handle(env)?;
         } else {
             #[cfg(feature = "cfi")]
-            cfi_assert!(env.state().contexts[idx].handle.is_default());
+            cfi_assert!(handle.is_default());
         }
         Ok(())
     }
