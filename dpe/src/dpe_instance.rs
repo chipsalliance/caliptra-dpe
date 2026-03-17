@@ -20,7 +20,7 @@ use caliptra_cfi_lib::cfi_launder;
 #[cfg(feature = "cfi")]
 use caliptra_cfi_lib::{cfi_assert, cfi_assert_bool, cfi_assert_eq};
 use cfg_if::cfg_if;
-use crypto::{Crypto, CryptoSuite, Digest, Hasher};
+use crypto::{Crypto, CryptoSuite, Digest};
 use platform::Platform;
 #[cfg(not(feature = "disable_internal_dice"))]
 use platform::MAX_CHUNK_SIZE;
@@ -248,10 +248,11 @@ impl DpeInstance {
         }
 
         // Derive the new TCI as HASH(TCI_CUMULATIVE || INPUT_DATA).
-        let mut hasher = env.crypto.hash_initialize()?;
-        hasher.update(&context.tci.tci_cumulative.0)?;
-        hasher.update(&measurement.0)?;
-        let digest = hasher.finish()?;
+        let digest = env.crypto.with_hasher(&mut |hasher| {
+            hasher.update(&context.tci.tci_cumulative.0)?;
+            hasher.update(&measurement.0)?;
+            Ok(())
+        })?;
 
         let digest_bytes = digest.as_slice();
 
@@ -307,7 +308,8 @@ impl DpeInstance {
         env: &mut DpeEnv<impl DpeTypes>,
         start_idx: usize,
     ) -> Result<Digest, DpeErrorCode> {
-        let mut hasher = env.crypto.hash_initialize()?;
+        let hasher = env.crypto.hasher()?;
+        hasher.initialize()?;
 
         let mut uses_internal_input_info = false;
         let mut uses_internal_input_dice = false;
@@ -529,10 +531,14 @@ pub mod tests {
         assert_eq!(data, context.tci.tci_current.0);
 
         // Compute cumulative.
-        let mut hasher = env.crypto.hash_initialize().unwrap();
-        hasher.update(&[0; DPE_PROFILE.hash_size()]).unwrap();
-        hasher.update(&data).unwrap();
-        let first_cumulative = hasher.finish().unwrap();
+        let first_cumulative = env
+            .crypto
+            .with_hasher(&mut |hasher| {
+                hasher.update(&[0; DPE_PROFILE.hash_size()]).unwrap();
+                hasher.update(&data).unwrap();
+                Ok(())
+            })
+            .unwrap();
 
         // Make sure the cumulative was computed correctly.
         assert_eq!(first_cumulative.as_slice(), context.tci.tci_cumulative.0);
@@ -549,10 +555,14 @@ pub mod tests {
         env.state.contexts[0] = context;
         assert_eq!(data, context.tci.tci_current.0);
 
-        let mut hasher = env.crypto.hash_initialize().unwrap();
-        hasher.update(first_cumulative.as_slice()).unwrap();
-        hasher.update(&data).unwrap();
-        let second_cumulative = hasher.finish().unwrap();
+        let second_cumulative = env
+            .crypto
+            .with_hasher(&mut |hasher| {
+                hasher.update(first_cumulative.as_slice()).unwrap();
+                hasher.update(&data).unwrap();
+                Ok(())
+            })
+            .unwrap();
 
         // Make sure the cumulative was computed correctly.
         assert_eq!(second_cumulative.as_slice(), context.tci.tci_cumulative.0);
@@ -593,21 +603,25 @@ pub mod tests {
             last_cdi = curr_cdi;
         }
 
-        let mut hasher = env.crypto.hash_initialize().unwrap();
         let leaf_idx = env
             .state
             .get_active_context_pos(&ContextHandle::default(), TEST_LOCALITIES[0])
             .unwrap();
 
-        for result in ChildToRootIter::new(leaf_idx, &env.state.contexts) {
-            let context = result.unwrap();
-            hasher.update(context.tci.as_bytes()).unwrap();
-            hasher
-                .update(/*allow_x509=*/ context.allow_x509().as_bytes())
-                .unwrap();
-        }
+        let digest = env
+            .crypto
+            .with_hasher(&mut |hasher| {
+                for result in ChildToRootIter::new(leaf_idx, &env.state.contexts) {
+                    let context = result.unwrap();
+                    hasher.update(context.tci.as_bytes()).unwrap();
+                    hasher
+                        .update(/*allow_x509=*/ context.allow_x509().as_bytes())
+                        .unwrap();
+                }
+                Ok(())
+            })
+            .unwrap();
 
-        let digest = hasher.finish().unwrap();
         let answer = env.crypto.derive_cdi(&digest, b"DPE").unwrap();
         assert_eq!(answer, last_cdi);
     }
@@ -643,12 +657,6 @@ pub mod tests {
         assert!(child_context.uses_internal_input_info());
         assert!(!parent_context.uses_internal_input_info());
 
-        let mut hasher = env.crypto.hash_initialize().unwrap();
-
-        hasher.update(child_context.tci.as_bytes()).unwrap();
-        hasher.update(/*allow_x509=*/ false.as_bytes()).unwrap();
-        hasher.update(parent_context.tci.as_bytes()).unwrap();
-        hasher.update(/*allow_x509=*/ true.as_bytes()).unwrap();
         let mut internal_input_info = [0u8; INTERNAL_INPUT_INFO_SIZE];
         dpe.serialize_internal_input_info(
             &mut env.platform,
@@ -657,11 +665,19 @@ pub mod tests {
         )
         .unwrap();
 
-        hasher
-            .update(&internal_input_info[..INTERNAL_INPUT_INFO_SIZE])
+        let digest = env
+            .crypto
+            .with_hasher(&mut |hasher| {
+                hasher.update(child_context.tci.as_bytes()).unwrap();
+                hasher.update(/*allow_x509=*/ false.as_bytes()).unwrap();
+                hasher.update(parent_context.tci.as_bytes()).unwrap();
+                hasher.update(/*allow_x509=*/ true.as_bytes()).unwrap();
+                hasher
+                    .update(&internal_input_info[..INTERNAL_INPUT_INFO_SIZE])
+                    .unwrap();
+                Ok(())
+            })
             .unwrap();
-
-        let digest = hasher.finish().unwrap();
         let answer = env.crypto.derive_cdi(&digest, b"DPE").unwrap();
         assert_eq!(answer, cdi_with_internal_input_info);
     }
@@ -697,16 +713,18 @@ pub mod tests {
         assert!(child_context.uses_internal_input_dice());
         assert!(!parent_context.uses_internal_input_dice());
 
-        let mut hasher = env.crypto.hash_initialize().unwrap();
-
-        hasher.update(child_context.tci.as_bytes()).unwrap();
-        hasher.update(/*allow_x509=*/ false.as_bytes()).unwrap();
-        hasher.update(parent_context.tci.as_bytes()).unwrap();
-        hasher.update(/*allow_x509=*/ true.as_bytes()).unwrap();
         let cert_chain = env.platform.0.cert_chain();
-        hasher.update(&cert_chain).unwrap();
-
-        let digest = hasher.finish().unwrap();
+        let digest = env
+            .crypto
+            .with_hasher(&mut |hasher| {
+                hasher.update(child_context.tci.as_bytes()).unwrap();
+                hasher.update(/*allow_x509=*/ false.as_bytes()).unwrap();
+                hasher.update(parent_context.tci.as_bytes()).unwrap();
+                hasher.update(/*allow_x509=*/ true.as_bytes()).unwrap();
+                hasher.update(&cert_chain).unwrap();
+                Ok(())
+            })
+            .unwrap();
         let answer = env.crypto.derive_cdi(&digest, b"DPE").unwrap();
         assert_eq!(answer, cdi_with_internal_input_dice)
     }
