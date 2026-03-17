@@ -217,9 +217,9 @@ mod tests {
     use super::*;
     use crate::dpe_instance::tests::SIMULATION_HANDLE;
     use caliptra_cfi_lib::CfiCounter;
+    use caliptra_dpe_platform::default::AUTO_INIT_LOCALITY;
     use core::mem::offset_of;
     use core::mem::size_of;
-    use platform::default::AUTO_INIT_LOCALITY;
 
     #[test]
     fn test_get_active_context_index() {

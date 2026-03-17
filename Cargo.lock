@@ -222,6 +222,94 @@ version = "0.1.0"
 source = "git+https://github.com/chipsalliance/caliptra-cfi.git?rev=767d4ef59a106aea683b883c07bd65456fb3ba6b#767d4ef59a106aea683b883c07bd65456fb3ba6b"
 
 [[package]]
+name = "caliptra-dpe"
+version = "0.1.0"
+dependencies = [
+ "asn1",
+ "bitflags",
+ "caliptra-cfi-derive",
+ "caliptra-cfi-lib",
+ "caliptra-dpe-crypto",
+ "caliptra-dpe-platform",
+ "cfg-if",
+ "cms",
+ "const-oid 0.10.2",
+ "constant_time_eq",
+ "der 0.7.8",
+ "flexi_logger",
+ "log",
+ "ml-dsa",
+ "openssl",
+ "pkcs8 0.11.0-rc.8",
+ "rand",
+ "spki 0.7.2",
+ "ufmt",
+ "x509-parser",
+ "zerocopy",
+ "zeroize",
+]
+
+[[package]]
+name = "caliptra-dpe-crypto"
+version = "0.1.0"
+dependencies = [
+ "arrayvec",
+ "base64ct",
+ "caliptra-cfi-derive",
+ "caliptra-cfi-lib",
+ "constant_time_eq",
+ "ecdsa",
+ "hkdf",
+ "ml-dsa",
+ "p256",
+ "p384",
+ "pkcs8 0.11.0-rc.8",
+ "rand",
+ "sec1",
+ "sha2",
+ "strum",
+ "strum_macros",
+ "zerocopy",
+ "zeroize",
+]
+
+[[package]]
+name = "caliptra-dpe-platform"
+version = "0.1.0"
+dependencies = [
+ "arrayvec",
+ "cfg-if",
+ "ufmt",
+ "x509-cert",
+]
+
+[[package]]
+name = "caliptra-dpe-simulator"
+version = "0.1.0"
+dependencies = [
+ "caliptra-dpe",
+ "caliptra-dpe-crypto",
+ "caliptra-dpe-platform",
+ "clap",
+ "ctrlc",
+ "env_logger",
+ "log",
+]
+
+[[package]]
+name = "caliptra-dpe-tools"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "caliptra-dpe",
+ "caliptra-dpe-crypto",
+ "caliptra-dpe-platform",
+ "clap",
+ "pem",
+ "zerocopy",
+]
+
+[[package]]
 name = "cc"
 version = "1.2.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -337,30 +425,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ce420fe07aecd3e67c5f910618fe65e94158f6dcc0adf44e00d69ce2bdfe0fd0"
 dependencies = [
  "libc",
-]
-
-[[package]]
-name = "crypto"
-version = "0.1.0"
-dependencies = [
- "arrayvec",
- "base64ct",
- "caliptra-cfi-derive",
- "caliptra-cfi-lib",
- "constant_time_eq",
- "ecdsa",
- "hkdf",
- "ml-dsa",
- "p256",
- "p384",
- "pkcs8 0.11.0-rc.8",
- "rand",
- "sec1",
- "sha2",
- "strum",
- "strum_macros",
- "zerocopy",
- "zeroize",
 ]
 
 [[package]]
@@ -499,34 +563,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.108",
-]
-
-[[package]]
-name = "dpe"
-version = "0.1.0"
-dependencies = [
- "asn1",
- "bitflags",
- "caliptra-cfi-derive",
- "caliptra-cfi-lib",
- "cfg-if",
- "cms",
- "const-oid 0.10.2",
- "constant_time_eq",
- "crypto",
- "der 0.7.8",
- "flexi_logger",
- "log",
- "ml-dsa",
- "openssl",
- "pkcs8 0.11.0-rc.8",
- "platform",
- "rand",
- "spki 0.7.2",
- "ufmt",
- "x509-parser",
- "zerocopy",
- "zeroize",
 ]
 
 [[package]]
@@ -1042,16 +1078,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7edddbd0b52d732b21ad9a5fab5c704c14cd949e5e9a1ec5929a24fded1b904c"
 
 [[package]]
-name = "platform"
-version = "0.1.0"
-dependencies = [
- "arrayvec",
- "cfg-if",
- "ufmt",
- "x509-cert",
-]
-
-[[package]]
 name = "powerfmt"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1275,19 +1301,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "simulator"
-version = "0.1.0"
-dependencies = [
- "clap",
- "crypto",
- "ctrlc",
- "dpe",
- "env_logger",
- "log",
- "platform",
-]
-
-[[package]]
 name = "spki"
 version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1450,19 +1463,6 @@ checksum = "2834e6017e3e5e4b9834939793b282bc03b37a3336245fa820e35e233e2a85de"
 dependencies = [
  "num-conv",
  "time-core",
-]
-
-[[package]]
-name = "tools"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "crypto",
- "dpe",
- "pem",
- "platform",
- "zerocopy",
 ]
 
 [[package]]

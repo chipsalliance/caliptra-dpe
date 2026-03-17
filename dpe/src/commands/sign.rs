@@ -13,10 +13,10 @@ use caliptra_cfi_derive::cfi_impl_fn;
 use caliptra_cfi_lib::cfi_launder;
 #[cfg(feature = "cfi")]
 use caliptra_cfi_lib::{cfi_assert, cfi_assert_bool, cfi_assert_ne};
-use cfg_if::cfg_if;
 #[cfg(any(feature = "p256", feature = "p384"))]
-use crypto::ecdsa::EcdsaSignature;
-use crypto::{Crypto, SignData, Signature};
+use caliptra_dpe_crypto::ecdsa::EcdsaSignature;
+use caliptra_dpe_crypto::{Crypto, SignData, Signature};
+use cfg_if::cfg_if;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 #[repr(C)]
@@ -147,7 +147,7 @@ impl CommandExecution for SignCommand<'_> {
                 Ok(size_of_val(response))
             }
             #[cfg(feature = "ml-dsa")]
-            Signature::Mldsa(crypto::ml_dsa::MldsaSignature(sig)) => {
+            Signature::Mldsa(caliptra_dpe_crypto::ml_dsa::MldsaSignature(sig)) => {
                 use crate::response::SignMlDsaResp;
                 let response = mutresp::<SignMlDsaResp>(dpe.profile, out)?;
 

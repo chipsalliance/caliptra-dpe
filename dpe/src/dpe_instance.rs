@@ -19,11 +19,11 @@ use caliptra_cfi_derive::cfi_impl_fn;
 use caliptra_cfi_lib::cfi_launder;
 #[cfg(feature = "cfi")]
 use caliptra_cfi_lib::{cfi_assert, cfi_assert_bool, cfi_assert_eq};
-use cfg_if::cfg_if;
-use crypto::{Crypto, CryptoSuite, Digest, Hasher};
-use platform::Platform;
+use caliptra_dpe_crypto::{Crypto, CryptoSuite, Digest, Hasher};
+use caliptra_dpe_platform::Platform;
 #[cfg(not(feature = "disable_internal_dice"))]
-use platform::MAX_CHUNK_SIZE;
+use caliptra_dpe_platform::MAX_CHUNK_SIZE;
+use cfg_if::cfg_if;
 use zerocopy::IntoBytes;
 
 pub trait DpeTypes {
@@ -399,8 +399,8 @@ pub mod tests {
     use crate::tci::TciMeasurement;
     use crate::{DpeFlags, CURRENT_PROFILE_MAJOR_VERSION};
     use caliptra_cfi_lib::CfiCounter;
-    use crypto::RustCryptoImpl;
-    use platform::default::{DefaultPlatform, AUTO_INIT_LOCALITY};
+    use caliptra_dpe_crypto::RustCryptoImpl;
+    use caliptra_dpe_platform::default::{DefaultPlatform, AUTO_INIT_LOCALITY};
     use zerocopy::IntoBytes;
 
     #[cfg(feature = "p256")]
@@ -413,13 +413,13 @@ pub mod tests {
     pub const DPE_PROFILE: DpeProfile = DpeProfile::Mldsa87;
 
     #[cfg(feature = "p256")]
-    use crypto::Ecdsa256RustCrypto;
+    use caliptra_dpe_crypto::Ecdsa256RustCrypto;
 
     #[cfg(feature = "p384")]
-    use crypto::Ecdsa384RustCrypto;
+    use caliptra_dpe_crypto::Ecdsa384RustCrypto;
 
     #[cfg(feature = "ml-dsa")]
-    use crypto::MldsaRustCrypto;
+    use caliptra_dpe_crypto::MldsaRustCrypto;
 
     pub struct TestTypes;
     impl DpeTypes for TestTypes {
