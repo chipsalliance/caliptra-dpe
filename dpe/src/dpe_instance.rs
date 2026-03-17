@@ -413,24 +413,21 @@ pub mod tests {
     pub const DPE_PROFILE: DpeProfile = DpeProfile::Mldsa87;
 
     #[cfg(feature = "p256")]
-    use caliptra_dpe_crypto::Ecdsa256RustCrypto;
-
+    pub fn new_crypto() -> RustCryptoImpl {
+        RustCryptoImpl::new_ecc256()
+    }
     #[cfg(feature = "p384")]
-    use caliptra_dpe_crypto::Ecdsa384RustCrypto;
-
+    pub fn new_crypto() -> RustCryptoImpl {
+        RustCryptoImpl::new_ecc384()
+    }
     #[cfg(feature = "ml-dsa")]
-    use caliptra_dpe_crypto::MldsaRustCrypto;
+    pub fn new_crypto() -> RustCryptoImpl {
+        RustCryptoImpl::new_mldsa87()
+    }
 
     pub struct TestTypes;
     impl DpeTypes for TestTypes {
-        #[cfg(feature = "p256")]
-        type Crypto<'a> = Ecdsa256RustCrypto;
-
-        #[cfg(feature = "p384")]
-        type Crypto<'a> = Ecdsa384RustCrypto;
-
-        #[cfg(feature = "ml-dsa")]
-        type Crypto<'a> = MldsaRustCrypto;
+        type Crypto<'a> = RustCryptoImpl;
 
         type Platform<'a> = DefaultPlatform;
     }
@@ -447,7 +444,7 @@ pub mod tests {
 
     pub fn test_env(state: &mut State) -> DpeEnv<TestTypes> {
         DpeEnv::<TestTypes> {
-            crypto: RustCryptoImpl::new(),
+            crypto: new_crypto(),
             platform: DEFAULT_PLATFORM,
             state,
         }

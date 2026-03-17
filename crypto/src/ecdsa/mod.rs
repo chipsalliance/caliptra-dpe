@@ -87,12 +87,15 @@ pub mod curve_256 {
     pub type EcdsaSignature256 = EcdsaSig<CURVE_SIZE>;
 
     impl SignatureType for Curve256 {
-        const SIGNATURE_ALGORITHM: SignatureAlgorithm =
-            SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit256);
+        fn signature_algorithm(&self) -> SignatureAlgorithm {
+            SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit256)
+        }
     }
 
     impl DigestType for Curve256 {
-        const DIGEST_ALGORITHM: DigestAlgorithm = DigestAlgorithm::Sha256;
+        fn digest_algorithm(&self) -> DigestAlgorithm {
+            DigestAlgorithm::Sha256
+        }
     }
 }
 
@@ -108,12 +111,15 @@ pub mod curve_384 {
     pub type EcdsaSignature384 = EcdsaSig<CURVE_SIZE>;
 
     impl SignatureType for Curve384 {
-        const SIGNATURE_ALGORITHM: SignatureAlgorithm =
-            SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384);
+        fn signature_algorithm(&self) -> SignatureAlgorithm {
+            SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384)
+        }
     }
 
     impl DigestType for Curve384 {
-        const DIGEST_ALGORITHM: DigestAlgorithm = DigestAlgorithm::Sha384;
+        fn digest_algorithm(&self) -> DigestAlgorithm {
+            DigestAlgorithm::Sha384
+        }
     }
 }
 

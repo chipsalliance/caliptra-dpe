@@ -29,19 +29,11 @@ pub const MAX_EXPORTED_CDI_SIZE: usize = 32;
 pub type ExportedCdiHandle = [u8; MAX_EXPORTED_CDI_SIZE];
 
 pub trait SignatureType {
-    const SIGNATURE_ALGORITHM: SignatureAlgorithm;
-
-    fn signature_algorithm(&self) -> SignatureAlgorithm {
-        Self::SIGNATURE_ALGORITHM
-    }
+    fn signature_algorithm(&self) -> SignatureAlgorithm;
 }
 
 pub trait DigestType {
-    const DIGEST_ALGORITHM: DigestAlgorithm;
-
-    fn digest_algorithm(&self) -> DigestAlgorithm {
-        Self::DIGEST_ALGORITHM
-    }
+    fn digest_algorithm(&self) -> DigestAlgorithm;
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -62,11 +54,7 @@ impl SignDataAlgorithm {
 }
 
 pub trait SignDataType {
-    const SIGN_DATA_ALGORITHM: SignDataAlgorithm;
-
-    fn digest_algorithm(&self) -> SignDataAlgorithm {
-        Self::SIGN_DATA_ALGORITHM
-    }
+    fn sign_data_algorithm(&self) -> SignDataAlgorithm;
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -153,11 +141,15 @@ pub trait Hasher {
 pub struct Sha256(pub [u8; DigestAlgorithm::Sha256.size()]);
 
 impl DigestType for Sha256 {
-    const DIGEST_ALGORITHM: DigestAlgorithm = DigestAlgorithm::Sha256;
+    fn digest_algorithm(&self) -> DigestAlgorithm {
+        DigestAlgorithm::Sha256
+    }
 }
 
 impl SignDataType for Sha256 {
-    const SIGN_DATA_ALGORITHM: SignDataAlgorithm = SignDataAlgorithm::Sha256;
+    fn sign_data_algorithm(&self) -> SignDataAlgorithm {
+        SignDataAlgorithm::Sha256
+    }
 }
 
 #[derive(Debug, FromBytes, IntoBytes, KnownLayout, Immutable, Clone)]
@@ -165,11 +157,15 @@ impl SignDataType for Sha256 {
 pub struct Sha384(pub [u8; DigestAlgorithm::Sha384.size()]);
 
 impl DigestType for Sha384 {
-    const DIGEST_ALGORITHM: DigestAlgorithm = DigestAlgorithm::Sha384;
+    fn digest_algorithm(&self) -> DigestAlgorithm {
+        DigestAlgorithm::Sha384
+    }
 }
 
 impl SignDataType for Sha384 {
-    const SIGN_DATA_ALGORITHM: SignDataAlgorithm = SignDataAlgorithm::Sha384;
+    fn sign_data_algorithm(&self) -> SignDataAlgorithm {
+        SignDataAlgorithm::Sha384
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -242,7 +238,9 @@ impl From<[u8; 48]> for Digest {
 pub struct Mu(pub [u8; 64]);
 
 impl SignDataType for Mu {
-    const SIGN_DATA_ALGORITHM: SignDataAlgorithm = SignDataAlgorithm::Mu;
+    fn sign_data_algorithm(&self) -> SignDataAlgorithm {
+        SignDataAlgorithm::Mu
+    }
 }
 
 impl From<[u8; 64]> for Mu {
