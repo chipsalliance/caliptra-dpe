@@ -120,7 +120,11 @@ impl CommandExecution for RotateCtxCmd {
         } else {
             dpe.generate_new_handle(env)?
         };
-        env.state.contexts[idx].handle = new_handle;
+        env.state
+            .contexts
+            .get_mut(idx)
+            .ok_or(DpeErrorCode::InternalError)?
+            .handle = new_handle;
 
         *response = NewHandleResp {
             handle: new_handle,
