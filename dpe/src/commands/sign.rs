@@ -13,17 +13,13 @@ use caliptra_cfi_derive::cfi_impl_fn;
 use caliptra_cfi_lib::cfi_launder;
 #[cfg(feature = "cfi")]
 use caliptra_cfi_lib::{cfi_assert, cfi_assert_bool, cfi_assert_ne};
-<<<<<<< sign_raw
 use cfg_if::cfg_if;
 #[cfg(feature = "ml-dsa")]
 use core::mem::size_of;
 use core::mem::size_of_val;
-=======
->>>>>>> main
 #[cfg(any(feature = "p256", feature = "p384"))]
 use caliptra_dpe_crypto::ecdsa::EcdsaSignature;
 use caliptra_dpe_crypto::{Crypto, SignData, Signature};
-use cfg_if::cfg_if;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 #[repr(C)]
