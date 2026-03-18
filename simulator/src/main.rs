@@ -3,16 +3,16 @@
 #[cfg(not(feature = "rustcrypto"))]
 compile_error!("must provide a crypto implementation");
 
-use clap::Parser;
-use dpe::DpeFlags;
-use dpe::{
+use caliptra_dpe::DpeFlags;
+use caliptra_dpe::{
     dpe_instance::{DpeEnv, DpeTypes},
     response::Response,
     support::Support,
     DpeInstance,
 };
+use caliptra_dpe_platform::default::{DefaultPlatform, DefaultPlatformProfile};
+use clap::Parser;
 use log::{error, info, trace, warn};
-use platform::default::{DefaultPlatform, DefaultPlatformProfile};
 use profile::*;
 use std::fs;
 use std::io::{Error, ErrorKind, Read, Write};
@@ -23,24 +23,24 @@ use std::process;
 #[cfg(feature = "p256")]
 mod profile {
     use super::*;
-    pub use crypto::Ecdsa256RustCrypto as RustCrypto;
-    pub const DPE_PROFILE: dpe::DpeProfile = dpe::DpeProfile::P256Sha256;
+    pub use caliptra_dpe_crypto::Ecdsa256RustCrypto as RustCrypto;
+    pub const DPE_PROFILE: caliptra_dpe::DpeProfile = caliptra_dpe::DpeProfile::P256Sha256;
     pub const PLATFORM_PROFILE: DefaultPlatformProfile = DefaultPlatformProfile::P256;
 }
 
 #[cfg(feature = "p384")]
 mod profile {
     use super::*;
-    pub use crypto::Ecdsa384RustCrypto as RustCrypto;
-    pub const DPE_PROFILE: dpe::DpeProfile = dpe::DpeProfile::P384Sha384;
+    pub use caliptra_dpe_crypto::Ecdsa384RustCrypto as RustCrypto;
+    pub const DPE_PROFILE: caliptra_dpe::DpeProfile = caliptra_dpe::DpeProfile::P384Sha384;
     pub const PLATFORM_PROFILE: DefaultPlatformProfile = DefaultPlatformProfile::P384;
 }
 
 #[cfg(feature = "ml-dsa")]
 mod profile {
     use super::*;
-    pub use crypto::MldsaRustCrypto as RustCrypto;
-    pub const DPE_PROFILE: dpe::DpeProfile = dpe::DpeProfile::Mldsa87;
+    pub use caliptra_dpe_crypto::MldsaRustCrypto as RustCrypto;
+    pub const DPE_PROFILE: caliptra_dpe::DpeProfile = caliptra_dpe::DpeProfile::Mldsa87;
     pub const PLATFORM_PROFILE: DefaultPlatformProfile = DefaultPlatformProfile::Mldsa87;
 }
 
@@ -191,7 +191,7 @@ fn main() -> std::io::Result<()> {
     let mut env = DpeEnv::<SimTypes> {
         crypto: <SimTypes as DpeTypes>::Crypto::new(),
         platform: DefaultPlatform(PLATFORM_PROFILE),
-        state: &mut dpe::State::new(support, flags),
+        state: &mut caliptra_dpe::State::new(support, flags),
     };
     let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).map_err(|err| {
         Error::new(

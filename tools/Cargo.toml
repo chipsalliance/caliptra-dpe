@@ -1,30 +1,30 @@
 # Licensed under the Apache-2.0 license
 
 [package]
-name = "tools"
+name = "caliptra-dpe-tools"
 version = "0.1.0"
 edition = "2021"
 
 [features]
 default = ["p384"]
 # Run ARBITRARY_MAX_HANDLES=n cargo build --features arbitrary_max_handles to use this feature
-arbitrary_max_handles = ["dpe/arbitrary_max_handles"]
-p256 = ["dpe/p256"]
-p384 = ["dpe/p384"]
+arbitrary_max_handles = ["caliptra-dpe/arbitrary_max_handles"]
+p256 = ["caliptra-dpe/p256"]
+p384 = ["caliptra-dpe/p384"]
 # TODO(clundin): Placeholder name until we decide pattern for DPE profiles and feature flags.
 ml-dsa = [
-  "dpe/ml-dsa"
+  "caliptra-dpe/ml-dsa"
 ]
 hybrid = ["p384", "ml-dsa"]
-cfi = ["dpe/cfi"]
+cfi = ["caliptra-dpe/cfi"]
 
 [dependencies]
 anyhow = "1.0.70"
-dpe = {path = "../dpe", default-features = false}
+caliptra-dpe = {path = "../dpe", default-features = false}
 clap = { version = "4.1.8", features = ["derive"] }
-crypto = {path = "../crypto", default-features = false, features = ["deterministic_rand", "rustcrypto"]}
+caliptra-dpe-crypto = {path = "../crypto", default-features = false, features = ["deterministic_rand", "rustcrypto"]}
 pem = "2"
-platform = {path = "../platform", default-features = false, features = ["rustcrypto"]}
+caliptra-dpe-platform = {path = "../platform", default-features = false, features = ["rustcrypto"]}
 zerocopy.workspace = true
 
 [[bin]]

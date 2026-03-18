@@ -88,6 +88,54 @@ version = "0.1.0"
 source = "git+https://github.com/chipsalliance/caliptra-cfi.git?rev=767d4ef59a106aea683b883c07bd65456fb3ba6b#767d4ef59a106aea683b883c07bd65456fb3ba6b"
 
 [[package]]
+name = "caliptra-dpe"
+version = "0.1.0"
+dependencies = [
+ "bitflags",
+ "caliptra-cfi-derive",
+ "caliptra-cfi-lib",
+ "caliptra-dpe-crypto",
+ "caliptra-dpe-platform",
+ "cfg-if",
+ "constant_time_eq",
+ "ufmt",
+ "zerocopy",
+ "zeroize",
+]
+
+[[package]]
+name = "caliptra-dpe-crypto"
+version = "0.1.0"
+dependencies = [
+ "arrayvec",
+ "base64ct",
+ "caliptra-cfi-derive",
+ "caliptra-cfi-lib",
+ "constant_time_eq",
+ "ecdsa",
+ "hkdf",
+ "ml-dsa",
+ "p256",
+ "p384",
+ "pkcs8 0.11.0-rc.8",
+ "rand",
+ "sec1",
+ "sha2",
+ "zerocopy",
+ "zeroize",
+]
+
+[[package]]
+name = "caliptra-dpe-platform"
+version = "0.1.0"
+dependencies = [
+ "arrayvec",
+ "cfg-if",
+ "ufmt",
+ "x509-cert",
+]
+
+[[package]]
 name = "cc"
 version = "1.0.83"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -128,28 +176,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a17b76ff3a4162b0b27f354a0c87015ddad39d35f9c0c36607a3bdd175dde1f1"
 dependencies = [
  "libc",
-]
-
-[[package]]
-name = "crypto"
-version = "0.1.0"
-dependencies = [
- "arrayvec",
- "base64ct",
- "caliptra-cfi-derive",
- "caliptra-cfi-lib",
- "constant_time_eq",
- "ecdsa",
- "hkdf",
- "ml-dsa",
- "p256",
- "p384",
- "pkcs8 0.11.0-rc.8",
- "rand",
- "sec1",
- "sha2",
- "zerocopy",
- "zeroize",
 ]
 
 [[package]]
@@ -250,31 +276,15 @@ dependencies = [
 ]
 
 [[package]]
-name = "dpe"
-version = "0.1.0"
-dependencies = [
- "bitflags",
- "caliptra-cfi-derive",
- "caliptra-cfi-lib",
- "cfg-if",
- "constant_time_eq",
- "crypto",
- "platform",
- "ufmt",
- "zerocopy",
- "zeroize",
-]
-
-[[package]]
 name = "dpe-fuzz"
 version = "0.0.0"
 dependencies = [
  "afl",
- "crypto",
- "dpe",
+ "caliptra-dpe",
+ "caliptra-dpe-crypto",
+ "caliptra-dpe-platform",
  "libfuzzer-sys",
  "log",
- "platform",
  "simplelog",
  "time",
 ]
@@ -557,16 +567,6 @@ checksum = "77089aec8290d0b7bb01b671b091095cf1937670725af4fd73d47249f03b12c0"
 dependencies = [
  "der 0.8.0-rc.10",
  "spki 0.8.0-rc.4",
-]
-
-[[package]]
-name = "platform"
-version = "0.1.0"
-dependencies = [
- "arrayvec",
- "cfg-if",
- "ufmt",
- "x509-cert",
 ]
 
 [[package]]

@@ -18,17 +18,17 @@ simplelog = "0.12.1"
 # Once we move to a newer toolchain Cargo update should fix this.
 time = "=0.3.36"
 
-[dependencies.dpe]
+[dependencies.caliptra-dpe]
 path = ".."
 default-features = false
 features = ["p256"]
 
-[dependencies.crypto]
+[dependencies.caliptra-dpe-crypto]
 path = "../../crypto"
 default-features = false
 features = ["rustcrypto"]
 
-[dependencies.platform]
+[dependencies.caliptra-dpe-platform]
 path = "../../platform"
 default-features = false
 features = ["rustcrypto"]
