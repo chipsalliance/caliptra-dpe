@@ -17,7 +17,7 @@ pub use self::sign::{SignCommand, SignFlags, SignP256Cmd, SignP384Cmd};
 use caliptra_cfi_derive::{cfi_impl_fn, Launder};
 
 #[cfg(feature = "ml-dsa")]
-pub use {self::certify_key::CertifyKeyMldsa87Cmd, sign::SignMldsa87Cmd};
+pub use {self::certify_key::CertifyKeyMldsa87Cmd, sign::SignMldsa87Cmd, sign::SignMldsa87RawCmd};
 
 #[cfg(not(feature = "disable_rotate_context"))]
 pub use self::rotate_context::{RotateCtxCmd, RotateCtxFlags};
@@ -209,6 +209,13 @@ impl<'a> From<&'a SignP384Cmd> for Command<'a> {
 impl<'a> From<&'a SignMldsa87Cmd> for Command<'a> {
     fn from(cmd: &'a SignMldsa87Cmd) -> Command<'a> {
         Command::Sign(SignCommand::Mldsa87(cmd))
+    }
+}
+
+#[cfg(feature = "ml-dsa")]
+impl<'a> From<&'a SignMldsa87RawCmd> for Command<'a> {
+    fn from(cmd: &'a SignMldsa87RawCmd) -> Command<'a> {
+        Command::Sign(SignCommand::Mldsa87Raw(cmd))
     }
 }
 

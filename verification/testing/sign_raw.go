@@ -11,7 +11,6 @@ import (
 )
 
 // TestSignRawMode validates the new raw sign functionality for ML-DSA
-// This tests signing with pre-computed external mu values
 func TestSignRawMode(d client.TestDPEInstance, c client.DPEClient, t *testing.T) {
 	// Get profile
 	profile, err := client.GetTransportProfile(d)

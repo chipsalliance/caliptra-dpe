@@ -169,7 +169,11 @@ impl CommandExecution for SignCommand<'_> {
             SignCommand::Mldsa87Raw(cmd) => (
                 &cmd.handle,
                 cmd.label.as_slice(),
-                SignData::Raw(&cmd.raw_data[..(cmd.size as usize)]),
+                SignData::Raw(
+                    cmd.raw_data
+                        .get(..cmd.size as usize)
+                        .ok_or(DpeErrorCode::InvalidArgument)?,
+                ),
             ),
         };
         let idx = env.state.get_active_context_pos(handle, locality)?;
@@ -340,6 +344,20 @@ impl CommandExecution for SignMldsa87Cmd {
     }
 }
 
+#[cfg(feature = "ml-dsa")]
+impl CommandExecution for SignMldsa87RawCmd {
+    #[cfg_attr(feature = "cfi", cfi_impl_fn)]
+    fn execute_serialized(
+        &self,
+        dpe: &mut DpeInstance,
+        env: &mut DpeEnv<impl DpeTypes>,
+        locality: u32,
+        out: &mut [u8],
+    ) -> Result<usize, DpeErrorCode> {
+        SignCommand::Mldsa87Raw(self).execute_serialized(dpe, env, locality, out)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -503,11 +521,10 @@ mod tests {
                 _ => panic!("Incorrect response type"),
             }
         };
-        let cert_bytes = certify_resp.cert().unwrap();
-
         match DPE_PROFILE {
             #[cfg(any(feature = "p256", feature = "p384"))]
             DpeProfile::P256Sha256 | DpeProfile::P384Sha384 => {
+                let cert_bytes = certify_resp.cert().unwrap();
                 let (r, s) = match sign_resp {
                     #[cfg(feature = "p256")]
                     SignResp::P256(resp) => (resp.sig_r.to_vec(), resp.sig_s.to_vec()),
@@ -528,11 +545,9 @@ mod tests {
             }
             #[cfg(feature = "ml-dsa")]
             DpeProfile::Mldsa87 => {
+                use crate::response::CertifyKeyResp;
                 use ml_dsa::signature::Verifier;
                 use ml_dsa::{EncodedSignature, EncodedVerifyingKey, VerifyingKey};
-                use x509_parser::nom::Parser;
-                use x509_parser::prelude::*;
-                use x509_parser::public_key::PublicKey;
 
                 let sig_bytes = match sign_resp {
                     SignResp::Mldsa87(resp) => resp.sig,
@@ -544,17 +559,13 @@ mod tests {
                 let sig =
                     ml_dsa::Signature::decode(&encoded_sig).expect("Error decoding signature");
 
-                let mut parser = X509CertificateParser::new().with_deep_parse_extensions(true);
-                let (_, cert) = parser.parse(cert_bytes).expect("Failed to parse cert");
-
-                let pub_key_parsed = cert.public_key().parsed().unwrap();
-                let key_bytes = match pub_key_parsed {
-                    PublicKey::Unknown(k) => k,
-                    _ => panic!("Expected unknown key type for ML-DSA"),
+                let key_bytes = match certify_resp {
+                    CertifyKeyResp::Mldsa87(resp) => resp.pubkey,
+                    _ => panic!("Expected Mldsa87 CertifyKeyResp"),
                 };
 
                 let encoded_vk =
-                    EncodedVerifyingKey::<ml_dsa::MlDsa87>::try_from(key_bytes).unwrap();
+                    EncodedVerifyingKey::<ml_dsa::MlDsa87>::try_from(key_bytes.as_slice()).unwrap();
                 let vk = VerifyingKey::<ml_dsa::MlDsa87>::decode(&encoded_vk);
 
                 assert!(vk.verify_mu((&TEST_SIGN_DIGEST).into(), &sig));
@@ -644,48 +655,22 @@ mod tests {
         let mut env = test_env(&mut state);
         let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
-        for i in 0..3 {
-            DeriveContextCmd {
-                handle: ContextHandle::default(),
-                data: TciMeasurement([i; DPE_PROFILE.hash_size()]),
-                flags: DeriveContextFlags::MAKE_DEFAULT | DeriveContextFlags::INPUT_ALLOW_X509,
-                tci_type: i as u32,
-                target_locality: 0,
-                svn: 0,
-            }
-            .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
-            .unwrap();
+        let raw_data = b"test raw signing message";
+        let mut raw_buf = [0u8; MLDSA87_RAW_MAX_SIZE];
+        raw_buf[..raw_data.len()].copy_from_slice(raw_data);
+
+        let response = SignMldsa87RawCmd {
+            handle: ContextHandle::default(),
+            label: TEST_LABEL,
+            flags: SignFlags::IS_RAW,
+            size: raw_data.len() as u32,
+            raw_data: raw_buf,
         }
-
-        let cmd = {
-            let raw_data = b"test raw signing message";
-            let mut raw_buf = [0u8; MLDSA87_RAW_MAX_SIZE];
-            raw_buf[..raw_data.len()].copy_from_slice(raw_data);
-
-            let mut buf = CommandHdr::new(DPE_PROFILE, Command::SIGN)
-                .as_bytes()
-                .to_vec();
-            buf.extend(
-                SignMldsa87RawCmd {
-                    handle: ContextHandle::default(),
-                    label: TEST_LABEL,
-                    flags: SignFlags::IS_RAW,
-                    size: raw_data.len() as u32,
-                    raw_data: raw_buf,
-                }
-                .as_bytes(),
-            );
-            buf
-        };
-
-        let mut resp_buf = [0u8; size_of::<Response>()];
-        let cmd = Command::deserialize(DPE_PROFILE, &cmd).unwrap();
-        cmd.execute_serialized(&mut dpe, &mut env, TEST_LOCALITIES[0], &mut resp_buf)
-            .unwrap();
-        let response = Response::try_read_from_bytes(&cmd, &resp_buf).unwrap();
+        .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
+        .unwrap();
 
         let sign_resp = match response {
-            Response::Sign(resp) => resp,
+            Response::Sign(SignResp::Mldsa87(resp)) => resp,
             _ => panic!("Incorrect response type"),
         };
 
@@ -705,34 +690,24 @@ mod tests {
             }
         };
 
-        let cert_bytes = certify_resp.cert().unwrap();
-
+        use crate::response::CertifyKeyResp;
         use ml_dsa::signature::Verifier;
         use ml_dsa::{EncodedSignature, EncodedVerifyingKey, VerifyingKey};
-        use x509_parser::nom::Parser;
-        use x509_parser::prelude::*;
-        use x509_parser::public_key::PublicKey;
 
-        let sig_bytes = match sign_resp {
-            SignResp::Mldsa87(resp) => resp.sig,
-            _ => panic!("Incorrect response type"),
-        };
+        let sig_bytes = sign_resp.sig;
         let encoded_sig = EncodedSignature::<ml_dsa::MlDsa87>::try_from(sig_bytes.as_slice())
             .expect("Invalid signature length");
         let sig = ml_dsa::Signature::decode(&encoded_sig).expect("Error decoding signature");
 
-        let mut parser = X509CertificateParser::new().with_deep_parse_extensions(true);
-        let (_, cert) = parser.parse(cert_bytes).expect("Failed to parse cert");
-
-        let pub_key_parsed = cert.public_key().parsed().unwrap();
-        let key_bytes = match pub_key_parsed {
-            PublicKey::Unknown(k) => k,
-            _ => panic!("Expected unknown key type for ML-DSA"),
+        let key_bytes = match certify_resp {
+            CertifyKeyResp::Mldsa87(resp) => resp.pubkey,
+            _ => panic!("Expected Mldsa87 CertifyKeyResp"),
         };
 
-        let encoded_vk = EncodedVerifyingKey::<ml_dsa::MlDsa87>::try_from(key_bytes).unwrap();
+        let encoded_vk =
+            EncodedVerifyingKey::<ml_dsa::MlDsa87>::try_from(key_bytes.as_slice()).unwrap();
         let vk = VerifyingKey::<ml_dsa::MlDsa87>::decode(&encoded_vk);
 
-        assert!(vk.verify(b"test raw signing message", &sig).is_ok());
+        assert!(vk.verify(raw_data, &sig).is_ok());
     }
 }

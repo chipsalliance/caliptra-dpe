@@ -270,6 +270,15 @@ type SignReq[Digest DigestAlgorithm, SignData DigestAlgorithm] struct {
 	ToBeSigned    SignData
 }
 
+// SignRawCmd is the input request to Sign in raw mode.
+type SignRawCmd[Digest DigestAlgorithm] struct {
+	ContextHandle ContextHandle
+	Label         Digest
+	Flags         SignFlags
+	Size          uint32
+	RawData       [SignRawMaxSize]byte
+}
+
 // ECDSASignature represents an ECDSA signature with R and S values
 type ECDSASignature[Digest DigestAlgorithm] struct {
 	R Digest
@@ -829,7 +838,6 @@ func (c *DPEABI[_, Digest, _, SignData, Signature]) Sign(handle *ContextHandle, 
 }
 
 // SignRaw calls DPE Sign command with raw data
-// This is useful for ML-DSA when signing pre-computed external mu values
 func (c *DPEABI[_, Digest, _, _, Signature]) SignRaw(handle *ContextHandle, label []byte, rawData []byte) (*DPESignedHash, error) {
 	// Only ML-DSA supports raw signing.
 	if c.Profile != ProfileMldsa87 {
@@ -845,42 +853,24 @@ func (c *DPEABI[_, Digest, _, _, Signature]) SignRaw(handle *ContextHandle, labe
 		return nil, fmt.Errorf("raw data too large")
 	}
 
-	// For ML-DSA, we manually build a buffer containing the fields
-	// needed by the raw-sign command. The command uses a fixed-size
-	// buffer on the wire to simplify parsing.
-	// Manually construct the command buffer
-	buf := &bytes.Buffer{}
-
-	// Write handle
-	if err := binary.Write(buf, binary.LittleEndian, handle); err != nil {
-		return nil, err
-	}
-
-	// Write label (as fixed-size digest)
 	l, err := NewDigest[Digest](label)
 	if err != nil {
 		return nil, err
 	}
-	if err := binary.Write(buf, binary.LittleEndian, l); err != nil {
-		return nil, err
-	}
 
-	// Write flags with IS_RAW set
-	flags := SignFlagIsRaw
-	if err := binary.Write(buf, binary.LittleEndian, flags); err != nil {
-		return nil, err
-	}
-
-	// Write size of raw data.
-	size := uint32(len(rawData))
-	if err := binary.Write(buf, binary.LittleEndian, size); err != nil {
-		return nil, err
-	}
-
-	// Write raw data as a fixed-size payload (padded with zeros).
 	var rawBuf [SignRawMaxSize]byte
 	copy(rawBuf[:], rawData)
-	if err := binary.Write(buf, binary.LittleEndian, rawBuf); err != nil {
+
+	cmd := &SignRawCmd[Digest]{
+		ContextHandle: *handle,
+		Label:         l,
+		Flags:         SignFlagIsRaw,
+		Size:          uint32(len(rawData)),
+		RawData:       rawBuf,
+	}
+
+	buf := &bytes.Buffer{}
+	if err := binary.Write(buf, binary.LittleEndian, cmd); err != nil {
 		return nil, err
 	}
 
@@ -909,22 +899,18 @@ func (c *DPEABI[_, Digest, _, _, Signature]) SignRaw(handle *ContextHandle, labe
 	}
 
 	// Parse response based on profile
-	if c.Profile == ProfileMldsa87 {
-		respStruct := struct {
-			NewContextHandle [16]byte
-			Signature        Mldsa87Signature
-			Padding          [1]byte
-		}{}
-		if err := binary.Read(r, binary.LittleEndian, &respStruct); err != nil {
-			return nil, err
-		}
-		return &DPESignedHash{
-			Handle:    respStruct.NewContextHandle,
-			Signature: respStruct.Signature[:],
-		}, nil
+	respStruct := struct {
+		NewContextHandle [16]byte
+		Signature        Mldsa87Signature
+		Padding          [1]byte
+	}{}
+	if err := binary.Read(r, binary.LittleEndian, &respStruct); err != nil {
+		return nil, err
 	}
-
-	return nil, fmt.Errorf("SignRaw not implemented for this profile")
+	return &DPESignedHash{
+		Handle:    respStruct.NewContextHandle,
+		Signature: respStruct.Signature[:],
+	}, nil
 }
 
 // ToFlags converts support to the profile-defined support flags format
