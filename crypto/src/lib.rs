@@ -430,10 +430,69 @@ pub trait CryptoSuite: Crypto + SignatureType + DigestType {
     }
 }
 
-pub trait Crypto {
-    type Cdi;
-    type PrivKey;
+pub trait Signer {
+    /// Sign `data` with the derived private key
+    fn sign(&mut self, data: &SignData) -> Result<Signature, CryptoError>;
 
+    /// Get the public key associated with the derived key-pair
+    fn public_key(&mut self) -> Result<PubKey, CryptoError>;
+}
+
+pub trait CdiManager {
+    /// Derives a key pair using a cryptographically secure KDF
+    ///
+    /// # Arguments
+    ///
+    /// * `label` - Caller-supplied label to use in asymmetric key derivation
+    /// * `info` - Caller-supplied info string to use in asymmetric key derivation
+    fn derive_key_pair(
+        &mut self,
+        label: &[u8],
+        info: &[u8],
+    ) -> Result<&mut dyn Signer, CryptoError>;
+
+    /// CFI wrapper around derive_key_pair
+    ///
+    /// To implement this function, you need to add the
+    /// cfi_impl_fn proc_macro to derive_key_pair.
+    #[cfg(feature = "cfi")]
+    fn __cfi_derive_key_pair(
+        &mut self,
+        label: &[u8],
+        info: &[u8],
+    ) -> Result<&mut dyn Signer, CryptoError>;
+
+    /// Sign `data` with a derived key-pair from the CDI
+    ///
+    /// # Arguments
+    ///
+    /// * `label` - Caller-supplied label to use in asymmetric key derivation
+    /// * `info` - Caller-supplied info string to use in asymmetric key derivation
+    /// * `data` - Data to be signed.
+    fn sign_with_derived(
+        &mut self,
+        label: &[u8],
+        info: &[u8],
+        data: &SignData,
+    ) -> Result<Signature, CryptoError> {
+        self.derive_key_pair(label, info)?.sign(data)
+    }
+
+    /// Get the public key of a derived key-pair from the CDI
+    ///
+    /// # Arguments
+    ///
+    /// * `label` - Caller-supplied label to use in asymmetric key derivation
+    /// * `info` - Caller-supplied info string to use in asymmetric key derivation
+    fn derive_pub_key(&mut self, label: &[u8], info: &[u8]) -> Result<PubKey, CryptoError> {
+        self.derive_key_pair(label, info)?.public_key()
+    }
+
+    /// This should only be used in testing
+    fn as_slice(&self) -> &[u8];
+}
+
+pub trait Crypto {
     /// Fills the buffer with random values.
     ///
     /// # Arguments
@@ -490,7 +549,11 @@ pub trait Crypto {
     ///
     /// * `measurement` - A digest of the measurements which should be used for CDI derivation
     /// * `info` - Caller-supplied info string to use in CDI derivation
-    fn derive_cdi(&mut self, measurement: &Digest, info: &[u8]) -> Result<Self::Cdi, CryptoError>;
+    fn derive_cdi(
+        &mut self,
+        measurement: &Digest,
+        info: &[u8],
+    ) -> Result<&mut dyn CdiManager, CryptoError>;
 
     /// Derive a CDI for an exported private key based on the current base CDI and measurements
     ///
@@ -509,36 +572,24 @@ pub trait Crypto {
     /// To implement this function, you need to add the
     /// cfi_impl_fn proc_macro to derive_cdi.
     #[cfg(feature = "cfi")]
-    fn __cfi_derive_cdi(
-        &mut self,
+    fn __cfi_derive_cdi<'a>(
+        &'a mut self,
         measurement: &Digest,
         info: &[u8],
-    ) -> Result<Self::Cdi, CryptoError>;
+    ) -> Result<&'a mut dyn CdiManager, CryptoError>;
 
-    /// CFI wrapper around derive_cdi_exported
+    /// Derive a CDI for an exported private key based on the current base CDI and measurements
     ///
-    /// To implement this function, you need to add the
-    /// cfi_impl_fn proc_macro to derive_exported_cdi.
+    /// # Arguments
+    ///
+    /// * `measurement` - A digest of the measurements which should be used for CDI derivation
+    /// * `info` - Caller-supplied info string to use in CDI derivation
     #[cfg(feature = "cfi")]
     fn __cfi_derive_exported_cdi(
         &mut self,
         measurement: &Digest,
         info: &[u8],
     ) -> Result<ExportedCdiHandle, CryptoError>;
-
-    /// Derives a key pair using a cryptographically secure KDF
-    ///
-    /// # Arguments
-    ///
-    /// * `cdi` - Caller-supplied private key to use in public key derivation
-    /// * `label` - Caller-supplied label to use in asymmetric key derivation
-    /// * `info` - Caller-supplied info string to use in asymmetric key derivation
-    fn derive_key_pair(
-        &mut self,
-        cdi: &Self::Cdi,
-        label: &[u8],
-        info: &[u8],
-    ) -> Result<(Self::PrivKey, PubKey), CryptoError>;
 
     /// Derives an exported key pair using a cryptographically secure KDF
     ///
@@ -553,19 +604,7 @@ pub trait Crypto {
         exported_handle: &ExportedCdiHandle,
         label: &[u8],
         info: &[u8],
-    ) -> Result<(Self::PrivKey, PubKey), CryptoError>;
-
-    /// CFI wrapper around derive_key_pair
-    ///
-    /// To implement this function, you need to add the
-    /// cfi_impl_fn proc_macro to derive_key_pair.
-    #[cfg(feature = "cfi")]
-    fn __cfi_derive_key_pair(
-        &mut self,
-        cdi: &Self::Cdi,
-        label: &[u8],
-        info: &[u8],
-    ) -> Result<(Self::PrivKey, PubKey), CryptoError>;
+    ) -> Result<&mut dyn Signer, CryptoError>;
 
     /// CFI wrapper around derive_key_pair_exported
     ///
@@ -577,7 +616,7 @@ pub trait Crypto {
         exported_handle: &ExportedCdiHandle,
         label: &[u8],
         info: &[u8],
-    ) -> Result<(Self::PrivKey, PubKey), CryptoError>;
+    ) -> Result<&mut dyn Signer, CryptoError>;
 
     /// Sign `digest` with the platform Alias Key
     ///
@@ -586,18 +625,43 @@ pub trait Crypto {
     /// * `data` - Data to be signed.
     fn sign_with_alias(&mut self, data: &SignData) -> Result<Signature, CryptoError>;
 
-    /// Sign `digest` with a derived key-pair from the CDI and caller-supplied private key
+    /// Sign `data` with a key derived from the current CDI and measurements.
     ///
     /// # Arguments
     ///
+    /// * `measurement` - A digest of the measurements which should be used for CDI derivation.
+    /// * `info` - Caller-supplied info string to use in CDI derivation.
+    /// * `label` - Caller-supplied label to use in key derivation.
+    /// * `derived_info` - Caller-supplied info string to use in key derivation.
     /// * `data` - Data to be signed.
-    /// * `priv_key` - Caller-supplied private key to use in public key derivation
-    /// * `pub_key` - The public key corresponding to `priv_key`. An implementation may
-    ///    optionally use pub_key to validate any generated signatures.
     fn sign_with_derived(
         &mut self,
+        measurement: &Digest,
+        info: &[u8],
+        label: &[u8],
+        derived_info: &[u8],
         data: &SignData,
-        priv_key: &Self::PrivKey,
-        pub_key: &PubKey,
-    ) -> Result<Signature, CryptoError>;
+    ) -> Result<Signature, CryptoError> {
+        self.derive_cdi(measurement, info)?
+            .sign_with_derived(label, derived_info, data)
+    }
+
+    /// Derive the public key for a key derived from the current CDI and measurements.
+    ///
+    /// # Arguments
+    ///
+    /// * `measurement` - A digest of the measurements which should be used for CDI derivation.
+    /// * `info` - Caller-supplied info string to use in CDI derivation.
+    /// * `label` - Caller-supplied label to use in key derivation.
+    /// * `derived_info` - Caller-supplied info string to use in key derivation.
+    fn derive_pub_key(
+        &mut self,
+        measurement: &Digest,
+        info: &[u8],
+        label: &[u8],
+        derived_info: &[u8],
+    ) -> Result<PubKey, CryptoError> {
+        self.derive_cdi(measurement, info)?
+            .derive_pub_key(label, derived_info)
+    }
 }
