@@ -2,7 +2,7 @@
 
 use super::CommandExecution;
 use crate::{
-    dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
+    dpe_instance::{DpeEnv, DpeInstance},
     mutresp,
     response::{DpeErrorCode, GetProfileResp},
 };
@@ -28,12 +28,12 @@ impl CommandExecution for GetProfileCmd {
     fn execute_serialized(
         &self,
         dpe: &mut DpeInstance,
-        env: &mut DpeEnv<impl DpeTypes>,
+        env: &mut DpeEnv,
         _locality: u32,
         out: &mut [u8],
     ) -> Result<usize, DpeErrorCode> {
         let response = mutresp::<GetProfileResp>(dpe.profile, out)?;
-        *response = dpe.get_profile(&mut env.platform, env.state.support)?;
+        *response = dpe.get_profile(env.platform, env.state.support)?;
 
         Ok(size_of_val(response))
     }

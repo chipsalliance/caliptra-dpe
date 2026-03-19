@@ -1,13 +1,13 @@
 // Licensed under the Apache-2.0 license.
 use super::CommandExecution;
 use crate::{
-    dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
+    dpe_instance::{DpeEnv, DpeInstance},
     mutresp,
     response::{DpeErrorCode, GetCertificateChainResp},
 };
 #[cfg(feature = "cfi")]
 use caliptra_cfi_derive::cfi_impl_fn;
-use caliptra_dpe_platform::{Platform, MAX_CHUNK_SIZE};
+use caliptra_dpe_platform::MAX_CHUNK_SIZE;
 
 #[repr(C)]
 #[derive(
@@ -30,7 +30,7 @@ impl CommandExecution for GetCertificateChainCmd {
     fn execute_serialized(
         &self,
         dpe: &mut DpeInstance,
-        env: &mut DpeEnv<impl DpeTypes>,
+        env: &mut DpeEnv,
         _locality: u32,
         out: &mut [u8],
     ) -> Result<usize, DpeErrorCode> {
@@ -58,7 +58,8 @@ mod tests {
     use super::*;
     use crate::{
         commands::{tests::PROFILES, Command, CommandHdr},
-        dpe_instance::tests::{test_env, test_state, DPE_PROFILE, TEST_LOCALITIES},
+        dpe_instance::tests::{test_state, DPE_PROFILE, TEST_LOCALITIES},
+        test_env,
     };
     use caliptra_cfi_lib::CfiCounter;
     use zerocopy::IntoBytes;
@@ -89,7 +90,7 @@ mod tests {
     fn test_fails_if_size_greater_than_max_chunk_size() {
         CfiCounter::reset_for_test();
         let mut state = test_state();
-        let mut env = test_env(&mut state);
+        test_env!(env, &mut state);
         let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
         assert_eq!(

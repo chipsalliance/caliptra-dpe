@@ -4,12 +4,7 @@
 compile_error!("must provide a crypto implementation");
 
 use caliptra_dpe::DpeFlags;
-use caliptra_dpe::{
-    dpe_instance::{DpeEnv, DpeTypes},
-    response::Response,
-    support::Support,
-    DpeInstance,
-};
+use caliptra_dpe::{dpe_instance::DpeEnv, response::Response, support::Support, DpeInstance};
 use caliptra_dpe_platform::default::{DefaultPlatform, DefaultPlatformProfile};
 use clap::Parser;
 use log::{error, info, trace, warn};
@@ -52,7 +47,7 @@ mod profile {
 
 const SOCKET_PATH: &str = "/tmp/dpe-sim.socket";
 
-fn handle_request(dpe: &mut DpeInstance, env: &mut DpeEnv<impl DpeTypes>, stream: &mut UnixStream) {
+fn handle_request(dpe: &mut DpeInstance, env: &mut DpeEnv, stream: &mut UnixStream) {
     let mut buf = [0u8; 4096];
     let (locality, cmd) = {
         let len = stream.read(&mut buf).unwrap();
@@ -147,14 +142,6 @@ struct Args {
     mark_dice_extensions_critical: bool,
 }
 
-struct SimTypes {}
-
-impl DpeTypes for SimTypes {
-    type Crypto<'a> = caliptra_dpe_crypto::RustCryptoImpl;
-
-    type Platform<'a> = DefaultPlatform;
-}
-
 fn main() -> std::io::Result<()> {
     env_logger::init();
     let args = Args::parse();
@@ -194,10 +181,13 @@ fn main() -> std::io::Result<()> {
         args.mark_dice_extensions_critical,
     );
 
-    let mut env = DpeEnv::<SimTypes> {
-        crypto: profile::new_crypto(),
-        platform: DefaultPlatform(PLATFORM_PROFILE),
-        state: &mut caliptra_dpe::State::new(support, flags),
+    let mut crypto = profile::new_crypto();
+    let mut platform = DefaultPlatform(PLATFORM_PROFILE);
+    let mut state = caliptra_dpe::State::new(support, flags);
+    let mut env = DpeEnv {
+        crypto: &mut crypto,
+        platform: &mut platform,
+        state: &mut state,
     };
     let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).map_err(|err| {
         Error::new(

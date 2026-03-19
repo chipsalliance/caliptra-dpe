@@ -2,7 +2,7 @@
 use super::CommandExecution;
 use crate::{
     context::{ActiveContextArgs, Context, ContextHandle, ContextType},
-    dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
+    dpe_instance::{DpeEnv, DpeInstance},
     mutresp,
     response::{DpeErrorCode, NewHandleResp},
 };
@@ -56,7 +56,7 @@ impl CommandExecution for InitCtxCmd {
     fn execute_serialized(
         &self,
         dpe: &mut DpeInstance,
-        env: &mut DpeEnv<impl DpeTypes>,
+        env: &mut DpeEnv,
         locality: u32,
         out: &mut [u8],
     ) -> Result<usize, DpeErrorCode> {
@@ -122,10 +122,10 @@ mod tests {
     use crate::{
         commands::{tests::PROFILES, Command, CommandHdr},
         context::ContextState,
-        dpe_instance::tests::{test_env, DPE_PROFILE, TEST_LOCALITIES},
+        dpe_instance::tests::{DPE_PROFILE, TEST_LOCALITIES},
         response::Response,
         support::Support,
-        DpeFlags, State,
+        test_env, DpeFlags, State,
     };
     use caliptra_cfi_lib::CfiCounter;
     use zerocopy::IntoBytes;
@@ -151,7 +151,7 @@ mod tests {
     fn test_initialize_context() {
         CfiCounter::reset_for_test();
         let mut state = State::default();
-        let mut env = test_env(&mut state);
+        test_env!(env, &mut state);
         let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
         let handle = match InitCtxCmd::new_use_default()

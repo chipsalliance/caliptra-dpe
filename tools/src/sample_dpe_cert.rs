@@ -7,7 +7,7 @@ use profile::*;
 use {
     caliptra_dpe::commands::{self, CertifyKeyFlags, DeriveContextCmd, DeriveContextFlags},
     caliptra_dpe::context::ContextHandle,
-    caliptra_dpe::dpe_instance::{DpeEnv, DpeTypes},
+    caliptra_dpe::dpe_instance::DpeEnv,
     caliptra_dpe::response::Response,
     caliptra_dpe::{support::Support, DpeInstance},
     caliptra_dpe_platform::default::DefaultPlatform,
@@ -50,17 +50,11 @@ mod profile {
 
 pub struct TestTypes {}
 
-impl DpeTypes for TestTypes {
-    type Crypto<'a> = caliptra_dpe_crypto::RustCryptoImpl;
-
-    type Platform<'a> = DefaultPlatform;
-}
-
 // Call DeriveContext on the default context so the generated cert will have a
 // TcbInfo populated.
 fn add_tcb_info(
     dpe: &mut DpeInstance,
-    env: &mut DpeEnv<TestTypes>,
+    env: &mut DpeEnv,
     data: &TciMeasurement,
     tci_type: u32,
     svn: u32,
@@ -91,7 +85,7 @@ fn add_tcb_info(
     };
 }
 
-fn certify_key(dpe: &mut DpeInstance, env: &mut DpeEnv<TestTypes>, format: u32) -> Vec<u8> {
+fn certify_key(dpe: &mut DpeInstance, env: &mut DpeEnv, format: u32) -> Vec<u8> {
     let certify_key_cmd = CertifyKeyCmd {
         handle: ContextHandle::default(),
         flags: CertifyKeyFlags::empty(),
@@ -149,9 +143,9 @@ fn main() {
         DpeFlags::empty()
     };
 
-    let mut env = DpeEnv::<TestTypes> {
-        crypto: profile::new_crypto(),
-        platform: DefaultPlatform(PLATFORM_PROFILE),
+    let mut env = DpeEnv {
+        crypto: &mut profile::new_crypto(),
+        platform: &mut DefaultPlatform(PLATFORM_PROFILE),
         state: &mut caliptra_dpe::State::new(support, flags),
     };
 

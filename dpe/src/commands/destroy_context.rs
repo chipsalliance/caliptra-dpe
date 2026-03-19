@@ -2,7 +2,7 @@
 use super::CommandExecution;
 use crate::{
     context::{Children, Context, ContextHandle, ContextState},
-    dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
+    dpe_instance::{DpeEnv, DpeInstance},
     mutresp,
     response::{DpeErrorCode, ResponseHdr},
     State,
@@ -90,7 +90,7 @@ impl CommandExecution for DestroyCtxCmd {
     fn execute_serialized(
         &self,
         dpe: &mut DpeInstance,
-        env: &mut DpeEnv<impl DpeTypes>,
+        env: &mut DpeEnv,
         locality: u32,
         out: &mut [u8],
     ) -> Result<usize, DpeErrorCode> {
@@ -110,9 +110,10 @@ mod tests {
         },
         context::{Context, ContextState},
         dpe_instance::tests::{
-            test_env, test_state, DPE_PROFILE, SIMULATION_HANDLE, TEST_HANDLE, TEST_LOCALITIES,
+            test_state, DPE_PROFILE, SIMULATION_HANDLE, TEST_HANDLE, TEST_LOCALITIES,
         },
         response::Response,
+        test_env,
     };
     use caliptra_cfi_lib::CfiCounter;
     use zerocopy::IntoBytes;
@@ -140,7 +141,7 @@ mod tests {
     fn test_destroy_context() {
         CfiCounter::reset_for_test();
         let mut state = State::default();
-        let mut env = test_env(&mut state);
+        test_env!(env, &mut state);
         let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
         InitCtxCmd::new_use_default()
@@ -295,7 +296,7 @@ mod tests {
     fn test_retired_parent_contexts_destroyed() {
         CfiCounter::reset_for_test();
         let mut state = test_state();
-        let mut env = test_env(&mut state);
+        test_env!(env, &mut state);
         let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
         // create new context while preserving auto-initialized context
@@ -357,7 +358,7 @@ mod tests {
     fn test_retired_parent_context_not_destroyed_if_it_has_other_active_children() {
         CfiCounter::reset_for_test();
         let mut state = test_state();
-        let mut env = test_env(&mut state);
+        test_env!(env, &mut state);
         let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
         // create new context while preserving auto-initialized context
