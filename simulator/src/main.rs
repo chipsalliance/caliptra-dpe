@@ -3,6 +3,7 @@
 #[cfg(not(feature = "rustcrypto"))]
 compile_error!("must provide a crypto implementation");
 
+use caliptra_dpe::dpe_instance::DpeEnvImpl;
 use caliptra_dpe::DpeFlags;
 use caliptra_dpe::{dpe_instance::DpeEnv, response::Response, support::Support, DpeInstance};
 use caliptra_dpe_platform::default::{DefaultPlatform, DefaultPlatformProfile};
@@ -47,7 +48,7 @@ mod profile {
 
 const SOCKET_PATH: &str = "/tmp/dpe-sim.socket";
 
-fn handle_request(dpe: &mut DpeInstance, env: &mut DpeEnv, stream: &mut UnixStream) {
+fn handle_request(dpe: &mut DpeInstance, env: &mut dyn DpeEnv, stream: &mut UnixStream) {
     let mut buf = [0u8; 4096];
     let (locality, cmd) = {
         let len = stream.read(&mut buf).unwrap();
@@ -184,7 +185,7 @@ fn main() -> std::io::Result<()> {
     let mut crypto = profile::new_crypto();
     let mut platform = DefaultPlatform(PLATFORM_PROFILE);
     let mut state = caliptra_dpe::State::new(support, flags);
-    let mut env = DpeEnv {
+    let mut env = DpeEnvImpl {
         crypto: &mut crypto,
         platform: &mut platform,
         state: &mut state,

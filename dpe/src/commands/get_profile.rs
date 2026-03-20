@@ -28,12 +28,13 @@ impl CommandExecution for GetProfileCmd {
     fn execute_serialized(
         &self,
         dpe: &mut DpeInstance,
-        env: &mut DpeEnv,
+        env: &mut dyn DpeEnv,
         _locality: u32,
         out: &mut [u8],
     ) -> Result<usize, DpeErrorCode> {
         let response = mutresp::<GetProfileResp>(dpe.profile, out)?;
-        *response = dpe.get_profile(env.platform, env.state.support)?;
+        let support = env.state().support;
+        *response = dpe.get_profile(env.platform(), support)?;
 
         Ok(size_of_val(response))
     }

@@ -17,7 +17,7 @@ use simplelog::{Config, WriteLogger};
 use std::fs::OpenOptions;
 
 use caliptra_dpe::{
-    dpe_instance::DpeEnv, response::Response, support::Support, DpeInstance, DpeProfile,
+    dpe_instance::DpeEnvImpl, response::Response, support::Support, DpeInstance, DpeProfile,
 };
 use caliptra_dpe_platform::default::{DefaultPlatform, DefaultPlatformProfile, AUTO_INIT_LOCALITY};
 
@@ -41,7 +41,7 @@ fn harness(data: &[u8]) {
             .unwrap(),
     );
 
-    let mut env = DpeEnv {
+    let mut env = DpeEnvImpl {
         crypto: &mut RustCryptoImpl::new_ecc256(),
         platform: &mut DefaultPlatform(DefaultPlatformProfile::P256),
         state: &mut caliptra_dpe::State::new(SUPPORT, DpeFlags::empty()),

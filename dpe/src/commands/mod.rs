@@ -277,7 +277,7 @@ impl CommandExecution for Command<'_> {
     fn execute_serialized(
         &self,
         dpe: &mut DpeInstance,
-        env: &mut DpeEnv,
+        env: &mut dyn DpeEnv,
         locality: u32,
         out: &mut [u8],
     ) -> Result<usize, DpeErrorCode> {
@@ -299,7 +299,7 @@ pub trait CommandExecution {
     fn execute<'a>(
         &'a self,
         dpe: &mut DpeInstance,
-        env: &mut DpeEnv,
+        env: &mut dyn DpeEnv,
         locality: u32,
     ) -> Result<Response, DpeErrorCode>
     where
@@ -318,7 +318,7 @@ pub trait CommandExecution {
     fn __cfi_execute<'a>(
         &'a self,
         dpe: &mut DpeInstance,
-        env: &mut DpeEnv,
+        env: &mut dyn DpeEnv,
         locality: u32,
     ) -> Result<Response, DpeErrorCode>
     where
@@ -332,7 +332,7 @@ pub trait CommandExecution {
     fn execute_serialized(
         &self,
         dpe: &mut DpeInstance,
-        env: &mut DpeEnv,
+        env: &mut dyn DpeEnv,
         locality: u32,
         out: &mut [u8],
     ) -> Result<usize, DpeErrorCode>;
@@ -345,7 +345,7 @@ pub trait CommandExecution {
     fn __cfi_execute_serialized(
         &self,
         dpe: &mut DpeInstance,
-        env: &mut DpeEnv,
+        env: &mut dyn DpeEnv,
         locality: u32,
         out: &mut [u8],
     ) -> Result<usize, DpeErrorCode>;

@@ -1,6 +1,7 @@
 // Licensed under the Apache-2.0 license
 
 use anyhow::{anyhow, Result};
+use caliptra_dpe::dpe_instance::DpeEnvImpl;
 use caliptra_dpe::{
     commands::{CertifyKeyCommand, CommandExecution, DeriveContextCmd, DeriveContextFlags},
     DpeFlags, DpeProfile, MAX_HANDLES,
@@ -90,7 +91,7 @@ struct Args {
     cert: bool,
 }
 
-fn send_certify_key(dpe: &mut DpeInstance, env: &mut DpeEnv, args: &Args) -> Result<Response> {
+fn send_certify_key(dpe: &mut DpeInstance, env: &mut dyn DpeEnv, args: &Args) -> Result<Response> {
     let format = if args.cert {
         CertifyKeyCommand::FORMAT_X509
     } else {
@@ -116,7 +117,7 @@ fn send_certify_key(dpe: &mut DpeInstance, env: &mut DpeEnv, args: &Args) -> Res
     }
 }
 
-fn run(env: &mut DpeEnv, args: &Args) -> Result<()> {
+fn run(env: &mut dyn DpeEnv, args: &Args) -> Result<()> {
     let mut dpe = DpeInstance::new(env, args.algorithm.into())
         .map_err(|e| anyhow!("DPE error creating instance: {e:?}"))?;
 
@@ -176,7 +177,7 @@ fn main() -> Result<()> {
     match args.algorithm {
         #[cfg(any(feature = "p256", feature = "p384"))]
         Algorithm::Ec => run(
-            &mut DpeEnv {
+            &mut DpeEnvImpl {
                 crypto: &mut ec::new_crypto(),
                 platform: &mut DefaultPlatform(args.algorithm.into()),
                 state: &mut state,
@@ -185,7 +186,7 @@ fn main() -> Result<()> {
         ),
         #[cfg(feature = "ml-dsa")]
         Algorithm::Mldsa => run(
-            &mut DpeEnv {
+            &mut DpeEnvImpl {
                 crypto: &mut caliptra_dpe_crypto::RustCryptoImpl::new_mldsa87(),
                 platform: &mut DefaultPlatform(DefaultPlatformProfile::Mldsa87),
                 state: &mut state,

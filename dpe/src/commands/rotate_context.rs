@@ -84,26 +84,26 @@ impl CommandExecution for RotateCtxCmd {
     fn execute_serialized(
         &self,
         dpe: &mut DpeInstance,
-        env: &mut DpeEnv,
+        env: &mut dyn DpeEnv,
         locality: u32,
         out: &mut [u8],
     ) -> Result<usize, DpeErrorCode> {
-        if !env.state.support.rotate_context() {
+        if !env.state().support.rotate_context() {
             return Err(DpeErrorCode::InvalidCommand);
         } else {
             #[cfg(feature = "cfi")]
-            cfi_assert!(env.state.support.rotate_context());
+            cfi_assert!(env.state().support.rotate_context());
         }
         let response = mutresp::<NewHandleResp>(dpe.profile, out)?;
-        let idx = env.state.get_active_context_pos(&self.handle, locality)?;
+        let idx = env.state().get_active_context_pos(&self.handle, locality)?;
 
         // Make sure caller's locality does not already have a default context.
         if self.uses_target_is_default() {
             let default_context_idx = env
-                .state
+                .state()
                 .get_active_context_pos(&ContextHandle::default(), locality);
             let non_default_valid_handles_exist =
-                self.non_default_valid_handles_exist(env.state, locality, idx);
+                self.non_default_valid_handles_exist(env.state(), locality, idx);
             if default_context_idx.is_ok() || cfi_launder(non_default_valid_handles_exist) {
                 return Err(DpeErrorCode::InvalidArgument);
             } else {
@@ -120,7 +120,7 @@ impl CommandExecution for RotateCtxCmd {
         } else {
             dpe.generate_new_handle(env)?
         };
-        env.state.contexts[idx].handle = new_handle;
+        env.state().contexts[idx].handle = new_handle;
 
         *response = NewHandleResp {
             handle: new_handle,
