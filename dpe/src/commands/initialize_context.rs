@@ -96,18 +96,22 @@ impl CommandExecution for InitCtxCmd {
             (ContextType::Simulation, dpe.generate_new_handle(env)?)
         };
 
-        env.state.contexts[idx].activate(&ActiveContextArgs {
-            context_type,
-            locality,
-            handle: &handle,
-            tci_type: 0,
-            parent_idx: Context::ROOT_INDEX,
-            allow_x509: true,
-            uses_internal_input_info: false,
-            uses_internal_input_dice: false,
-            allow_export_cdi: true,
-            svn: 0,
-        });
+        env.state
+            .contexts
+            .get_mut(idx)
+            .ok_or(DpeErrorCode::InternalError)?
+            .activate(&ActiveContextArgs {
+                context_type,
+                locality,
+                handle: &handle,
+                tci_type: 0,
+                parent_idx: Context::ROOT_INDEX,
+                allow_x509: true,
+                uses_internal_input_info: false,
+                uses_internal_input_dice: false,
+                allow_export_cdi: true,
+                svn: 0,
+            });
         *response = NewHandleResp {
             handle,
             resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),

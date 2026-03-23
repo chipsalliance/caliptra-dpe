@@ -12,7 +12,7 @@ use crate::{
     response::{DpeErrorCode, GetProfileResp, Response, ResponseHdr},
     support::Support,
     tci::TciMeasurement,
-    DpeProfile, State, MAX_HANDLES,
+    DpeProfile, State,
 };
 #[cfg(feature = "cfi")]
 use caliptra_cfi_derive::cfi_impl_fn;
@@ -101,14 +101,17 @@ impl DpeInstance {
         let dpe = Self::new(env, profile)?;
 
         let locality = env.platform.get_auto_init_locality()?;
-        let idx = env
+        let (context, idx) = env
             .state
-            .get_active_context_pos(&ContextHandle::default(), locality)?;
-        let mut tmp_context = env.state.contexts[idx];
+            .get_active_context_and_idx(&ContextHandle::default(), locality)?;
+        let mut tmp_context = *context;
         // add measurement to auto-initialized context
         dpe.add_tci_measurement(env, &mut tmp_context, auto_init_measurement, locality)?;
-        env.state.contexts[idx] = tmp_context;
-        env.state.contexts[idx].tci.tci_type = tci_type;
+        tmp_context.tci.tci_type = tci_type;
+        *env.state
+            .contexts
+            .get_mut(idx)
+            .ok_or(DpeErrorCode::InternalError)? = tmp_context;
         Ok(dpe)
     }
 
@@ -205,14 +208,21 @@ impl DpeInstance {
         env: &mut DpeEnv<impl DpeTypes>,
         idx: usize,
     ) -> Result<(), DpeErrorCode> {
-        if idx >= MAX_HANDLES {
-            return Err(DpeErrorCode::MaxTcis);
-        }
-        if !env.state.contexts[idx].handle.is_default() {
-            env.state.contexts[idx].handle = self.generate_new_handle(env)?;
+        let handle = &env
+            .state
+            .contexts
+            .get(idx)
+            .ok_or(DpeErrorCode::MaxTcis)?
+            .handle;
+        if !handle.is_default() {
+            env.state
+                .contexts
+                .get_mut(idx)
+                .ok_or(DpeErrorCode::InternalError)?
+                .handle = self.generate_new_handle(env)?;
         } else {
             #[cfg(feature = "cfi")]
-            cfi_assert!(env.state.contexts[idx].handle.is_default());
+            cfi_assert!(handle.is_default());
         }
         Ok(())
     }
@@ -349,7 +359,11 @@ impl DpeInstance {
                 env.platform
                     .get_certificate_chain(offset, MAX_CHUNK_SIZE as u32, &mut cert_chunk)
             {
-                hasher.update(&cert_chunk[..len as usize])?;
+                hasher.update(
+                    cert_chunk
+                        .get(..len as usize)
+                        .ok_or(DpeErrorCode::InternalError)?,
+                )?;
                 offset += len;
             }
         }

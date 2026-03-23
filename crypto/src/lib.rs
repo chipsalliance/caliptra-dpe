@@ -14,6 +14,9 @@ pub use crate::rustcrypto::*;
 #[cfg(feature = "rustcrypto")]
 pub mod rustcrypto;
 
+#[cfg(feature = "dummy")]
+pub mod dummy;
+
 #[cfg(feature = "deterministic_rand")]
 pub use rand::*;
 

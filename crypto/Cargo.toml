@@ -8,6 +8,7 @@ edition = "2021"
 [features]
 default = ["cfi"]
 rustcrypto = ["dep:hkdf", "dep:p256", "dep:p384", "dep:rand", "dep:sha2", "dep:base64ct", "dep:ecdsa", "dep:sec1", "dep:ml-dsa", "dep:pkcs8"]
+dummy = [] # Dummy trait implementations that do nothing
 ml-dsa = []
 deterministic_rand = ["dep:rand"]
 cfi = ["caliptra-cfi-lib/cfi", "caliptra-cfi-lib/cfi-counter"]
