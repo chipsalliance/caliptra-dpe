@@ -5,7 +5,7 @@ compile_error!("select one of the features p256, p384, ml-dsa");
 
 use std::hint::black_box;
 
-pub use crypto::Ecdsa256RustCrypto as RustCrypto;
+use crypto::dummy::DummyCrypto;
 use dpe::DpeFlags;
 use dpe::DpeInstance;
 use dpe::DpeProfile;
@@ -16,7 +16,7 @@ use platform::dummy::{DefaultPlatform, DefaultPlatformProfile};
 struct SimTypes {}
 
 impl DpeTypes for SimTypes {
-    type Crypto<'a> = RustCrypto;
+    type Crypto<'a> = DummyCrypto;
 
     type Platform<'a> = DefaultPlatform;
 }
