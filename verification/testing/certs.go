@@ -33,7 +33,7 @@ var (
 
 // BasicConstraints represents an X.509 BasicConstraints extension
 type BasicConstraints struct {
-	IsCA              bool `asn1`
+	IsCA              bool `asn1:"optional,default:false"`
 	PathLenConstraint int  `asn1:"optional"`
 }
 
