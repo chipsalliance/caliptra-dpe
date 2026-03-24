@@ -589,10 +589,8 @@ mod tests {
         let cmd_bytes = binding.as_bytes();
 
         // Test deserialization
-        let cmd = SignCommand::deserialize(DPE_PROFILE, cmd_bytes);
-        assert!(cmd.is_ok());
-
-        match cmd.unwrap() {
+        let cmd = SignCommand::deserialize(DPE_PROFILE, cmd_bytes).unwrap();
+        match cmd {
             #[cfg(feature = "ml-dsa")]
             SignCommand::Mldsa87Raw(cmd) => {
                 assert_eq!(cmd.handle.0, SIMULATION_HANDLE.0);
