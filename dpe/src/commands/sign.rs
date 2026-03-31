@@ -17,6 +17,9 @@ use caliptra_cfi_lib::{cfi_assert, cfi_assert_bool, cfi_assert_ne};
 use caliptra_dpe_crypto::ecdsa::EcdsaSignature;
 use caliptra_dpe_crypto::{Crypto, SignData, Signature};
 use cfg_if::cfg_if;
+#[cfg(feature = "ml-dsa")]
+use core::mem::size_of;
+use core::mem::size_of_val;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 #[repr(C)]
@@ -24,7 +27,32 @@ use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 pub struct SignFlags(pub u32);
 
 bitflags! {
-    impl SignFlags: u32 {}
+    impl SignFlags: u32 {
+        const IS_RAW = 1 << 0;
+    }
+}
+
+#[cfg(feature = "ml-dsa")]
+const MLDSA87_RAW_MAX_SIZE: usize = 1024;
+
+#[cfg(feature = "ml-dsa")]
+#[repr(C)]
+#[derive(Debug, PartialEq, Eq, IntoBytes, FromBytes, Immutable, KnownLayout)]
+struct SignMldsa87Header {
+    pub handle: ContextHandle,
+    pub label: [u8; 48],
+    pub flags: SignFlags,
+}
+
+#[cfg(feature = "ml-dsa")]
+#[repr(C)]
+#[derive(Debug, PartialEq, Eq, IntoBytes, FromBytes, Immutable, KnownLayout)]
+pub struct SignMldsa87RawCmd {
+    pub handle: ContextHandle,
+    pub label: [u8; 48],
+    pub flags: SignFlags,
+    pub size: u32,
+    pub raw_data: [u8; MLDSA87_RAW_MAX_SIZE],
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -35,6 +63,8 @@ pub enum SignCommand<'a> {
     P384(&'a SignP384Cmd),
     #[cfg(feature = "ml-dsa")]
     Mldsa87(&'a SignMldsa87Cmd),
+    #[cfg(feature = "ml-dsa")]
+    Mldsa87Raw(&'a SignMldsa87RawCmd),
 }
 
 impl SignCommand<'_> {
@@ -45,10 +75,40 @@ impl SignCommand<'_> {
             #[cfg(feature = "p384")]
             DpeProfile::P384Sha384 => SignCommand::parse_command(SignCommand::P384, bytes),
             #[cfg(feature = "ml-dsa")]
-            DpeProfile::Mldsa87 => SignCommand::parse_command(SignCommand::Mldsa87, bytes),
+            DpeProfile::Mldsa87 => SignCommand::deserialize_mldsa87(bytes),
             _ => Err(DpeErrorCode::InvalidArgument)?,
         }
     }
+
+    #[cfg(feature = "ml-dsa")]
+    fn deserialize_mldsa87(bytes: &[u8]) -> Result<SignCommand, DpeErrorCode> {
+        // Only need the prefix to inspect the flags.
+        let header = SignMldsa87Header::ref_from_prefix(bytes)
+            .map_err(|_| DpeErrorCode::InvalidArgument)?
+            .0;
+
+        if header.flags.contains(SignFlags::IS_RAW) {
+            // Raw mode uses a fixed-size command struct.
+            if bytes.len() < size_of::<SignMldsa87RawCmd>() {
+                return Err(DpeErrorCode::InvalidArgument);
+            }
+
+            let cmd = SignMldsa87RawCmd::ref_from_prefix(bytes)
+                .map_err(|_| DpeErrorCode::InvalidArgument)?
+                .0;
+
+            let size = cmd.size as usize;
+            if size > MLDSA87_RAW_MAX_SIZE {
+                return Err(DpeErrorCode::InvalidArgument);
+            }
+
+            Ok(SignCommand::Mldsa87Raw(cmd))
+        } else {
+            // Legacy fixed-size command, safe to parse normally.
+            SignCommand::parse_command(SignCommand::Mldsa87, bytes)
+        }
+    }
+
     pub fn parse_command<'a, T: FromBytes + KnownLayout + Immutable + 'a>(
         build: impl FnOnce(&'a T) -> SignCommand<'a>,
         bytes: &'a [u8],
@@ -57,6 +117,7 @@ impl SignCommand<'_> {
             T::ref_from_prefix(bytes).map_err(|_| DpeErrorCode::InvalidArgument)?;
         Ok(build(prefix))
     }
+
     pub fn as_bytes(&self) -> &[u8] {
         match self {
             #[cfg(feature = "p256")]
@@ -65,6 +126,8 @@ impl SignCommand<'_> {
             SignCommand::P384(cmd) => cmd.as_bytes(),
             #[cfg(feature = "ml-dsa")]
             SignCommand::Mldsa87(cmd) => cmd.as_bytes(),
+            #[cfg(feature = "ml-dsa")]
+            SignCommand::Mldsa87Raw(cmd) => cmd.as_bytes(),
         }
     }
 }
@@ -97,6 +160,16 @@ impl CommandExecution for SignCommand<'_> {
                 &cmd.handle,
                 cmd.label.as_slice(),
                 SignData::Mu(cmd.digest.into()),
+            ),
+            #[cfg(feature = "ml-dsa")]
+            SignCommand::Mldsa87Raw(cmd) => (
+                &cmd.handle,
+                cmd.label.as_slice(),
+                SignData::Raw(
+                    cmd.raw_data
+                        .get(..cmd.size as usize)
+                        .ok_or(DpeErrorCode::InvalidArgument)?,
+                ),
             ),
         };
         let idx = env.state.get_active_context_pos(handle, locality)?;
@@ -267,6 +340,20 @@ impl CommandExecution for SignMldsa87Cmd {
     }
 }
 
+#[cfg(feature = "ml-dsa")]
+impl CommandExecution for SignMldsa87RawCmd {
+    #[cfg_attr(feature = "cfi", cfi_impl_fn)]
+    fn execute_serialized(
+        &self,
+        dpe: &mut DpeInstance,
+        env: &mut DpeEnv<impl DpeTypes>,
+        locality: u32,
+        out: &mut [u8],
+    ) -> Result<usize, DpeErrorCode> {
+        SignCommand::Mldsa87Raw(self).execute_serialized(dpe, env, locality, out)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -430,11 +517,10 @@ mod tests {
                 _ => panic!("Incorrect response type"),
             }
         };
-        let cert_bytes = certify_resp.cert().unwrap();
-
         match DPE_PROFILE {
             #[cfg(any(feature = "p256", feature = "p384"))]
             DpeProfile::P256Sha256 | DpeProfile::P384Sha384 => {
+                let cert_bytes = certify_resp.cert().unwrap();
                 let (r, s) = match sign_resp {
                     #[cfg(feature = "p256")]
                     SignResp::P256(resp) => (resp.sig_r.to_vec(), resp.sig_s.to_vec()),
@@ -455,11 +541,9 @@ mod tests {
             }
             #[cfg(feature = "ml-dsa")]
             DpeProfile::Mldsa87 => {
+                use crate::response::CertifyKeyResp;
                 use ml_dsa::signature::Verifier;
                 use ml_dsa::{EncodedSignature, EncodedVerifyingKey, VerifyingKey};
-                use x509_parser::nom::Parser;
-                use x509_parser::prelude::*;
-                use x509_parser::public_key::PublicKey;
 
                 let sig_bytes = match sign_resp {
                     SignResp::Mldsa87(resp) => resp.sig,
@@ -471,22 +555,153 @@ mod tests {
                 let sig =
                     ml_dsa::Signature::decode(&encoded_sig).expect("Error decoding signature");
 
-                let mut parser = X509CertificateParser::new().with_deep_parse_extensions(true);
-                let (_, cert) = parser.parse(cert_bytes).expect("Failed to parse cert");
-
-                let pub_key_parsed = cert.public_key().parsed().unwrap();
-                let key_bytes = match pub_key_parsed {
-                    PublicKey::Unknown(k) => k,
-                    _ => panic!("Expected unknown key type for ML-DSA"),
+                let key_bytes = match certify_resp {
+                    CertifyKeyResp::Mldsa87(resp) => resp.pubkey,
+                    _ => panic!("Expected Mldsa87 CertifyKeyResp"),
                 };
 
                 let encoded_vk =
-                    EncodedVerifyingKey::<ml_dsa::MlDsa87>::try_from(key_bytes).unwrap();
+                    EncodedVerifyingKey::<ml_dsa::MlDsa87>::try_from(key_bytes.as_slice()).unwrap();
                 let vk = VerifyingKey::<ml_dsa::MlDsa87>::decode(&encoded_vk);
 
                 assert!(vk.verify_mu((&TEST_SIGN_DIGEST).into(), &sig));
             }
             _ => panic!("Unsupported profile"),
         }
+    }
+
+    #[cfg(feature = "ml-dsa")]
+    #[test]
+    fn test_deserialize_sign_raw_mode() {
+        CfiCounter::reset_for_test();
+        // Test raw mode deserialization (fixed-size command with max payload)
+        let raw_data = b"test_raw_data_to_sign";
+        let mut raw_buf = [0u8; MLDSA87_RAW_MAX_SIZE];
+        raw_buf[..raw_data.len()].copy_from_slice(raw_data);
+
+        let binding = SignMldsa87RawCmd {
+            handle: SIMULATION_HANDLE,
+            label: TEST_LABEL,
+            flags: SignFlags::IS_RAW,
+            size: raw_data.len() as u32,
+            raw_data: raw_buf,
+        };
+        let cmd_bytes = binding.as_bytes();
+
+        // Test deserialization
+        let cmd = SignCommand::deserialize(DPE_PROFILE, cmd_bytes).unwrap();
+        match cmd {
+            #[cfg(feature = "ml-dsa")]
+            SignCommand::Mldsa87Raw(cmd) => {
+                assert_eq!(cmd.handle.0, SIMULATION_HANDLE.0);
+                assert_eq!(cmd.label, TEST_LABEL);
+                assert_eq!(&cmd.raw_data[..(cmd.size as usize)], raw_data);
+            }
+            _ => panic!("Expected Mldsa87Raw variant"),
+        }
+    }
+
+    #[cfg(feature = "ml-dsa")]
+    #[test]
+    fn test_deserialize_sign_raw_mode_invalid_buffer() {
+        CfiCounter::reset_for_test();
+        // Test that invalid buffer size (exceeds the max allowed) is rejected.
+        let cmd = SignMldsa87RawCmd {
+            handle: SIMULATION_HANDLE,
+            label: TEST_LABEL,
+            flags: SignFlags::IS_RAW,
+            size: (MLDSA87_RAW_MAX_SIZE as u32 + 1),
+            raw_data: [0u8; MLDSA87_RAW_MAX_SIZE],
+        };
+
+        // Test deserialization should fail
+        let cmd = SignCommand::deserialize(DPE_PROFILE, cmd.as_bytes());
+        assert!(cmd.is_err());
+        assert_eq!(cmd.unwrap_err(), DpeErrorCode::InvalidArgument);
+    }
+
+    #[cfg(feature = "ml-dsa")]
+    #[test]
+    fn test_deserialize_sign_non_raw_mode() {
+        CfiCounter::reset_for_test();
+        // Test that non-raw mode still works (backward compatibility)
+        let mut command = CommandHdr::new(DPE_PROFILE, Command::SIGN)
+            .as_bytes()
+            .to_vec();
+        command.extend(TEST_SIGN_CMD.as_bytes());
+
+        let cmd = Command::deserialize(DPE_PROFILE, &command);
+        assert!(cmd.is_ok());
+
+        match cmd.unwrap() {
+            Command::Sign(SignCommand::Mldsa87(_)) => {
+                // Expected
+            }
+            _ => panic!("Expected Mldsa87 variant for non-raw mode"),
+        }
+    }
+
+    #[cfg(feature = "ml-dsa")]
+    #[test]
+    fn test_sign_raw_mode_signature_is_valid() {
+        CfiCounter::reset_for_test();
+        let mut state = test_state();
+        let mut env = test_env(&mut state);
+        let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
+
+        let raw_data = b"test raw signing message";
+        let mut raw_buf = [0u8; MLDSA87_RAW_MAX_SIZE];
+        raw_buf[..raw_data.len()].copy_from_slice(raw_data);
+
+        let response = SignMldsa87RawCmd {
+            handle: ContextHandle::default(),
+            label: TEST_LABEL,
+            flags: SignFlags::IS_RAW,
+            size: raw_data.len() as u32,
+            raw_data: raw_buf,
+        }
+        .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
+        .unwrap();
+
+        let sign_resp = match response {
+            Response::Sign(SignResp::Mldsa87(resp)) => resp,
+            _ => panic!("Incorrect response type"),
+        };
+
+        let certify_resp = {
+            let cmd = CertifyKeyCmd {
+                handle: ContextHandle::default(),
+                flags: CertifyKeyFlags::empty(),
+                label: TEST_LABEL,
+                format: CertifyKeyCommand::FORMAT_X509,
+            };
+            match CertifyKeyCommand::from(&cmd)
+                .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
+                .unwrap()
+            {
+                Response::CertifyKey(resp) => resp,
+                _ => panic!("Incorrect response type"),
+            }
+        };
+
+        use crate::response::CertifyKeyResp;
+        use ml_dsa::signature::Verifier;
+        use ml_dsa::{EncodedSignature, EncodedVerifyingKey, VerifyingKey};
+
+        let sig_bytes = sign_resp.sig;
+        let encoded_sig = EncodedSignature::<ml_dsa::MlDsa87>::try_from(sig_bytes.as_slice())
+            .expect("Invalid signature length");
+        let sig = ml_dsa::Signature::decode(&encoded_sig).expect("Error decoding signature");
+
+        let key_bytes = match certify_resp {
+            CertifyKeyResp::Mldsa87(resp) => resp.pubkey,
+            _ => panic!("Expected Mldsa87 CertifyKeyResp"),
+        };
+
+        let encoded_vk =
+            EncodedVerifyingKey::<ml_dsa::MlDsa87>::try_from(key_bytes.as_slice()).unwrap();
+        let vk = VerifyingKey::<ml_dsa::MlDsa87>::decode(&encoded_vk);
+
+        assert!(vk.verify(raw_data, &sig).is_ok());
     }
 }

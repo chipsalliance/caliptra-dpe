@@ -1,8 +1,8 @@
 module github.com/chipsalliance/caliptra-dpe/verification/testing
 
-go 1.22.0
+go 1.24.0
 
-toolchain go1.24.8
+toolchain go1.24.13
 
 replace github.com/chipsalliance/caliptra-dpe/verification/client => ../client
 
@@ -32,9 +32,9 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/weppos/publicsuffix-go v0.30.2-0.20230730094716-a20f9abcc222 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/crypto v0.21.0 // indirect
-	golang.org/x/net v0.22.0 // indirect
-	golang.org/x/sys v0.18.0 // indirect
-	golang.org/x/text v0.14.0 // indirect
+	golang.org/x/crypto v0.48.0 // indirect
+	golang.org/x/net v0.49.0 // indirect
+	golang.org/x/sys v0.41.0 // indirect
+	golang.org/x/text v0.34.0 // indirect
 	google.golang.org/protobuf v1.32.0 // indirect
 )
