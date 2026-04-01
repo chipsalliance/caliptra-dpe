@@ -19,8 +19,7 @@ use caliptra_cfi_lib::cfi_launder;
 use caliptra_cfi_lib::{cfi_assert, cfi_assert_bool};
 use caliptra_dpe_crypto::{
     ecdsa::{EcdsaPubKey, EcdsaSignature},
-    Crypto, CryptoError, CryptoSuite, Digest, Hasher, PubKey, SignData, Signature,
-    MAX_EXPORTED_CDI_SIZE,
+    Crypto, CryptoError, CryptoSuite, Digest, PubKey, SignData, Signature, MAX_EXPORTED_CDI_SIZE,
 };
 #[cfg(not(feature = "disable_x509"))]
 use caliptra_dpe_platform::CertValidity;
@@ -2774,21 +2773,14 @@ fn get_subject_key_identifier(
     subject_key_identifier: &mut [u8],
 ) -> Result<(), DpeErrorCode> {
     // compute key identifier as SHA hash of the DER encoded subject public key
-    let mut hasher = env.crypto.hash_initialize()?;
-    match pub_key {
+    let hashed_pub_key = match pub_key {
         PubKey::Ecdsa(pub_key) => {
             let (x, y) = pub_key.as_slice();
-            hasher.update(&[0x04])?;
-            hasher.update(x)?;
-            hasher.update(y)?;
+            env.crypto.hash_all(&[&[0x04], &x, &y])?
         }
         #[cfg(feature = "ml-dsa")]
-        PubKey::Mldsa(pub_key) => {
-            hasher.update(pub_key.as_slice())?;
-        }
-    }
-
-    let hashed_pub_key = hasher.finish()?;
+        PubKey::Mldsa(pub_key) => env.crypto.hash(pub_key.as_slice())?,
+    };
     if hashed_pub_key.size() < MAX_KEY_IDENTIFIER_SIZE {
         return Err(DpeErrorCode::InternalError);
     }
