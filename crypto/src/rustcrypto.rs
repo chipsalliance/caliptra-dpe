@@ -6,9 +6,9 @@ use crate::{
         EcdsaSig,
     },
     hkdf::*,
-    Crypto, CryptoError, CryptoSuite, Digest, DigestAlgorithm, DigestType, ExportedCdiHandle,
-    Hasher, PubKey, SignData, SignDataAlgorithm, SignDataType, SignatureAlgorithm, SignatureType,
-    MAX_EXPORTED_CDI_SIZE,
+    CdiManager, Crypto, CryptoError, CryptoSuite, Digest, DigestAlgorithm, DigestType,
+    ExportedCdiHandle, Hasher, PubKey, SignData, SignDataAlgorithm, SignDataType,
+    SignatureAlgorithm, SignatureType, MAX_EXPORTED_CDI_SIZE,
 };
 
 #[cfg(feature = "ml-dsa")]
@@ -141,14 +141,136 @@ impl Hasher for RustCryptoHasher {
 // Currently only supports one CDI handle but in the future we may want to support multiple.
 const MAX_CDI_HANDLES: usize = 1;
 
+pub struct RustCryptoSigner {
+    priv_key: Vec<u8>,
+    signature_alg: SignatureAlgorithm,
+}
+
+impl crate::Signer for RustCryptoSigner {
+    fn sign(&mut self, data: &SignData) -> Result<super::Signature, CryptoError> {
+        match self.signature_alg {
+            SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit256) => {
+                let signing = p256::ecdsa::SigningKey::from_slice(self.priv_key.as_slice())?;
+                let sig =
+                    RustCryptoImpl::ecdsa_sign_data_inner(&signing, data, self.signature_alg)?;
+                Ok(EcdsaSig::from(sig).into())
+            }
+            SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384) => {
+                let signing = p384::ecdsa::SigningKey::from_slice(self.priv_key.as_slice())?;
+                let sig =
+                    RustCryptoImpl::ecdsa_sign_data_inner(&signing, data, self.signature_alg)?;
+                Ok(EcdsaSig::from(sig).into())
+            }
+            #[cfg(feature = "ml-dsa")]
+            SignatureAlgorithm::Mldsa(MldsaAlgorithm::Mldsa87) => {
+                let kp = MlDsa87::from_seed(
+                    self.priv_key
+                        .as_slice()
+                        .try_into()
+                        .map_err(|_| RUSTCRYPTO_ML_DSA_ERROR)?,
+                );
+                RustCryptoImpl::mldsa_sign_data_inner(&kp, data)
+            }
+        }
+    }
+
+    fn public_key(&mut self) -> Result<PubKey, CryptoError> {
+        match self.signature_alg {
+            SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit256) => {
+                let signing = p256::ecdsa::SigningKey::from_slice(self.priv_key.as_slice())?;
+                let verifying = p256::ecdsa::VerifyingKey::from(&signing);
+                let point = verifying.to_encoded_point(false);
+
+                let mut x = [0; EcdsaAlgorithm::Bit256.curve_size()];
+                let mut y = [0; EcdsaAlgorithm::Bit256.curve_size()];
+                x.clone_from_slice(point.x().ok_or(RUSTCRYPTO_ECDSA_ERROR)?.as_slice());
+                y.clone_from_slice(point.y().ok_or(RUSTCRYPTO_ECDSA_ERROR)?.as_slice());
+
+                Ok(EcdsaPub::from_slice(&x, &y).into())
+            }
+            SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384) => {
+                let signing = p384::ecdsa::SigningKey::from_slice(self.priv_key.as_slice())?;
+                let verifying = p384::ecdsa::VerifyingKey::from(&signing);
+                let point = verifying.to_encoded_point(false);
+
+                let mut x = [0; EcdsaAlgorithm::Bit384.curve_size()];
+                let mut y = [0; EcdsaAlgorithm::Bit384.curve_size()];
+                x.clone_from_slice(point.x().ok_or(RUSTCRYPTO_ECDSA_ERROR)?.as_slice());
+                y.clone_from_slice(point.y().ok_or(RUSTCRYPTO_ECDSA_ERROR)?.as_slice());
+
+                Ok(EcdsaPub::from_slice(&x, &y).into())
+            }
+            #[cfg(feature = "ml-dsa")]
+            SignatureAlgorithm::Mldsa(MldsaAlgorithm::Mldsa87) => {
+                let kp = MlDsa87::from_seed(
+                    self.priv_key
+                        .as_slice()
+                        .try_into()
+                        .map_err(|_| RUSTCRYPTO_ML_DSA_ERROR)?,
+                );
+                let verifying = kp.verifying_key();
+                let encoded_key = verifying.encode();
+                Ok(PubKey::Mldsa(
+                    MldsaPublicKey::read_from_bytes(encoded_key.as_bytes())
+                        .map_err(|_| RUSTCRYPTO_ML_DSA_ERROR)?,
+                ))
+            }
+        }
+    }
+}
+
+pub struct RustCryptoCdi {
+    cdi: Vec<u8>,
+    signature_alg: SignatureAlgorithm,
+    signer: RustCryptoSigner,
+}
+
+impl crate::CdiManager for RustCryptoCdi {
+    #[cfg_attr(feature = "cfi", cfi_impl_fn)]
+    fn derive_key_pair(
+        &mut self,
+        label: &[u8],
+        info: &[u8],
+    ) -> Result<&mut dyn crate::Signer, CryptoError> {
+        self.signer.priv_key = hkdf_get_priv_key(self.signature_alg, &self.cdi, label, info)?;
+        self.signer.signature_alg = self.signature_alg;
+        Ok(&mut self.signer)
+    }
+
+    fn as_slice(&self) -> &[u8] {
+        &self.cdi
+    }
+}
+
 pub struct RustCryptoImpl {
     rng: StdRng,
-    export_cdi_slots: Vec<(<Self as Crypto>::Cdi, ExportedCdiHandle)>,
-    hasher: RustCryptoHasher,
+    export_cdi_slots: Vec<(Vec<u8>, ExportedCdiHandle)>,
     signature_alg: SignatureAlgorithm,
     digest_alg: DigestAlgorithm,
     sign_data_alg: SignDataAlgorithm,
+    hasher: RustCryptoHasher,
+    cdi: RustCryptoCdi,
 }
+
+impl SignatureType for RustCryptoImpl {
+    fn signature_algorithm(&self) -> SignatureAlgorithm {
+        self.signature_alg
+    }
+}
+
+impl DigestType for RustCryptoImpl {
+    fn digest_algorithm(&self) -> DigestAlgorithm {
+        self.digest_alg
+    }
+}
+
+impl SignDataType for RustCryptoImpl {
+    fn sign_data_algorithm(&self) -> SignDataAlgorithm {
+        self.sign_data_alg
+    }
+}
+
+impl CryptoSuite for RustCryptoImpl {}
 
 impl RustCryptoImpl {
     #[cfg(not(feature = "deterministic_rand"))]
@@ -160,10 +282,18 @@ impl RustCryptoImpl {
         Self {
             rng: StdRng::from_entropy(),
             export_cdi_slots: Vec::new(),
-            hasher: RustCryptoHasher::new(digest_alg),
             signature_alg,
             digest_alg,
             sign_data_alg,
+            hasher: RustCryptoHasher::new(digest_alg),
+            cdi: RustCryptoCdi {
+                cdi: Vec::new(),
+                signature_alg,
+                signer: RustCryptoSigner {
+                    priv_key: Vec::new(),
+                    signature_alg,
+                },
+            },
         }
     }
 
@@ -178,10 +308,18 @@ impl RustCryptoImpl {
         Self {
             rng: seeded_rng,
             export_cdi_slots: Vec::new(),
-            hasher: RustCryptoHasher::new(digest_alg),
             signature_alg,
             digest_alg,
             sign_data_alg,
+            hasher: RustCryptoHasher::new(digest_alg),
+            cdi: RustCryptoCdi {
+                cdi: Vec::new(),
+                signature_alg,
+                signer: RustCryptoSigner {
+                    priv_key: Vec::new(),
+                    signature_alg,
+                },
+            },
         }
     }
 
@@ -210,84 +348,34 @@ impl RustCryptoImpl {
         )
     }
 
-    #[allow(clippy::type_complexity)]
-    fn derive_key_pair_inner(
-        &mut self,
-        cdi: &<Self as Crypto>::Cdi,
-        label: &[u8],
-        info: &[u8],
-    ) -> Result<(<Self as Crypto>::PrivKey, PubKey), CryptoError> {
-        match self.signature_algorithm() {
-            alg @ SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit256) => {
-                let secret = hkdf_get_priv_key(alg, cdi, label, info)?;
-                let signing = p256::ecdsa::SigningKey::from_slice(secret.as_slice())?;
-                let verifying = p256::ecdsa::VerifyingKey::from(&signing);
-                let point = verifying.to_encoded_point(false);
-
-                let mut x = [0; EcdsaAlgorithm::Bit256.curve_size()];
-                let mut y = [0; EcdsaAlgorithm::Bit256.curve_size()];
-                x.clone_from_slice(point.x().ok_or(RUSTCRYPTO_ECDSA_ERROR)?.as_slice());
-                y.clone_from_slice(point.y().ok_or(RUSTCRYPTO_ECDSA_ERROR)?.as_slice());
-
-                Ok((
-                    RustCryptoPrivKey(secret),
-                    EcdsaPub::from_slice(&x, &y).into(),
-                ))
+    fn ecdsa_sign_data_inner<C: PrimeCurve>(
+        key: &dyn PrehashSigner<Signature<C>>,
+        data: &SignData,
+        alg: SignatureAlgorithm,
+    ) -> Result<Signature<C>, CryptoError> {
+        match data {
+            SignData::Digest(dig) => Ok(key.sign_prehash(dig.as_slice())?),
+            SignData::Raw(raw) => {
+                let digest_bytes = match alg {
+                    SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit256) => {
+                        use sha2::{Digest, Sha256};
+                        Sha256::digest(raw).to_vec()
+                    }
+                    SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384) => {
+                        use sha2::{Digest, Sha384};
+                        Sha384::digest(raw).to_vec()
+                    }
+                    #[allow(unreachable_patterns)]
+                    _ => return Err(CryptoError::MismatchedAlgorithm),
+                };
+                Ok(key.sign_prehash(&digest_bytes)?)
             }
-            alg @ SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384) => {
-                let secret = hkdf_get_priv_key(alg, cdi, label, info)?;
-                let signing = p384::ecdsa::SigningKey::from_slice(secret.as_slice())?;
-                let verifying = p384::ecdsa::VerifyingKey::from(&signing);
-                let point = verifying.to_encoded_point(false);
-
-                let mut x = [0; EcdsaAlgorithm::Bit384.curve_size()];
-                let mut y = [0; EcdsaAlgorithm::Bit384.curve_size()];
-                x.clone_from_slice(point.x().ok_or(RUSTCRYPTO_ECDSA_ERROR)?.as_slice());
-                y.clone_from_slice(point.y().ok_or(RUSTCRYPTO_ECDSA_ERROR)?.as_slice());
-
-                Ok((
-                    RustCryptoPrivKey(secret),
-                    EcdsaPub::from_slice(&x, &y).into(),
-                ))
-            }
-            #[cfg(feature = "ml-dsa")]
-            alg @ SignatureAlgorithm::Mldsa(MldsaAlgorithm::Mldsa87) => {
-                let secret = hkdf_get_priv_key(alg, cdi, label, info)?;
-                let kp = MlDsa87::from_seed(
-                    secret
-                        .as_slice()
-                        .try_into()
-                        .map_err(|_| RUSTCRYPTO_ML_DSA_ERROR)?,
-                );
-                let verifying = kp.verifying_key();
-                let encoded_key = verifying.encode();
-                Ok((
-                    RustCryptoPrivKey(secret),
-                    PubKey::Mldsa(
-                        MldsaPublicKey::read_from_bytes(encoded_key.as_bytes())
-                            .map_err(|_| RUSTCRYPTO_ML_DSA_ERROR)?,
-                    ),
-                ))
-            }
+            _ => Err(CryptoError::MismatchedAlgorithm),
         }
     }
 
-    fn ecdsa_sign_data<C: PrimeCurve>(
-        &mut self,
-        key: &dyn PrehashSigner<Signature<C>>,
-        data: &SignData,
-    ) -> Result<Signature<C>, CryptoError> {
-        let hash = match data {
-            SignData::Digest(dig) => dig,
-            SignData::Raw(raw) => &self.hash(raw)?,
-            SignData::Mu(_) => return Err(CryptoError::MismatchedAlgorithm),
-        };
-        Ok(key.sign_prehash(hash.as_slice())?)
-    }
-
     #[cfg(feature = "ml-dsa")]
-    fn mldsa_sign_data(
-        &mut self,
+    fn mldsa_sign_data_inner(
         key: &KeyPair<MlDsa87>,
         data: &SignData,
     ) -> Result<super::Signature, CryptoError> {
@@ -303,30 +391,7 @@ impl RustCryptoImpl {
     }
 }
 
-impl SignatureType for RustCryptoImpl {
-    fn signature_algorithm(&self) -> SignatureAlgorithm {
-        self.signature_alg
-    }
-}
-
-impl DigestType for RustCryptoImpl {
-    fn digest_algorithm(&self) -> DigestAlgorithm {
-        self.digest_alg
-    }
-}
-
-impl SignDataType for RustCryptoImpl {
-    fn sign_data_algorithm(&self) -> SignDataAlgorithm {
-        self.sign_data_alg
-    }
-}
-
-pub struct RustCryptoPrivKey(Vec<u8>);
-
 impl Crypto for RustCryptoImpl {
-    type Cdi = Vec<u8>;
-    type PrivKey = RustCryptoPrivKey;
-
     fn hasher(&mut self) -> Result<&mut dyn Hasher, CryptoError> {
         Ok(&mut self.hasher)
     }
@@ -337,8 +402,15 @@ impl Crypto for RustCryptoImpl {
     }
 
     #[cfg_attr(feature = "cfi", cfi_impl_fn)]
-    fn derive_cdi(&mut self, measurement: &Digest, info: &[u8]) -> Result<Self::Cdi, CryptoError> {
-        hkdf_derive_cdi(self.signature_algorithm(), measurement, info)
+    fn derive_cdi(
+        &mut self,
+        measurement: &Digest,
+        info: &[u8],
+    ) -> Result<&mut dyn crate::CdiManager, CryptoError> {
+        let cdi_key = hkdf_derive_cdi(self.signature_alg, measurement, info)?;
+        self.cdi.cdi.clear();
+        self.cdi.cdi.extend_from_slice(cdi_key.as_slice());
+        Ok(&mut self.cdi)
     }
 
     #[cfg_attr(feature = "cfi", cfi_impl_fn)]
@@ -347,7 +419,7 @@ impl Crypto for RustCryptoImpl {
         measurement: &Digest,
         info: &[u8],
     ) -> Result<ExportedCdiHandle, CryptoError> {
-        let cdi = hkdf_derive_cdi(self.signature_algorithm(), measurement, info)?;
+        let cdi = hkdf_derive_cdi(self.signature_alg, measurement, info)?;
 
         for (stored_cdi, _) in self.export_cdi_slots.iter() {
             if constant_time_eq(stored_cdi.as_slice(), cdi.as_slice()) {
@@ -361,18 +433,9 @@ impl Crypto for RustCryptoImpl {
 
         let mut exported_cdi_handle = [0; MAX_EXPORTED_CDI_SIZE];
         self.rand_bytes(&mut exported_cdi_handle)?;
-        self.export_cdi_slots.push((cdi, exported_cdi_handle));
+        self.export_cdi_slots
+            .push((cdi.as_slice().to_vec(), exported_cdi_handle));
         Ok(exported_cdi_handle)
-    }
-
-    #[cfg_attr(feature = "cfi", cfi_impl_fn)]
-    fn derive_key_pair(
-        &mut self,
-        cdi: &Self::Cdi,
-        label: &[u8],
-        info: &[u8],
-    ) -> Result<(Self::PrivKey, PubKey), CryptoError> {
-        self.derive_key_pair_inner(cdi, label, info)
     }
 
     #[cfg_attr(feature = "cfi", cfi_impl_fn)]
@@ -381,27 +444,26 @@ impl Crypto for RustCryptoImpl {
         exported_handle: &ExportedCdiHandle,
         label: &[u8],
         info: &[u8],
-    ) -> Result<(Self::PrivKey, PubKey), CryptoError> {
-        let cdi = {
-            let mut cdi = None;
-            for (stored_cdi, stored_handle) in self.export_cdi_slots.iter() {
-                if constant_time_eq(stored_handle.as_slice(), exported_handle.as_slice()) {
-                    cdi = Some(stored_cdi.clone());
-                }
+    ) -> Result<&mut dyn crate::Signer, CryptoError> {
+        for (cdi, handle) in &self.export_cdi_slots {
+            if constant_time_eq(handle.as_slice(), exported_handle.as_slice()) {
+                self.cdi.cdi.clear();
+                self.cdi.cdi.extend_from_slice(cdi);
+                self.cdi.signature_alg = self.signature_alg;
+                return self.cdi.derive_key_pair(label, info);
             }
-            cdi.ok_or(CryptoError::InvalidExportedCdiHandle)
-        }?;
-        self.derive_key_pair_inner(&cdi, label, info)
+        }
+        Err(CryptoError::InvalidExportedCdiHandle)
     }
 
     fn sign_with_alias(&mut self, data: &SignData) -> Result<super::Signature, CryptoError> {
-        match self.signature_algorithm() {
+        match self.signature_alg {
             SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit256) => {
                 let signing_key = p256::ecdsa::SigningKey::from_sec1_pem(include_str!(concat!(
                     env!("OUT_DIR"),
                     "/alias_priv_256.pem"
                 )))?;
-                let sig: p256::ecdsa::Signature = self.ecdsa_sign_data(&signing_key, data)?;
+                let sig = Self::ecdsa_sign_data_inner(&signing_key, data, self.signature_alg)?;
                 Ok(EcdsaSig::from(sig).into())
             }
             SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384) => {
@@ -409,7 +471,7 @@ impl Crypto for RustCryptoImpl {
                     env!("OUT_DIR"),
                     "/alias_priv_384.pem"
                 )))?;
-                let sig: p384::ecdsa::Signature = self.ecdsa_sign_data(&signing_key, data)?;
+                let sig = Self::ecdsa_sign_data_inner(&signing_key, data, self.signature_alg)?;
                 Ok(EcdsaSig::from(sig).into())
             }
             #[cfg(feature = "ml-dsa")]
@@ -418,35 +480,8 @@ impl Crypto for RustCryptoImpl {
                     env!("OUT_DIR"),
                     "/alias_priv_mldsa_87.pem"
                 )))?;
-                self.mldsa_sign_data(&ml_dsa_secret, data)
-            }
-        }
-    }
-
-    fn sign_with_derived(
-        &mut self,
-        data: &SignData,
-        priv_key: &Self::PrivKey,
-        _pub_key: &PubKey,
-    ) -> Result<super::Signature, CryptoError> {
-        match self.signature_algorithm() {
-            SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit256) => {
-                let key = p256::ecdsa::SigningKey::from_slice(priv_key.0.as_slice())?;
-                let sig: p256::ecdsa::Signature = self.ecdsa_sign_data(&key, data)?;
-                Ok(EcdsaSig::from(sig).into())
-            }
-            SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384) => {
-                let key = p384::ecdsa::SigningKey::from_slice(priv_key.0.as_slice())?;
-                let sig: p384::ecdsa::Signature = self.ecdsa_sign_data(&key, data)?;
-                Ok(EcdsaSig::from(sig).into())
-            }
-            #[cfg(feature = "ml-dsa")]
-            SignatureAlgorithm::Mldsa(MldsaAlgorithm::Mldsa87) => {
-                let ml_dsa_secret = MlDsa87::from_seed(priv_key.0.as_slice().try_into().unwrap());
-                self.mldsa_sign_data(&ml_dsa_secret, data)
+                Self::mldsa_sign_data_inner(&ml_dsa_secret, data)
             }
         }
     }
 }
-
-impl CryptoSuite for RustCryptoImpl {}

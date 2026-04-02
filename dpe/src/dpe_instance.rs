@@ -584,7 +584,12 @@ pub mod tests {
             let digest = dpe
                 .compute_measurement_hash(&mut env, leaf_context_idx)
                 .unwrap();
-            let curr_cdi = env.crypto.derive_cdi(&digest, b"DPE").unwrap();
+            let curr_cdi = env
+                .crypto
+                .derive_cdi(&digest, b"DPE")
+                .unwrap()
+                .as_slice()
+                .to_vec();
             assert_ne!(last_cdi, curr_cdi);
 
             last_cdi = curr_cdi;
@@ -609,7 +614,12 @@ pub mod tests {
             })
             .unwrap();
 
-        let answer = env.crypto.derive_cdi(&digest, b"DPE").unwrap();
+        let answer = env
+            .crypto
+            .derive_cdi(&digest, b"DPE")
+            .unwrap()
+            .as_slice()
+            .to_vec();
         assert_eq!(answer, last_cdi);
     }
 
@@ -638,7 +648,12 @@ pub mod tests {
         let digest = dpe
             .compute_measurement_hash(&mut env, child_context_idx)
             .unwrap();
-        let cdi_with_internal_input_info = env.crypto.derive_cdi(&digest, b"DPE").unwrap();
+        let cdi_with_internal_input_info = env
+            .crypto
+            .derive_cdi(&digest, b"DPE")
+            .unwrap()
+            .as_slice()
+            .to_vec();
         let parent_context = &env.state.contexts[parent_context_idx];
         let child_context = &env.state.contexts[child_context_idx];
         assert!(child_context.uses_internal_input_info());
@@ -662,7 +677,12 @@ pub mod tests {
                 &&internal_input_info[..INTERNAL_INPUT_INFO_SIZE],
             ])
             .unwrap();
-        let answer = env.crypto.derive_cdi(&digest, b"DPE").unwrap();
+        let answer = env
+            .crypto
+            .derive_cdi(&digest, b"DPE")
+            .unwrap()
+            .as_slice()
+            .to_vec();
         assert_eq!(answer, cdi_with_internal_input_info);
     }
 
@@ -691,7 +711,12 @@ pub mod tests {
         let digest = dpe
             .compute_measurement_hash(&mut env, child_context_idx)
             .unwrap();
-        let cdi_with_internal_input_dice = env.crypto.derive_cdi(&digest, b"DPE").unwrap();
+        let cdi_with_internal_input_dice = env
+            .crypto
+            .derive_cdi(&digest, b"DPE")
+            .unwrap()
+            .as_slice()
+            .to_vec();
         let parent_context = &env.state.contexts[parent_context_idx];
         let child_context = &env.state.contexts[child_context_idx];
         assert!(child_context.uses_internal_input_dice());
@@ -708,7 +733,12 @@ pub mod tests {
                 &cert_chain,
             ])
             .unwrap();
-        let answer = env.crypto.derive_cdi(&digest, b"DPE").unwrap();
+        let answer = env
+            .crypto
+            .derive_cdi(&digest, b"DPE")
+            .unwrap()
+            .as_slice()
+            .to_vec();
         assert_eq!(answer, cdi_with_internal_input_dice)
     }
 

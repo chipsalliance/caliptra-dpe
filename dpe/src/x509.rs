@@ -2924,27 +2924,27 @@ fn create_dpe_cert_or_csr(
 
     let mut exported_cdi_handle = None;
 
-    let key_pair = match cert_type {
+    let pub_key = match cert_type {
         CertificateType::Exported => {
             let exported_handle = env.crypto.derive_exported_cdi(&digest, args.cdi_label)?;
             exported_cdi_handle = Some(exported_handle);
             env.crypto
-                .derive_key_pair_exported(&exported_handle, args.key_label, args.context)
+                .derive_key_pair_exported(&exported_handle, args.key_label, args.context)?
+                .public_key()
         }
         CertificateType::Leaf => {
-            let cdi = env.crypto.derive_cdi(&digest, args.cdi_label)?;
             env.crypto
-                .derive_key_pair(&cdi, args.key_label, args.context)
+                .derive_pub_key(&digest, args.cdi_label, args.key_label, args.context)
         }
     };
-    if cfi_launder(key_pair.is_ok()) {
+    if cfi_launder(pub_key.is_ok()) {
         #[cfg(feature = "cfi")]
-        cfi_assert!(key_pair.is_ok());
+        cfi_assert!(pub_key.is_ok());
     } else {
         #[cfg(feature = "cfi")]
-        cfi_assert!(key_pair.is_err());
+        cfi_assert!(pub_key.is_err());
     }
-    let (priv_key, pub_key) = okref(&key_pair)?;
+    let pub_key = okref(&pub_key)?;
     let mut subj_serial = [0u8; MAX_HASH_SIZE * 2];
     let subject_name = get_subject_name(env, &cert_type, pub_key, &mut subj_serial)?;
 
@@ -2987,8 +2987,22 @@ fn create_dpe_cert_or_csr(
 
     let mut sign_cb = |data: &[u8], use_derived: bool| {
         if use_derived {
-            env.crypto
-                .sign_with_derived(&SignData::Raw(data), priv_key, pub_key)
+            match cert_type {
+                CertificateType::Exported => {
+                    let exported_handle =
+                        exported_cdi_handle.ok_or(CryptoError::CryptoLibError(0))?;
+                    env.crypto
+                        .derive_key_pair_exported(&exported_handle, args.key_label, args.context)?
+                        .sign(&SignData::Raw(data))
+                }
+                CertificateType::Leaf => env.crypto.sign_with_derived(
+                    &digest,
+                    args.cdi_label,
+                    args.key_label,
+                    args.context,
+                    &SignData::Raw(data),
+                ),
+            }
         } else {
             env.crypto.sign_with_alias(&SignData::Raw(data))
         }

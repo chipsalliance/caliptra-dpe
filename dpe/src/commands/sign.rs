@@ -258,7 +258,7 @@ fn sign(
     let cdi = env.crypto.derive_cdi(&cdi_digest, b"DPE")?;
     let profile = dpe.profile;
     let context = profile.key_context();
-    let key_pair = env.crypto.derive_key_pair(&cdi, label, context);
+    let key_pair = cdi.derive_key_pair(label, context);
     if cfi_launder(key_pair.is_ok()) {
         #[cfg(feature = "cfi")]
         cfi_assert!(key_pair.is_ok());
@@ -266,9 +266,8 @@ fn sign(
         #[cfg(feature = "cfi")]
         cfi_assert!(key_pair.is_err());
     }
-    let (priv_key, pub_key) = key_pair?;
-
-    Ok(env.crypto.sign_with_derived(data, &priv_key, &pub_key)?)
+    let signer = key_pair?;
+    Ok(signer.sign(data)?)
 }
 
 #[repr(C)]
