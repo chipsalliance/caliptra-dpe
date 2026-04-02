@@ -1,6 +1,6 @@
 // Licensed under the Apache-2.0 license
 
-use crate::{DigestAlgorithm, DigestType, SignatureAlgorithm, SignatureType};
+use crate::{SignatureAlgorithm, SignatureType};
 
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
@@ -49,12 +49,9 @@ impl MldsaAlgorithm {
 pub struct ExternalMu(pub [u8; MldsaAlgorithm::Mldsa87.external_mu_size()]);
 
 impl SignatureType for ExternalMu {
-    const SIGNATURE_ALGORITHM: SignatureAlgorithm =
-        SignatureAlgorithm::Mldsa(MldsaAlgorithm::Mldsa87);
-}
-
-impl DigestType for ExternalMu {
-    const DIGEST_ALGORITHM: DigestAlgorithm = DigestAlgorithm::Sha384;
+    fn signature_algorithm(&self) -> SignatureAlgorithm {
+        SignatureAlgorithm::Mldsa(MldsaAlgorithm::Mldsa87)
+    }
 }
 
 #[derive(Clone, FromBytes, IntoBytes, KnownLayout, Immutable)]

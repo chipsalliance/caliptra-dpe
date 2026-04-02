@@ -10,7 +10,6 @@ use {
     caliptra_dpe::dpe_instance::{DpeEnv, DpeTypes},
     caliptra_dpe::response::Response,
     caliptra_dpe::{support::Support, DpeInstance},
-    caliptra_dpe_crypto::RustCryptoImpl,
     caliptra_dpe_platform::default::DefaultPlatform,
     pem::{encode_config, EncodeConfig, LineEnding, Pem},
     zerocopy::IntoBytes,
@@ -20,33 +19,39 @@ use {
 mod profile {
     use super::*;
     pub use caliptra_dpe::commands::CertifyKeyP256Cmd as CertifyKeyCmd;
-    pub use caliptra_dpe_crypto::Ecdsa256RustCrypto as RustCrypto;
     pub const DPE_PROFILE: caliptra_dpe::DpeProfile = caliptra_dpe::DpeProfile::P256Sha256;
     pub const PLATFORM_PROFILE: DefaultPlatformProfile = DefaultPlatformProfile::P256;
+    pub fn new_crypto() -> caliptra_dpe_crypto::RustCryptoImpl {
+        caliptra_dpe_crypto::RustCryptoImpl::new_ecc256()
+    }
 }
 
 #[cfg(feature = "p384")]
 mod profile {
     use super::*;
     pub use caliptra_dpe::commands::CertifyKeyP384Cmd as CertifyKeyCmd;
-    pub use caliptra_dpe_crypto::Ecdsa384RustCrypto as RustCrypto;
     pub const DPE_PROFILE: caliptra_dpe::DpeProfile = caliptra_dpe::DpeProfile::P384Sha384;
     pub const PLATFORM_PROFILE: DefaultPlatformProfile = DefaultPlatformProfile::P384;
+    pub fn new_crypto() -> caliptra_dpe_crypto::RustCryptoImpl {
+        caliptra_dpe_crypto::RustCryptoImpl::new_ecc384()
+    }
 }
 
 #[cfg(feature = "ml-dsa")]
 mod profile {
     use super::*;
     pub use caliptra_dpe::commands::CertifyKeyMldsa87Cmd as CertifyKeyCmd;
-    pub use caliptra_dpe_crypto::MldsaRustCrypto as RustCrypto;
     pub const DPE_PROFILE: caliptra_dpe::DpeProfile = caliptra_dpe::DpeProfile::Mldsa87;
     pub const PLATFORM_PROFILE: DefaultPlatformProfile = DefaultPlatformProfile::Mldsa87;
+    pub fn new_crypto() -> caliptra_dpe_crypto::RustCryptoImpl {
+        caliptra_dpe_crypto::RustCryptoImpl::new_mldsa87()
+    }
 }
 
 pub struct TestTypes {}
 
 impl DpeTypes for TestTypes {
-    type Crypto<'a> = RustCrypto;
+    type Crypto<'a> = caliptra_dpe_crypto::RustCryptoImpl;
 
     type Platform<'a> = DefaultPlatform;
 }
@@ -145,7 +150,7 @@ fn main() {
     };
 
     let mut env = DpeEnv::<TestTypes> {
-        crypto: RustCryptoImpl::new(),
+        crypto: profile::new_crypto(),
         platform: DefaultPlatform(PLATFORM_PROFILE),
         state: &mut caliptra_dpe::State::new(support, flags),
     };

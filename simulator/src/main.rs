@@ -23,25 +23,31 @@ use std::process;
 #[cfg(feature = "p256")]
 mod profile {
     use super::*;
-    pub use caliptra_dpe_crypto::Ecdsa256RustCrypto as RustCrypto;
     pub const DPE_PROFILE: caliptra_dpe::DpeProfile = caliptra_dpe::DpeProfile::P256Sha256;
     pub const PLATFORM_PROFILE: DefaultPlatformProfile = DefaultPlatformProfile::P256;
+    pub fn new_crypto() -> caliptra_dpe_crypto::RustCryptoImpl {
+        caliptra_dpe_crypto::RustCryptoImpl::new_ecc256()
+    }
 }
 
 #[cfg(feature = "p384")]
 mod profile {
     use super::*;
-    pub use caliptra_dpe_crypto::Ecdsa384RustCrypto as RustCrypto;
     pub const DPE_PROFILE: caliptra_dpe::DpeProfile = caliptra_dpe::DpeProfile::P384Sha384;
     pub const PLATFORM_PROFILE: DefaultPlatformProfile = DefaultPlatformProfile::P384;
+    pub fn new_crypto() -> caliptra_dpe_crypto::RustCryptoImpl {
+        caliptra_dpe_crypto::RustCryptoImpl::new_ecc384()
+    }
 }
 
 #[cfg(feature = "ml-dsa")]
 mod profile {
     use super::*;
-    pub use caliptra_dpe_crypto::MldsaRustCrypto as RustCrypto;
     pub const DPE_PROFILE: caliptra_dpe::DpeProfile = caliptra_dpe::DpeProfile::Mldsa87;
     pub const PLATFORM_PROFILE: DefaultPlatformProfile = DefaultPlatformProfile::Mldsa87;
+    pub fn new_crypto() -> caliptra_dpe_crypto::RustCryptoImpl {
+        caliptra_dpe_crypto::RustCryptoImpl::new_mldsa87()
+    }
 }
 
 const SOCKET_PATH: &str = "/tmp/dpe-sim.socket";
@@ -144,7 +150,7 @@ struct Args {
 struct SimTypes {}
 
 impl DpeTypes for SimTypes {
-    type Crypto<'a> = RustCrypto;
+    type Crypto<'a> = caliptra_dpe_crypto::RustCryptoImpl;
 
     type Platform<'a> = DefaultPlatform;
 }
@@ -189,7 +195,7 @@ fn main() -> std::io::Result<()> {
     );
 
     let mut env = DpeEnv::<SimTypes> {
-        crypto: <SimTypes as DpeTypes>::Crypto::new(),
+        crypto: profile::new_crypto(),
         platform: DefaultPlatform(PLATFORM_PROFILE),
         state: &mut caliptra_dpe::State::new(support, flags),
     };

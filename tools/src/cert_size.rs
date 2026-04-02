@@ -22,22 +22,28 @@ use self::ml_dsa::*;
 #[cfg(feature = "p256")]
 mod ec {
     pub use caliptra_dpe::commands::CertifyKeyP256Cmd as CertifyKeyCmd;
-    pub use caliptra_dpe_crypto::Ecdsa256RustCrypto as EcdsaRustCrypto;
+    pub fn new_crypto() -> caliptra_dpe_crypto::RustCryptoImpl {
+        caliptra_dpe_crypto::RustCryptoImpl::new_ecc256()
+    }
 }
 #[cfg(feature = "p384")]
 mod ec {
     pub use caliptra_dpe::commands::CertifyKeyP384Cmd as CertifyKeyCmd;
-    pub use caliptra_dpe_crypto::Ecdsa384RustCrypto as EcdsaRustCrypto;
+    pub fn new_crypto() -> caliptra_dpe_crypto::RustCryptoImpl {
+        caliptra_dpe_crypto::RustCryptoImpl::new_ecc384()
+    }
 }
 #[cfg(feature = "ml-dsa")]
 mod ml_dsa {
     pub use caliptra_dpe::commands::CertifyKeyMldsa87Cmd as CertifyKeyMldsaCmd;
-    pub use caliptra_dpe_crypto::MldsaRustCrypto;
 
     pub struct SimTypesMldsa;
     impl caliptra_dpe::dpe_instance::DpeTypes for SimTypesMldsa {
-        type Crypto<'a> = MldsaRustCrypto;
+        type Crypto<'a> = caliptra_dpe_crypto::RustCryptoImpl;
         type Platform<'a> = caliptra_dpe_platform::default::DefaultPlatform;
+    }
+    pub fn new_crypto() -> caliptra_dpe_crypto::RustCryptoImpl {
+        caliptra_dpe_crypto::RustCryptoImpl::new_mldsa87()
     }
 }
 
@@ -108,7 +114,7 @@ struct Args {
 struct SimTypesEc;
 #[cfg(any(feature = "p256", feature = "p384"))]
 impl DpeTypes for SimTypesEc {
-    type Crypto<'a> = EcdsaRustCrypto;
+    type Crypto<'a> = caliptra_dpe_crypto::RustCryptoImpl;
     type Platform<'a> = DefaultPlatform;
 }
 
@@ -203,7 +209,7 @@ fn main() -> Result<()> {
         #[cfg(any(feature = "p256", feature = "p384"))]
         Algorithm::Ec => run(
             &mut DpeEnv::<SimTypesEc> {
-                crypto: EcdsaRustCrypto::new(),
+                crypto: ec::new_crypto(),
                 platform: DefaultPlatform(args.algorithm.into()),
                 state: &mut state,
             },
@@ -212,7 +218,7 @@ fn main() -> Result<()> {
         #[cfg(feature = "ml-dsa")]
         Algorithm::Mldsa => run(
             &mut DpeEnv::<SimTypesMldsa> {
-                crypto: MldsaRustCrypto::new(),
+                crypto: ml_dsa::new_crypto(),
                 platform: DefaultPlatform(DefaultPlatformProfile::Mldsa87),
                 state: &mut state,
             },

@@ -24,7 +24,7 @@ use caliptra_dpe::{
 };
 use caliptra_dpe_platform::default::{DefaultPlatform, DefaultPlatformProfile, AUTO_INIT_LOCALITY};
 
-use caliptra_dpe_crypto::Ecdsa256RustCrypto;
+use caliptra_dpe_crypto::RustCryptoImpl;
 
 // https://github.com/chipsalliance/caliptra-sw/issues/624 will consider matrix fuzzing.
 const SUPPORT: Support = Support::all();
@@ -32,7 +32,7 @@ const SUPPORT: Support = Support::all();
 struct SimTypes {}
 
 impl DpeTypes for SimTypes {
-    type Crypto<'a> = Ecdsa256RustCrypto;
+    type Crypto<'a> = RustCryptoImpl;
     type Platform<'a> = DefaultPlatform;
 }
 
@@ -52,7 +52,7 @@ fn harness(data: &[u8]) {
     );
 
     let mut env = DpeEnv::<SimTypes> {
-        crypto: Ecdsa256RustCrypto::new(),
+        crypto: RustCryptoImpl::new_ecc256(),
         platform: DefaultPlatform(DefaultPlatformProfile::P256),
         state: &mut caliptra_dpe::State::new(SUPPORT, DpeFlags::empty()),
     };
