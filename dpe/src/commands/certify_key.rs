@@ -428,6 +428,7 @@ mod tests {
         State, MAX_HANDLES, TCI_SIZE,
     };
     use caliptra_cfi_lib::CfiCounter;
+    use caliptra_dpe_crypto::artifacts;
     #[cfg(feature = "ml-dsa")]
     use caliptra_dpe_crypto::ml_dsa::{MldsaAlgorithm, MldsaPublicKey};
     use caliptra_dpe_crypto::{
@@ -675,12 +676,12 @@ mod tests {
             match DPE_PROFILE.alg() {
                 SignatureAlgorithm::Ecdsa(algorithm) => {
                     let priv_key = match algorithm {
-                        EcdsaAlgorithm::Bit256 => EcKey::private_key_from_der(include_bytes!(
-                            "../../../platform/src/test_data/key_256.der"
-                        )),
-                        EcdsaAlgorithm::Bit384 => EcKey::private_key_from_der(include_bytes!(
-                            "../../../platform/src/test_data/key_384.der"
-                        )),
+                        EcdsaAlgorithm::Bit256 => {
+                            EcKey::private_key_from_der(artifacts::KEY_P256_DER)
+                        }
+                        EcdsaAlgorithm::Bit384 => {
+                            EcKey::private_key_from_der(artifacts::KEY_P384_DER)
+                        }
                     }
                     .unwrap();
                     let curve = match algorithm {
@@ -716,10 +717,9 @@ mod tests {
                     //      See https://github.com/rust-openssl/rust-openssl/pull/2405
                     //      for the current state of ml-dsa OpenSSL bindings.
                     use pkcs8::DecodePrivateKey;
-                    let key: ml_dsa::KeyPair<ml_dsa::MlDsa87> = ml_dsa::KeyPair::from_pkcs8_der(
-                        include_bytes!("../../../platform/src/test_data/key_mldsa_87.der"),
-                    )
-                    .expect("Error decoding ML-DSA private key");
+                    let key: ml_dsa::KeyPair<ml_dsa::MlDsa87> =
+                        ml_dsa::KeyPair::from_pkcs8_der(artifacts::KEY_MLDSA_87_DER)
+                            .expect("Error decoding ML-DSA private key");
 
                     info!(
                         "CSR signature length: {}",

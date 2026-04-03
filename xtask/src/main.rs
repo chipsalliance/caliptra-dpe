@@ -48,8 +48,6 @@ pub enum TestSubcommands {
     Verification,
     /// Run cert parser tests
     Certs,
-    /// Generate test data
-    GenerateTestData,
 }
 
 #[derive(Parser)]
@@ -161,7 +159,6 @@ fn run_test_command(args: &TestArgs) -> Result<()> {
         Some(TestSubcommands::Unit) => run_unit_tests()?,
         Some(TestSubcommands::Verification) => run_verification_tests()?,
         Some(TestSubcommands::Certs) => run_cert_parser_tests()?,
-        Some(TestSubcommands::GenerateTestData) => generate_test_data()?,
         None => run_tests()?,
     }
     Ok(())
@@ -263,148 +260,6 @@ fn run_cert_parser_test(profile: &str) -> Result<()> {
         .dir(script_dir)
         .env("DPE_PROFILE", profile)
         .run()?;
-    Ok(())
-}
-
-fn generate_test_data() -> Result<()> {
-    let test_data_dir = Path::new("platform/src/test_data");
-
-    let openssl = |args: &[&str]| Cmd::new("openssl").args(args).dir(test_data_dir).run();
-
-    openssl(&[
-        "ecparam",
-        "-name",
-        "prime256v1",
-        "-genkey",
-        "-noout",
-        "-out",
-        "key_256.pem",
-    ])?;
-    openssl(&[
-        "req",
-        "-new",
-        "-key",
-        "key_256.pem",
-        "-x509",
-        "-nodes",
-        "-days",
-        "365000",
-        "-out",
-        "cert_256.pem",
-        "-addext",
-        "keyUsage=critical,keyCertSign",
-        "-subj",
-        "/CN=DPE Test Alias/",
-    ])?;
-    openssl(&[
-        "ec",
-        "-in",
-        "key_256.pem",
-        "-outform",
-        "DER",
-        "-out",
-        "key_256.der",
-    ])?;
-    openssl(&[
-        "x509",
-        "-in",
-        "cert_256.pem",
-        "-outform",
-        "DER",
-        "-out",
-        "cert_256.der",
-    ])?;
-
-    openssl(&[
-        "ecparam",
-        "-name",
-        "secp384r1",
-        "-genkey",
-        "-noout",
-        "-out",
-        "key_384.pem",
-    ])?;
-    openssl(&[
-        "req",
-        "-new",
-        "-key",
-        "key_384.pem",
-        "-x509",
-        "-nodes",
-        "-days",
-        "365000",
-        "-out",
-        "cert_384.pem",
-        "-addext",
-        "keyUsage=critical,keyCertSign",
-        "-subj",
-        "/CN=DPE Test Alias/",
-    ])?;
-    openssl(&[
-        "ec",
-        "-in",
-        "key_384.pem",
-        "-outform",
-        "DER",
-        "-out",
-        "key_384.der",
-    ])?;
-    openssl(&[
-        "x509",
-        "-in",
-        "cert_384.pem",
-        "-outform",
-        "DER",
-        "-out",
-        "cert_384.der",
-    ])?;
-
-    openssl(&[
-        "genpkey",
-        "-algorithm",
-        "ML-DSA-87",
-        "-provparam",
-        "ml-dsa.output_formats=seed-only",
-        "-out",
-        "key_mldsa_87.pem",
-    ])?;
-    openssl(&[
-        "req",
-        "-new",
-        "-key",
-        "key_mldsa_87.pem",
-        "-x509",
-        "-nodes",
-        "-days",
-        "365000",
-        "-out",
-        "cert_mldsa_87.pem",
-        "-addext",
-        "keyUsage=critical,keyCertSign",
-        "-subj",
-        "/CN=DPE Test Alias/",
-    ])?;
-    openssl(&[
-        "pkey",
-        "-in",
-        "key_mldsa_87.pem",
-        "-outform",
-        "DER",
-        "-provparam",
-        "ml-dsa.output_formats=seed-only",
-        "-out",
-        "key_mldsa_87.der",
-    ])?;
-    openssl(&[
-        "x509",
-        "-in",
-        "cert_mldsa_87.pem",
-        "-outform",
-        "DER",
-        "-out",
-        "cert_mldsa_87.der",
-    ])?;
-
     Ok(())
 }
 

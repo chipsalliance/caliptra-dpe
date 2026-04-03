@@ -457,29 +457,22 @@ impl Crypto for RustCryptoImpl {
     }
 
     fn sign_with_alias(&mut self, data: &SignData) -> Result<super::Signature, CryptoError> {
+        use crate::artifacts;
         match self.signature_alg {
             SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit256) => {
-                let signing_key = p256::ecdsa::SigningKey::from_sec1_pem(include_str!(concat!(
-                    env!("OUT_DIR"),
-                    "/alias_priv_256.pem"
-                )))?;
+                let signing_key = p256::ecdsa::SigningKey::from_sec1_pem(artifacts::KEY_P256_PEM)?;
                 let sig = Self::ecdsa_sign_data_inner(&signing_key, data, self.signature_alg)?;
                 Ok(EcdsaSig::from(sig).into())
             }
             SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384) => {
-                let signing_key = p384::ecdsa::SigningKey::from_sec1_pem(include_str!(concat!(
-                    env!("OUT_DIR"),
-                    "/alias_priv_384.pem"
-                )))?;
+                let signing_key = p384::ecdsa::SigningKey::from_sec1_pem(artifacts::KEY_P384_PEM)?;
                 let sig = Self::ecdsa_sign_data_inner(&signing_key, data, self.signature_alg)?;
                 Ok(EcdsaSig::from(sig).into())
             }
             #[cfg(feature = "ml-dsa")]
             SignatureAlgorithm::Mldsa(MldsaAlgorithm::Mldsa87) => {
-                let ml_dsa_secret = KeyPair::<MlDsa87>::from_pkcs8_pem(include_str!(concat!(
-                    env!("OUT_DIR"),
-                    "/alias_priv_mldsa_87.pem"
-                )))?;
+                let ml_dsa_secret =
+                    KeyPair::<MlDsa87>::from_pkcs8_pem(artifacts::KEY_MLDSA_87_PEM)?;
                 Self::mldsa_sign_data_inner(&ml_dsa_secret, data)
             }
         }

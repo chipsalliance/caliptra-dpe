@@ -2,8 +2,11 @@
 
 [package]
 name = "caliptra-dpe-simulator"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
 
 [features]
 default = ["p384", "rustcrypto"]
@@ -11,16 +14,16 @@ p256 = ["caliptra-dpe/p256"]
 p384 = ["caliptra-dpe/p384"]
 # TODO(clundin): Placeholder name until we decide pattern for DPE profiles and feature flags.
 ml-dsa = ["caliptra-dpe/ml-dsa"]
-rustcrypto = ["caliptra-dpe-crypto/rustcrypto", "caliptra-dpe-platform/rustcrypto"]
+rustcrypto = ["caliptra-dpe-crypto/rustcrypto"]
 cfi = ["caliptra-dpe/cfi"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 ctrlc = { version = "3.0", features = ["termination"] }
-clap = { version = "4.1.8", features = ["derive"] }
+clap.workspace = true
 log = "0.4.17"
 env_logger = "0.10.0"
-caliptra-dpe = { path = "../dpe", default-features = false }
-caliptra-dpe-crypto = { path = "../crypto", default-features = false }
-caliptra-dpe-platform = { path = "../platform", default-features = false}
+caliptra-dpe = { workspace = true, default-features = false }
+caliptra-dpe-crypto = { workspace = true, default-features = false }
+caliptra-dpe-platform = { workspace = true, default-features = false, features = ["rustcrypto"] }

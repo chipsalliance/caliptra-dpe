@@ -17,22 +17,20 @@ pub enum DefaultPlatformProfile {
 // Run ./generate.sh to generate all test certs and test private keys
 impl DefaultPlatformProfile {
     pub fn pem(&self) -> &'static [u8] {
+        use caliptra_dpe_crypto::artifacts;
         match self {
-            DefaultPlatformProfile::P256 => include_bytes!("test_data/cert_256.pem"),
-            DefaultPlatformProfile::P384 => include_bytes!("test_data/cert_384.pem"),
-            DefaultPlatformProfile::Mldsa87 => {
-                include_bytes!("test_data/cert_mldsa_87.pem")
-            }
+            DefaultPlatformProfile::P256 => artifacts::CERT_P256_PEM.as_bytes(),
+            DefaultPlatformProfile::P384 => artifacts::CERT_P384_PEM.as_bytes(),
+            DefaultPlatformProfile::Mldsa87 => artifacts::CERT_MLDSA_87_PEM.as_bytes(),
         }
     }
 
     pub fn cert_chain(&self) -> &'static [u8] {
+        use caliptra_dpe_crypto::artifacts;
         match self {
-            DefaultPlatformProfile::P256 => include_bytes!("test_data/cert_256.der"),
-            DefaultPlatformProfile::P384 => include_bytes!("test_data/cert_384.der"),
-            DefaultPlatformProfile::Mldsa87 => {
-                include_bytes!("test_data/cert_mldsa_87.der")
-            }
+            DefaultPlatformProfile::P256 => artifacts::CERT_P256_DER,
+            DefaultPlatformProfile::P384 => artifacts::CERT_P384_DER,
+            DefaultPlatformProfile::Mldsa87 => artifacts::CERT_MLDSA_87_DER,
         }
     }
 }
