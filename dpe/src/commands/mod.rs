@@ -72,7 +72,9 @@ impl Command<'_> {
     /// * `bytes` - serialized command
     pub fn deserialize(profile: DpeProfile, bytes: &[u8]) -> Result<Command, DpeErrorCode> {
         let header = CommandHdr::try_from_with_profile(profile, bytes)?;
-        let bytes = &bytes[size_of::<CommandHdr>()..];
+        let bytes = bytes
+            .get(size_of::<CommandHdr>()..)
+            .ok_or(DpeErrorCode::InvalidCommand)?;
 
         match header.cmd_id {
             Command::GET_PROFILE => Self::parse_command(Command::GetProfile, bytes),

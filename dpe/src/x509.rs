@@ -596,7 +596,10 @@ impl CertWriter<'_> {
         // Size of concatenated tcb infos
         let tcb_infos_size = measurements.tci_nodes.len()
             * self.get_tcb_info_size(
-                &measurements.tci_nodes[0],
+                measurements
+                    .tci_nodes
+                    .first()
+                    .ok_or(DpeErrorCode::InternalError)?,
                 measurements.supports_recursive,
                 /*tagged=*/ true,
             )?;
@@ -1081,11 +1084,10 @@ impl CertWriter<'_> {
 
     /// Write a single `byte` to the certificate buffer
     fn encode_byte(&mut self, byte: u8) -> Result<usize, DpeErrorCode> {
-        if self.offset >= self.certificate.len() {
-            return Err(DpeErrorCode::InternalError);
-        }
-
-        self.certificate[self.offset] = byte;
+        *self
+            .certificate
+            .get_mut(self.offset)
+            .ok_or(DpeErrorCode::InternalError)? = byte;
         self.offset += 1;
         Ok(1)
     }
@@ -1136,10 +1138,11 @@ impl CertWriter<'_> {
             bytes_written += self.encode_byte(0)?;
         }
 
-        if integer_offset >= integer.len() {
-            return Err(DpeErrorCode::InternalError);
-        }
-        bytes_written += self.encode_bytes(&integer[integer_offset..])?;
+        bytes_written += self.encode_bytes(
+            integer
+                .get(integer_offset..)
+                .ok_or(DpeErrorCode::InternalError)?,
+        )?;
 
         Ok(bytes_written)
     }
@@ -1654,7 +1657,10 @@ impl CertWriter<'_> {
 
         let tcb_infos_size = if !measurements.tci_nodes.is_empty() {
             self.get_tcb_info_size(
-                &measurements.tci_nodes[0],
+                measurements
+                    .tci_nodes
+                    .first()
+                    .ok_or(DpeErrorCode::InternalError)?,
                 measurements.supports_recursive,
                 /*tagged=*/ true,
             )? * measurements.tci_nodes.len()
@@ -2739,7 +2745,7 @@ fn get_subject_name<'a>(
     env.crypto.get_pubkey_serial(pub_key, subj_serial)?;
 
     // The serial number of the subject can be at most 64 bytes
-    let truncated_subj_serial = &subj_serial[..64];
+    let truncated_subj_serial = subj_serial.get(..64).ok_or(DpeErrorCode::InvalidArgument)?;
 
     let cn: &[u8] = match cert_type {
         CertificateType::Leaf => b"DPE Leaf",
@@ -2764,7 +2770,9 @@ fn get_tci_nodes<'a>(
     if tcb_count > MAX_HANDLES {
         return Err(DpeErrorCode::InternalError);
     }
-    Ok(&mut nodes[..tcb_count])
+    nodes
+        .get_mut(..tcb_count)
+        .ok_or(DpeErrorCode::InternalError)
 }
 
 fn get_subject_key_identifier(
@@ -2785,7 +2793,12 @@ fn get_subject_key_identifier(
         return Err(DpeErrorCode::InternalError);
     }
     // truncate key identifier to 20 bytes
-    subject_key_identifier.copy_from_slice(&hashed_pub_key.as_slice()[..MAX_KEY_IDENTIFIER_SIZE]);
+    subject_key_identifier.copy_from_slice(
+        hashed_pub_key
+            .as_slice()
+            .get(..MAX_KEY_IDENTIFIER_SIZE)
+            .ok_or(DpeErrorCode::InternalError)?,
+    );
     Ok(())
 }
 
@@ -3018,7 +3031,9 @@ fn create_dpe_cert_or_csr(
                 if issuer_len > MAX_ISSUER_NAME_SIZE {
                     return Err(DpeErrorCode::InternalError);
                 }
-                &issuer_name[..issuer_len]
+                issuer_name
+                    .get(..issuer_len)
+                    .ok_or(DpeErrorCode::InternalError)?
             };
             CertOrCsrArgs::Cert {
                 issuer_name,
