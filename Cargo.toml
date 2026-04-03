@@ -8,6 +8,7 @@ members = [
     "platform",
     "simulator",
     "tools",
+    "xtask",
 ]
 
 [workspace.dependencies]
