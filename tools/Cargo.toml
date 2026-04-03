@@ -2,8 +2,11 @@
 
 [package]
 name = "caliptra-dpe-tools"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
 
 [features]
 default = ["p384"]
@@ -19,13 +22,14 @@ hybrid = ["p384", "ml-dsa"]
 cfi = ["caliptra-dpe/cfi"]
 
 [dependencies]
-anyhow = "1.0.70"
-caliptra-dpe = {path = "../dpe", default-features = false}
-clap = { version = "4.1.8", features = ["derive"] }
-caliptra-dpe-crypto = {path = "../crypto", default-features = false, features = ["deterministic_rand", "rustcrypto"]}
+anyhow.workspace = true
+caliptra-dpe = { workspace = true, default-features = false }
+clap.workspace = true
+caliptra-dpe-crypto = { workspace = true, default-features = false, features = ["deterministic_rand", "rustcrypto"] }
 pem = "2"
-caliptra-dpe-platform = {path = "../platform", default-features = false, features = ["rustcrypto"]}
+caliptra-dpe-platform = { workspace = true, default-features = false, features = ["rustcrypto"] }
 zerocopy.workspace = true
+
 
 [[bin]]
 name = "sample_dpe_cert"

@@ -2,8 +2,11 @@
 
 [package]
 name = "caliptra-dpe"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
 
 [features]
 default = ["p384", "cfi"]
@@ -31,12 +34,12 @@ bitflags = "2.4.0"
 caliptra-cfi-lib = { workspace = true, default-features = false }
 caliptra-cfi-derive.workspace = true
 constant_time_eq.workspace = true
-caliptra-dpe-crypto = {path = "../crypto", default-features = false}
-caliptra-dpe-platform = {path = "../platform", default-features = false}
-ufmt = { git = "https://github.com/korran/ufmt.git", rev = "1d0743c1ffffc68bc05ca8eeb81c166192863f33", features = ["inline"] }
+caliptra-dpe-crypto = { workspace = true, default-features = false }
+caliptra-dpe-platform = { workspace = true, default-features = false }
+ufmt.workspace = true
 zerocopy.workspace = true
-zeroize = { version = "1.8.2", default-features = false, features = ["zeroize_derive"] }
-cfg-if = "1.0.0"
+zeroize.workspace = true
+cfg-if.workspace = true
 log = { version = "0.4.28", optional = true }
 
 [dev-dependencies]
@@ -44,8 +47,8 @@ asn1 = "0.13.0"
 caliptra-cfi-lib = { workspace = true, features = ["cfi-test"] }
 const-oid = "0.10.2"
 x509-parser = "0.15.1"
-caliptra-dpe-crypto = {path = "../crypto", features = ["deterministic_rand", "rustcrypto"]}
-caliptra-dpe-platform = {path = "../platform", default-features = false, features = ["rustcrypto"]}
+caliptra-dpe-crypto = { workspace = true, features = ["deterministic_rand", "rustcrypto"] }
+caliptra-dpe-platform = { workspace = true, default-features = false, features = ["rustcrypto"] }
 cms = "0.2.2"
 der = "0.7.8"
 spki = "0.7.2"
