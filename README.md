@@ -12,6 +12,18 @@ Crates:
 
 This project uses the `xtask` pattern for common development tasks. You can run them using `cargo xtask <command>`.
 
+### Development Environment
+
+A Nix flake is provided to set up a consistent development environment with all necessary dependencies (Rust, Go, uv, OpenSSL, etc.).
+
+If you have Nix installed with flakes enabled, you can enter the development environment by running:
+
+```bash
+nix develop
+```
+
+### xtask Commands
+
 Available commands:
 * `cargo xtask ci`: Run all CI checks (format, lint, test, etc.)
 * `cargo xtask test`: Run all tests.

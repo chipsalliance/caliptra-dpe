@@ -501,9 +501,6 @@ fn run_verification_test(profile: &str, crypto: &str) -> Result<()> {
 fn run_fuzz_checks() -> Result<()> {
     let fuzz_dir = Path::new("dpe/fuzz");
     let nightly = "nightly-2025-07-08";
-    Cmd::new("rustup")
-        .args(["toolchain", "install", nightly])
-        .run()?;
     cargo()
         .args([
             &format!("+{}", nightly),
