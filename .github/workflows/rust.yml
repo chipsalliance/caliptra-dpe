@@ -1,0 +1,108 @@
+name: Rust Lint, Build and Test
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+      - name: Cache cargo registry and build
+        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 #v2.8.2
+      - name: Install clippy
+        run: rustup component add clippy
+      - name: lint dpe
+        run: |
+          cargo fmt -p caliptra-dpe -v --check
+          cargo clippy -p caliptra-dpe --features=p256 --no-default-features -- --deny=warnings
+          cargo clippy -p caliptra-dpe --features=p384 --no-default-features -- --deny=warnings
+          cargo clippy -p caliptra-dpe --features=ml-dsa --no-default-features -- --deny=warnings
+          cargo clippy -p caliptra-dpe --features=hybrid --no-default-features -- --deny=warnings
+      - name: lint crypto
+        run: |
+          cargo fmt -p caliptra-dpe-crypto -v --check
+          cargo clippy -p caliptra-dpe-crypto --no-default-features -- --deny=warnings
+      - name: lint platform
+        run: |
+          cargo fmt -p caliptra-dpe-platform -v --check
+          cargo clippy -p caliptra-dpe-platform --no-default-features -- --deny=warnings
+      - name: lint tools
+        run: |
+          cargo fmt -p caliptra-dpe-tools -v --check
+          cargo clippy -p caliptra-dpe-tools --features=p256 --no-default-features -- --deny=warnings
+          cargo clippy -p caliptra-dpe-tools --features=p384 --no-default-features -- --deny=warnings
+          cargo clippy -p caliptra-dpe-tools --features=ml-dsa --no-default-features -- --deny=warnings
+      - name: lint simulator
+        run: |
+          cargo fmt -p caliptra-dpe-simulator -v --check
+          cargo clippy -p caliptra-dpe-simulator --features=p256,rustcrypto --no-default-features -- --deny=warnings
+          cargo clippy -p caliptra-dpe-simulator --features=p384,rustcrypto --no-default-features -- --deny=warnings
+          cargo clippy -p caliptra-dpe-simulator --features=ml-dsa,rustcrypto --no-default-features -- --deny=warnings
+  dpe:
+    runs-on: ubuntu-latest
+    needs: lint
+    strategy:
+      matrix:
+        profile: [p256, p384, ml-dsa, hybrid]
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+      - name: Cache cargo registry and build
+        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 #v2.8.2
+      - name: build
+        run: cargo build -p caliptra-dpe --features=${{ matrix.profile }} --no-default-features
+      - name: build(cfi)
+        run: cargo build -p caliptra-dpe --features=${{ matrix.profile }},cfi --no-default-features
+      - name: test
+        if: ${{ !(matrix.profile == 'hybrid') }}
+        run: cargo test -p caliptra-dpe --features=${{ matrix.profile }},cfi --no-default-features -- --test-threads=1
+  crypto:
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+      - name: Cache cargo registry and build
+        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 #v2.8.2
+      - name: build
+        run: cargo build -p caliptra-dpe-crypto --no-default-features
+      - name: test
+        run: cargo test -p caliptra-dpe-crypto --no-default-features
+  platform:
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+      - name: Cache cargo registry and build
+        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 #v2.8.2
+      - name: build
+        run: cargo build -p caliptra-dpe-platform --no-default-features
+      - name: test
+        run: cargo test -p caliptra-dpe-platform --no-default-features
+  tools_and_simulator:
+    runs-on: ubuntu-latest
+    needs: lint
+    strategy:
+      matrix:
+        profile: [p256, p384, ml-dsa]
+        package: [caliptra-dpe-tools, caliptra-dpe-simulator]
+        include:
+          - package: caliptra-dpe-simulator
+            crypto: rustcrypto
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+      - name: Cache cargo registry and build
+        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 #v2.8.2
+      - name: build
+        run: cargo build -p ${{ matrix.package }} --features=${{ matrix.profile }},${{ matrix.crypto }} --no-default-features
+      - name: test
+        run: cargo test -p ${{ matrix.package }} --features=${{ matrix.profile }},${{ matrix.crypto }} --no-default-features

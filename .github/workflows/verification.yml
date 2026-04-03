@@ -1,0 +1,74 @@
+name: Verification tests
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  verification_testing:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        profile: [p256, p384, ml-dsa]
+        crypto: [rustcrypto]
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+      - name: Cache cargo registry and build
+        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 #v2.8.2
+      - name: build simulator
+        run: cargo build -p caliptra-dpe-simulator --features=${{ matrix.profile }},${{ matrix.crypto }} --no-default-features
+      - name: run verification tests
+        run: |
+          cd verification/testing
+          go test -v
+  fuzzer_build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./dpe/fuzz
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+      - name: Cache cargo registry and build
+        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 #v2.8.2
+        with:
+          cache-all-crates: true
+      - name: Install nightly toolchain
+        run: rustup toolchain install nightly-2025-07-08
+      - name: Install fuzzing tools
+        run: cargo +nightly-2025-07-08 install cargo-fuzz cargo-afl --locked
+      - name: Build afl config
+        run: cargo +nightly-2025-07-08 afl config --build
+        continue-on-error: true
+      - name: cargo fmt
+        run: cargo fmt --check
+      - name: cargo clippy
+        run: |
+          cargo clippy --features libfuzzer-sys
+          cargo clippy --features afl
+      - name: fuzz build
+        run: cargo +nightly-2025-07-08 fuzz build --features libfuzzer-sys
+      - name: afl build
+        run: cargo +nightly-2025-07-08 afl build --features afl
+  cert_verification:
+    strategy:
+      matrix:
+        profile: [p256, p384, ml-dsa]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+      - name: Cache cargo registry and build
+        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5 #v2.8.2
+      - name: Install dependencies
+        run: |
+          go install golang.org/x/lint/golint@latest
+          sudo snap install astral-uv --classic
+      - name: Run cert test
+        run: DPE_PROFILE=${{ matrix.profile }} ./verification/cert_parser/run_tests.sh
+        
