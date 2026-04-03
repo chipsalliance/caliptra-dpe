@@ -1,0 +1,13 @@
+# Licensed under the Apache-2.0 license
+
+[package]
+name = "xtask"
+version = "0.1.0"
+authors = ["Caliptra DPE Project"]
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+anyhow = "1.0"
+clap = { version = "4.3", features = ["derive"] }
