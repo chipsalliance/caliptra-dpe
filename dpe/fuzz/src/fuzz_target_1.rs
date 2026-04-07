@@ -17,10 +17,7 @@ use simplelog::{Config, WriteLogger};
 use std::fs::OpenOptions;
 
 use caliptra_dpe::{
-    dpe_instance::{DpeEnv, DpeTypes},
-    response::Response,
-    support::Support,
-    DpeInstance, DpeProfile,
+    dpe_instance::DpeEnv, response::Response, support::Support, DpeInstance, DpeProfile,
 };
 use caliptra_dpe_platform::default::{DefaultPlatform, DefaultPlatformProfile, AUTO_INIT_LOCALITY};
 
@@ -28,13 +25,6 @@ use caliptra_dpe_crypto::RustCryptoImpl;
 
 // https://github.com/chipsalliance/caliptra-sw/issues/624 will consider matrix fuzzing.
 const SUPPORT: Support = Support::all();
-
-struct SimTypes {}
-
-impl DpeTypes for SimTypes {
-    type Crypto<'a> = RustCryptoImpl;
-    type Platform<'a> = DefaultPlatform;
-}
 
 // Although fuzzers use persistent mode, using an internal worker shortens the lifetime.
 // So, no risk of double-initialising or destroying the context.
@@ -51,9 +41,9 @@ fn harness(data: &[u8]) {
             .unwrap(),
     );
 
-    let mut env = DpeEnv::<SimTypes> {
-        crypto: RustCryptoImpl::new_ecc256(),
-        platform: DefaultPlatform(DefaultPlatformProfile::P256),
+    let mut env = DpeEnv {
+        crypto: &mut RustCryptoImpl::new_ecc256(),
+        platform: &mut DefaultPlatform(DefaultPlatformProfile::P256),
         state: &mut caliptra_dpe::State::new(SUPPORT, DpeFlags::empty()),
     };
     let mut dpe = DpeInstance::new(&mut env, DpeProfile::P256Sha256).unwrap();

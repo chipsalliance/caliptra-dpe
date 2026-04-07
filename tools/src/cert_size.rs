@@ -5,19 +5,12 @@ use caliptra_dpe::{
     commands::{CertifyKeyCommand, CommandExecution, DeriveContextCmd, DeriveContextFlags},
     DpeFlags, DpeProfile, MAX_HANDLES,
 };
-use caliptra_dpe::{
-    dpe_instance::{DpeEnv, DpeTypes},
-    response::Response,
-    support::Support,
-    DpeInstance,
-};
+use caliptra_dpe::{dpe_instance::DpeEnv, response::Response, support::Support, DpeInstance};
 use caliptra_dpe_platform::default::{DefaultPlatform, DefaultPlatformProfile};
 use clap::{Parser, ValueEnum};
 
 #[cfg(any(feature = "p256", feature = "p384"))]
 use self::ec::*;
-#[cfg(feature = "ml-dsa")]
-use self::ml_dsa::*;
 
 #[cfg(feature = "p256")]
 mod ec {
@@ -31,19 +24,6 @@ mod ec {
     pub use caliptra_dpe::commands::CertifyKeyP384Cmd as CertifyKeyCmd;
     pub fn new_crypto() -> caliptra_dpe_crypto::RustCryptoImpl {
         caliptra_dpe_crypto::RustCryptoImpl::new_ecc384()
-    }
-}
-#[cfg(feature = "ml-dsa")]
-mod ml_dsa {
-    pub use caliptra_dpe::commands::CertifyKeyMldsa87Cmd as CertifyKeyMldsaCmd;
-
-    pub struct SimTypesMldsa;
-    impl caliptra_dpe::dpe_instance::DpeTypes for SimTypesMldsa {
-        type Crypto<'a> = caliptra_dpe_crypto::RustCryptoImpl;
-        type Platform<'a> = caliptra_dpe_platform::default::DefaultPlatform;
-    }
-    pub fn new_crypto() -> caliptra_dpe_crypto::RustCryptoImpl {
-        caliptra_dpe_crypto::RustCryptoImpl::new_mldsa87()
     }
 }
 
@@ -110,19 +90,7 @@ struct Args {
     cert: bool,
 }
 
-#[cfg(any(feature = "p256", feature = "p384"))]
-struct SimTypesEc;
-#[cfg(any(feature = "p256", feature = "p384"))]
-impl DpeTypes for SimTypesEc {
-    type Crypto<'a> = caliptra_dpe_crypto::RustCryptoImpl;
-    type Platform<'a> = DefaultPlatform;
-}
-
-fn send_certify_key(
-    dpe: &mut DpeInstance,
-    env: &mut DpeEnv<impl DpeTypes>,
-    args: &Args,
-) -> Result<Response> {
+fn send_certify_key(dpe: &mut DpeInstance, env: &mut DpeEnv, args: &Args) -> Result<Response> {
     let format = if args.cert {
         CertifyKeyCommand::FORMAT_X509
     } else {
@@ -137,7 +105,7 @@ fn send_certify_key(
         .execute(dpe, env, 0)
         .map_err(|e| anyhow!("DPE error certifying key: {e:?}")),
         #[cfg(feature = "ml-dsa")]
-        Algorithm::Mldsa => CertifyKeyMldsaCmd {
+        Algorithm::Mldsa => caliptra_dpe::commands::CertifyKeyMldsa87Cmd {
             format,
             ..Default::default()
         }
@@ -148,7 +116,7 @@ fn send_certify_key(
     }
 }
 
-fn run<T: DpeTypes>(env: &mut DpeEnv<T>, args: &Args) -> Result<()> {
+fn run(env: &mut DpeEnv, args: &Args) -> Result<()> {
     let mut dpe = DpeInstance::new(env, args.algorithm.into())
         .map_err(|e| anyhow!("DPE error creating instance: {e:?}"))?;
 
@@ -208,18 +176,18 @@ fn main() -> Result<()> {
     match args.algorithm {
         #[cfg(any(feature = "p256", feature = "p384"))]
         Algorithm::Ec => run(
-            &mut DpeEnv::<SimTypesEc> {
-                crypto: ec::new_crypto(),
-                platform: DefaultPlatform(args.algorithm.into()),
+            &mut DpeEnv {
+                crypto: &mut ec::new_crypto(),
+                platform: &mut DefaultPlatform(args.algorithm.into()),
                 state: &mut state,
             },
             &args,
         ),
         #[cfg(feature = "ml-dsa")]
         Algorithm::Mldsa => run(
-            &mut DpeEnv::<SimTypesMldsa> {
-                crypto: ml_dsa::new_crypto(),
-                platform: DefaultPlatform(DefaultPlatformProfile::Mldsa87),
+            &mut DpeEnv {
+                crypto: &mut caliptra_dpe_crypto::RustCryptoImpl::new_mldsa87(),
+                platform: &mut DefaultPlatform(DefaultPlatformProfile::Mldsa87),
                 state: &mut state,
             },
             &args,
