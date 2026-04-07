@@ -1,13 +1,15 @@
 # Licensed under the Apache-2.0 license
 
 [package]
-name = "xtask"
+name = "caliptra-dpe-test-artifacts"
 version.workspace = true
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[features]
+
 [dependencies]
-anyhow.workspace = true
-clap.workspace = true
+
+[build-dependencies]

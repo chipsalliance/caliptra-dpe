@@ -111,6 +111,7 @@ dependencies = [
  "base64ct",
  "caliptra-cfi-derive",
  "caliptra-cfi-lib",
+ "caliptra-dpe-test-artifacts",
  "constant_time_eq",
  "ecdsa",
  "hkdf",
@@ -130,10 +131,15 @@ name = "caliptra-dpe-platform"
 version = "0.1.0"
 dependencies = [
  "arrayvec",
+ "caliptra-dpe-crypto",
  "cfg-if",
  "ufmt",
  "x509-cert",
 ]
+
+[[package]]
+name = "caliptra-dpe-test-artifacts"
+version = "0.1.0"
 
 [[package]]
 name = "cc"
