@@ -29,12 +29,12 @@ fn main() {
 
     let algorithms = [
         Algorithm {
-            suffix: "256",
+            suffix: "p256",
             gen_args: &["ecparam", "-name", "prime256v1", "-genkey", "-noout"],
             pkey_args: &["ec"],
         },
         Algorithm {
-            suffix: "384",
+            suffix: "p384",
             gen_args: &["ecparam", "-name", "secp384r1", "-genkey", "-noout"],
             pkey_args: &["ec"],
         },

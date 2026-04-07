@@ -28,14 +28,14 @@ include_artifacts!(
     CERT_P256_DER,
     KEY_P256_PEM,
     KEY_P256_DER,
-    "256"
+    "p256"
 );
 include_artifacts!(
     CERT_P384_PEM,
     CERT_P384_DER,
     KEY_P384_PEM,
     KEY_P384_DER,
-    "384"
+    "p384"
 );
 include_artifacts!(
     CERT_MLDSA_87_PEM,
