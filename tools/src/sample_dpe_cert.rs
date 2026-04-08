@@ -1,6 +1,6 @@
 // Licensed under the Apache-2.0 license
 
-use caliptra_dpe::{tci::TciMeasurement, DpeFlags};
+use caliptra_dpe::{dpe_instance::DpeEnvImpl, tci::TciMeasurement, DpeFlags};
 use caliptra_dpe_platform::default::DefaultPlatformProfile;
 use clap::{Parser, ValueEnum};
 use profile::*;
@@ -54,7 +54,7 @@ pub struct TestTypes {}
 // TcbInfo populated.
 fn add_tcb_info(
     dpe: &mut DpeInstance,
-    env: &mut DpeEnv,
+    env: &mut dyn DpeEnv,
     data: &TciMeasurement,
     tci_type: u32,
     svn: u32,
@@ -85,7 +85,7 @@ fn add_tcb_info(
     };
 }
 
-fn certify_key(dpe: &mut DpeInstance, env: &mut DpeEnv, format: u32) -> Vec<u8> {
+fn certify_key(dpe: &mut DpeInstance, env: &mut dyn DpeEnv, format: u32) -> Vec<u8> {
     let certify_key_cmd = CertifyKeyCmd {
         handle: ContextHandle::default(),
         flags: CertifyKeyFlags::empty(),
@@ -143,7 +143,7 @@ fn main() {
         DpeFlags::empty()
     };
 
-    let mut env = DpeEnv {
+    let mut env = DpeEnvImpl {
         crypto: &mut profile::new_crypto(),
         platform: &mut DefaultPlatform(PLATFORM_PROFILE),
         state: &mut caliptra_dpe::State::new(support, flags),

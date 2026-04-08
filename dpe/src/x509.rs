@@ -19,7 +19,7 @@ use caliptra_cfi_lib::cfi_launder;
 use caliptra_cfi_lib::{cfi_assert, cfi_assert_bool};
 use caliptra_dpe_crypto::{
     ecdsa::{EcdsaPubKey, EcdsaSignature},
-    CryptoError, Digest, PubKey, SignData, Signature, MAX_EXPORTED_CDI_SIZE,
+    CryptoError, CryptoSuite, Digest, PubKey, SignData, Signature, MAX_EXPORTED_CDI_SIZE,
 };
 #[cfg(not(feature = "disable_x509"))]
 use caliptra_dpe_platform::CertValidity;
@@ -2721,22 +2721,22 @@ pub(crate) struct CreateDpeCertResult {
 
 fn get_dpe_measurement_digest(
     dpe: &mut DpeInstance,
-    env: &mut DpeEnv,
+    env: &mut dyn DpeEnv,
     handle: &ContextHandle,
     locality: u32,
 ) -> Result<Digest, DpeErrorCode> {
-    let parent_idx = env.state.get_active_context_pos(handle, locality)?;
+    let parent_idx = env.state().get_active_context_pos(handle, locality)?;
     let digest = dpe.compute_measurement_hash(env, parent_idx)?;
     Ok(digest)
 }
 
 fn get_subject_name<'a>(
-    env: &mut DpeEnv,
+    crypto: &mut dyn CryptoSuite,
     cert_type: &CertificateType,
     pub_key: &'a PubKey,
     subj_serial: &'a mut [u8],
 ) -> Result<Name<'a>, DpeErrorCode> {
-    env.crypto.get_pubkey_serial(pub_key, subj_serial)?;
+    crypto.get_pubkey_serial(pub_key, subj_serial)?;
 
     // The serial number of the subject can be at most 64 bytes
     let truncated_subj_serial = &subj_serial[..64];
@@ -2768,7 +2768,7 @@ fn get_tci_nodes<'a>(
 }
 
 fn get_subject_key_identifier(
-    env: &mut DpeEnv,
+    crypto: &mut dyn CryptoSuite,
     pub_key: &PubKey,
     subject_key_identifier: &mut [u8],
 ) -> Result<(), DpeErrorCode> {
@@ -2776,10 +2776,10 @@ fn get_subject_key_identifier(
     let hashed_pub_key = match pub_key {
         PubKey::Ecdsa(pub_key) => {
             let (x, y) = pub_key.as_slice();
-            env.crypto.hash_all(&[&[0x04], &x, &y])?
+            crypto.hash_all(&[&[0x04], &x, &y])?
         }
         #[cfg(feature = "ml-dsa")]
-        PubKey::Mldsa(pub_key) => env.crypto.hash(pub_key.as_slice())?,
+        PubKey::Mldsa(pub_key) => crypto.hash(pub_key.as_slice())?,
     };
     if hashed_pub_key.size() < MAX_KEY_IDENTIFIER_SIZE {
         return Err(DpeErrorCode::InternalError);
@@ -2792,7 +2792,7 @@ fn get_subject_key_identifier(
 pub(crate) fn create_exported_dpe_cert(
     args: &CreateDpeCertArgs,
     dpe: &mut DpeInstance,
-    env: &mut DpeEnv,
+    env: &mut dyn DpeEnv,
     cert: &mut [u8],
 ) -> Result<CreateDpeCertResult, DpeErrorCode> {
     create_dpe_cert_or_csr(
@@ -2808,7 +2808,7 @@ pub(crate) fn create_exported_dpe_cert(
 pub(crate) fn create_dpe_cert(
     args: &CreateDpeCertArgs,
     dpe: &mut DpeInstance,
-    env: &mut DpeEnv,
+    env: &mut dyn DpeEnv,
     cert: &mut [u8],
 ) -> Result<CreateDpeCertResult, DpeErrorCode> {
     create_dpe_cert_or_csr(
@@ -2825,7 +2825,7 @@ pub(crate) fn create_dpe_cert(
 pub(crate) fn create_dpe_csr(
     args: &CreateDpeCertArgs,
     dpe: &mut DpeInstance,
-    env: &mut DpeEnv,
+    env: &mut dyn DpeEnv,
     csr: &mut [u8],
 ) -> Result<CreateDpeCertResult, DpeErrorCode> {
     create_dpe_cert_or_csr(
@@ -2915,26 +2915,26 @@ fn generate_cert_or_csr(
 fn create_dpe_cert_or_csr(
     args: &CreateDpeCertArgs,
     dpe: &mut DpeInstance,
-    env: &mut DpeEnv,
+    env: &mut dyn DpeEnv,
     cert_format: CertificateFormat,
     cert_type: CertificateType,
     output_cert_or_csr: &mut [u8],
 ) -> Result<CreateDpeCertResult, DpeErrorCode> {
     let digest = get_dpe_measurement_digest(dpe, env, args.handle, args.locality)?;
+    let (crypto, platform, state) = env.get();
 
     let mut exported_cdi_handle = None;
 
     let pub_key = match cert_type {
         CertificateType::Exported => {
-            let exported_handle = env.crypto.derive_exported_cdi(&digest, args.cdi_label)?;
+            let exported_handle = crypto.derive_exported_cdi(&digest, args.cdi_label)?;
             exported_cdi_handle = Some(exported_handle);
-            env.crypto
+            crypto
                 .derive_key_pair_exported(&exported_handle, args.key_label, args.context)?
                 .public_key()
         }
         CertificateType::Leaf => {
-            env.crypto
-                .derive_pub_key(&digest, args.cdi_label, args.key_label, args.context)
+            crypto.derive_pub_key(&digest, args.cdi_label, args.key_label, args.context)
         }
     };
     if cfi_launder(pub_key.is_ok()) {
@@ -2946,20 +2946,19 @@ fn create_dpe_cert_or_csr(
     }
     let pub_key = okref(&pub_key)?;
     let mut subj_serial = [0u8; MAX_HASH_SIZE * 2];
-    let subject_name = get_subject_name(env, &cert_type, pub_key, &mut subj_serial)?;
+    let subject_name = get_subject_name(crypto, &cert_type, pub_key, &mut subj_serial)?;
 
     const INITIALIZER: TciNodeData = TciNodeData::new();
     let mut nodes = [INITIALIZER; MAX_HANDLES];
-    let tci_nodes = get_tci_nodes(env.state, args.handle, args.locality, &mut nodes)?;
+    let tci_nodes = get_tci_nodes(state, args.handle, args.locality, &mut nodes)?;
 
     let mut subject_key_identifier = [0u8; MAX_KEY_IDENTIFIER_SIZE];
-    get_subject_key_identifier(env, pub_key, &mut subject_key_identifier)?;
+    get_subject_key_identifier(crypto, pub_key, &mut subject_key_identifier)?;
 
     let mut authority_key_identifier = [0u8; MAX_KEY_IDENTIFIER_SIZE];
-    env.platform
-        .get_issuer_key_identifier(&mut authority_key_identifier)?;
+    platform.get_issuer_key_identifier(&mut authority_key_identifier)?;
 
-    let subject_alt_name = match env.platform.get_subject_alternative_name() {
+    let subject_alt_name = match platform.get_subject_alternative_name() {
         Ok(subject_alt_name) => Some(subject_alt_name),
         Err(PlatformError::NotImplemented) => None,
         Err(e) => Err(DpeErrorCode::Platform(e))?,
@@ -2971,7 +2970,7 @@ fn create_dpe_cert_or_csr(
     };
 
     let supports_recursive = match cert_type {
-        CertificateType::Leaf => env.state.support.recursive(),
+        CertificateType::Leaf => state.support.recursive(),
         CertificateType::Exported => false,
     };
 
@@ -2991,11 +2990,11 @@ fn create_dpe_cert_or_csr(
                 CertificateType::Exported => {
                     let exported_handle =
                         exported_cdi_handle.ok_or(CryptoError::CryptoLibError(0))?;
-                    env.crypto
+                    crypto
                         .derive_key_pair_exported(&exported_handle, args.key_label, args.context)?
                         .sign(&SignData::Raw(data))
                 }
-                CertificateType::Leaf => env.crypto.sign_with_derived(
+                CertificateType::Leaf => crypto.sign_with_derived(
                     &digest,
                     args.cdi_label,
                     args.key_label,
@@ -3004,17 +3003,17 @@ fn create_dpe_cert_or_csr(
                 ),
             }
         } else {
-            env.crypto.sign_with_alias(&SignData::Raw(data))
+            crypto.sign_with_alias(&SignData::Raw(data))
         }
     };
 
     let mut issuer_name = [0u8; MAX_ISSUER_NAME_SIZE];
-    let cert_validity = env.platform.get_cert_validity()?;
-    let signer_identifier = env.platform.get_signer_identifier()?;
+    let cert_validity = platform.get_cert_validity()?;
+    let signer_identifier = platform.get_signer_identifier()?;
     let format_specific_args = match cert_format {
         CertificateFormat::X509 => {
             let issuer_name = {
-                let issuer_len = env.platform.get_issuer_name(&mut issuer_name)?;
+                let issuer_len = platform.get_issuer_name(&mut issuer_name)?;
                 if issuer_len > MAX_ISSUER_NAME_SIZE {
                     return Err(DpeErrorCode::InternalError);
                 }

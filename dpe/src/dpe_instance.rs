@@ -26,10 +26,32 @@ use caliptra_dpe_platform::MAX_CHUNK_SIZE;
 use cfg_if::cfg_if;
 use zerocopy::IntoBytes;
 
-pub struct DpeEnv<'a> {
+pub trait DpeEnv {
+    fn crypto(&mut self) -> &mut dyn CryptoSuite;
+    fn platform(&mut self) -> &mut dyn Platform;
+    fn state(&mut self) -> &mut State;
+    fn get(&mut self) -> (&mut dyn CryptoSuite, &mut dyn Platform, &mut State);
+}
+
+pub struct DpeEnvImpl<'a> {
     pub crypto: &'a mut dyn CryptoSuite,
     pub platform: &'a mut dyn Platform,
     pub state: &'a mut State,
+}
+
+impl DpeEnv for DpeEnvImpl<'_> {
+    fn crypto(&mut self) -> &mut dyn CryptoSuite {
+        self.crypto
+    }
+    fn platform(&mut self) -> &mut dyn Platform {
+        self.platform
+    }
+    fn state(&mut self) -> &mut State {
+        self.state
+    }
+    fn get(&mut self) -> (&mut dyn CryptoSuite, &mut dyn Platform, &mut State) {
+        (self.crypto, self.platform, self.state)
+    }
 }
 
 pub struct DpeInstance {
@@ -52,15 +74,15 @@ impl DpeInstance {
     /// * `support` - optional functionality the instance supports
     /// * `flags` - configures `Self` behaviors.
     #[cfg_attr(feature = "cfi", cfi_impl_fn)]
-    pub fn new(env: &mut DpeEnv, profile: DpeProfile) -> Result<Self, DpeErrorCode> {
+    pub fn new(env: &mut dyn DpeEnv, profile: DpeProfile) -> Result<Self, DpeErrorCode> {
         let mut dpe = Self::initialized(profile);
 
-        if env.state.support.auto_init() {
-            let locality = env.platform.get_auto_init_locality()?;
+        if env.state().support.auto_init() {
+            let locality = env.platform().get_auto_init_locality()?;
             InitCtxCmd::new_use_default().execute(&mut dpe, env, locality)?;
         } else {
             #[cfg(feature = "cfi")]
-            cfi_assert!(!env.state.support.auto_init());
+            cfi_assert!(!env.state().support.auto_init());
         }
         Ok(dpe)
     }
@@ -77,29 +99,29 @@ impl DpeInstance {
     #[cfg_attr(feature = "cfi", cfi_impl_fn)]
     #[cfg(not(feature = "disable_auto_init"))]
     pub fn new_auto_init(
-        env: &mut DpeEnv,
+        env: &mut dyn DpeEnv,
         profile: DpeProfile,
         tci_type: u32,
         auto_init_measurement: &TciMeasurement,
     ) -> Result<Self, DpeErrorCode> {
         // auto-init must be supported to add an auto init measurement
-        if !env.state.support.auto_init() {
+        if !env.state().support.auto_init() {
             return Err(DpeErrorCode::ArgumentNotSupported);
         } else {
             #[cfg(feature = "cfi")]
-            cfi_assert!(env.state.support.auto_init());
+            cfi_assert!(env.state().support.auto_init());
         }
         let dpe = Self::new(env, profile)?;
 
-        let locality = env.platform.get_auto_init_locality()?;
+        let locality = env.platform().get_auto_init_locality()?;
         let idx = env
-            .state
+            .state()
             .get_active_context_pos(&ContextHandle::default(), locality)?;
-        let mut tmp_context = env.state.contexts[idx];
+        let mut tmp_context = env.state().contexts[idx];
         // add measurement to auto-initialized context
         dpe.add_tci_measurement(env, &mut tmp_context, auto_init_measurement, locality)?;
-        env.state.contexts[idx] = tmp_context;
-        env.state.contexts[idx].tci.tci_type = tci_type;
+        env.state().contexts[idx] = tmp_context;
+        env.state().contexts[idx].tci.tci_type = tci_type;
         Ok(dpe)
     }
 
@@ -128,7 +150,7 @@ impl DpeInstance {
     #[cfg_attr(feature = "cfi", cfi_impl_fn)]
     pub fn execute_serialized_command(
         &mut self,
-        env: &mut DpeEnv,
+        env: &mut dyn DpeEnv,
         locality: u32,
         cmd: &[u8],
     ) -> Result<Response, DpeErrorCode> {
@@ -172,12 +194,17 @@ impl DpeInstance {
     /// * `env` - DPE environment containing Crypto and Platform implementations
     pub(crate) fn generate_new_handle(
         &self,
-        env: &mut DpeEnv,
+        env: &mut dyn DpeEnv,
     ) -> Result<ContextHandle, DpeErrorCode> {
         for _ in 0..Self::MAX_NEW_HANDLE_ATTEMPTS {
             let mut handle = ContextHandle::default();
-            env.crypto.rand_bytes(&mut handle.0)?;
-            if !handle.is_default() && !env.state.contexts.iter().any(|c| c.handle.equals(&handle))
+            env.crypto().rand_bytes(&mut handle.0)?;
+            if !handle.is_default()
+                && !env
+                    .state()
+                    .contexts
+                    .iter()
+                    .any(|c| c.handle.equals(&handle))
             {
                 return Ok(handle);
             }
@@ -193,17 +220,17 @@ impl DpeInstance {
     /// * `idx` - the index of the context
     pub fn roll_onetime_use_handle(
         &mut self,
-        env: &mut DpeEnv,
+        env: &mut dyn DpeEnv,
         idx: usize,
     ) -> Result<(), DpeErrorCode> {
         if idx >= MAX_HANDLES {
             return Err(DpeErrorCode::MaxTcis);
         }
-        if !env.state.contexts[idx].handle.is_default() {
-            env.state.contexts[idx].handle = self.generate_new_handle(env)?;
+        if !env.state().contexts[idx].handle.is_default() {
+            env.state().contexts[idx].handle = self.generate_new_handle(env)?;
         } else {
             #[cfg(feature = "cfi")]
-            cfi_assert!(env.state.contexts[idx].handle.is_default());
+            cfi_assert!(env.state().contexts[idx].handle.is_default());
         }
         Ok(())
     }
@@ -220,7 +247,7 @@ impl DpeInstance {
     #[cfg_attr(feature = "cfi", cfi_impl_fn)]
     pub(crate) fn add_tci_measurement(
         &self,
-        env: &mut DpeEnv,
+        env: &mut dyn DpeEnv,
         context: &mut Context,
         measurement: &TciMeasurement,
         locality: u32,
@@ -240,7 +267,7 @@ impl DpeInstance {
 
         // Derive the new TCI as HASH(TCI_CUMULATIVE || INPUT_DATA).
         let digest = env
-            .crypto
+            .crypto()
             .hash_all(&[&context.tci.tci_cumulative.0, &measurement.0])?;
 
         let digest_bytes = digest.as_slice();
@@ -294,17 +321,18 @@ impl DpeInstance {
     #[cfg_attr(feature = "cfi", cfi_impl_fn)]
     pub(crate) fn compute_measurement_hash(
         &mut self,
-        env: &mut DpeEnv,
+        env: &mut dyn DpeEnv,
         start_idx: usize,
     ) -> Result<Digest, DpeErrorCode> {
-        let hasher = env.crypto.hasher()?;
+        let (crypto, platform, state) = env.get();
+        let hasher = crypto.hasher()?;
         hasher.initialize()?;
 
         let mut uses_internal_input_info = false;
         let mut uses_internal_input_dice = false;
 
         // Hash each node.
-        for status in ChildToRootIter::new(start_idx, &env.state.contexts) {
+        for status in ChildToRootIter::new(start_idx, &state.contexts) {
             let context = status?;
 
             hasher.update(context.tci.as_bytes())?;
@@ -323,11 +351,7 @@ impl DpeInstance {
         #[cfg(not(feature = "disable_internal_info"))]
         if cfi_launder(uses_internal_input_info) {
             let mut internal_input_info = [0u8; INTERNAL_INPUT_INFO_SIZE];
-            self.serialize_internal_input_info(
-                env.platform,
-                env.state.support,
-                &mut internal_input_info,
-            )?;
+            self.serialize_internal_input_info(platform, state.support, &mut internal_input_info)?;
             hasher.update(&internal_input_info[..INTERNAL_INPUT_INFO_SIZE])?;
         }
 
@@ -337,8 +361,7 @@ impl DpeInstance {
             let mut offset = 0;
             let mut cert_chunk = [0u8; MAX_CHUNK_SIZE];
             while let Ok(len) =
-                env.platform
-                    .get_certificate_chain(offset, MAX_CHUNK_SIZE as u32, &mut cert_chunk)
+                platform.get_certificate_chain(offset, MAX_CHUNK_SIZE as u32, &mut cert_chunk)
             {
                 hasher.update(&cert_chunk[..len as usize])?;
                 offset += len;
@@ -431,7 +454,7 @@ pub mod tests {
         ($env_name:ident, $state:expr) => {
             let mut crypto = $crate::dpe_instance::tests::new_crypto();
             let mut platform = $crate::commands::tests::DEFAULT_PLATFORM;
-            let mut $env_name = $crate::dpe_instance::DpeEnv {
+            let mut $env_name = $crate::dpe_instance::DpeEnvImpl {
                 crypto: &mut crypto,
                 platform: &mut platform,
                 state: $state,
@@ -588,10 +611,10 @@ pub mod tests {
             .get_active_context_pos(&ContextHandle::default(), TEST_LOCALITIES[0])
             .unwrap();
 
-        let digest = env
-            .crypto
+        let (crypto, _platform, state) = env.get();
+        let digest = crypto
             .with_hasher(&|hasher| {
-                for result in ChildToRootIter::new(leaf_idx, &env.state.contexts) {
+                for result in ChildToRootIter::new(leaf_idx, &state.contexts) {
                     let context = result.unwrap();
                     hasher.update(context.tci.as_bytes()).unwrap();
                     hasher
@@ -602,8 +625,7 @@ pub mod tests {
             })
             .unwrap();
 
-        let answer = env
-            .crypto
+        let answer = crypto
             .derive_cdi(&digest, b"DPE")
             .unwrap()
             .as_slice()

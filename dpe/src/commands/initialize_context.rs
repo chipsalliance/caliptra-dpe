@@ -56,15 +56,15 @@ impl CommandExecution for InitCtxCmd {
     fn execute_serialized(
         &self,
         dpe: &mut DpeInstance,
-        env: &mut DpeEnv,
+        env: &mut dyn DpeEnv,
         locality: u32,
         out: &mut [u8],
     ) -> Result<usize, DpeErrorCode> {
         let response = mutresp::<NewHandleResp>(dpe.profile, out)?;
 
         // This function can only be called once for non-simulation contexts.
-        if (self.flag_is_default() && env.state.has_initialized())
-            || (self.flag_is_simulation() && !env.state.support.simulation())
+        if (self.flag_is_default() && env.state().has_initialized())
+            || (self.flag_is_simulation() && !env.state().support.simulation())
         {
             return Err(DpeErrorCode::ArgumentNotSupported);
         }
@@ -78,25 +78,25 @@ impl CommandExecution for InitCtxCmd {
 
         cfg_if! {
             if #[cfg(feature = "cfi")] {
-                cfi_assert!(!self.flag_is_default() || !env.state.has_initialized());
-                cfi_assert!(!self.flag_is_simulation() || env.state.support.simulation());
+                cfi_assert!(!self.flag_is_default() || !env.state().has_initialized());
+                cfi_assert!(!self.flag_is_simulation() || env.state().support.simulation());
                 cfi_assert!(self.flag_is_default() ^ self.flag_is_simulation());
             }
         }
 
         let idx = env
-            .state
+            .state()
             .get_next_inactive_context_pos()
             .ok_or(DpeErrorCode::MaxTcis)?;
         let (context_type, handle) = if self.flag_is_default() {
-            env.state.has_initialized = true.into();
+            env.state().has_initialized = true.into();
             (ContextType::Normal, ContextHandle::default())
         } else {
             // Simulation.
             (ContextType::Simulation, dpe.generate_new_handle(env)?)
         };
 
-        env.state.contexts[idx].activate(&ActiveContextArgs {
+        env.state().contexts[idx].activate(&ActiveContextArgs {
             context_type,
             locality,
             handle: &handle,

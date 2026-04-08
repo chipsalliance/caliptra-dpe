@@ -30,7 +30,7 @@ impl CommandExecution for GetCertificateChainCmd {
     fn execute_serialized(
         &self,
         dpe: &mut DpeInstance,
-        env: &mut DpeEnv,
+        env: &mut dyn DpeEnv,
         _locality: u32,
         out: &mut [u8],
     ) -> Result<usize, DpeErrorCode> {
@@ -42,7 +42,7 @@ impl CommandExecution for GetCertificateChainCmd {
 
         let mut cert_chunk = [0u8; MAX_CHUNK_SIZE];
         let len = env
-            .platform
+            .platform()
             .get_certificate_chain(self.offset, self.size, &mut cert_chunk)?;
         *response = GetCertificateChainResp {
             certificate_chain: cert_chunk,

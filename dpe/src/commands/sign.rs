@@ -138,7 +138,7 @@ impl CommandExecution for SignCommand<'_> {
     fn execute_serialized(
         &self,
         dpe: &mut DpeInstance,
-        env: &mut DpeEnv,
+        env: &mut dyn DpeEnv,
         locality: u32,
         out: &mut [u8],
     ) -> Result<usize, DpeErrorCode> {
@@ -172,8 +172,8 @@ impl CommandExecution for SignCommand<'_> {
                 ),
             ),
         };
-        let idx = env.state.get_active_context_pos(handle, locality)?;
-        let context = &env.state.contexts[idx];
+        let idx = env.state().get_active_context_pos(handle, locality)?;
+        let context = &env.state().contexts[idx];
 
         if context.context_type == ContextType::Simulation {
             return Err(DpeErrorCode::InvalidArgument);
@@ -196,7 +196,7 @@ impl CommandExecution for SignCommand<'_> {
                 dpe.roll_onetime_use_handle(env, idx)?;
                 let (&sig_r, &sig_s) = sig.as_slice();
                 *response = SignP256Resp {
-                    new_context_handle: env.state.contexts[idx].handle,
+                    new_context_handle: env.state().contexts[idx].handle,
                     sig_r,
                     sig_s,
                     resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
@@ -212,7 +212,7 @@ impl CommandExecution for SignCommand<'_> {
                 dpe.roll_onetime_use_handle(env, idx)?;
                 let (&sig_r, &sig_s) = sig.as_slice();
                 *response = SignP384Resp {
-                    new_context_handle: env.state.contexts[idx].handle,
+                    new_context_handle: env.state().contexts[idx].handle,
                     sig_r,
                     sig_s,
                     resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
@@ -227,7 +227,7 @@ impl CommandExecution for SignCommand<'_> {
                 // Rotate the handle if it isn't the default context.
                 dpe.roll_onetime_use_handle(env, idx)?;
                 *response = SignMlDsaResp {
-                    new_context_handle: env.state.contexts[idx].handle,
+                    new_context_handle: env.state().contexts[idx].handle,
                     sig: *sig,
                     _padding: [0; 1],
                     resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
@@ -249,13 +249,13 @@ impl CommandExecution for SignCommand<'_> {
 /// * `digest` - The data to be signed
 fn sign(
     dpe: &mut DpeInstance,
-    env: &mut DpeEnv,
+    env: &mut dyn DpeEnv,
     idx: usize,
     label: &[u8],
     data: &SignData,
 ) -> Result<Signature, DpeErrorCode> {
     let cdi_digest = dpe.compute_measurement_hash(env, idx)?;
-    let cdi = env.crypto.derive_cdi(&cdi_digest, b"DPE")?;
+    let cdi = env.crypto().derive_cdi(&cdi_digest, b"DPE")?;
     let profile = dpe.profile;
     let context = profile.key_context();
     let key_pair = cdi.derive_key_pair(label, context);
@@ -285,7 +285,7 @@ impl CommandExecution for SignP256Cmd {
     fn execute_serialized(
         &self,
         dpe: &mut DpeInstance,
-        env: &mut DpeEnv,
+        env: &mut dyn DpeEnv,
         locality: u32,
         out: &mut [u8],
     ) -> Result<usize, DpeErrorCode> {
@@ -308,7 +308,7 @@ impl CommandExecution for SignP384Cmd {
     fn execute_serialized(
         &self,
         dpe: &mut DpeInstance,
-        env: &mut DpeEnv,
+        env: &mut dyn DpeEnv,
         locality: u32,
         out: &mut [u8],
     ) -> Result<usize, DpeErrorCode> {
@@ -331,7 +331,7 @@ impl CommandExecution for SignMldsa87Cmd {
     fn execute_serialized(
         &self,
         dpe: &mut DpeInstance,
-        env: &mut DpeEnv,
+        env: &mut dyn DpeEnv,
         locality: u32,
         out: &mut [u8],
     ) -> Result<usize, DpeErrorCode> {
@@ -345,7 +345,7 @@ impl CommandExecution for SignMldsa87RawCmd {
     fn execute_serialized(
         &self,
         dpe: &mut DpeInstance,
-        env: &mut DpeEnv,
+        env: &mut dyn DpeEnv,
         locality: u32,
         out: &mut [u8],
     ) -> Result<usize, DpeErrorCode> {

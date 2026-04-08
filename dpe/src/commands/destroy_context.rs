@@ -90,12 +90,12 @@ impl CommandExecution for DestroyCtxCmd {
     fn execute_serialized(
         &self,
         dpe: &mut DpeInstance,
-        env: &mut DpeEnv,
+        env: &mut dyn DpeEnv,
         locality: u32,
         out: &mut [u8],
     ) -> Result<usize, DpeErrorCode> {
         let response = mutresp::<ResponseHdr>(dpe.profile, out)?;
-        destroy_context(&self.handle, env.state, locality)?;
+        destroy_context(&self.handle, env.state(), locality)?;
         *response = dpe.response_hdr(DpeErrorCode::NoError);
         Ok(size_of_val(response))
     }
