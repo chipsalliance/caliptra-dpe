@@ -162,6 +162,21 @@ var DeriveContextRecursiveOnDerivedContextsTestCase = TestCase{
 	"DeriveContext_RecursiveOnDerivedContexts", TestDeriveContextRecursiveOnDerivedContexts, []string{"AutoInit", "Recursive", "RetainParentContext", "X509", "RotateContext"},
 }
 
+// DeriveContextAllowRecursiveTestCase tests that Recursive updates are only allowed when AllowRecursive was set during DeriveContext
+var DeriveContextAllowRecursiveTestCase = TestCase{
+	"DeriveContext_AllowRecursive", TestDeriveContextAllowRecursive, []string{"AutoInit", "Recursive", "RetainParentContext"},
+}
+
+// DeriveContextInputTypeUniquenessTestCase tests that INPUT_TYPE (tci_type) must be unique among children of the same parent
+var DeriveContextInputTypeUniquenessTestCase = TestCase{
+	"DeriveContext_InputTypeUniqueness", TestDeriveContextInputTypeUniqueness, []string{"AutoInit", "RetainParentContext"},
+}
+
+// UpdateContextMeasurementTestCase tests the UpdateContextMeasurement vendor command
+var UpdateContextMeasurementTestCase = TestCase{
+	"UpdateContextMeasurement", TestUpdateContextMeasurement, []string{"AutoInit", "RetainParentContext"},
+}
+
 // AllTestCases contains all DPE test cases
 var AllTestCases = []TestCase{
 	CertifyKeyTestCase,
@@ -190,6 +205,9 @@ var IrreversibleTestCases = []TestCase{
 	DeriveContextMaxTCIsTestCase,
 	DeriveContextRecursiveTestCase,
 	DeriveContextRecursiveOnDerivedContextsTestCase,
+	DeriveContextAllowRecursiveTestCase,
+	DeriveContextInputTypeUniquenessTestCase,
+	UpdateContextMeasurementTestCase,
 }
 
 // RunTargetTestCases runs all test cases for target

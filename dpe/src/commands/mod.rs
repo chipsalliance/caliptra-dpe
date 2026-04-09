@@ -13,6 +13,7 @@ pub use self::get_certificate_chain::GetCertificateChainCmd;
 pub use self::get_profile::GetProfileCmd;
 pub use self::initialize_context::InitCtxCmd;
 pub use self::sign::{SignCommand, SignFlags, SignP256Cmd, SignP384Cmd};
+pub use self::update_context_measurement::UpdateContextMeasurementCmd;
 #[cfg(feature = "cfi")]
 use caliptra_cfi_derive::{cfi_impl_fn, Launder};
 
@@ -39,6 +40,7 @@ mod initialize_context;
 #[cfg(not(feature = "disable_rotate_context"))]
 mod rotate_context;
 mod sign;
+mod update_context_measurement;
 
 #[derive(Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "cfi", derive(Launder))]
@@ -52,6 +54,8 @@ pub enum Command<'a> {
     RotateCtx(&'a RotateCtxCmd),
     DestroyCtx(&'a DestroyCtxCmd),
     GetCertificateChain(&'a GetCertificateChainCmd),
+    /// Vendor command 0x80000000: update a child context's TCI authorized by the parent.
+    UpdateContextMeasurement(&'a UpdateContextMeasurementCmd),
 }
 
 impl Command<'_> {
@@ -64,6 +68,8 @@ impl Command<'_> {
     pub const ROTATE_CONTEXT_HANDLE: u32 = 0x0e;
     pub const DESTROY_CONTEXT: u32 = 0x0f;
     pub const GET_CERTIFICATE_CHAIN: u32 = 0x10;
+    /// Vendor command: UpdateContextMeasurement (first vendor slot per the iROT profile spec).
+    pub const UPDATE_CONTEXT_MEASUREMENT: u32 = 0x80000000;
 
     /// Returns the command with its parameters given a slice of bytes.
     ///
@@ -85,6 +91,9 @@ impl Command<'_> {
             Command::DESTROY_CONTEXT => Self::parse_command(Command::DestroyCtx, bytes),
             Command::GET_CERTIFICATE_CHAIN => {
                 Self::parse_command(Command::GetCertificateChain, bytes)
+            }
+            Command::UPDATE_CONTEXT_MEASUREMENT => {
+                Self::parse_command(Command::UpdateContextMeasurement, bytes)
             }
             _ => Err(DpeErrorCode::InvalidCommand),
         }
@@ -110,6 +119,7 @@ impl Command<'_> {
             #[cfg(not(feature = "disable_rotate_context"))]
             Command::RotateCtx(cmd) => cmd.as_bytes(),
             Command::Sign(cmd) => cmd.as_bytes(),
+            Command::UpdateContextMeasurement(cmd) => cmd.as_bytes(),
         }
     }
 
@@ -124,6 +134,7 @@ impl Command<'_> {
             Command::RotateCtx(_) => Command::ROTATE_CONTEXT_HANDLE,
             Command::DestroyCtx(_) => Command::DESTROY_CONTEXT,
             Command::GetCertificateChain(_) => Command::GET_CERTIFICATE_CHAIN,
+            Command::UpdateContextMeasurement(_) => Command::UPDATE_CONTEXT_MEASUREMENT,
         }
     }
 }
@@ -238,6 +249,12 @@ impl<'a> From<&'a GetCertificateChainCmd> for Command<'a> {
     }
 }
 
+impl<'a> From<&'a UpdateContextMeasurementCmd> for Command<'a> {
+    fn from(cmd: &'a UpdateContextMeasurementCmd) -> Command<'a> {
+        Command::UpdateContextMeasurement(cmd)
+    }
+}
+
 impl<'a> From<&'a CertifyKeyCommand<'a>> for Command<'a> {
     fn from(cmd: &'a CertifyKeyCommand<'a>) -> Command<'a> {
         match cmd {
@@ -291,6 +308,7 @@ impl CommandExecution for Command<'_> {
             #[cfg(not(feature = "disable_rotate_context"))]
             Command::RotateCtx(cmd) => cmd.execute_serialized(dpe, env, locality, out),
             Command::Sign(cmd) => cmd.execute_serialized(dpe, env, locality, out),
+            Command::UpdateContextMeasurement(cmd) => cmd.execute_serialized(dpe, env, locality, out),
         }
     }
 }

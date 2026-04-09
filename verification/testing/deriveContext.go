@@ -637,3 +637,172 @@ func verifyMeasurements(d client.TestDPEInstance, c client.DPEClient, t *testing
 		t.Errorf("[ERROR]: Unexpected cumulative TCI value, want %v but got %v", expectedCumulative, cumulative)
 	}
 }
+
+// TestDeriveContextInputTypeUniqueness checks that DeriveContext rejects creating two
+// children of the same parent with the same INPUT_TYPE (tci_type).
+func TestDeriveContextInputTypeUniqueness(d client.TestDPEInstance, c client.DPEClient, t *testing.T) {
+	simulation := false
+	handle := getInitialContextHandle(d, c, t, simulation)
+
+	profile, err := client.GetTransportProfile(d)
+	if err != nil {
+		t.Fatalf("[FATAL]: Could not get profile: %v", err)
+	}
+	digestLen := profile.GetDigestSize()
+
+	const tciType uint32 = 0xABCD1234
+
+	// Create the first child with tciType
+	resp, err := c.DeriveContext(handle, make([]byte, digestLen), client.RetainParentContext, tciType, 0)
+	if err != nil {
+		t.Fatalf("[FATAL]: DeriveContext (first child) failed: %v", err)
+	}
+	childHandle := &resp.NewContextHandle
+	handle = &resp.ParentContextHandle
+	defer c.DestroyContext(childHandle)
+
+	// Attempting to create a second child with the same tciType under the same parent must fail.
+	_, err = c.DeriveContext(handle, make([]byte, digestLen), client.RetainParentContext, tciType, 0)
+	if err == nil {
+		t.Errorf("[ERROR]: DeriveContext should return %q when INPUT_TYPE is not unique, but returned no error", client.StatusInvalidArgument)
+	} else if !errors.Is(err, client.StatusInvalidArgument) {
+		t.Errorf("[ERROR]: Incorrect error type. Should return %q, but returned %q", client.StatusInvalidArgument, err)
+	}
+
+	// A different tciType must succeed.
+	const differentTciType uint32 = 0xDEADBEEF
+	resp2, err := c.DeriveContext(handle, make([]byte, digestLen), client.RetainParentContext, differentTciType, 0)
+	if err != nil {
+		t.Errorf("[ERROR]: DeriveContext with a different INPUT_TYPE should succeed, but failed: %v", err)
+	} else {
+		c.DestroyContext(&resp2.NewContextHandle)
+	}
+}
+
+// TestDeriveContextAllowRecursive checks that DeriveContext with the Recursive flag is only
+// permitted on contexts that were created with the AllowRecursive flag.
+func TestDeriveContextAllowRecursive(d client.TestDPEInstance, c client.DPEClient, t *testing.T) {
+	simulation := false
+	handle := getInitialContextHandle(d, c, t, simulation)
+
+	profile, err := client.GetTransportProfile(d)
+	if err != nil {
+		t.Fatalf("[FATAL]: Could not get profile: %v", err)
+	}
+	digestLen := profile.GetDigestSize()
+
+	// --- Child WITHOUT AllowRecursive ---
+	// Create child without AllowRecursive; recursive update must be rejected.
+	respNoAllow, err := c.DeriveContext(handle, make([]byte, digestLen), client.RetainParentContext, 0x00000001, 0)
+	if err != nil {
+		t.Fatalf("[FATAL]: DeriveContext (no AllowRecursive) failed: %v", err)
+	}
+	childNoAllow := &respNoAllow.NewContextHandle
+	handle = &respNoAllow.ParentContextHandle
+	defer c.DestroyContext(childNoAllow)
+
+	_, err = c.DeriveContext(childNoAllow, make([]byte, digestLen), client.Recursive, 0x00000001, 0)
+	if err == nil {
+		t.Errorf("[ERROR]: Recursive update on a context without AllowRecursive should return %q, but returned no error", client.StatusInvalidArgument)
+	} else if !errors.Is(err, client.StatusInvalidArgument) {
+		t.Errorf("[ERROR]: Incorrect error type. Should return %q, but returned %q", client.StatusInvalidArgument, err)
+	}
+
+	// --- Child WITH AllowRecursive ---
+	// Create child with AllowRecursive; recursive update must succeed.
+	respWithAllow, err := c.DeriveContext(handle, make([]byte, digestLen), client.RetainParentContext|client.AllowRecursive, 0x00000002, 0)
+	if err != nil {
+		t.Fatalf("[FATAL]: DeriveContext (with AllowRecursive) failed: %v", err)
+	}
+	childWithAllow := &respWithAllow.NewContextHandle
+	defer c.DestroyContext(childWithAllow)
+
+	resp, err := c.DeriveContext(childWithAllow, make([]byte, digestLen), client.Recursive, 0x00000002, 0)
+	if err != nil {
+		t.Errorf("[ERROR]: Recursive update on a context with AllowRecursive should succeed, but failed: %v", err)
+	} else {
+		*childWithAllow = resp.NewContextHandle
+	}
+
+	// --- AllowRecursive and Recursive together must be rejected ---
+	_, err = c.DeriveContext(childWithAllow, make([]byte, digestLen), client.AllowRecursive|client.Recursive, 0x00000002, 0)
+	if err == nil {
+		t.Errorf("[ERROR]: Setting AllowRecursive and Recursive together should return %q, but returned no error", client.StatusInvalidArgument)
+	} else if !errors.Is(err, client.StatusInvalidArgument) {
+		t.Errorf("[ERROR]: Incorrect error type. Should return %q, but returned %q", client.StatusInvalidArgument, err)
+	}
+}
+
+// TestUpdateContextMeasurement checks the UpdateContextMeasurement vendor command:
+// it must update a child context's TCI using the parent handle as authorization,
+// even when the child does not have AllowRecursive set.
+func TestUpdateContextMeasurement(d client.TestDPEInstance, c client.DPEClient, t *testing.T) {
+	simulation := false
+	handle := getInitialContextHandle(d, c, t, simulation)
+
+	profile, err := client.GetTransportProfile(d)
+	if err != nil {
+		t.Fatalf("[FATAL]: Could not get profile: %v", err)
+	}
+	digestLen := profile.GetDigestSize()
+
+	tciValue := make([]byte, digestLen)
+	for i := range tciValue {
+		tciValue[i] = byte(i + 1)
+	}
+	updateValue := make([]byte, digestLen)
+	for i := range updateValue {
+		updateValue[i] = byte(i + 100)
+	}
+
+	const tciType uint32 = 0x12345678
+
+	// Create a child context WITHOUT AllowRecursive.
+	resp, err := c.DeriveContext(handle, tciValue, client.RetainParentContext, tciType, 0)
+	if err != nil {
+		t.Fatalf("[FATAL]: DeriveContext failed: %v", err)
+	}
+	childHandle := &resp.NewContextHandle
+	parentHandle := &resp.ParentContextHandle
+	defer c.DestroyContext(childHandle)
+
+	// Record cumulative TCI before the update.
+	childHandle, tcbInfoBefore, err := getTcbInfoForHandle(d, c, childHandle)
+	if err != nil {
+		t.Fatalf("[FATAL]: Could not get TcbInfo before update: %v", err)
+	}
+	cumulativeBefore := tcbInfoBefore.IntegrityRegisters[0].RegisterDigests[0].Digest
+
+	// UpdateContextMeasurement must succeed even though AllowRecursive was not set.
+	ucmResp, err := c.UpdateContextMeasurement(parentHandle, updateValue, tciType)
+	if err != nil {
+		t.Fatalf("[FATAL]: UpdateContextMeasurement failed: %v", err)
+	}
+
+	// Update handles to the rotated values.
+	*childHandle = ucmResp.NewContextHandle
+	*parentHandle = ucmResp.NewParentContextHandle
+
+	// Verify the child's TCI was updated correctly.
+	expectedCumulative := computeExpectedCumulative(cumulativeBefore, updateValue)
+	verifyMeasurements(d, c, t, childHandle, updateValue, expectedCumulative)
+
+	// --- Error cases ---
+
+	// Null parent handle must be rejected.
+	nullHandle := client.DefaultContextHandle
+	_, err = c.UpdateContextMeasurement(&nullHandle, updateValue, tciType)
+	if err == nil {
+		t.Errorf("[ERROR]: UpdateContextMeasurement with null parent handle should return %q, but returned no error", client.StatusInvalidArgument)
+	} else if !errors.Is(err, client.StatusInvalidArgument) {
+		t.Errorf("[ERROR]: Incorrect error type for null parent. Should return %q, but returned %q", client.StatusInvalidArgument, err)
+	}
+
+	// Non-existent tciType must be rejected.
+	_, err = c.UpdateContextMeasurement(parentHandle, updateValue, 0xDEADBEEF)
+	if err == nil {
+		t.Errorf("[ERROR]: UpdateContextMeasurement with non-existent INPUT_TYPE should return %q, but returned no error", client.StatusInvalidArgument)
+	} else if !errors.Is(err, client.StatusInvalidArgument) {
+		t.Errorf("[ERROR]: Incorrect error type for missing INPUT_TYPE. Should return %q, but returned %q", client.StatusInvalidArgument, err)
+	}
+}

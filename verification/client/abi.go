@@ -58,7 +58,8 @@ type profileCommandCodes struct {
 	Sign                CommandCode
 	RotateContextHandle CommandCode
 	DestroyContext      CommandCode
-	GetCertificateChain CommandCode
+	GetCertificateChain         CommandCode
+	UpdateContextMeasurement    CommandCode
 }
 
 // profileInfo holds constants defined in a specific version of the DPE iRoT
@@ -81,6 +82,7 @@ func getProfileInfoV08() profileInfo {
 			RotateContextHandle: 0xE,
 			DestroyContext:      0xF,
 			GetCertificateChain: 0x80,
+			UpdateContextMeasurement: 0x80000000,
 		},
 		MajorVersion: 0,
 		MinorVersion: 8,
@@ -99,6 +101,7 @@ func getProfileInfoV09() profileInfo {
 			RotateContextHandle: 0xe,
 			DestroyContext:      0xf,
 			GetCertificateChain: 0x10,
+			UpdateContextMeasurement: 0x80000000,
 		},
 		MajorVersion: 0,
 		MinorVersion: 9,
@@ -234,6 +237,9 @@ const (
 	Recursive               DeriveContextFlags = 1 << 24
 	CdiExport               DeriveContextFlags = 1 << 23
 	CreateCertificate       DeriveContextFlags = 1 << 22
+	// AllowRecursive permits future DeriveContext(Recursive) calls on the created child context.
+	// Without this flag the child context will reject recursive TCI updates.
+	AllowRecursive DeriveContextFlags = 1 << 21
 )
 
 // DeriveContextReq is the input request to DeriveContext
@@ -253,6 +259,26 @@ type DeriveContextResp struct {
 	ExportedCdi         ExportedCdi
 	CertificateSize     uint32
 	NewCertificate      []byte
+}
+
+// UpdateContextMeasurementCmd is the vendor command 0x80000000: update a child TCI
+// authorized by the parent handle rather than the child handle.
+type UpdateContextMeasurementCmd[Digest DigestAlgorithm] struct {
+	ParentContextHandle ContextHandle
+	InputData          Digest
+	Reserved           uint32
+	TciType            uint32
+	// Svn must always be zero. SVN is fixed at context creation and cannot be changed
+	// by UpdateContextMeasurement; a non-zero value is rejected by the DPE with InvalidArgument.
+	Svn uint32
+}
+
+// UpdateContextMeasurementResp is the output response from UpdateContextMeasurement.
+type UpdateContextMeasurementResp struct {
+	// NewContextHandle is the rotated handle for the updated child context.
+	NewContextHandle ContextHandle
+	// NewParentContextHandle is the rotated handle for the parent context.
+	NewParentContextHandle ContextHandle
 }
 
 // SignFlags is the input flags to Sign
@@ -962,4 +988,34 @@ func CalculateExternalMu(msg []byte, pubKey []byte) []byte {
 	sh.Write(msg)
 	sh.Read(mu)
 	return mu
+}
+
+// UpdateContextMeasurement calls the vendor DPE UpdateContextMeasurement command.
+// It updates the TCI of the direct child of parentHandle whose tci_type matches tciType,
+// using authorization from the parent context handle rather than the child context handle.
+func (c *DPEABI[_, Digest, _, _, _]) UpdateContextMeasurement(parentHandle *ContextHandle, inputData []byte, tciType uint32) (*UpdateContextMeasurementResp, error) {
+	if len(inputData) != DigestLen[Digest]() {
+		return nil, fmt.Errorf("invalid digest length")
+	}
+
+	input, err := NewDigest[Digest](inputData)
+	if err != nil {
+		return nil, err
+	}
+
+	cmd := UpdateContextMeasurementCmd[Digest]{
+		ParentContextHandle: *parentHandle,
+		InputData:           input,
+		Reserved:            0,
+		TciType:             tciType,
+		Svn:                 0,
+	}
+
+	var resp UpdateContextMeasurementResp
+	_, _, err = execCommand(c.transport, c.constants.Codes.UpdateContextMeasurement, c.Profile, cmd, &resp)
+	if err != nil {
+		return nil, err
+	}
+
+	return &resp, nil
 }

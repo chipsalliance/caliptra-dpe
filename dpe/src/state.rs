@@ -393,7 +393,7 @@ mod tests {
                 offset_of!(Context, uses_internal_input_dice),
                 offset_of!(Context, allow_x509),
                 offset_of!(Context, allow_export_cdi),
-                offset_of!(Context, reserved),
+                offset_of!(Context, allow_recursive),
             );
 
             if actual_offsets != expected_offsets {

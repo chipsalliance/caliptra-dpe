@@ -34,6 +34,10 @@ bitflags! {
         const RECURSIVE = 1u32 << 24;
         const EXPORT_CDI = 1u32 << 23;
         const CREATE_CERTIFICATE = 1u32 << 22;
+        /// When set, the generated child context SHALL be allowed to use
+        /// DeriveContext with RECURSIVE. Without this flag, recursive updates on
+        /// the child are rejected (opt-in).
+        const ALLOW_RECURSIVE = 1u32 << 21;
     }
 }
 
@@ -76,6 +80,10 @@ impl DeriveContextFlags {
 
     pub const fn allows_new_context_to_export(&self) -> bool {
         self.contains(DeriveContextFlags::ALLOW_NEW_CONTEXT_TO_EXPORT)
+    }
+
+    pub const fn allows_recursive(&self) -> bool {
+        self.contains(DeriveContextFlags::ALLOW_RECURSIVE)
     }
 }
 
@@ -224,6 +232,11 @@ impl CommandExecution for DeriveContextCmd {
                 && env.state().contexts[parent_idx].context_type == ContextType::Simulation)
             || (flags.exports_cdi() && !env.state().contexts[parent_idx].allow_export_cdi())
             || (flags.is_recursive() && flags.retains_parent())
+            // ALLOW_RECURSIVE is a property stored on a newly created child context.
+            // When RECURSIVE is set, no child is created — the current context's TCI is
+            // updated in place. Setting ALLOW_RECURSIVE alongside RECURSIVE is therefore
+            // invalid: there is no child context to attach the property to.
+            || (flags.allows_recursive() && flags.is_recursive())
         {
             return Err(DpeErrorCode::InvalidArgument);
         }
@@ -254,6 +267,11 @@ impl CommandExecution for DeriveContextCmd {
                 if #[cfg(not(feature = "disable_recursive"))] {
                     let response = mutresp::<DeriveContextResp>(dpe.profile, out)?;
                     let mut tmp_context = env.state().contexts[parent_idx];
+                    // The context must have been created with ALLOW_RECURSIVE to
+                    // permit recursive updates. Without it, reject.
+                    if !tmp_context.allow_recursive() {
+                        return Err(DpeErrorCode::InvalidArgument);
+                    }
                     if tmp_context.tci.tci_type != tci_type {
                         return Err(DpeErrorCode::InvalidArgument);
                     } else {
@@ -286,6 +304,15 @@ impl CommandExecution for DeriveContextCmd {
                 } else {
                     Err(DpeErrorCode::ArgumentNotSupported)?
                 }
+            }
+        }
+
+        // Check that no direct child of the parent already has the same INPUT_TYPE.
+        // Each INPUT_TYPE value SHALL be unique among the direct children of a given context.
+        let parent_children = env.state().contexts[parent_idx].children;
+        for sibling_idx in parent_children.iter() {
+            if env.state().contexts[sibling_idx].tci.tci_type == tci_type {
+                return Err(DpeErrorCode::InvalidArgument);
             }
         }
 
@@ -399,6 +426,8 @@ impl CommandExecution for DeriveContextCmd {
             allow_export_cdi: flags.allows_new_context_to_export()
                 & tmp_parent_context.allow_export_cdi(),
             svn,
+            // Propagate ALLOW_RECURSIVE flag to the new child context.
+            allow_recursive: flags.allows_recursive(),
         });
 
         dpe.add_tci_measurement(env, &mut tmp_child_context, data, target_locality)?;

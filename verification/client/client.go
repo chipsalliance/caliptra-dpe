@@ -58,6 +58,7 @@ type DPEClient interface {
 	RotateContextHandle(handle *ContextHandle, flags RotateContextHandleFlags) (*ContextHandle, error)
 	Sign(handle *ContextHandle, label []byte, flags SignFlags, toBeSigned []byte) (*DPESignedHash, error)
 	SignRaw(handle *ContextHandle, label []byte, rawData []byte) (*DPESignedHash, error)
+	UpdateContextMeasurement(parentHandle *ContextHandle, inputData []byte, tciType uint32) (*UpdateContextMeasurementResp, error)
 }
 
 // NewClient returns a new DPE client

@@ -31,6 +31,7 @@ pub enum Response {
     Sign(SignResp),
     DestroyCtx(ResponseHdr),
     GetCertificateChain(GetCertificateChainResp),
+    UpdateContextMeasurement(UpdateContextMeasurementResp),
     Error(ResponseHdr),
 }
 
@@ -47,6 +48,7 @@ impl Response {
             Response::Sign(res) => res.as_bytes(),
             Response::DestroyCtx(res) => res.as_bytes(),
             Response::GetCertificateChain(res) => res.as_bytes(),
+            Response::UpdateContextMeasurement(res) => res.as_bytes(),
             Response::Error(res) => res.as_bytes(),
         }
     }
@@ -67,6 +69,7 @@ impl Response {
             Response::Sign(res) => Ok(res.as_bytes()),
             Response::DestroyCtx(res) => Ok(res.as_bytes()),
             Response::GetCertificateChain(res) => Ok(res.as_bytes()),
+            Response::UpdateContextMeasurement(res) => Ok(res.as_bytes()),
             Response::Error(res) => Ok(res.as_bytes()),
         }
     }
@@ -168,6 +171,11 @@ impl Response {
                     .map_err(|_| DpeErrorCode::InvalidArgument)?
                     .0,
             )),
+            Command::UpdateContextMeasurement(_) => Response::UpdateContextMeasurement(
+                UpdateContextMeasurementResp::try_read_from_prefix(bytes)
+                    .map_err(|_| DpeErrorCode::InvalidArgument)?
+                    .0,
+            ),
         };
         Ok(r)
     }
@@ -243,6 +251,17 @@ pub struct DeriveContextResp {
     pub resp_hdr: ResponseHdr,
     pub handle: ContextHandle,
     pub parent_handle: ContextHandle,
+}
+
+/// Response for the UpdateContextMeasurement vendor command.
+#[repr(C)]
+#[derive(Debug, PartialEq, Eq, IntoBytes, TryFromBytes, Immutable, KnownLayout)]
+pub struct UpdateContextMeasurementResp {
+    pub resp_hdr: ResponseHdr,
+    /// Rotated handle for the updated child context.
+    pub new_context_handle: ContextHandle,
+    /// Rotated handle for the parent context (always retained).
+    pub new_parent_context_handle: ContextHandle,
 }
 
 #[repr(C)]
@@ -496,6 +515,9 @@ pub enum DpeErrorCode {
     InvalidMutRefBuf = 0x1004,
     InvalidResponseBuf = 0x1005,
     UninitializedResponseHeader = 0x1006,
+    /// Returned by UpdateContextMeasurement when PARENT_CONTEXT_HANDLE does not
+    /// exist in the caller's locality. Value matches the OCP iROT profile spec (0x85).
+    InvalidParentLocality = 0x85,
     Platform(PlatformError) = 0x01000000,
     Crypto(CryptoError) = 0x02000000,
     Validation(ValidationError) = 0x03000000,

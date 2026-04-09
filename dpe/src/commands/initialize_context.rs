@@ -107,6 +107,9 @@ impl CommandExecution for InitCtxCmd {
             uses_internal_input_dice: false,
             allow_export_cdi: true,
             svn: 0,
+            // Root/simulation contexts created by InitializeContext are not
+            // eligible for recursive updates (no parent to authorize them).
+            allow_recursive: false,
         });
         *response = NewHandleResp {
             handle,
