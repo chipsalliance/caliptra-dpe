@@ -51,15 +51,15 @@ type Support struct {
 // profileCommandCodes holds command codes for a specific revision of the
 // DPE iRoT profile.
 type profileCommandCodes struct {
-	GetProfile          CommandCode
-	InitializeContext   CommandCode
-	DeriveContext       CommandCode
-	CertifyKey          CommandCode
-	Sign                CommandCode
-	RotateContextHandle CommandCode
-	DestroyContext      CommandCode
-	GetCertificateChain         CommandCode
-	UpdateContextMeasurement    CommandCode
+	GetProfile               CommandCode
+	InitializeContext        CommandCode
+	DeriveContext            CommandCode
+	CertifyKey               CommandCode
+	Sign                     CommandCode
+	RotateContextHandle      CommandCode
+	DestroyContext           CommandCode
+	GetCertificateChain      CommandCode
+	UpdateContextMeasurement CommandCode
 }
 
 // profileInfo holds constants defined in a specific version of the DPE iRoT
@@ -74,14 +74,14 @@ type profileInfo struct {
 func getProfileInfoV08() profileInfo {
 	return profileInfo{
 		Codes: profileCommandCodes{
-			GetProfile:          0x1,
-			InitializeContext:   0x5,
-			DeriveContext:       0x6,
-			CertifyKey:          0x7,
-			Sign:                0x8,
-			RotateContextHandle: 0xE,
-			DestroyContext:      0xF,
-			GetCertificateChain: 0x80,
+			GetProfile:               0x1,
+			InitializeContext:        0x5,
+			DeriveContext:            0x6,
+			CertifyKey:               0x7,
+			Sign:                     0x8,
+			RotateContextHandle:      0xE,
+			DestroyContext:           0xF,
+			GetCertificateChain:      0x80,
 			UpdateContextMeasurement: 0x80000000,
 		},
 		MajorVersion: 0,
@@ -93,14 +93,14 @@ func getProfileInfoV08() profileInfo {
 func getProfileInfoV09() profileInfo {
 	return profileInfo{
 		Codes: profileCommandCodes{
-			GetProfile:          0x1,
-			InitializeContext:   0x7,
-			DeriveContext:       0x8,
-			CertifyKey:          0x9,
-			Sign:                0xa,
-			RotateContextHandle: 0xe,
-			DestroyContext:      0xf,
-			GetCertificateChain: 0x10,
+			GetProfile:               0x1,
+			InitializeContext:        0x7,
+			DeriveContext:            0x8,
+			CertifyKey:               0x9,
+			Sign:                     0xa,
+			RotateContextHandle:      0xe,
+			DestroyContext:           0xf,
+			GetCertificateChain:      0x10,
 			UpdateContextMeasurement: 0x80000000,
 		},
 		MajorVersion: 0,
@@ -265,9 +265,9 @@ type DeriveContextResp struct {
 // authorized by the parent handle rather than the child handle.
 type UpdateContextMeasurementCmd[Digest DigestAlgorithm] struct {
 	ParentContextHandle ContextHandle
-	InputData          Digest
-	Reserved           uint32
-	TciType            uint32
+	InputData           Digest
+	Reserved            uint32
+	TciType             uint32
 	// Svn must always be zero. SVN is fixed at context creation and cannot be changed
 	// by UpdateContextMeasurement; a non-zero value is rejected by the DPE with InvalidArgument.
 	Svn uint32

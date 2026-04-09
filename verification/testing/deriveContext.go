@@ -489,24 +489,34 @@ func TestDeriveContextRecursive(d client.TestDPEInstance, c client.DPEClient, t 
 		tciValue[i] = byte(i)
 	}
 
-	handle, tcbInfo, err := getTcbInfoForHandle(d, c, handle)
+	// The auto-init root context does not carry AllowRecursive (recursive TCI updates
+	// are opt-in). Derive a child with AllowRecursive so it can be recursively updated.
+	childResp, err := c.DeriveContext(handle, make([]byte, digestLen),
+		client.DeriveContextFlags(client.AllowRecursive|client.InputAllowX509), 0, 0)
+	if err != nil {
+		t.Fatalf("[FATAL]: Could not create child context with AllowRecursive: %v", err)
+	}
+	childHandle := &childResp.NewContextHandle
+
+	childHandle, tcbInfo, err := getTcbInfoForHandle(d, c, childHandle)
 	if err != nil {
 		t.Fatal(err)
 	}
 	lastCumulative := tcbInfo.IntegrityRegisters[0].RegisterDigests[0].Digest
 
-	// Set current TCI value
-	_, err = c.DeriveContext(handle,
+	// Set current TCI value by recursively updating the child.
+	resp, err := c.DeriveContext(childHandle,
 		tciValue,
 		client.DeriveContextFlags(client.Recursive),
 		0, 0)
 	if err != nil {
 		t.Fatalf("[FATAL]: Could not set TCI value: %v", err)
 	}
+	childHandle = &resp.NewContextHandle
 
 	// Check current and cumulative measurement by CertifyKey
 	expectedCumulative := computeExpectedCumulative(lastCumulative, tciValue)
-	verifyMeasurements(d, c, t, handle, tciValue, expectedCumulative)
+	verifyMeasurements(d, c, t, &childHandle, tciValue, expectedCumulative)
 }
 
 // TestDeriveContextRecursiveOnDerivedContexts tests the DeriveContext command with
@@ -550,7 +560,7 @@ func TestDeriveContextRecursiveOnDerivedContexts(d client.TestDPEInstance, c cli
 	}()
 
 	// DeriveContext with input data, tag it and check TCI_CUMULATIVE
-	childCtx, err := c.DeriveContext(parentHandle, tciValue, client.DeriveContextFlags(client.RetainParentContext|client.InputAllowX509), 0, 0)
+	childCtx, err := c.DeriveContext(parentHandle, tciValue, client.DeriveContextFlags(client.RetainParentContext|client.InputAllowX509|client.AllowRecursive), 0, 0)
 	if err != nil {
 		t.Fatalf("[FATAL]: Error while creating default child handle in default context: %s", err)
 	}
@@ -620,11 +630,13 @@ func computeExpectedCumulative(lastCumulative []byte, tciValue []byte) []byte {
 	return hasher.Sum(nil)
 }
 
-func verifyMeasurements(d client.TestDPEInstance, c client.DPEClient, t *testing.T, handle *client.ContextHandle, expectedCurrent []byte, expectedCumulative []byte) {
-	_, tcbInfo, err := getTcbInfoForHandle(d, c, handle)
+func verifyMeasurements(d client.TestDPEInstance, c client.DPEClient, t *testing.T, handle **client.ContextHandle, expectedCurrent []byte, expectedCumulative []byte) {
+	newHandle, tcbInfo, err := getTcbInfoForHandle(d, c, *handle)
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Update the caller's handle to the rotated value returned by CertifyKey.
+	*handle = newHandle
 
 	// Check that the last TcbInfo current/cumulative are as expected
 	current := tcbInfo.Fwids[0].Digest
@@ -649,6 +661,21 @@ func TestDeriveContextInputTypeUniqueness(d client.TestDPEInstance, c client.DPE
 		t.Fatalf("[FATAL]: Could not get profile: %v", err)
 	}
 	digestLen := profile.GetDigestSize()
+
+	// RetainParentContext requires the parent to be a non-default handle (default and
+	// non-default contexts cannot coexist in the same locality). Rotate the auto-init
+	// default handle to a non-default handle first.
+	rotatedHandle, err := c.RotateContextHandle(handle, client.RotateContextHandleFlags(0))
+	if err != nil {
+		t.Fatalf("[FATAL]: Could not rotate default handle: %v", err)
+	}
+	handle = rotatedHandle
+	defer func() {
+		_, err = c.RotateContextHandle(handle, client.RotateContextHandleFlags(client.TargetIsDefault))
+		if err != nil {
+			t.Errorf("[ERROR]: Error restoring default context handle: %v", err)
+		}
+	}()
 
 	const tciType uint32 = 0xABCD1234
 
@@ -675,6 +702,8 @@ func TestDeriveContextInputTypeUniqueness(d client.TestDPEInstance, c client.DPE
 	if err != nil {
 		t.Errorf("[ERROR]: DeriveContext with a different INPUT_TYPE should succeed, but failed: %v", err)
 	} else {
+		// Track the rotated parent handle so the restore defer uses the correct value.
+		handle = &resp2.ParentContextHandle
 		c.DestroyContext(&resp2.NewContextHandle)
 	}
 }
@@ -690,6 +719,21 @@ func TestDeriveContextAllowRecursive(d client.TestDPEInstance, c client.DPEClien
 		t.Fatalf("[FATAL]: Could not get profile: %v", err)
 	}
 	digestLen := profile.GetDigestSize()
+
+	// RetainParentContext requires the parent to be a non-default handle (default and
+	// non-default contexts cannot coexist in the same locality). Rotate the auto-init
+	// default handle to a non-default handle first.
+	rotatedHandle, err := c.RotateContextHandle(handle, client.RotateContextHandleFlags(0))
+	if err != nil {
+		t.Fatalf("[FATAL]: Could not rotate default handle: %v", err)
+	}
+	handle = rotatedHandle
+	defer func() {
+		_, err = c.RotateContextHandle(handle, client.RotateContextHandleFlags(client.TargetIsDefault))
+		if err != nil {
+			t.Errorf("[ERROR]: Error restoring default context handle: %v", err)
+		}
+	}()
 
 	// --- Child WITHOUT AllowRecursive ---
 	// Create child without AllowRecursive; recursive update must be rejected.
@@ -715,6 +759,7 @@ func TestDeriveContextAllowRecursive(d client.TestDPEInstance, c client.DPEClien
 		t.Fatalf("[FATAL]: DeriveContext (with AllowRecursive) failed: %v", err)
 	}
 	childWithAllow := &respWithAllow.NewContextHandle
+	handle = &respWithAllow.ParentContextHandle
 	defer c.DestroyContext(childWithAllow)
 
 	resp, err := c.DeriveContext(childWithAllow, make([]byte, digestLen), client.Recursive, 0x00000002, 0)
@@ -746,6 +791,29 @@ func TestUpdateContextMeasurement(d client.TestDPEInstance, c client.DPEClient, 
 	}
 	digestLen := profile.GetDigestSize()
 
+	// RetainParentContext requires the parent to be a non-default handle (default and
+	// non-default contexts cannot coexist in the same locality). Rotate the auto-init
+	// default handle to a non-default handle first.
+	rotatedHandle, err := c.RotateContextHandle(handle, client.RotateContextHandleFlags(0))
+	if err != nil {
+		t.Fatalf("[FATAL]: Could not rotate default handle: %v", err)
+	}
+	handle = rotatedHandle
+
+	// Register the restore-to-default defer FIRST so it runs LAST (LIFO). The child
+	// must be destroyed before the parent can be restored to the default handle
+	// (RotateContextHandle with TargetIsDefault rejects if non-default siblings exist
+	// in the same locality).
+	var currentParentHandle *client.ContextHandle
+	defer func() {
+		if currentParentHandle != nil {
+			_, err = c.RotateContextHandle(currentParentHandle, client.RotateContextHandleFlags(client.TargetIsDefault))
+			if err != nil {
+				t.Errorf("[ERROR]: Error restoring default context handle: %v", err)
+			}
+		}
+	}()
+
 	tciValue := make([]byte, digestLen)
 	for i := range tciValue {
 		tciValue[i] = byte(i + 1)
@@ -758,13 +826,13 @@ func TestUpdateContextMeasurement(d client.TestDPEInstance, c client.DPEClient, 
 	const tciType uint32 = 0x12345678
 
 	// Create a child context WITHOUT AllowRecursive.
-	resp, err := c.DeriveContext(handle, tciValue, client.RetainParentContext, tciType, 0)
+	resp, err := c.DeriveContext(handle, tciValue, client.RetainParentContext|client.InputAllowX509, tciType, 0)
 	if err != nil {
 		t.Fatalf("[FATAL]: DeriveContext failed: %v", err)
 	}
 	childHandle := &resp.NewContextHandle
-	parentHandle := &resp.ParentContextHandle
-	defer c.DestroyContext(childHandle)
+	currentParentHandle = &resp.ParentContextHandle
+	defer func() { c.DestroyContext(childHandle) }() // use closure so childHandle is read when defer runs
 
 	// Record cumulative TCI before the update.
 	childHandle, tcbInfoBefore, err := getTcbInfoForHandle(d, c, childHandle)
@@ -774,18 +842,18 @@ func TestUpdateContextMeasurement(d client.TestDPEInstance, c client.DPEClient, 
 	cumulativeBefore := tcbInfoBefore.IntegrityRegisters[0].RegisterDigests[0].Digest
 
 	// UpdateContextMeasurement must succeed even though AllowRecursive was not set.
-	ucmResp, err := c.UpdateContextMeasurement(parentHandle, updateValue, tciType)
+	ucmResp, err := c.UpdateContextMeasurement(currentParentHandle, updateValue, tciType)
 	if err != nil {
 		t.Fatalf("[FATAL]: UpdateContextMeasurement failed: %v", err)
 	}
 
 	// Update handles to the rotated values.
 	*childHandle = ucmResp.NewContextHandle
-	*parentHandle = ucmResp.NewParentContextHandle
+	*currentParentHandle = ucmResp.NewParentContextHandle
 
 	// Verify the child's TCI was updated correctly.
 	expectedCumulative := computeExpectedCumulative(cumulativeBefore, updateValue)
-	verifyMeasurements(d, c, t, childHandle, updateValue, expectedCumulative)
+	verifyMeasurements(d, c, t, &childHandle, updateValue, expectedCumulative)
 
 	// --- Error cases ---
 
@@ -799,7 +867,7 @@ func TestUpdateContextMeasurement(d client.TestDPEInstance, c client.DPEClient, 
 	}
 
 	// Non-existent tciType must be rejected.
-	_, err = c.UpdateContextMeasurement(parentHandle, updateValue, 0xDEADBEEF)
+	_, err = c.UpdateContextMeasurement(currentParentHandle, updateValue, 0xDEADBEEF)
 	if err == nil {
 		t.Errorf("[ERROR]: UpdateContextMeasurement with non-existent INPUT_TYPE should return %q, but returned no error", client.StatusInvalidArgument)
 	} else if !errors.Is(err, client.StatusInvalidArgument) {

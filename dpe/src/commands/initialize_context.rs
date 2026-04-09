@@ -107,9 +107,10 @@ impl CommandExecution for InitCtxCmd {
             uses_internal_input_dice: false,
             allow_export_cdi: true,
             svn: 0,
-            // Root/simulation contexts created by InitializeContext are not
-            // eligible for recursive updates (no parent to authorize them).
-            allow_recursive: false,
+            // Default (root) contexts created by InitializeContext are allowed to receive
+            // recursive TCI updates via DeriveContext(RECURSIVE | MAKE_DEFAULT). Simulation
+            // contexts are separate trust domains and keep the restrictive default.
+            allow_recursive: self.flag_is_default(),
         });
         *response = NewHandleResp {
             handle,

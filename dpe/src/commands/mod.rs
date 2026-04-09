@@ -308,7 +308,9 @@ impl CommandExecution for Command<'_> {
             #[cfg(not(feature = "disable_rotate_context"))]
             Command::RotateCtx(cmd) => cmd.execute_serialized(dpe, env, locality, out),
             Command::Sign(cmd) => cmd.execute_serialized(dpe, env, locality, out),
-            Command::UpdateContextMeasurement(cmd) => cmd.execute_serialized(dpe, env, locality, out),
+            Command::UpdateContextMeasurement(cmd) => {
+                cmd.execute_serialized(dpe, env, locality, out)
+            }
         }
     }
 }

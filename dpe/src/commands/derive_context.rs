@@ -787,6 +787,10 @@ mod tests {
             handle: new_context_handle,
             flags: DeriveContextFlags::RETAIN_PARENT_CONTEXT
                 | DeriveContextFlags::INTERNAL_INPUT_INFO,
+            // The parent already has one child with tci_type=0 from the first
+            // DeriveContextCmd above; use a distinct tci_type to satisfy the
+            // INPUT_TYPE uniqueness constraint among siblings.
+            tci_type: 1,
             ..Default::default()
         })
         .execute(&mut dpe, &mut env, 0)
@@ -906,6 +910,10 @@ mod tests {
         }) = DeriveContextCmd {
             handle: env.state.contexts[old_default_idx].handle,
             flags: DeriveContextFlags::RETAIN_PARENT_CONTEXT,
+            // The parent already has one child with tci_type=0 (created in the
+            // CHANGE_LOCALITY step above); use a distinct tci_type to satisfy
+            // the INPUT_TYPE uniqueness constraint.
+            tci_type: 1,
             ..Default::default()
         }
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
@@ -1547,6 +1555,8 @@ mod tests {
             // Children + Parent
             let expected_active_contexts = i + 1;
             // Create the next context from the current context.
+            // Each child gets a unique tci_type to satisfy the INPUT_TYPE uniqueness
+            // constraint (all children share the same root parent).
             (handle, parent_handle) = derive_context_and_check_active_child_count(
                 &mut dpe,
                 &mut env,
@@ -1555,6 +1565,7 @@ mod tests {
                     flags: DeriveContextFlags::RETAIN_PARENT_CONTEXT
                         | DeriveContextFlags::ALLOW_NEW_CONTEXT_TO_EXPORT,
                     target_locality: TEST_LOCALITIES[0],
+                    tci_type: i as u32,
                     ..Default::default()
                 },
                 expected_active_contexts,
@@ -1645,6 +1656,8 @@ mod tests {
             // Children + Parent
             let expected_active_contexts = i + 1;
             // Create the next context from the current context.
+            // Each child gets a unique tci_type to satisfy the INPUT_TYPE uniqueness
+            // constraint (all children share the same root parent).
             (_, parent_handle) = derive_context_and_check_active_child_count(
                 &mut dpe,
                 &mut env,
@@ -1652,6 +1665,7 @@ mod tests {
                     handle: parent_handle,
                     flags: DeriveContextFlags::RETAIN_PARENT_CONTEXT,
                     target_locality: TEST_LOCALITIES[0],
+                    tci_type: i as u32,
                     ..Default::default()
                 },
                 expected_active_contexts,

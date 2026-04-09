@@ -392,6 +392,10 @@ mod tests {
         let handle_b = match (DeriveContextCmd {
             handle: parent_handle,
             target_locality: TEST_LOCALITIES[1],
+            // Use a distinct tci_type; the parent already has one child with
+            // tci_type=0 (from the previous DeriveContext), and INPUT_TYPE must
+            // be unique among siblings.
+            tci_type: 1,
             ..Default::default()
         })
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[1])

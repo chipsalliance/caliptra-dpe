@@ -78,6 +78,7 @@ fn handle_request(dpe: &mut DpeInstance, env: &mut dyn DpeEnv, stream: &mut Unix
         Response::Sign(ref res) => res.resp_hdr().status,
         Response::DestroyCtx(ref resp_hdr) => resp_hdr.status,
         Response::GetCertificateChain(ref res) => res.resp_hdr.status,
+        Response::UpdateContextMeasurement(ref res) => res.resp_hdr.status,
         Response::Error(ref resp_hdr) => resp_hdr.status,
     };
     // There are a few vendor error codes starting at 0x1000, so this can be a 2 bytes.
