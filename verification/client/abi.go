@@ -268,9 +268,9 @@ type UpdateContextMeasurementCmd[Digest DigestAlgorithm] struct {
 	InputData           Digest
 	Reserved            uint32
 	TciType             uint32
-	// Svn must always be zero. SVN is fixed at context creation and cannot be changed
-	// by UpdateContextMeasurement; a non-zero value is rejected by the DPE with InvalidArgument.
-	Svn uint32
+	// ReservedSvn is reserved for future use and ignored by this command.
+	// SVN is fixed at context creation and cannot be changed by UpdateContextMeasurement.
+	ReservedSvn uint32
 }
 
 // UpdateContextMeasurementResp is the output response from UpdateContextMeasurement.
@@ -1008,7 +1008,7 @@ func (c *DPEABI[_, Digest, _, _, _]) UpdateContextMeasurement(parentHandle *Cont
 		InputData:           input,
 		Reserved:            0,
 		TciType:             tciType,
-		Svn:                 0,
+		ReservedSvn:         0,
 	}
 
 	var resp UpdateContextMeasurementResp

@@ -436,8 +436,10 @@ impl CommandExecution for DeriveContextCmd {
             allow_export_cdi: flags.allows_new_context_to_export()
                 & tmp_parent_context.allow_export_cdi(),
             svn,
-            // Propagate ALLOW_RECURSIVE flag to the new child context.
-            allow_recursive: flags.allows_recursive(),
+            // A child may only receive recursive permission if the caller requests it AND
+            // the parent itself has allow_recursive — preventing privilege escalation across
+            // contexts that don't opt in.
+            allow_recursive: flags.allows_recursive() & tmp_parent_context.allow_recursive(),
         });
 
         dpe.add_tci_measurement(env, &mut tmp_child_context, data, target_locality)?;
