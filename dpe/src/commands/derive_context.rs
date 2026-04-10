@@ -199,6 +199,13 @@ impl DeriveContextCmd {
             c.state == ContextState::Active && c.locality == target_locality
         })?;
 
+        // check if the typ already exists
+        for c in state.contexts.iter() {
+            if c.state != ContextState::Inactive && c.tci.tci_type == self.tci_type {
+                return Ok(false);
+            }
+        }
+
         Ok(if self.flags.makes_default() {
             self.safe_to_make_default(parent_idx, default_context_idx, num_contexts_in_locality)
         } else {
@@ -608,9 +615,10 @@ mod tests {
         let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
         // Fill all contexts with children (minus the auto-init context).
-        for _ in 0..MAX_HANDLES - 1 {
+        for i in 0..MAX_HANDLES - 1 {
             DeriveContextCmd {
                 flags: DeriveContextFlags::MAKE_DEFAULT,
+                tci_type: i as u32 + 1,
                 ..Default::default()
             }
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
@@ -703,6 +711,7 @@ mod tests {
             })),
             DeriveContextCmd {
                 flags: DeriveContextFlags::MAKE_DEFAULT,
+                tci_type: 1,
                 ..Default::default()
             }
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
@@ -715,7 +724,12 @@ mod tests {
                 parent_handle: ContextHandle([0xff; ContextHandle::SIZE]),
                 resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
             })),
-            DeriveContextCmd::default().execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
+            DeriveContextCmd {
+                handle: ContextHandle::default(),
+                tci_type: 2,
+                ..Default::default()
+            }
+            .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         );
     }
 
@@ -748,6 +762,7 @@ mod tests {
         let parent_handle = match (DeriveContextCmd {
             handle,
             flags: DeriveContextFlags::RETAIN_PARENT_CONTEXT,
+            tci_type: 1,
             ..Default::default()
         })
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
@@ -799,10 +814,10 @@ mod tests {
             handle: new_context_handle,
             flags: DeriveContextFlags::RETAIN_PARENT_CONTEXT
                 | DeriveContextFlags::INTERNAL_INPUT_INFO,
-            // The parent already has one child with tci_type=0 from the first
+            // The parent already has one child with tci_type=1 from the first
             // DeriveContextCmd above; use a distinct tci_type to satisfy the
             // INPUT_TYPE uniqueness constraint among siblings.
-            tci_type: 1,
+            tci_type: 2,
             ..Default::default()
         })
         .execute(&mut dpe, &mut env, 0)
@@ -882,6 +897,7 @@ mod tests {
             })),
             DeriveContextCmd {
                 flags: DeriveContextFlags::MAKE_DEFAULT,
+                tci_type: 1,
                 ..Default::default()
             }
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
@@ -899,6 +915,7 @@ mod tests {
                     | DeriveContextFlags::MAKE_DEFAULT
                     | DeriveContextFlags::CHANGE_LOCALITY,
                 target_locality: TEST_LOCALITIES[1],
+                tci_type: 2,
                 ..Default::default()
             }
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
@@ -922,10 +939,10 @@ mod tests {
         }) = DeriveContextCmd {
             handle: env.state.contexts[old_default_idx].handle,
             flags: DeriveContextFlags::RETAIN_PARENT_CONTEXT,
-            // The parent already has one child with tci_type=0 (created in the
+            // The parent already has one child with tci_type=1 (created in the
             // CHANGE_LOCALITY step above); use a distinct tci_type to satisfy
             // the INPUT_TYPE uniqueness constraint.
-            tci_type: 1,
+            tci_type: 3,
             ..Default::default()
         }
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
@@ -1280,6 +1297,7 @@ mod tests {
         let Ok(Response::DeriveContext(DeriveContextResp { handle, .. })) = DeriveContextCmd {
             flags: DeriveContextFlags::ALLOW_NEW_CONTEXT_TO_EXPORT,
             target_locality: TEST_LOCALITIES[0],
+            tci_type: 1,
             ..Default::default()
         }
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[0]) else {
@@ -1327,6 +1345,7 @@ mod tests {
                 | DeriveContextFlags::CREATE_CERTIFICATE
                 | DeriveContextFlags::RETAIN_PARENT_CONTEXT,
             target_locality: TEST_LOCALITIES[0],
+            tci_type: 1,
             ..Default::default()
         }
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[0]);
@@ -1352,6 +1371,7 @@ mod tests {
         let Ok(Response::DeriveContext(res)) = DeriveContextCmd {
             data: TciMeasurement([0xA; TCI_SIZE]),
             target_locality: TEST_LOCALITIES[0],
+            tci_type: 2,
             ..Default::default()
         }
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[0]) else {
@@ -1365,6 +1385,7 @@ mod tests {
             handle: res.handle,
             flags: DeriveContextFlags::EXPORT_CDI | DeriveContextFlags::CREATE_CERTIFICATE,
             target_locality: TEST_LOCALITIES[0],
+            tci_type: 3,
             ..Default::default()
         }
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[0]);
@@ -1382,6 +1403,7 @@ mod tests {
         let Ok(Response::DeriveContext(res)) = DeriveContextCmd {
             data: TciMeasurement([0xA; TCI_SIZE]),
             target_locality: TEST_LOCALITIES[0],
+            tci_type: 4,
             ..Default::default()
         }
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[0]) else {
@@ -1396,6 +1418,7 @@ mod tests {
                 | DeriveContextFlags::CREATE_CERTIFICATE
                 | DeriveContextFlags::ALLOW_NEW_CONTEXT_TO_EXPORT,
             target_locality: TEST_LOCALITIES[0],
+            tci_type: 5,
             ..Default::default()
         }
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[0]);
@@ -1417,6 +1440,7 @@ mod tests {
             flags: DeriveContextFlags::MAKE_DEFAULT
                 | DeriveContextFlags::ALLOW_NEW_CONTEXT_TO_EXPORT,
             target_locality: TEST_LOCALITIES[0],
+            tci_type: 6,
             ..Default::default()
         }
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[0]);
@@ -1437,6 +1461,7 @@ mod tests {
                 | DeriveContextFlags::EXPORT_CDI
                 | DeriveContextFlags::CREATE_CERTIFICATE,
             target_locality: TEST_LOCALITIES[0],
+            tci_type: 7,
             ..Default::default()
         }
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[0]);
@@ -1895,5 +1920,69 @@ mod tests {
             }
             Err(e) => panic!("x509 parsing failed: {:?}", e),
         };
+    }
+
+    #[test]
+    fn test_tci_type_uniqueness_in_locality() {
+        CfiCounter::reset_for_test();
+        let mut state = State::new(
+            Support::AUTO_INIT | Support::ROTATE_CONTEXT,
+            DpeFlags::empty(),
+        );
+        test_env!(env, &mut state);
+        let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
+
+        // Rotate the default handle so we have a non-default active context.
+        let handle = match (RotateCtxCmd {
+            handle: ContextHandle::default(),
+            flags: RotateCtxFlags::empty(),
+        })
+        .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
+        .unwrap()
+        {
+            Response::RotateCtx(resp) => resp.handle,
+            _ => panic!("Failed to rotate default handle"),
+        };
+
+        let tci_type = 0x1234;
+
+        // Create first child with tci_type.
+        let child_handle = match (DeriveContextCmd {
+            handle,
+            tci_type,
+            ..Default::default()
+        })
+        .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
+        .unwrap()
+        {
+            Response::DeriveContext(resp) => resp.handle,
+            _ => panic!("Wrong response type"),
+        };
+
+        // Test that creating two contexts in the same locality with the same
+        // type causes an error.
+        assert_eq!(
+            Err(DpeErrorCode::InvalidArgument),
+            DeriveContextCmd {
+                handle: child_handle,
+                tci_type,
+                ..Default::default()
+            }
+            .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
+        );
+
+        // Test having two contexts with the same type in separate localities
+        // also fails.
+        assert_eq!(
+            Err(DpeErrorCode::InvalidArgument),
+            DeriveContextCmd {
+                handle: child_handle,
+                tci_type,
+                target_locality: TEST_LOCALITIES[1],
+                flags: DeriveContextFlags::CHANGE_LOCALITY,
+                ..Default::default()
+            }
+            .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
+        );
     }
 }

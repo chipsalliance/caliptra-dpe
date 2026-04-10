@@ -152,7 +152,7 @@ mod tests {
         assert_eq!(
             Err(DpeErrorCode::InvalidLocality),
             DestroyCtxCmd {
-                handle: ContextHandle::default(),
+                handle: ContextHandle::default()
             }
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[1])
         );
@@ -166,7 +166,7 @@ mod tests {
                 dpe.response_hdr(DpeErrorCode::NoError)
             )),
             DestroyCtxCmd {
-                handle: ContextHandle::default(),
+                handle: ContextHandle::default()
             }
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         );
@@ -178,7 +178,7 @@ mod tests {
                 dpe.response_hdr(DpeErrorCode::NoError)
             )),
             DestroyCtxCmd {
-                handle: TEST_HANDLE,
+                handle: TEST_HANDLE
             }
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         );
@@ -240,7 +240,7 @@ mod tests {
                 dpe.response_hdr(DpeErrorCode::NoError)
             )),
             DestroyCtxCmd {
-                handle: ContextHandle::default(),
+                handle: ContextHandle::default()
             }
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         );
@@ -283,7 +283,7 @@ mod tests {
                 dpe.response_hdr(DpeErrorCode::NoError)
             )),
             DestroyCtxCmd {
-                handle: ContextHandle([1; ContextHandle::SIZE]),
+                handle: ContextHandle([1; ContextHandle::SIZE])
             }
             .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         );
@@ -303,6 +303,7 @@ mod tests {
         let handle_1 = match (DeriveContextCmd {
             flags: DeriveContextFlags::RETAIN_PARENT_CONTEXT | DeriveContextFlags::CHANGE_LOCALITY,
             target_locality: TEST_LOCALITIES[1],
+            tci_type: 1,
             ..Default::default()
         })
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
@@ -316,6 +317,7 @@ mod tests {
         let handle_2 = match (DeriveContextCmd {
             handle: handle_1,
             target_locality: TEST_LOCALITIES[1],
+            tci_type: 2,
             ..Default::default()
         })
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[1])
@@ -329,6 +331,7 @@ mod tests {
         let handle_3 = match (DeriveContextCmd {
             handle: handle_2,
             target_locality: TEST_LOCALITIES[1],
+            tci_type: 3,
             ..Default::default()
         })
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[1])
@@ -365,6 +368,7 @@ mod tests {
         let parent_handle = match (DeriveContextCmd {
             flags: DeriveContextFlags::RETAIN_PARENT_CONTEXT | DeriveContextFlags::CHANGE_LOCALITY,
             target_locality: TEST_LOCALITIES[1],
+            tci_type: 1,
             ..Default::default()
         })
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
@@ -379,6 +383,7 @@ mod tests {
             handle: parent_handle,
             flags: DeriveContextFlags::RETAIN_PARENT_CONTEXT,
             target_locality: TEST_LOCALITIES[1],
+            tci_type: 2,
             ..Default::default()
         })
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[1])
@@ -393,9 +398,9 @@ mod tests {
             handle: parent_handle,
             target_locality: TEST_LOCALITIES[1],
             // Use a distinct tci_type; the parent already has one child with
-            // tci_type=0 (from the previous DeriveContext), and INPUT_TYPE must
+            // tci_type=1 (from the previous DeriveContext), and INPUT_TYPE must
             // be unique among siblings.
-            tci_type: 1,
+            tci_type: 3,
             ..Default::default()
         })
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[1])
