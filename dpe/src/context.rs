@@ -43,7 +43,9 @@ pub struct Context {
     pub allow_x509: U8Bool,
     /// Whether this context can use the `EXPORT_CDI` feature.
     pub allow_export_cdi: U8Bool,
-    pub reserved: [u8; 1],
+    /// Whether recursive TCI measurement update via DeriveContext(RECURSIVE=true) is permitted
+    /// for this context. Set by the ALLOW_RECURSIVE flag at context creation time.
+    pub allow_recursive: U8Bool,
 }
 
 // As long as a `u32` is used for the children bit map the MAX_HANDLES upper bound is 32.
@@ -89,7 +91,7 @@ impl Context {
             // The root context needs to
             // allow_export_cdi or it is never enabled.
             allow_export_cdi: U8Bool::new(true),
-            reserved: [0; 1],
+            allow_recursive: U8Bool::new(false),
         }
     }
 
@@ -104,6 +106,12 @@ impl Context {
     }
     pub fn allow_export_cdi(&self) -> bool {
         self.allow_export_cdi.get()
+    }
+
+    /// Whether recursive TCI measurement update via DeriveContext(RECURSIVE=true) is permitted.
+    /// With ALLOW_RECURSIVE semantics, this returns false by default (recursive is opt-in).
+    pub fn allow_recursive(&self) -> bool {
+        self.allow_recursive.get()
     }
 
     /// Sets all values to an initialized state according to ActiveContextArgs
@@ -122,6 +130,7 @@ impl Context {
         self.uses_internal_input_info = args.uses_internal_input_info.into();
         self.uses_internal_input_dice = args.uses_internal_input_dice.into();
         self.allow_export_cdi = args.allow_export_cdi.into();
+        self.allow_recursive = args.allow_recursive.into();
     }
 
     /// Destroy this context so it can no longer be used until it is re-initialized. The default
@@ -136,6 +145,7 @@ impl Context {
         self.locality = 0;
         self.children = Children::empty();
         self.handle = ContextHandle::new_invalid();
+        self.allow_recursive = false.into();
     }
 
     /// Return the list of children of the context with idx added.
@@ -320,6 +330,8 @@ pub struct ActiveContextArgs<'a> {
     pub uses_internal_input_dice: bool,
     pub allow_export_cdi: bool,
     pub svn: u32,
+    /// Set at context creation time to permit future DeriveContext(RECURSIVE=true) calls.
+    pub allow_recursive: bool,
 }
 
 pub(crate) struct ChildToRootIter<'a> {

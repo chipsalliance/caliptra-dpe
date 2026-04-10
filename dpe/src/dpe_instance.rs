@@ -167,6 +167,7 @@ impl DpeInstance {
             Command::RotateCtx(cmd) => cmd.execute(self, env, locality),
             Command::DestroyCtx(cmd) => cmd.execute(self, env, locality),
             Command::GetCertificateChain(cmd) => cmd.execute(self, env, locality),
+            Command::UpdateContextMeasurement(cmd) => cmd.execute(self, env, locality),
         };
 
         match resp {

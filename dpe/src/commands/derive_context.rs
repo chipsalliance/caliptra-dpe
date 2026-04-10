@@ -34,6 +34,10 @@ bitflags! {
         const RECURSIVE = 1u32 << 24;
         const EXPORT_CDI = 1u32 << 23;
         const CREATE_CERTIFICATE = 1u32 << 22;
+        /// When set, the generated child context SHALL be allowed to use
+        /// DeriveContext with RECURSIVE. Without this flag, recursive updates on
+        /// the child are rejected (opt-in).
+        const ALLOW_RECURSIVE = 1u32 << 21;
     }
 }
 
@@ -76,6 +80,10 @@ impl DeriveContextFlags {
 
     pub const fn allows_new_context_to_export(&self) -> bool {
         self.contains(DeriveContextFlags::ALLOW_NEW_CONTEXT_TO_EXPORT)
+    }
+
+    pub const fn allows_recursive(&self) -> bool {
+        self.contains(DeriveContextFlags::ALLOW_RECURSIVE)
     }
 }
 
@@ -147,6 +155,22 @@ impl DeriveContextCmd {
             }
             _ => false,
         }
+    }
+
+    /// Whether the given tci_type is unique among the direct children of the parent.
+    ///
+    /// Each INPUT_TYPE value SHALL be unique among the direct children of a given context.
+    ///
+    /// # Arguments
+    ///
+    /// * `state` - Current DPE state.
+    /// * `parent_idx` - Index of the parent context.
+    /// * `tci_type` - INPUT_TYPE to check for uniqueness.
+    fn tci_type_is_unique_among_children(state: &State, parent_idx: usize, tci_type: u32) -> bool {
+        let parent_children = state.contexts[parent_idx].children;
+        parent_children
+            .iter()
+            .all(|idx| state.contexts[idx].tci.tci_type != tci_type)
     }
 
     /// Whether it is okay to create a child in the given environment.
@@ -224,6 +248,14 @@ impl CommandExecution for DeriveContextCmd {
                 && env.state().contexts[parent_idx].context_type == ContextType::Simulation)
             || (flags.exports_cdi() && !env.state().contexts[parent_idx].allow_export_cdi())
             || (flags.is_recursive() && flags.retains_parent())
+            // ALLOW_RECURSIVE and RECURSIVE are mutually exclusive: RECURSIVE updates the current
+            // context in place, while ALLOW_RECURSIVE grants that ability to a new child context.
+            || (flags.allows_recursive() && flags.is_recursive())
+            // Recursive updates are only permitted on contexts that were explicitly
+            // created with ALLOW_RECURSIVE. Check the parent context's stored property
+            // (consistent with how x509 and export_cdi are validated above via the
+            // parent's allow_x509/allow_export_cdi fields).
+            || (!env.state().contexts[parent_idx].allow_recursive() && flags.is_recursive())
         {
             return Err(DpeErrorCode::InvalidArgument);
         }
@@ -287,6 +319,11 @@ impl CommandExecution for DeriveContextCmd {
                     Err(DpeErrorCode::ArgumentNotSupported)?
                 }
             }
+        }
+
+        // Each INPUT_TYPE value SHALL be unique among the direct children of a given context.
+        if !Self::tci_type_is_unique_among_children(env.state(), parent_idx, tci_type) {
+            return Err(DpeErrorCode::InvalidArgument);
         }
 
         // Copy the parent context to mutate so that we avoid mutating internal state upon an error.
@@ -399,6 +436,10 @@ impl CommandExecution for DeriveContextCmd {
             allow_export_cdi: flags.allows_new_context_to_export()
                 & tmp_parent_context.allow_export_cdi(),
             svn,
+            // A child may only receive recursive permission if the caller requests it AND
+            // the parent itself has allow_recursive — preventing privilege escalation across
+            // contexts that don't opt in.
+            allow_recursive: flags.allows_recursive() & tmp_parent_context.allow_recursive(),
         });
 
         dpe.add_tci_measurement(env, &mut tmp_child_context, data, target_locality)?;
@@ -758,6 +799,10 @@ mod tests {
             handle: new_context_handle,
             flags: DeriveContextFlags::RETAIN_PARENT_CONTEXT
                 | DeriveContextFlags::INTERNAL_INPUT_INFO,
+            // The parent already has one child with tci_type=0 from the first
+            // DeriveContextCmd above; use a distinct tci_type to satisfy the
+            // INPUT_TYPE uniqueness constraint among siblings.
+            tci_type: 1,
             ..Default::default()
         })
         .execute(&mut dpe, &mut env, 0)
@@ -877,6 +922,10 @@ mod tests {
         }) = DeriveContextCmd {
             handle: env.state.contexts[old_default_idx].handle,
             flags: DeriveContextFlags::RETAIN_PARENT_CONTEXT,
+            // The parent already has one child with tci_type=0 (created in the
+            // CHANGE_LOCALITY step above); use a distinct tci_type to satisfy
+            // the INPUT_TYPE uniqueness constraint.
+            tci_type: 1,
             ..Default::default()
         }
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
@@ -1518,6 +1567,8 @@ mod tests {
             // Children + Parent
             let expected_active_contexts = i + 1;
             // Create the next context from the current context.
+            // Each child gets a unique tci_type to satisfy the INPUT_TYPE uniqueness
+            // constraint (all children share the same root parent).
             (handle, parent_handle) = derive_context_and_check_active_child_count(
                 &mut dpe,
                 &mut env,
@@ -1526,6 +1577,7 @@ mod tests {
                     flags: DeriveContextFlags::RETAIN_PARENT_CONTEXT
                         | DeriveContextFlags::ALLOW_NEW_CONTEXT_TO_EXPORT,
                     target_locality: TEST_LOCALITIES[0],
+                    tci_type: i as u32,
                     ..Default::default()
                 },
                 expected_active_contexts,
@@ -1616,6 +1668,8 @@ mod tests {
             // Children + Parent
             let expected_active_contexts = i + 1;
             // Create the next context from the current context.
+            // Each child gets a unique tci_type to satisfy the INPUT_TYPE uniqueness
+            // constraint (all children share the same root parent).
             (_, parent_handle) = derive_context_and_check_active_child_count(
                 &mut dpe,
                 &mut env,
@@ -1623,6 +1677,7 @@ mod tests {
                     handle: parent_handle,
                     flags: DeriveContextFlags::RETAIN_PARENT_CONTEXT,
                     target_locality: TEST_LOCALITIES[0],
+                    tci_type: i as u32,
                     ..Default::default()
                 },
                 expected_active_contexts,

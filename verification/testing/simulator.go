@@ -180,6 +180,21 @@ func GetSimulatorTargets() []TestTarget {
 			getTestTarget([]string{"AutoInit", "Recursive", "RetainParentContext", "X509", "RotateContext", "DpeInstanceMarkDiceExtensionsCritical"}),
 			[]TestCase{DeriveContextRecursiveOnDerivedContextsTestCase},
 		},
+		{
+			"DeriveContext_AllowRecursive",
+			getTestTarget([]string{"AutoInit", "Recursive", "RetainParentContext", "RotateContext"}),
+			[]TestCase{DeriveContextAllowRecursiveTestCase},
+		},
+		{
+			"DeriveContext_InputTypeUniqueness",
+			getTestTarget([]string{"AutoInit", "RetainParentContext", "RotateContext"}),
+			[]TestCase{DeriveContextInputTypeUniquenessTestCase},
+		},
+		{
+			"UpdateContextMeasurement",
+			getTestTarget([]string{"AutoInit", "RetainParentContext", "X509", "RotateContext", "Recursive"}),
+			[]TestCase{UpdateContextMeasurementTestCase},
+		},
 	}
 }
 
