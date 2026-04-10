@@ -107,9 +107,12 @@ impl CommandExecution for InitCtxCmd {
             uses_internal_input_dice: false,
             allow_export_cdi: true,
             svn: 0,
-            // Default (root) contexts created by InitializeContext are allowed to receive
-            // recursive TCI updates via DeriveContext(RECURSIVE | MAKE_DEFAULT). Simulation
-            // contexts are separate trust domains and keep the restrictive default.
+            // The XOR validation above ensures exactly one flag is set, so allow_recursive is
+            // always true for default contexts and always false for simulation contexts.
+            // Default (root) contexts may require recursive TCI updates.
+            // Simulation contexts have no equivalent use case; granting it implicitly would
+            // let any code holding the handle silently overwrite existing measurements without
+            // creating a child, leaving no auditable record of the mutation.
             allow_recursive: self.flag_is_default(),
         });
         *response = NewHandleResp {

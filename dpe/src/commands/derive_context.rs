@@ -157,6 +157,22 @@ impl DeriveContextCmd {
         }
     }
 
+    /// Whether the given tci_type is unique among the direct children of the parent.
+    ///
+    /// Each INPUT_TYPE value SHALL be unique among the direct children of a given context.
+    ///
+    /// # Arguments
+    ///
+    /// * `state` - Current DPE state.
+    /// * `parent_idx` - Index of the parent context.
+    /// * `tci_type` - INPUT_TYPE to check for uniqueness.
+    fn tci_type_is_unique_among_children(state: &State, parent_idx: usize, tci_type: u32) -> bool {
+        let parent_children = state.contexts[parent_idx].children;
+        parent_children
+            .iter()
+            .all(|idx| state.contexts[idx].tci.tci_type != tci_type)
+    }
+
     /// Whether it is okay to create a child in the given environment.
     ///
     /// When a default context is in a locality, it MUST be the only context in the locality. There
@@ -232,11 +248,14 @@ impl CommandExecution for DeriveContextCmd {
                 && env.state().contexts[parent_idx].context_type == ContextType::Simulation)
             || (flags.exports_cdi() && !env.state().contexts[parent_idx].allow_export_cdi())
             || (flags.is_recursive() && flags.retains_parent())
-            // ALLOW_RECURSIVE is a property stored on a newly created child context.
-            // When RECURSIVE is set, no child is created — the current context's TCI is
-            // updated in place. Setting ALLOW_RECURSIVE alongside RECURSIVE is therefore
-            // invalid: there is no child context to attach the property to.
+            // ALLOW_RECURSIVE and RECURSIVE are mutually exclusive: RECURSIVE updates the current
+            // context in place, while ALLOW_RECURSIVE grants that ability to a new child context.
             || (flags.allows_recursive() && flags.is_recursive())
+            // Recursive updates are only permitted on contexts that were explicitly
+            // created with ALLOW_RECURSIVE. Check the parent context's stored property
+            // (consistent with how x509 and export_cdi are validated above via the
+            // parent's allow_x509/allow_export_cdi fields).
+            || (!env.state().contexts[parent_idx].allow_recursive() && flags.is_recursive())
         {
             return Err(DpeErrorCode::InvalidArgument);
         }
@@ -267,11 +286,6 @@ impl CommandExecution for DeriveContextCmd {
                 if #[cfg(not(feature = "disable_recursive"))] {
                     let response = mutresp::<DeriveContextResp>(dpe.profile, out)?;
                     let mut tmp_context = env.state().contexts[parent_idx];
-                    // The context must have been created with ALLOW_RECURSIVE to
-                    // permit recursive updates. Without it, reject.
-                    if !tmp_context.allow_recursive() {
-                        return Err(DpeErrorCode::InvalidArgument);
-                    }
                     if tmp_context.tci.tci_type != tci_type {
                         return Err(DpeErrorCode::InvalidArgument);
                     } else {
@@ -307,13 +321,9 @@ impl CommandExecution for DeriveContextCmd {
             }
         }
 
-        // Check that no direct child of the parent already has the same INPUT_TYPE.
         // Each INPUT_TYPE value SHALL be unique among the direct children of a given context.
-        let parent_children = env.state().contexts[parent_idx].children;
-        for sibling_idx in parent_children.iter() {
-            if env.state().contexts[sibling_idx].tci.tci_type == tci_type {
-                return Err(DpeErrorCode::InvalidArgument);
-            }
+        if !Self::tci_type_is_unique_among_children(env.state(), parent_idx, tci_type) {
+            return Err(DpeErrorCode::InvalidArgument);
         }
 
         // Copy the parent context to mutate so that we avoid mutating internal state upon an error.

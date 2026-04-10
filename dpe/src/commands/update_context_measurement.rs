@@ -34,7 +34,7 @@ use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct UpdateContextMeasurementCmd {
-    /// Handle of the parent context. Must not be the default (null) handle.
+    /// Handle of the parent context. Must not be the default handle.
     pub parent_handle: crate::context::ContextHandle,
     /// New TCI measurement to extend into the child context.
     pub data: TciMeasurement,
