@@ -481,7 +481,7 @@ mod tests {
                 handle: ContextHandle::default(),
                 data: TciMeasurement([i; DPE_PROFILE.hash_size()]),
                 flags: DeriveContextFlags::MAKE_DEFAULT | DeriveContextFlags::INPUT_ALLOW_X509,
-                tci_type: i as u32,
+                tci_type: i as u32 + 1,
                 target_locality: 0,
                 svn: 0,
             }

@@ -118,7 +118,7 @@ mod tests {
     use crate::{
         commands::{
             rotate_context::{RotateCtxCmd, RotateCtxFlags},
-            DeriveContextCmd, DeriveContextFlags, InitCtxCmd,
+            DeriveContextCmd, DeriveContextFlags,
         },
         context::ContextHandle,
         dpe_instance::{tests::TEST_LOCALITIES, DpeInstance},
