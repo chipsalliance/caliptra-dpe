@@ -581,7 +581,7 @@ pub mod tests {
                 handle: ContextHandle::default(),
                 data: TciMeasurement([i; DPE_PROFILE.hash_size()]),
                 flags: DeriveContextFlags::MAKE_DEFAULT,
-                tci_type: i as u32,
+                tci_type: i as u32 + 1,
                 target_locality: 0,
                 svn: 0,
             }
@@ -647,6 +647,7 @@ pub mod tests {
             .unwrap();
         DeriveContextCmd {
             flags: DeriveContextFlags::MAKE_DEFAULT | DeriveContextFlags::INTERNAL_INPUT_INFO,
+            tci_type: 1,
             ..Default::default()
         }
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
@@ -711,6 +712,7 @@ pub mod tests {
             .unwrap();
         DeriveContextCmd {
             flags: DeriveContextFlags::MAKE_DEFAULT | DeriveContextFlags::INTERNAL_INPUT_DICE,
+            tci_type: 1,
             ..Default::default()
         }
         .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])

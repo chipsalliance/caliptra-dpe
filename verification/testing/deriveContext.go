@@ -33,7 +33,7 @@ func TestDeriveContext(d client.TestDPEInstance, c client.DPEClient, t *testing.
 	digestLen := profile.GetDigestSize()
 
 	// Child context handle returned will be the default context handle when MakeDefault flag is set
-	if resp, err = c.DeriveContext(handle, make([]byte, digestLen), client.MakeDefault, 0, 0); err != nil {
+	if resp, err = c.DeriveContext(handle, make([]byte, digestLen), client.MakeDefault, 1, 0); err != nil {
 		t.Errorf("[ERROR]: Error while creating child context handle: %s", err)
 	}
 	handle = &resp.NewContextHandle
@@ -43,7 +43,7 @@ func TestDeriveContext(d client.TestDPEInstance, c client.DPEClient, t *testing.
 
 	// When there is already a default handle, setting MakeDefault and RetainParentContext will cause error
 	// because there cannot be default *and* non-default handles in a locality
-	if _, err = c.DeriveContext(handle, make([]byte, digestLen), client.MakeDefault|client.RetainParentContext, 0, 0); err == nil {
+	if _, err = c.DeriveContext(handle, make([]byte, digestLen), client.MakeDefault|client.RetainParentContext, 2, 0); err == nil {
 		t.Errorf("[ERROR]: Should return %q, but returned no error", client.StatusInvalidArgument)
 	} else if !errors.Is(err, client.StatusInvalidArgument) {
 		t.Errorf("[ERROR]: Incorrect error type. Should return %q, but returned %q", client.StatusInvalidArgument, err)
@@ -52,14 +52,14 @@ func TestDeriveContext(d client.TestDPEInstance, c client.DPEClient, t *testing.
 	// Retain parent should fail because parent handle is a default handle
 	// and child handle will be a non-default handle.
 	// Default and non-default handle cannot coexist in same locality.
-	if _, err = c.DeriveContext(handle, make([]byte, digestLen), client.RetainParentContext, 0, 0); err == nil {
+	if _, err = c.DeriveContext(handle, make([]byte, digestLen), client.RetainParentContext, 3, 0); err == nil {
 		t.Errorf("[ERROR]: Should return %q, but returned no error", client.StatusInvalidArgument)
 	} else if !errors.Is(err, client.StatusInvalidArgument) {
 		t.Errorf("[ERROR]: Incorrect error type. Should return %q, but returned %q", client.StatusInvalidArgument, err)
 	}
 
 	// Child context handle should be a random handle when MakeDefault flag is NOT used
-	if resp, err = c.DeriveContext(handle, make([]byte, digestLen), 0, 0, 0); err != nil {
+	if resp, err = c.DeriveContext(handle, make([]byte, digestLen), 0, 4, 0); err != nil {
 		t.Errorf("[ERROR]: Error while creating child context handle: %s", err)
 	}
 	handle = &resp.NewContextHandle
@@ -68,7 +68,7 @@ func TestDeriveContext(d client.TestDPEInstance, c client.DPEClient, t *testing.
 	}
 
 	// Now, there is no default handle, setting RetainParentContext flag should succeed
-	if resp, err = c.DeriveContext(handle, make([]byte, digestLen), client.RetainParentContext, 0, 0); err != nil {
+	if resp, err = c.DeriveContext(handle, make([]byte, digestLen), client.RetainParentContext, 5, 0); err != nil {
 		t.Errorf("[ERROR]: Error while making child context handle as default handle: %s", err)
 	}
 	handle = &resp.NewContextHandle
@@ -86,7 +86,7 @@ func TestDeriveContextCdiExport(d client.TestDPEInstance, c client.DPEClient, t 
 		t.Fatalf("Could not get profile: %v", err)
 	}
 	digestLen := profile.GetDigestSize()
-	resp, err = c.DeriveContext(handle, make([]byte, digestLen), client.CdiExport|client.CreateCertificate|client.RetainParentContext, 0, 0)
+	resp, err = c.DeriveContext(handle, make([]byte, digestLen), client.CdiExport|client.CreateCertificate|client.RetainParentContext, 1, 0)
 	if err != nil {
 		t.Fatalf("[ERROR]: Error while exporting CdiExport: %s", err)
 	}
@@ -139,7 +139,7 @@ func TestDeriveContextDisallowedChildCdiExport(d client.TestDPEInstance, c clien
 		t.Fatalf("Could not get profile: %v", err)
 	}
 	digestLen := profile.GetDigestSize()
-	res, err := c.DeriveContext(handle, make([]byte, digestLen), 0, 0, 0)
+	res, err := c.DeriveContext(handle, make([]byte, digestLen), 0, 1, 0)
 	if err != nil {
 		t.Fatalf("[ERROR]: Error while making default: %s", err)
 	}
@@ -161,7 +161,7 @@ func TestDeriveContextAllowedChildCdiExport(d client.TestDPEInstance, c client.D
 		t.Fatalf("Could not get profile: %v", err)
 	}
 	digestLen := profile.GetDigestSize()
-	res, err := c.DeriveContext(handle, make([]byte, digestLen), client.AllowNewContextToExport, 0, 0)
+	res, err := c.DeriveContext(handle, make([]byte, digestLen), client.AllowNewContextToExport, 1, 0)
 	if err != nil {
 		t.Fatalf("[ERROR]: Error while making default: %s", err)
 	}
@@ -237,7 +237,7 @@ func TestChangeLocality(d client.TestDPEInstance, c client.DPEClient, t *testing
 	otherLocality := currentLocality + 1
 
 	// Create child context in other locality
-	if resp, err = c.DeriveContext(handle, make([]byte, digestLen), client.ChangeLocality, 0, otherLocality); err != nil {
+	if resp, err = c.DeriveContext(handle, make([]byte, digestLen), client.ChangeLocality, 1, otherLocality); err != nil {
 		t.Fatalf("[ERROR]: Error while creating child context handle in other locality: %s", err)
 	}
 	handle = &resp.NewContextHandle
@@ -246,7 +246,7 @@ func TestChangeLocality(d client.TestDPEInstance, c client.DPEClient, t *testing
 	prevLocality := currentLocality
 	d.SetLocality(otherLocality)
 
-	if resp, err = c.DeriveContext(handle, make([]byte, digestLen), client.ChangeLocality, 0, prevLocality); err != nil {
+	if resp, err = c.DeriveContext(handle, make([]byte, digestLen), client.ChangeLocality, 2, prevLocality); err != nil {
 		t.Fatalf("[FATAL]: Error while creating child context handle in previous locality: %s", err)
 	}
 	handle = &resp.NewContextHandle
@@ -272,7 +272,7 @@ func TestInternalInputFlags(d client.TestDPEInstance, c client.DPEClient, t *tes
 	digestLen := profile.GetDigestSize()
 	// Internal input flags
 	if d.GetSupport().InternalDice {
-		if resp, err = c.DeriveContext(handle, make([]byte, digestLen), client.DeriveContextFlags(client.InternalInputDice), 0, 0); err != nil {
+		if resp, err = c.DeriveContext(handle, make([]byte, digestLen), client.DeriveContextFlags(client.InternalInputDice), 1, 0); err != nil {
 			t.Errorf("[ERROR]: Error while making child context handle as default handle: %s", err)
 		}
 		handle = &resp.NewContextHandle
@@ -281,7 +281,7 @@ func TestInternalInputFlags(d client.TestDPEInstance, c client.DPEClient, t *tes
 	}
 
 	if d.GetSupport().InternalInfo {
-		if resp, err = c.DeriveContext(handle, make([]byte, digestLen), client.DeriveContextFlags(client.InternalInputInfo), 0, 0); err != nil {
+		if resp, err = c.DeriveContext(handle, make([]byte, digestLen), client.DeriveContextFlags(client.InternalInputInfo), 2, 0); err != nil {
 			t.Errorf("[ERROR]: Error while making child context handle as default handle: %s", err)
 		}
 		handle = &resp.NewContextHandle
@@ -309,7 +309,7 @@ func TestPrivilegesEscalation(d client.TestDPEInstance, c client.DPEClient, t *t
 	resp, err := c.DeriveContext(handle,
 		make([]byte, digestLen),
 		client.DeriveContextFlags(0),
-		0, 0)
+		1, 0)
 	if err != nil {
 		t.Fatalf("[FATAL]: Error encountered in getting child context: %v", err)
 	}
@@ -354,7 +354,7 @@ func TestMaxTCIs(d client.TestDPEInstance, c client.DPEClient, t *testing.T) {
 	maxTciCount := int(d.GetMaxTciNodes())
 	allowedTciCount := maxTciCount - 1 // since, a TCI node is already auto-initialized
 	for i := 0; i < allowedTciCount; i++ {
-		resp, err = c.DeriveContext(handle, make([]byte, digestSize), client.InputAllowX509, 0, 0)
+		resp, err = c.DeriveContext(handle, make([]byte, digestSize), client.InputAllowX509, uint32(i+1), 0)
 		if err != nil {
 			t.Fatalf("[FATAL]: Error encountered in executing derive child: %v", err)
 		}
@@ -462,7 +462,7 @@ func TestDeriveContextSimulation(d client.TestDPEInstance, c client.DPEClient, t
 	}
 
 	// Setting RetainParentContext flag should not invalidate the parent handle
-	if resp, err = c.DeriveContext(handle, make([]byte, digestLen), client.RetainParentContext, 0, 0); err != nil {
+	if resp, err = c.DeriveContext(handle, make([]byte, digestLen), client.RetainParentContext, 1, 0); err != nil {
 		t.Fatalf("[FATAL]: Error while making child context and retaining parent handle %s", err)
 	}
 	handle = &resp.NewContextHandle
@@ -492,7 +492,7 @@ func TestDeriveContextRecursive(d client.TestDPEInstance, c client.DPEClient, t 
 	// The auto-init root context does not carry AllowRecursive (recursive TCI updates
 	// are opt-in). Derive a child with AllowRecursive so it can be recursively updated.
 	childResp, err := c.DeriveContext(handle, make([]byte, digestLen),
-		client.DeriveContextFlags(client.AllowRecursive|client.InputAllowX509), 0, 0)
+		client.DeriveContextFlags(client.AllowRecursive|client.InputAllowX509), 1, 0)
 	if err != nil {
 		t.Fatalf("[FATAL]: Could not create child context with AllowRecursive: %v", err)
 	}
@@ -508,7 +508,7 @@ func TestDeriveContextRecursive(d client.TestDPEInstance, c client.DPEClient, t 
 	resp, err := c.DeriveContext(childHandle,
 		tciValue,
 		client.DeriveContextFlags(client.Recursive),
-		0, 0)
+		1, 0)
 	if err != nil {
 		t.Fatalf("[FATAL]: Could not set TCI value: %v", err)
 	}
@@ -560,7 +560,7 @@ func TestDeriveContextRecursiveOnDerivedContexts(d client.TestDPEInstance, c cli
 	}()
 
 	// DeriveContext with input data, tag it and check TCI_CUMULATIVE
-	childCtx, err := c.DeriveContext(parentHandle, tciValue, client.DeriveContextFlags(client.RetainParentContext|client.InputAllowX509|client.AllowRecursive), 0, 0)
+	childCtx, err := c.DeriveContext(parentHandle, tciValue, client.DeriveContextFlags(client.RetainParentContext|client.InputAllowX509|client.AllowRecursive), 1, 0)
 	if err != nil {
 		t.Fatalf("[FATAL]: Error while creating default child handle in default context: %s", err)
 	}
@@ -596,7 +596,7 @@ func TestDeriveContextRecursiveOnDerivedContexts(d client.TestDPEInstance, c cli
 	resp, err := c.DeriveContext(childHandle,
 		extendTciValue,
 		client.DeriveContextFlags(client.Recursive),
-		0, 0)
+		1, 0)
 	if err != nil {
 		t.Fatalf("[FATAL]: Could not set TCI value: %v", err)
 	}
