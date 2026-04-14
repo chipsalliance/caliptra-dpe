@@ -14,7 +14,10 @@ pub mod printer;
 
 // Max cert chunk returned by GetCertificateChain
 pub const MAX_CHUNK_SIZE: usize = 2048;
+#[cfg(not(feature = "arbitrary_issuer_name_size"))]
 pub const MAX_ISSUER_NAME_SIZE: usize = 128;
+#[cfg(feature = "arbitrary_issuer_name_size")]
+include!(concat!(env!("OUT_DIR"), "/arbitrary_issuer_name_size.rs"));
 pub const MAX_SN_SIZE: usize = 20;
 pub const MAX_KEY_IDENTIFIER_SIZE: usize = 20;
 pub const MAX_VALIDITY_SIZE: usize = 24;
@@ -179,4 +182,20 @@ pub trait Platform {
     ///
     /// This is encoded into certificates created by DPE.
     fn get_ueid(&mut self) -> Result<Ueid, PlatformError>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_issuer_name_size() {
+        #[cfg(not(feature = "arbitrary_issuer_name_size"))]
+        let expected: usize = 128;
+        #[cfg(feature = "arbitrary_issuer_name_size")]
+        let expected: usize = option_env!("ARBITRARY_ISSUER_NAME_SIZE")
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(128);
+        assert_eq!(MAX_ISSUER_NAME_SIZE, expected);
+    }
 }
