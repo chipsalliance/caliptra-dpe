@@ -364,7 +364,11 @@ impl DpeInstance {
             while let Ok(len) =
                 platform.get_certificate_chain(offset, MAX_CHUNK_SIZE as u32, &mut cert_chunk)
             {
-                hasher.update(&cert_chunk[..len as usize])?;
+                hasher.update(
+                    cert_chunk
+                        .get(..len as usize)
+                        .ok_or(DpeErrorCode::InternalError)?,
+                )?;
                 offset += len;
             }
         }
