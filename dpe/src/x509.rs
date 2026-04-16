@@ -147,6 +147,11 @@ impl CertWriter<'_> {
     #[cfg(not(feature = "disable_csr"))]
     const CSR_V0: u64 = 0;
 
+    /// registerNum and registerName are listed as optional fields, but the spec
+    /// says one of those values must be set. Because there is only ever one
+    /// integrity register per TCB info, the registerNum is hardcoded to 0.
+    const INTEGRITY_REGISTER_NUM: u64 = 0;
+
     /// ASN.1 encoding with length stripped of the following OID.
     /// id-ml-dnsa-87 OBJECT IDENTIFIER ::= { joint-iso-itu-t(2)
     ///     country(16) us(840) organization(1) gov(101) csor(3)
@@ -566,8 +571,9 @@ impl CertWriter<'_> {
         let integrity_registers_size = if supports_recursive {
             let fwid_size = self.get_fwid_size(&node.tci_cumulative.0, /*tagged=*/ true)?;
             let fwid_list_size = Self::get_structure_size(fwid_size, /*tagged=*/ true)?;
+            let ir_num_size = Self::get_integer_size(Self::INTEGRITY_REGISTER_NUM, true)?;
             let integrity_register_size =
-                Self::get_structure_size(fwid_list_size, /*tagged=*/ true)?;
+                Self::get_structure_size(ir_num_size + fwid_list_size, /*tagged=*/ true)?;
             Self::get_structure_size(integrity_register_size, /*tagged=*/ true)?
         } else {
             0
@@ -1608,21 +1614,25 @@ impl CertWriter<'_> {
             // IMPLICIT [11] Constructed
             let fwid_size = self.get_fwid_size(&node.tci_cumulative.0, /*tagged=*/ true)?;
             let fwid_list_size = Self::get_structure_size(fwid_size, /*tagged=*/ true)?;
+            let ir_num_size = Self::get_integer_size(Self::INTEGRITY_REGISTER_NUM, true)?;
             let integrity_register_size =
-                Self::get_structure_size(fwid_list_size, /*tagged=*/ true)?;
+                Self::get_structure_size(ir_num_size + fwid_list_size, /*tagged=*/ true)?;
 
             bytes_written += self.encode_byte(Self::CONTEXT_SPECIFIC | Self::CONSTRUCTED | 11)?;
             bytes_written += self.encode_size_field(integrity_register_size)?;
 
-            // integrityRegusters[0] SEQUENCE
+            // integrityRegisters[0] SEQUENCE
             bytes_written += self.encode_byte(Self::SEQUENCE_TAG)?;
-            bytes_written += self.encode_size_field(fwid_list_size)?;
+            bytes_written += self.encode_size_field(ir_num_size + fwid_list_size)?;
+
+            // IMPLICIT [1] Primitive
+            // registerNum INTEGER
+            bytes_written += self.encode_byte(Self::CONTEXT_SPECIFIC | 0x01)?;
+            bytes_written += self.encode_integer(Self::INTEGRITY_REGISTER_NUM, false)?;
 
             // IMPLICIT [2] Constructed
             // registerDigests SEQUENCE OF FWID
             // cumulative measurement
-            // Note: registerName and registerNum are omitted because DPE only
-            // supports a single register.
             bytes_written += self.encode_byte(Self::CONTEXT_SPECIFIC | Self::CONSTRUCTED | 0x02)?;
             bytes_written += self.encode_size_field(fwid_size)?;
             bytes_written += self.encode_fwid(&node.tci_cumulative)?;
@@ -3088,7 +3098,7 @@ pub(crate) mod tests {
         #[implicit(0)]
         _register_name: Option<asn1::IA5String<'a>>,
         #[implicit(1)]
-        _register_num: Option<u64>,
+        pub register_num: Option<u64>,
         #[implicit(2)]
         pub register_digests: Option<asn1::SequenceOf<'a, Fwid<'a>>>,
     }
@@ -3267,7 +3277,9 @@ pub(crate) mod tests {
 
         // Integrity registers
         let mut ir_itr = parsed_tcb_info.integrity_registers.unwrap();
-        let mut fwid_itr = ir_itr.next().unwrap().register_digests.unwrap();
+        let ir = ir_itr.next().unwrap();
+        assert_eq!(ir.register_num.unwrap(), CertWriter::INTEGRITY_REGISTER_NUM);
+        let mut fwid_itr = ir.register_digests.unwrap();
         let expected_cumulative = fwid_itr.next().unwrap().digest;
         assert_eq!(expected_cumulative, node.tci_cumulative.0);
 
