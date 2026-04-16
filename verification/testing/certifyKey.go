@@ -376,9 +376,19 @@ func checkCertificateExtension(t *testing.T, extensions []pkix.Extension, label 
 	}
 
 	// Check MultiTcbInfo Extension structure
-	_, err = getMultiTcbInfo(extensions, isCritical)
+	multiTcbInfo, err := getMultiTcbInfo(extensions, isCritical)
 	if err != nil {
 		t.Error(err)
+	}
+	for _, tcbInfo := range multiTcbInfo {
+		if len(tcbInfo.IntegrityRegisters) > 1 {
+			t.Errorf("[ERROR]: Expected at most 1 Integrity Register, got %d", len(tcbInfo.IntegrityRegisters))
+		}
+		for _, ir := range tcbInfo.IntegrityRegisters {
+			if ir.RegisterNum != 0 {
+				t.Errorf("[ERROR]: Integrity Register Num is %d, expected 0", ir.RegisterNum)
+			}
+		}
 	}
 
 	// Check for keyusage extension
