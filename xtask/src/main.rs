@@ -1,9 +1,20 @@
 // Licensed under the Apache-2.0 license
 
+mod symbol_checker;
+
 use anyhow::{anyhow, Result};
 use clap::{Parser, Subcommand};
-use std::path::Path;
+use serde::Deserialize;
+use std::path::{Path, PathBuf};
 use std::process::Command;
+
+/// Struct for parsing cargo's JSON message output
+#[derive(Deserialize)]
+struct CargoMessage {
+    reason: String,
+    #[serde(default)]
+    filenames: Vec<String>,
+}
 
 // TODO(clundin): Support "hybrid"
 const PROFILES: &[&str] = &["ml-dsa", "p256", "p384"];
@@ -32,6 +43,8 @@ enum Commands {
     Precheckin(PrecheckinArgs),
     /// Run a tool from the tools/ folder
     RunTool(RunToolArgs),
+    /// Check ELF artifacts for panic symbols
+    CheckPanic,
 }
 
 #[derive(Parser)]
@@ -98,14 +111,39 @@ fn main() -> Result<()> {
         Commands::Test(args) => run_test_command(args)?,
         Commands::Precheckin(args) => run_precheckin_command(args)?,
         Commands::RunTool(args) => run_tool_command(args)?,
+        Commands::CheckPanic => check_panic()?,
     }
 
+    Ok(())
+}
+
+fn check_panic() -> Result<()> {
+    let check_syms = vec!["panic"];
+    for profile in PROFILES {
+        let artifacts = build_rust_targets(profile)?;
+        println!(
+            "Checking {} ELF artifacts for panic symbols...",
+            artifacts.len()
+        );
+        for artifact in &artifacts {
+            if symbol_checker::elf_sym_contain_one_of(artifact.clone(), check_syms.clone())? {
+                eprintln!(
+                    "Matched one of {:?} in artifact: {}",
+                    &check_syms,
+                    artifact.display()
+                );
+            }
+        }
+    }
     Ok(())
 }
 
 fn run_ci() -> Result<()> {
     run_precheckin()?;
     run_tests()?;
+
+    // Check for panic symbols in built artifacts
+    check_panic()?;
 
     // Additional checks for specific binaries/tools
     cargo_run(
@@ -195,7 +233,7 @@ fn run_tool_command(args: &RunToolArgs) -> Result<()> {
 
 fn run_unit_tests() -> Result<()> {
     for profile in PROFILES {
-        build_rust_targets(profile)?;
+        let _ = build_rust_targets(profile)?;
         test_rust_targets(profile)?;
     }
     Ok(())
@@ -272,14 +310,18 @@ fn features_for(manifest: &str, profile: &str) -> Option<String> {
     }
 }
 
-fn build_rust_targets(profile: &str) -> Result<()> {
+fn build_rust_targets(profile: &str) -> Result<Vec<PathBuf>> {
+    let mut all_artifacts = Vec::new();
+
     for manifest in MANIFESTS {
-        cargo_build(&CargoOptions::with_features(
+        let artifacts = cargo_build(&CargoOptions::with_features(
             manifest,
             &features_for(manifest, profile).unwrap_or_default(),
         ))?;
+        all_artifacts.extend(artifacts);
     }
-    Ok(())
+
+    Ok(all_artifacts)
 }
 
 fn lint_rust_targets(profile: &str) -> Result<()> {
@@ -464,12 +506,46 @@ impl<'a> CargoOptions<'a> {
     }
 }
 
-fn cargo_build(opts: &CargoOptions) -> Result<()> {
-    let mut cmd = cargo().args(["build", "--manifest-path", opts.manifest_path]);
+fn cargo_build(opts: &CargoOptions) -> Result<Vec<PathBuf>> {
+    let mut cmd = cargo().args([
+        "build",
+        "--manifest-path",
+        opts.manifest_path,
+        "--message-format=json",
+    ]);
     if !opts.features.is_empty() {
         cmd = cmd.arg(format!("--features={}", opts.features));
     }
-    cmd.arg("--no-default-features").run()
+    cmd = cmd.arg("--no-default-features");
+
+    let output = cmd.output()?;
+    if !output.status.success() {
+        // Print stderr for debugging
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        eprintln!("{}", stderr);
+        return Err(anyhow!("Build failed for {}", opts.manifest_path));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut artifacts = Vec::new();
+
+    for line in stdout.lines() {
+        if let Ok(msg) = serde_json::from_str::<CargoMessage>(line) {
+            if msg.reason == "compiler-artifact" {
+                for filename in msg.filenames {
+                    let path = PathBuf::from(&filename);
+                    // Filter for ELF binaries (no extension or .so files)
+                    if path.extension().is_none()
+                        || path.extension().map(|e| e == "so").unwrap_or(false)
+                    {
+                        artifacts.push(path);
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(artifacts)
 }
 
 fn cargo_test(opts: &CargoOptions, extra_args: &[&str]) -> Result<()> {
