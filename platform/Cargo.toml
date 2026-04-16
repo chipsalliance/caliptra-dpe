@@ -11,6 +11,8 @@ publish.workspace = true
 [features]
 default = []
 rustcrypto = ["caliptra-dpe-crypto/test-artifacts", "dep:x509-cert"]
+# Run ARBITRARY_ISSUER_NAME_SIZE=n cargo build --features arbitrary_issuer_name_size to use this feature
+arbitrary_issuer_name_size = []
 
 [dependencies]
 arrayvec.workspace = true
