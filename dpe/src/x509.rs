@@ -110,6 +110,11 @@ impl CertWriter<'_> {
     #[cfg(not(feature = "disable_csr"))]
     const CSR_V0: u64 = 0;
 
+    /// registerNum and registerName are listed as optional fields, but the spec
+    /// says one of those values must be set. Because there is only ever one
+    /// integrity register per TCB info, the registerNum is hardcoded to 0.
+    const INTEGRITY_REGISTER_NUM: u64 = 0;
+
     const ECDSA_OID: &'static [u8] = match DPE_PROFILE {
         // ECDSA with SHA256
         DpeProfile::P256Sha256 => &[0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x04, 0x03, 0x02],
@@ -375,8 +380,9 @@ impl CertWriter<'_> {
         let integrity_registers_size = if supports_recursive {
             let fwid_size = Self::get_fwid_size(&node.tci_cumulative.0, /*tagged=*/ true)?;
             let fwid_list_size = Self::get_structure_size(fwid_size, /*tagged=*/ true)?;
+            let ir_num_size = Self::get_integer_size(Self::INTEGRITY_REGISTER_NUM, true)?;
             let integrity_register_size =
-                Self::get_structure_size(fwid_list_size, /*tagged=*/ true)?;
+                Self::get_structure_size(ir_num_size + fwid_list_size, /*tagged=*/ true)?;
             Self::get_structure_size(integrity_register_size, /*tagged=*/ true)?
         } else {
             0
@@ -912,8 +918,16 @@ impl CertWriter<'_> {
     }
 
     /// DER-encodes a big-endian integer buffer as an ASN.1 INTEGER
-    fn encode_integer_bytes(&mut self, integer: &[u8]) -> Result<usize, DpeErrorCode> {
-        let mut bytes_written = self.encode_tag_field(Self::INTEGER_TAG)?;
+    fn encode_integer_bytes(
+        &mut self,
+        integer: &[u8],
+        tagged: bool,
+    ) -> Result<usize, DpeErrorCode> {
+        let mut bytes_written = if tagged {
+            self.encode_tag_field(Self::INTEGER_TAG)?
+        } else {
+            0
+        };
 
         let size = Self::get_integer_bytes_size(integer, false)?;
         bytes_written += self.encode_size_field(size)?;
@@ -935,8 +949,8 @@ impl CertWriter<'_> {
     }
 
     /// DER-encodes `integer` as an ASN.1 INTEGER
-    fn encode_integer(&mut self, integer: u64) -> Result<usize, DpeErrorCode> {
-        self.encode_integer_bytes(&integer.to_be_bytes())
+    fn encode_integer(&mut self, integer: u64, tagged: bool) -> Result<usize, DpeErrorCode> {
+        self.encode_integer_bytes(&integer.to_be_bytes(), tagged)
     }
 
     /// DER-encodes `oid` as an ASN.1 ObjectIdentifier
@@ -1163,8 +1177,8 @@ impl CertWriter<'_> {
         // Encode SEQUENCE
         bytes_written += self.encode_tag_field(Self::SEQUENCE_TAG)?;
         bytes_written += self.encode_size_field(seq_size)?;
-        bytes_written += self.encode_integer_bytes(sig.r.bytes())?;
-        bytes_written += self.encode_integer_bytes(sig.s.bytes())?;
+        bytes_written += self.encode_integer_bytes(sig.r.bytes(), /*tagged=*/ true)?;
+        bytes_written += self.encode_integer_bytes(sig.s.bytes(), /*tagged=*/ true)?;
 
         Ok(bytes_written)
     }
@@ -1191,8 +1205,8 @@ impl CertWriter<'_> {
         // Encode SEQUENCE
         bytes_written += self.encode_tag_field(Self::SEQUENCE_TAG)?;
         bytes_written += self.encode_size_field(seq_size)?;
-        bytes_written += self.encode_integer_bytes(sig.r.bytes())?;
-        bytes_written += self.encode_integer_bytes(sig.s.bytes())?;
+        bytes_written += self.encode_integer_bytes(sig.r.bytes(), /*tagged=*/ true)?;
+        bytes_written += self.encode_integer_bytes(sig.s.bytes(), /*tagged=*/ true)?;
 
         Ok(bytes_written)
     }
@@ -1204,7 +1218,7 @@ impl CertWriter<'_> {
             Self::X509_V3,
             /*tagged=*/ true,
         )?)?;
-        bytes_written += self.encode_integer(Self::X509_V3)?;
+        bytes_written += self.encode_integer(Self::X509_V3, /*tagged=*/ true)?;
 
         Ok(bytes_written)
     }
@@ -1278,21 +1292,26 @@ impl CertWriter<'_> {
             // IMPLICIT [11] Constructed
             let fwid_size = Self::get_fwid_size(&node.tci_cumulative.0, /*tagged=*/ true)?;
             let fwid_list_size = Self::get_structure_size(fwid_size, /*tagged=*/ true)?;
+            let ir_num_size = Self::get_integer_size(Self::INTEGRITY_REGISTER_NUM, true)?;
             let integrity_register_size =
-                Self::get_structure_size(fwid_list_size, /*tagged=*/ true)?;
+                Self::get_structure_size(ir_num_size + fwid_list_size, /*tagged=*/ true)?;
 
             bytes_written += self.encode_byte(Self::CONTEXT_SPECIFIC | Self::CONSTRUCTED | 11)?;
             bytes_written += self.encode_size_field(integrity_register_size)?;
 
-            // integrityRegusters[0] SEQUENCE
+            // integrityRegisters[0] SEQUENCE
             bytes_written += self.encode_byte(Self::SEQUENCE_TAG)?;
-            bytes_written += self.encode_size_field(fwid_list_size)?;
+            bytes_written += self.encode_size_field(ir_num_size + fwid_list_size)?;
+
+            // IMPLICIT [1] Primitive
+            // registerNum INTEGER
+            bytes_written += self.encode_byte(Self::CONTEXT_SPECIFIC | 0x01)?;
+            bytes_written +=
+                self.encode_integer(Self::INTEGRITY_REGISTER_NUM, /*tagged=*/ false)?;
 
             // IMPLICIT [2] Constructed
             // registerDigests SEQUENCE OF FWID
             // cumulative measurement
-            // Note: registerName and registerNum are omitted because DPE only
-            // supports a single register.
             bytes_written += self.encode_byte(Self::CONTEXT_SPECIFIC | Self::CONSTRUCTED | 0x02)?;
             bytes_written += self.encode_size_field(fwid_size)?;
             bytes_written += self.encode_fwid(&node.tci_cumulative)?;
@@ -1752,8 +1771,10 @@ impl CertWriter<'_> {
             SignerIdentifier::IssuerAndSerialNumber {
                 issuer_name: _,
                 serial_number: _,
-            } => self.encode_integer(Self::CMS_V1),
-            SignerIdentifier::SubjectKeyIdentifier(_) => self.encode_integer(Self::CMS_V3),
+            } => self.encode_integer(Self::CMS_V1, /*tagged=*/ true),
+            SignerIdentifier::SubjectKeyIdentifier(_) => {
+                self.encode_integer(Self::CMS_V3, /*tagged=*/ true)
+            }
         }
     }
 
@@ -1937,7 +1958,7 @@ impl CertWriter<'_> {
         bytes_written += self.encode_bytes(issuer_name)?;
 
         // serialNumber
-        bytes_written += self.encode_integer_bytes(serial_number)?;
+        bytes_written += self.encode_integer_bytes(serial_number, /*tagged=*/ true)?;
 
         Ok(bytes_written)
     }
@@ -2087,7 +2108,7 @@ impl CertWriter<'_> {
         bytes_written += self.encode_version()?;
 
         // serialNumber
-        bytes_written += self.encode_integer_bytes(serial_number)?;
+        bytes_written += self.encode_integer_bytes(serial_number, /*tagged=*/ true)?;
 
         // signature
         bytes_written += self.encode_ecdsa_sig_alg_id()?;
@@ -2179,7 +2200,7 @@ impl CertWriter<'_> {
         bytes_written += self.encode_size_field(cert_req_info_size)?;
 
         // version
-        bytes_written += self.encode_integer(Self::CSR_V0)?;
+        bytes_written += self.encode_integer(Self::CSR_V0, /*tagged=*/ true)?;
 
         // subject
         bytes_written += self.encode_rdn(subject_name)?;
@@ -2598,7 +2619,7 @@ pub(crate) mod tests {
         #[implicit(0)]
         _register_name: Option<asn1::IA5String<'a>>,
         #[implicit(1)]
-        _register_num: Option<u64>,
+        pub register_num: Option<u64>,
         #[implicit(2)]
         pub register_digests: Option<asn1::SequenceOf<'a, Fwid<'a>>>,
     }
@@ -2662,7 +2683,7 @@ pub(crate) mod tests {
         for c in buffer_cases {
             let mut cert = [0u8; 128];
             let mut w = CertWriter::new(&mut cert, true);
-            let byte_count = w.encode_integer_bytes(&c).unwrap();
+            let byte_count = w.encode_integer_bytes(&c, /*tagged=*/ true).unwrap();
             let n = asn1::parse_single::<u64>(&cert[..byte_count]).unwrap();
             assert_eq!(n, u64::from_be_bytes(c));
             assert_eq!(
@@ -2676,7 +2697,7 @@ pub(crate) mod tests {
         for c in integer_cases {
             let mut cert = [0; 128];
             let mut w = CertWriter::new(&mut cert, true);
-            let byte_count = w.encode_integer(c).unwrap();
+            let byte_count = w.encode_integer(c, /*tagged=*/ true).unwrap();
             let n = asn1::parse_single::<u64>(&cert[..byte_count]).unwrap();
             assert_eq!(n, c);
             assert_eq!(CertWriter::get_integer_size(c, true).unwrap(), byte_count);
@@ -2763,7 +2784,9 @@ pub(crate) mod tests {
 
         // Integrity registers
         let mut ir_itr = parsed_tcb_info.integrity_registers.unwrap();
-        let mut fwid_itr = ir_itr.next().unwrap().register_digests.unwrap();
+        let ir = ir_itr.next().unwrap();
+        assert_eq!(ir.register_num.unwrap(), CertWriter::INTEGRITY_REGISTER_NUM);
+        let mut fwid_itr = ir.register_digests.unwrap();
         let expected_cumulative = fwid_itr.next().unwrap().digest;
         assert_eq!(expected_cumulative, node.tci_cumulative.0);
 
