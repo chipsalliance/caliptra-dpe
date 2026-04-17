@@ -1,0 +1,7 @@
+[workspace]
+resolver = "3"
+version = "2024"
+
+members = [
+  "panic-check"
+]

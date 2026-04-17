@@ -13,7 +13,6 @@ members = [
     "test-artifacts",
     "ci-tools/panic-handler-check",
 ]
-resolver = "2"
 
 [workspace.package]
 version = "0.1.0"
@@ -24,18 +23,24 @@ publish = false
 
 [workspace.dependencies]
 caliptra-cfi-lib = { git = "https://github.com/chipsalliance/caliptra-cfi.git", package = "caliptra-cfi-lib", rev = "aa96c53073ce7f298f7482c1ac57f5f65ffc115e", default-features = false }
-caliptra-cfi-derive = { git = "https://github.com/chipsalliance/caliptra-cfi.git", package = "caliptra-cfi-derive", rev = "aa96c53073ce7f298f7482c1ac57f5f65ffc115e"}
+caliptra-cfi-derive = { git = "https://github.com/chipsalliance/caliptra-cfi.git", package = "caliptra-cfi-derive", rev = "aa96c53073ce7f298f7482c1ac57f5f65ffc115e" }
 zerocopy = { version = "0.8.17", features = ["derive"] }
 constant_time_eq = "0.3.0"
-arrayvec = { version = "0.7.4", default-features = false, features = ["zeroize"] }
+arrayvec = { version = "0.7.4", default-features = false, features = [
+    "zeroize",
+] }
 x509-cert = "0.2.4"
 caliptra-dpe-platform = { path = "platform", default-features = false }
 caliptra-dpe-crypto = { path = "crypto", default-features = false }
 caliptra-dpe-test-artifacts = { path = "test-artifacts" }
 caliptra-dpe = { path = "dpe", default-features = false }
 cfg-if = "1.0.0"
-ufmt = { git = "https://github.com/korran/ufmt.git", rev = "1d0743c1ffffc68bc05ca8eeb81c166192863f33", features = ["inline"] }
-zeroize = { version = "1.8.2", default-features = false, features = ["zeroize_derive"] }
+ufmt = { git = "https://github.com/korran/ufmt.git", rev = "1d0743c1ffffc68bc05ca8eeb81c166192863f33", features = [
+    "inline",
+] }
+zeroize = { version = "1.8.2", default-features = false, features = [
+    "zeroize_derive",
+] }
 anyhow = "1.0.70"
 clap = { version = "4.3", features = ["derive"] }
 
