@@ -11,7 +11,7 @@ members = [
     "tools",
     "xtask",
     "test-artifacts",
-    "ci-tools/panic-handler-check",
+    "verification/panic-check",
 ]
 
 [workspace.package]
