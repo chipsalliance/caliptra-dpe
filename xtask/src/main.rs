@@ -48,6 +48,19 @@ pub enum TestSubcommands {
     Verification,
     /// Run cert parser tests
     Certs,
+    /// Run panic check (verify firmware has no panic symbols)
+    PanicCheck(PanicCheckArgs),
+}
+
+#[derive(Parser)]
+pub struct PanicCheckArgs {
+    /// Run the should-fail test to verify the checker works
+    #[arg(long)]
+    pub should_fail: bool,
+
+    /// Crypto profile to test (default: hybrid)
+    #[arg(long, default_value = "hybrid")]
+    pub profile: String,
 }
 
 #[derive(Parser)]
@@ -121,6 +134,9 @@ fn run_ci() -> Result<()> {
     // Build fuzz target
     run_fuzz_checks()?;
 
+    // Run panic checks for all profiles
+    run_all_panic_checks()?;
+
     Ok(())
 }
 
@@ -159,6 +175,7 @@ fn run_test_command(args: &TestArgs) -> Result<()> {
         Some(TestSubcommands::Unit) => run_unit_tests()?,
         Some(TestSubcommands::Verification) => run_verification_tests()?,
         Some(TestSubcommands::Certs) => run_cert_parser_tests()?,
+        Some(TestSubcommands::PanicCheck(panic_args)) => run_panic_check(panic_args)?,
         None => run_tests()?,
     }
     Ok(())
@@ -394,6 +411,108 @@ fn run_fuzz_checks() -> Result<()> {
         ])
         .dir(fuzz_dir)
         .run()?;
+    Ok(())
+}
+
+const RISCV_TARGET: &str = "riscv32imc-unknown-none-elf";
+const PANIC_CHECK_MANIFEST: &str = "verification/panic-check/Cargo.toml";
+
+fn run_panic_check(args: &PanicCheckArgs) -> Result<()> {
+    let profile = &args.profile;
+    let should_fail = args.should_fail;
+
+    println!(
+        "Running panic check for profile: {} (should_fail: {})",
+        profile, should_fail
+    );
+
+    // Build firmware for RISC-V target
+    let features = if should_fail {
+        format!("{},should-fail", profile)
+    } else {
+        profile.to_string()
+    };
+
+    println!("Building firmware with features: {}", features);
+    cargo()
+        .args([
+            "build",
+            "--manifest-path",
+            PANIC_CHECK_MANIFEST,
+            "--bin",
+            "firmware",
+            "--target",
+            RISCV_TARGET,
+            "--profile",
+            "firmware-check",
+            "--no-default-features",
+            "--features",
+            &features,
+        ])
+        .run()?;
+
+    // Run the checker on the built firmware
+    let firmware_path = format!(
+        "verification/target/{}/firmware-check/firmware",
+        RISCV_TARGET
+    );
+
+    println!("Checking firmware for panic symbols: {}", firmware_path);
+    let result = cargo()
+        .args([
+            "run",
+            "--manifest-path",
+            PANIC_CHECK_MANIFEST,
+            "--bin",
+            "checker",
+            "--features",
+            "std",
+            "--",
+            &firmware_path,
+        ])
+        .run();
+
+    match (result, should_fail) {
+        (Ok(()), false) => {
+            println!("PASS: No panic symbols found (as expected)");
+            Ok(())
+        }
+        (Ok(()), true) => Err(anyhow!(
+            "UNEXPECTED PASS: Expected panic symbols but none found. \
+             The should-fail test should have failed!"
+        )),
+        (Err(_), true) => {
+            println!("PASS: Panic symbols found (as expected for should-fail test)");
+            Ok(())
+        }
+        (Err(e), false) => Err(anyhow!(
+            "FAIL: Panic symbols found in firmware! Error: {}",
+            e
+        )),
+    }
+}
+
+fn run_all_panic_checks() -> Result<()> {
+    // Run panic check for all profiles
+    for profile in PROFILES {
+        run_panic_check(&PanicCheckArgs {
+            should_fail: false,
+            profile: profile.to_string(),
+        })?;
+    }
+
+    // Also run for hybrid
+    run_panic_check(&PanicCheckArgs {
+        should_fail: false,
+        profile: "hybrid".to_string(),
+    })?;
+
+    // Run the should-fail test to verify the checker works
+    run_panic_check(&PanicCheckArgs {
+        should_fail: true,
+        profile: "hybrid".to_string(),
+    })?;
+
     Ok(())
 }
 
