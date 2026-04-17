@@ -2,8 +2,23 @@
 
 [workspace]
 resolver = "3"
-version = "2024"
 
 members = [
   "panic-check"
 ]
+
+[profile.firmware]
+inherits = "release"
+panic = "abort"
+lto = true
+opt-level = "s"
+codegen-units = 1
+
+[profile.firmware-check]
+inherits = "release"
+panic = "abort"
+lto = "thin"           
+opt-level = "s"
+codegen-units = 1
+strip = "none"
+debug = 1
