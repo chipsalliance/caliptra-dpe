@@ -173,7 +173,11 @@ impl CommandExecution for SignCommand<'_> {
             ),
         };
         let idx = env.state().get_active_context_pos(handle, locality)?;
-        let context = &env.state().contexts[idx];
+        let context = env
+            .state()
+            .contexts
+            .get(idx)
+            .ok_or(DpeErrorCode::InternalError)?;
 
         if context.context_type == ContextType::Simulation {
             return Err(DpeErrorCode::InvalidArgument);
@@ -196,7 +200,12 @@ impl CommandExecution for SignCommand<'_> {
                 dpe.roll_onetime_use_handle(env, idx)?;
                 let (&sig_r, &sig_s) = sig.as_slice();
                 *response = SignP256Resp {
-                    new_context_handle: env.state().contexts[idx].handle,
+                    new_context_handle: env
+                        .state()
+                        .contexts
+                        .get(idx)
+                        .ok_or(DpeErrorCode::InternalError)?
+                        .handle,
                     sig_r,
                     sig_s,
                     resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
@@ -212,7 +221,12 @@ impl CommandExecution for SignCommand<'_> {
                 dpe.roll_onetime_use_handle(env, idx)?;
                 let (&sig_r, &sig_s) = sig.as_slice();
                 *response = SignP384Resp {
-                    new_context_handle: env.state().contexts[idx].handle,
+                    new_context_handle: env
+                        .state()
+                        .contexts
+                        .get(idx)
+                        .ok_or(DpeErrorCode::InternalError)?
+                        .handle,
                     sig_r,
                     sig_s,
                     resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
@@ -227,7 +241,12 @@ impl CommandExecution for SignCommand<'_> {
                 // Rotate the handle if it isn't the default context.
                 dpe.roll_onetime_use_handle(env, idx)?;
                 *response = SignMlDsaResp {
-                    new_context_handle: env.state().contexts[idx].handle,
+                    new_context_handle: env
+                        .state()
+                        .contexts
+                        .get(idx)
+                        .ok_or(DpeErrorCode::InternalError)?
+                        .handle,
                     sig: *sig,
                     _padding: [0; 1],
                     resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),

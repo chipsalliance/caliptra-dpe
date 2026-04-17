@@ -16,6 +16,8 @@ pub mod rustcrypto;
 
 #[cfg(feature = "test-artifacts")]
 pub use caliptra_dpe_test_artifacts as artifacts;
+#[cfg(feature = "dummy")]
+pub mod dummy;
 
 #[cfg(feature = "deterministic_rand")]
 pub use rand::*;

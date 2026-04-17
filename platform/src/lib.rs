@@ -10,6 +10,8 @@ pub use arrayvec::ArrayVec;
 #[cfg(feature = "rustcrypto")]
 pub mod default;
 
+pub mod dummy;
+
 pub mod printer;
 
 // Max cert chunk returned by GetCertificateChain

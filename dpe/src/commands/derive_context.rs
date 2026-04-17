@@ -167,10 +167,17 @@ impl DeriveContextCmd {
     /// * `parent_idx` - Index of the parent context.
     /// * `tci_type` - INPUT_TYPE to check for uniqueness.
     fn tci_type_is_unique_among_children(state: &State, parent_idx: usize, tci_type: u32) -> bool {
-        let parent_children = state.contexts[parent_idx].children;
-        parent_children
-            .iter()
-            .all(|idx| state.contexts[idx].tci.tci_type != tci_type)
+        let Some(parent) = state.contexts.get(parent_idx) else {
+            return false;
+        };
+        let parent_children = parent.children;
+        parent_children.iter().all(|idx| {
+            state
+                .contexts
+                .get(idx)
+                .map(|ctx| ctx.tci.tci_type != tci_type)
+                .unwrap_or(false)
+        })
     }
 
     /// Whether it is okay to create a child in the given environment.
@@ -245,15 +252,14 @@ impl CommandExecution for DeriveContextCmd {
             return Err(DpeErrorCode::ArgumentNotSupported);
         }
 
-        let parent_idx = env.state().get_active_context_pos(handle, locality)?;
+        let (parent_ctx, parent_idx) = env.state().get_active_context_and_idx(handle, locality)?;
 
-        if (!env.state().contexts[parent_idx].allow_x509() && flags.allows_x509())
+        if (!parent_ctx.allow_x509() && flags.allows_x509())
             || (flags.exports_cdi() && !flags.creates_certificate())
             || (flags.exports_cdi() && flags.is_recursive())
             || (flags.exports_cdi() && flags.changes_locality())
-            || (flags.exports_cdi()
-                && env.state().contexts[parent_idx].context_type == ContextType::Simulation)
-            || (flags.exports_cdi() && !env.state().contexts[parent_idx].allow_export_cdi())
+            || (flags.exports_cdi() && parent_ctx.context_type == ContextType::Simulation)
+            || (flags.exports_cdi() && !parent_ctx.allow_export_cdi())
             || (flags.is_recursive() && flags.retains_parent())
             // ALLOW_RECURSIVE and RECURSIVE are mutually exclusive: RECURSIVE updates the current
             // context in place, while ALLOW_RECURSIVE grants that ability to a new child context.
@@ -262,7 +268,7 @@ impl CommandExecution for DeriveContextCmd {
             // created with ALLOW_RECURSIVE. Check the parent context's stored property
             // (consistent with how x509 and export_cdi are validated above via the
             // parent's allow_x509/allow_export_cdi fields).
-            || (!env.state().contexts[parent_idx].allow_recursive() && flags.is_recursive())
+            || (!parent_ctx.allow_recursive() && flags.is_recursive())
         {
             return Err(DpeErrorCode::InvalidArgument);
         }
@@ -283,7 +289,7 @@ impl CommandExecution for DeriveContextCmd {
                 cfi_assert!(support.internal_dice() || !flags.uses_internal_dice_input());
                 cfi_assert!(support.retain_parent_context() || !flags.retains_parent());
                 cfi_assert!(support.x509() || !flags.allows_x509());
-                cfi_assert!(env.state().contexts[parent_idx].allow_x509() || !flags.allows_x509());
+                cfi_assert!(parent_ctx.allow_x509() || !flags.allows_x509());
                 cfi_assert!(!flags.is_recursive() || !flags.retains_parent());
             }
         }
@@ -292,7 +298,7 @@ impl CommandExecution for DeriveContextCmd {
             cfg_if! {
                 if #[cfg(not(feature = "disable_recursive"))] {
                     let response = mutresp::<DeriveContextResp>(dpe.profile, out)?;
-                    let mut tmp_context = env.state().contexts[parent_idx];
+                    let mut tmp_context = *env.state().contexts.get(parent_idx).ok_or(DpeErrorCode::InternalError)?;
                     if tmp_context.tci.tci_type != tci_type {
                         return Err(DpeErrorCode::InvalidArgument);
                     } else {
@@ -309,14 +315,16 @@ impl CommandExecution for DeriveContextCmd {
                     // Rotate the handle if it isn't the default context.
                     dpe.roll_onetime_use_handle(env, parent_idx)?;
 
-                    env.state().contexts[parent_idx] = Context {
-                        handle: env.state().contexts[parent_idx].handle,
+                    let parent_ctx = env.state().contexts.get_mut(parent_idx).ok_or(DpeErrorCode::InternalError)?;
+
+                    *parent_ctx = Context {
+                        handle: parent_ctx.handle,
                         ..tmp_context
                     };
 
                     // Return new handle in new_context_handle
                     *response = DeriveContextResp {
-                        handle: env.state().contexts[parent_idx].handle,
+                        handle: parent_ctx.handle,
                         // Should be ignored since retain_parent cannot be true
                         parent_handle: ContextHandle::default(),
                         resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
@@ -334,7 +342,11 @@ impl CommandExecution for DeriveContextCmd {
         }
 
         // Copy the parent context to mutate so that we avoid mutating internal state upon an error.
-        let mut tmp_parent_context = env.state().contexts[parent_idx];
+        let mut tmp_parent_context = *env
+            .state()
+            .contexts
+            .get(parent_idx)
+            .ok_or(DpeErrorCode::InternalError)?;
         if flags.retains_parent() {
             if !tmp_parent_context.handle.is_default() {
                 tmp_parent_context.handle = dpe.generate_new_handle(env)?;
@@ -376,7 +388,7 @@ impl CommandExecution for DeriveContextCmd {
                     );
                     let CreateDpeCertResult { cert_size, exported_cdi_handle, .. } = okref(&result)?;
 
-                    if !flags.retains_parent() && !env.state().contexts[parent_idx].has_children() {
+                    if !flags.retains_parent() && !env.state().contexts.get(parent_idx).ok_or(DpeErrorCode::InternalError)?.has_children() {
                         // When the parent is not retained and there are no other children,
                         // destroy it.
                         destroy_context::destroy_context(handle, env.state(), locality)?;
@@ -384,11 +396,11 @@ impl CommandExecution for DeriveContextCmd {
                         // We either retained the parent or it has other children, so retire it and
                         // make it's handle invalid.
                         // At this point we cannot error out anymore, so it is safe to set the parent context.
-                        env.state().contexts[parent_idx] = tmp_parent_context;
+                        *env.state().contexts.get_mut(parent_idx).ok_or(DpeErrorCode::InternalError)? = tmp_parent_context;
                     }
 
                     response.handle = ContextHandle::new_invalid();
-                    response.parent_handle = env.state().contexts[parent_idx].handle;
+                    response.parent_handle = env.state().contexts.get(parent_idx).ok_or(DpeErrorCode::InternalError)?.handle;
                     response.resp_hdr = dpe.response_hdr(DpeErrorCode::NoError);
                     response.exported_cdi = *exported_cdi_handle;
                     response.certificate_size = *cert_size;
@@ -432,7 +444,12 @@ impl CommandExecution for DeriveContextCmd {
         // Create a temporary context to mutate so that we avoid mutating internal state upon an error.
         let mut tmp_child_context = Context::new();
         tmp_child_context.activate(&ActiveContextArgs {
-            context_type: env.state().contexts[parent_idx].context_type,
+            context_type: env
+                .state()
+                .contexts
+                .get(parent_idx)
+                .ok_or(DpeErrorCode::InternalError)?
+                .context_type,
             locality: target_locality,
             handle: &child_handle,
             tci_type,
@@ -456,12 +473,20 @@ impl CommandExecution for DeriveContextCmd {
         tmp_parent_context.children = children_with_child_idx;
 
         // At this point we cannot error out anymore, so it is safe to set the updated child and parent contexts.
-        env.state().contexts[child_idx] = tmp_child_context;
-        env.state().contexts[parent_idx] = tmp_parent_context;
+        *env.state()
+            .contexts
+            .get_mut(child_idx)
+            .ok_or(DpeErrorCode::InternalError)? = tmp_child_context;
+        let parent = env
+            .state()
+            .contexts
+            .get_mut(parent_idx)
+            .ok_or(DpeErrorCode::InternalError)?;
+        *parent = tmp_parent_context;
 
         *response = DeriveContextResp {
             handle: child_handle,
-            parent_handle: env.state().contexts[parent_idx].handle,
+            parent_handle: parent.handle,
             resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
         };
         Ok(size_of_val(response))

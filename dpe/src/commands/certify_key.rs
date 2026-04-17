@@ -151,7 +151,11 @@ impl CommandExecution for CertifyKeyCommand<'_> {
             CertifyKeyCommand::Mldsa87(cmd) => (&cmd.handle, cmd.format, cmd.label.as_slice()),
         };
         let idx = env.state().get_active_context_pos(handle, locality)?;
-        let context = env.state().contexts[idx];
+        let context = *env
+            .state()
+            .contexts
+            .get(idx)
+            .ok_or(DpeErrorCode::InternalError)?;
 
         if format == Self::FORMAT_X509 {
             if !env.state().support.x509() {
@@ -268,7 +272,13 @@ impl CommandExecution for CertifyKeyCommand<'_> {
         let len = response.size()?;
         // Rotate handle if it isn't the default
         dpe.roll_onetime_use_handle(env, idx)?;
-        response.set_handle(env.state().contexts[idx].handle);
+        response.set_handle(
+            env.state()
+                .contexts
+                .get(idx)
+                .ok_or(DpeErrorCode::InternalError)?
+                .handle,
+        );
 
         Ok(len)
     }
@@ -716,9 +726,10 @@ mod tests {
                     // TODO Replace RustCrypto with OpenSSL.
                     //      See https://github.com/rust-openssl/rust-openssl/pull/2405
                     //      for the current state of ml-dsa OpenSSL bindings.
+                    use ml_dsa::signature::Keypair;
                     use pkcs8::DecodePrivateKey;
-                    let key: ml_dsa::KeyPair<ml_dsa::MlDsa87> =
-                        ml_dsa::KeyPair::from_pkcs8_der(artifacts::KEY_MLDSA_87_DER)
+                    let key: ml_dsa::SigningKey<ml_dsa::MlDsa87> =
+                        ml_dsa::SigningKey::from_pkcs8_der(artifacts::KEY_MLDSA_87_DER)
                             .expect("Error decoding ML-DSA private key");
 
                     info!(

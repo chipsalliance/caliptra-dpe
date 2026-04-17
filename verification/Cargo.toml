@@ -1,0 +1,24 @@
+# Licensed under the Apache-2.0 license
+
+[workspace]
+resolver = "3"
+
+members = [
+  "panic-check"
+]
+
+[profile.firmware]
+inherits = "release"
+panic = "abort"
+lto = true
+opt-level = "s"
+codegen-units = 1
+
+[profile.firmware-check]
+inherits = "release"
+panic = "abort"
+lto = "thin"           
+opt-level = "s"
+codegen-units = 1
+strip = "none"
+debug = 1

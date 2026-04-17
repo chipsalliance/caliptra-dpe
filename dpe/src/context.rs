@@ -364,12 +364,11 @@ impl<'a> Iterator for ChildToRootIter<'a> {
             self.done = true;
             return Some(Err(DpeErrorCode::MaxTcis));
         }
-        if self.idx >= self.contexts.len() {
+
+        let Some(context) = self.contexts.get(self.idx) else {
             self.done = true;
             return Some(Err(DpeErrorCode::InternalError));
-        }
-
-        let context = &self.contexts[self.idx];
+        };
 
         // Check if context is valid.
         const MAX_IDX: u8 = (MAX_HANDLES - 1) as u8;
