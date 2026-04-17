@@ -9,15 +9,15 @@ use super::Crypto;
 
 pub struct DummyCrypto {
     hasher: DummyHasher,
-    cdi_manager: DummyCdiManager,
+    _cdi_manager: DummyCdiManager,
 }
 
 impl DummyCrypto {
     pub fn new() -> DummyCrypto {
         DummyCrypto {
             hasher: DummyHasher,
-            cdi_manager: DummyCdiManager {
-                signer: DummySigner,
+            _cdi_manager: DummyCdiManager {
+                _signer: DummySigner,
             },
         }
     }
@@ -112,7 +112,7 @@ impl Hasher for DummyHasher {
 }
 
 pub struct DummyCdiManager {
-    signer: DummySigner,
+    _signer: DummySigner,
 }
 
 impl CdiManager for DummyCdiManager {
