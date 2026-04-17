@@ -117,14 +117,23 @@ impl DpeInstance {
         let idx = env
             .state()
             .get_active_context_pos(&ContextHandle::default(), locality)?;
-        let mut tmp_context = env.state().contexts[idx];
+        let mut tmp_context = *env
+            .state()
+            .contexts
+            .get(idx)
+            .ok_or(DpeErrorCode::InternalError)?;
         // add measurement to auto-initialized context
         dpe.add_tci_measurement(env, &mut tmp_context, auto_init_measurement, locality)?;
         *env.state()
             .contexts
             .get_mut(idx)
             .ok_or(DpeErrorCode::InternalError)? = tmp_context;
-        env.state().contexts[idx].tci.tci_type = tci_type;
+        env.state()
+            .contexts
+            .get_mut(idx)
+            .ok_or(DpeErrorCode::InternalError)?
+            .tci
+            .tci_type = tci_type;
         Ok(dpe)
     }
 
@@ -228,7 +237,7 @@ impl DpeInstance {
         idx: usize,
     ) -> Result<(), DpeErrorCode> {
         let handle = &env
-            .state
+            .state()
             .contexts
             .get(idx)
             .ok_or(DpeErrorCode::MaxTcis)?

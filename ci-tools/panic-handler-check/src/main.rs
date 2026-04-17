@@ -6,20 +6,12 @@ compile_error!("select one of the features p256, p384, ml-dsa");
 use std::hint::black_box;
 
 use crypto::dummy::DummyCrypto;
+use dpe::dpe_instance::{DpeEnv, DpeEnvImpl};
+use dpe::support::Support;
 use dpe::DpeFlags;
 use dpe::DpeInstance;
 use dpe::DpeProfile;
-use dpe::dpe_instance::{DpeEnv, DpeTypes};
-use dpe::support::Support;
 use platform::dummy::{DefaultPlatform, DefaultPlatformProfile};
-
-struct SimTypes {}
-
-impl DpeTypes for SimTypes {
-    type Crypto<'a> = DummyCrypto;
-
-    type Platform<'a> = DefaultPlatform;
-}
 
 fn main() {
     let mut flags = DpeFlags::empty();
@@ -38,10 +30,13 @@ fn main() {
     #[cfg(feature = "ml-dsa")]
     let dpe_profile = DpeProfile::Mldsa87;
 
-    let mut env = DpeEnv::<SimTypes> {
-        crypto: <SimTypes as DpeTypes>::Crypto::new(),
-        platform: DefaultPlatform(platform_profile),
-        state: &mut dpe::State::new(Support::default(), flags),
+    let mut crypto = DummyCrypto::new();
+    let mut platform = DefaultPlatform(platform_profile);
+    let mut state = dpe::State::new(Support::default(), flags);
+    let mut env = DpeEnvImpl {
+        crypto: &mut crypto,
+        platform: &mut platform,
+        state: &mut state,
     };
     let mut dpe = DpeInstance::new(&mut env, dpe_profile).unwrap();
     test_execute_serialized_command(&mut dpe, &mut env);
@@ -53,18 +48,19 @@ fn main() {
 }
 
 #[no_panic::no_panic]
-fn test_execute_serialized_command(dpe: &mut DpeInstance, env: &mut DpeEnv<SimTypes>) {
+fn test_execute_serialized_command(dpe: &mut DpeInstance, env: &mut dyn DpeEnv) {
     let _ = dpe.execute_serialized_command(env, 1, &[0]);
 }
 
 #[no_panic::no_panic]
-fn test_roll_onetime_use_handle(dpe: &mut DpeInstance, env: &mut DpeEnv<SimTypes>) {
+fn test_roll_onetime_use_handle(dpe: &mut DpeInstance, env: &mut dyn DpeEnv) {
     let _ = dpe.roll_onetime_use_handle(env, 1);
 }
 
 #[no_panic::no_panic]
-fn test_get_profile(dpe: &mut DpeInstance, env: &mut DpeEnv<SimTypes>) {
-    let _ = dpe.get_profile(&mut env.platform, env.state.support);
+fn test_get_profile(dpe: &mut DpeInstance, env: &mut dyn DpeEnv) {
+    let support = env.state().support;
+    let _ = dpe.get_profile(env.platform(), support);
 }
 
 #[no_panic::no_panic]

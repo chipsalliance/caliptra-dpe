@@ -167,10 +167,17 @@ impl DeriveContextCmd {
     /// * `parent_idx` - Index of the parent context.
     /// * `tci_type` - INPUT_TYPE to check for uniqueness.
     fn tci_type_is_unique_among_children(state: &State, parent_idx: usize, tci_type: u32) -> bool {
-        let parent_children = state.contexts[parent_idx].children;
-        parent_children
-            .iter()
-            .all(|idx| state.contexts[idx].tci.tci_type != tci_type)
+        let Some(parent) = state.contexts.get(parent_idx) else {
+            return false;
+        };
+        let parent_children = parent.children;
+        parent_children.iter().all(|idx| {
+            state
+                .contexts
+                .get(idx)
+                .map(|ctx| ctx.tci.tci_type != tci_type)
+                .unwrap_or(false)
+        })
     }
 
     /// Whether it is okay to create a child in the given environment.
@@ -245,7 +252,7 @@ impl CommandExecution for DeriveContextCmd {
             return Err(DpeErrorCode::ArgumentNotSupported);
         }
 
-        let (parent_ctx, parent_idx) = env.state.get_active_context_and_idx(handle, locality)?;
+        let (parent_ctx, parent_idx) = env.state().get_active_context_and_idx(handle, locality)?;
 
         if (!parent_ctx.allow_x509() && flags.allows_x509())
             || (flags.exports_cdi() && !flags.creates_certificate())
@@ -261,7 +268,7 @@ impl CommandExecution for DeriveContextCmd {
             // created with ALLOW_RECURSIVE. Check the parent context's stored property
             // (consistent with how x509 and export_cdi are validated above via the
             // parent's allow_x509/allow_export_cdi fields).
-            || (!env.state().contexts[parent_idx].allow_recursive() && flags.is_recursive())
+            || (!parent_ctx.allow_recursive() && flags.is_recursive())
         {
             return Err(DpeErrorCode::InvalidArgument);
         }
@@ -282,7 +289,7 @@ impl CommandExecution for DeriveContextCmd {
                 cfi_assert!(support.internal_dice() || !flags.uses_internal_dice_input());
                 cfi_assert!(support.retain_parent_context() || !flags.retains_parent());
                 cfi_assert!(support.x509() || !flags.allows_x509());
-                cfi_assert!(env.state().contexts[parent_idx].allow_x509() || !flags.allows_x509());
+                cfi_assert!(parent_ctx.allow_x509() || !flags.allows_x509());
                 cfi_assert!(!flags.is_recursive() || !flags.retains_parent());
             }
         }
@@ -291,7 +298,7 @@ impl CommandExecution for DeriveContextCmd {
             cfg_if! {
                 if #[cfg(not(feature = "disable_recursive"))] {
                     let response = mutresp::<DeriveContextResp>(dpe.profile, out)?;
-                    let mut tmp_context = env.state().contexts.get(parent_idx).ok_or(DpeErrorCode::InternalError)?;
+                    let mut tmp_context = *env.state().contexts.get(parent_idx).ok_or(DpeErrorCode::InternalError)?;
                     if tmp_context.tci.tci_type != tci_type {
                         return Err(DpeErrorCode::InvalidArgument);
                     } else {
@@ -335,7 +342,7 @@ impl CommandExecution for DeriveContextCmd {
         }
 
         // Copy the parent context to mutate so that we avoid mutating internal state upon an error.
-        let mut tmp_parent_context = env
+        let mut tmp_parent_context = *env
             .state()
             .contexts
             .get(parent_idx)
@@ -466,14 +473,6 @@ impl CommandExecution for DeriveContextCmd {
         tmp_parent_context.children = children_with_child_idx;
 
         // At this point we cannot error out anymore, so it is safe to set the updated child and parent contexts.
-<<<<<<< HEAD
-        env.state().contexts[child_idx] = tmp_child_context;
-        env.state().contexts[parent_idx] = tmp_parent_context;
-
-        *response = DeriveContextResp {
-            handle: child_handle,
-            parent_handle: env.state().contexts[parent_idx].handle,
-=======
         *env.state()
             .contexts
             .get_mut(child_idx)
@@ -488,7 +487,6 @@ impl CommandExecution for DeriveContextCmd {
         *response = DeriveContextResp {
             handle: child_handle,
             parent_handle: parent.handle,
->>>>>>> cd628d1 (Add clippy lints to reduce panicking behavior)
             resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
         };
         Ok(size_of_val(response))
