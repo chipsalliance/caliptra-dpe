@@ -70,6 +70,8 @@ fn main() {
         Err(_) => return,
     };
 
-    // TODO: should we more or is this sufficent?
     let _ = black_box(dpe.execute_serialized_command(&mut env, 1, black_box(&[0])));
+    let _ = black_box(dpe.roll_onetime_use_handle(&mut env, black_box(1)));
+    let _ = black_box(dpe.get_profile(env.platform, black_box(env.state.support)));
+    let _ = black_box(dpe.deserialize_command(black_box(&[0])));
 }
