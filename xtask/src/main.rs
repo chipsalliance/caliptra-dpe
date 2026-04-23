@@ -50,6 +50,8 @@ pub enum TestSubcommands {
     Certs,
     /// Run panic check (verify firmware has no panic symbols)
     PanicCheck,
+    /// Run Miri tests
+    Miri(MiriArgs),
 }
 
 #[derive(Parser)]
@@ -90,6 +92,15 @@ pub enum ToolSubcommands {
         #[arg(last = true)]
         args: Vec<String>,
     },
+}
+
+#[derive(Parser)]
+pub struct MiriArgs {
+    #[arg(long, default_value_t = false)]
+    nextest: bool,
+
+    #[arg(long, default_value_t = 1)]
+    nthreads: u32,
 }
 
 fn main() -> Result<()> {
@@ -166,6 +177,7 @@ fn run_test_command(args: &TestArgs) -> Result<()> {
         Some(TestSubcommands::Verification) => run_verification_tests()?,
         Some(TestSubcommands::Certs) => run_cert_parser_tests()?,
         Some(TestSubcommands::PanicCheck) => run_panic_checks()?,
+        Some(TestSubcommands::Miri(args)) => run_miri_tests(args)?,
         None => run_tests()?,
     }
     Ok(())
@@ -218,6 +230,13 @@ fn run_verification_tests() -> Result<()> {
 fn run_cert_parser_tests() -> Result<()> {
     for profile in PROFILES {
         run_cert_parser_test(profile)?;
+    }
+    Ok(())
+}
+
+fn run_miri_tests(args: &MiriArgs) -> Result<()> {
+    for profile in PROFILES {
+        run_miri_test(profile, args)?
     }
     Ok(())
 }
@@ -363,6 +382,39 @@ fn test_rust_targets(profile: &str) -> Result<()> {
     Ok(())
 }
 
+fn run_miri_target(profile: &str, args: &MiriArgs) -> Result<()> {
+    // Note: CFI feature is excluded because it uses inline assembly which Miri does not support
+    let opts = CargoOptions::with_features("dpe/Cargo.toml", profile);
+    cargo_miri(&opts, None, args)?;
+    Ok(())
+}
+
+fn cargo_miri(
+    opts: &CargoOptions,
+    extra_args: Option<&[&str]>,
+    miri_args: &MiriArgs,
+) -> Result<()> {
+    let mut cmd = match miri_args.nextest {
+        true => cargo().args(["miri", "nextest", "run"]),
+        false => cargo().args(["miri", "test"]),
+    };
+
+    cmd = cmd.args(["--manifest-path", opts.manifest_path]);
+    if !opts.features.is_empty() {
+        cmd = cmd.arg(format!("--features={}", opts.features));
+    }
+
+    cmd = cmd.arg("--no-default-features");
+    if let Some(extra_args) = extra_args {
+        cmd = cmd.arg("--").args(extra_args);
+        if !miri_args.nextest {
+            cmd = cmd.arg(format!("--test-threads={}", miri_args.nthreads).as_str())
+        }
+    }
+
+    cmd.run()
+}
+
 fn run_verification_test(profile: &str, crypto: &str) -> Result<()> {
     let features = if profile == "hybrid" {
         format!("p384,ml-dsa,{}", crypto)
@@ -377,6 +429,13 @@ fn run_verification_test(profile: &str, crypto: &str) -> Result<()> {
         .args(["test", "-v"])
         .dir("verification/testing")
         .run()?;
+    Ok(())
+}
+
+/// Requires the same setup as the regular unit tests for profiles and feature flags.
+/// Since miri tests are computaional expenseive, use nextest to speed things up.
+fn run_miri_test(profile: &str, args: &MiriArgs) -> Result<()> {
+    run_miri_target(profile, args)?;
     Ok(())
 }
 
