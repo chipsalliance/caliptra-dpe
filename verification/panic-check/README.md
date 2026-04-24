@@ -1,6 +1,6 @@
 # panic-check
 
-Verify that the firmware image does not the possibily for panics.
+Ensure that the DPE library is free of panics by building and checking a sample firmware.
 The `firmware` profile is the same as the one in `caliptra-sw` to mimick the same build process.
 The `firmware-check` profile differs in the sense, that it does not strip the symbols, such that
 we can find any panic related ELF symbols.

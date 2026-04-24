@@ -11,7 +11,7 @@ members = [
     "tools",
     "xtask",
     "test-artifacts",
-    "verification/panic-check",
+    "verification/panic-check"
 ]
 
 [workspace.package]
@@ -50,3 +50,12 @@ panic = "abort"
 lto = true
 opt-level = "s"
 codegen-units = 1
+
+[profile.firmware-check]
+inherits = "release"
+panic = "abort"
+lto = "thin"           
+opt-level = "s"
+codegen-units = 1
+strip = "none"
+debug = 1

@@ -452,10 +452,7 @@ fn run_panic_check(args: &PanicCheckArgs) -> Result<()> {
         .run()?;
 
     // Run the checker on the built firmware
-    let firmware_path = format!(
-        "verification/target/{}/firmware-check/firmware",
-        RISCV_TARGET
-    );
+    let firmware_path = format!("target/{}/firmware-check/firmware", RISCV_TARGET);
 
     println!("Checking firmware for panic symbols: {}", firmware_path);
     let result = cargo()
