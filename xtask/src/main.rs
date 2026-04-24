@@ -357,7 +357,7 @@ fn test_rust_targets(profile: &str) -> Result<()> {
 
 fn run_miri_target(profile: &str, args: &MiriArgs) -> Result<()> {
     // Note: CFI feature is excluded because it uses inline assembly which Miri does not support
-    let opts = CargoOptions::with_features("dpe/Cargo.toml", profile);
+    let opts = CargoOptions::with_features("dpe/Cargo.toml", &format!("{},cfi", profile));
     cargo_miri(&opts, None, args)?;
     Ok(())
 }
@@ -371,6 +371,10 @@ fn cargo_miri(
         true => cargo().args(["miri", "nextest", "run"]),
         false => cargo().args(["miri", "test"]),
     };
+
+    if miri_args.nextest {
+        cmd = cmd.arg(format!("-j{}", miri_args.nthreads).as_str());
+    }
 
     cmd = cmd.args(["--manifest-path", opts.manifest_path]);
     if !opts.features.is_empty() {

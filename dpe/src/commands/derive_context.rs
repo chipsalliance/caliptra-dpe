@@ -87,7 +87,8 @@ impl DeriveContextFlags {
     }
 }
 
-#[repr(C)]
+// miri alignment: align(4) ensures zerocopy can safely reference from byte slices
+#[repr(C, align(4))]
 #[derive(Debug, PartialEq, Eq, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct DeriveContextCmd {
     pub handle: ContextHandle,
@@ -1884,7 +1885,11 @@ mod tests {
     }
 
     #[test]
+    // Skip under Miri: ML-DSA signature generation is too slow under Miri's interpreter.
+    // This is acceptable since Miri checks memory safety, not crypto correctness.
+    #[cfg_attr(miri, ignore)]
     fn test_correct_subject_name_for_exported_cdi() {
+        CfiCounter::reset_for_test();
         let mut state = State::new(Support::X509 | Support::CDI_EXPORT, DpeFlags::empty());
         test_env!(env, &mut state);
         let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();

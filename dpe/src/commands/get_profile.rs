@@ -9,7 +9,8 @@ use crate::{
 #[cfg(feature = "cfi")]
 use caliptra_cfi_derive::cfi_impl_fn;
 
-#[repr(C)]
+// miri alignment: align(4) ensures zerocopy can safely reference from byte slices
+#[repr(C, align(4))]
 #[derive(
     Debug,
     PartialEq,

@@ -20,7 +20,8 @@ use cfg_if::cfg_if;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 #[cfg(not(feature = "disable_x509"))]
-#[repr(C)]
+// miri alignment: align(4) ensures zerocopy can safely reference from byte slices
+#[repr(C, align(4))]
 #[derive(Debug, Default, PartialEq, Eq, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct CertifyKeyFlags(pub u32);
 
@@ -44,8 +45,8 @@ impl CertifyKeyCommand<'_> {
 
     pub fn deserialize(
         profile: DpeProfile,
-        bytes: &[u8],
-    ) -> Result<CertifyKeyCommand, DpeErrorCode> {
+        bytes: &'_ [u8],
+    ) -> Result<CertifyKeyCommand<'_>, DpeErrorCode> {
         match profile {
             #[cfg(feature = "p256")]
             DpeProfile::P256Sha256 => {
@@ -274,7 +275,8 @@ impl CommandExecution for CertifyKeyCommand<'_> {
     }
 }
 
-#[repr(C)]
+// miri alignment: align(4) ensures zerocopy can safely reference from byte slices
+#[repr(C, align(4))]
 #[derive(Debug, Default, PartialEq, Eq, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct CertifyKeyP256Cmd {
     pub handle: ContextHandle,
@@ -297,7 +299,8 @@ impl CommandExecution for CertifyKeyP256Cmd {
     }
 }
 
-#[repr(C)]
+// miri alignment: align(4) ensures zerocopy can safely reference from byte slices
+#[repr(C, align(4))]
 #[derive(Debug, PartialEq, Eq, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct CertifyKeyP384Cmd {
     pub handle: ContextHandle,
@@ -331,7 +334,9 @@ impl CommandExecution for CertifyKeyP384Cmd {
     }
 }
 
-#[repr(C)]
+// miri alignment: align(4) ensures zerocopy can safely reference from byte slices
+#[repr(C, align(4))]
+#[allow(dead_code)]
 #[derive(Debug, PartialEq, Eq, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct CertifyKeyMldsa87Cmd {
     pub handle: ContextHandle,
@@ -468,16 +473,21 @@ mod tests {
 
     #[test]
     fn test_deserialize_certify_key() {
+        use core::mem::size_of;
         CfiCounter::reset_for_test();
-        let mut command = CommandHdr::new(DPE_PROFILE, Command::CERTIFY_KEY)
-            .as_bytes()
-            .to_vec();
-        command.extend(TEST_CERTIFY_KEY_CMD.as_bytes());
+        // miri alignment: use u32 buffer to ensure 4-byte alignment for zerocopy
+        const BUF_SIZE: usize = (size_of::<CommandHdr>() + size_of::<CertifyKeyCmd>() + 3) / 4;
+        let mut command_buf = [0u32; BUF_SIZE];
+        let command = command_buf.as_mut_bytes();
+        let header = CommandHdr::new(DPE_PROFILE, Command::CERTIFY_KEY);
+        command[..size_of::<CommandHdr>()].copy_from_slice(header.as_bytes());
+        command[size_of::<CommandHdr>()..][..size_of::<CertifyKeyCmd>()]
+            .copy_from_slice(TEST_CERTIFY_KEY_CMD.as_bytes());
         assert_eq!(
             Ok(Command::CertifyKey(CertifyKeyCommand::from(
                 &TEST_CERTIFY_KEY_CMD
             ))),
-            Command::deserialize(DPE_PROFILE, &command)
+            Command::deserialize(DPE_PROFILE, command)
         );
     }
 

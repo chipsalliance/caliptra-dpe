@@ -31,7 +31,8 @@ use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 /// | 0x10+H    | U32        | reserved          | Reserved; must be zero.              |
 /// | 0x14+H    | U32        | tci_type          | INPUT_TYPE identifying the child.    |
 /// | 0x18+H    | U32        | reserved_svn      | Reserved; ignored by this command.   |
-#[repr(C)]
+// miri alignment: align(4) ensures zerocopy can safely reference from byte slices
+#[repr(C, align(4))]
 #[derive(Debug, PartialEq, Eq, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct UpdateContextMeasurementCmd {
     /// Handle of the parent context. Must not be the default handle.
