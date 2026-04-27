@@ -1,14 +1,14 @@
 // Licensed under the Apache-2.0 license.
 use crate::{response::DpeErrorCode, tci::TciNodeData, U8Bool, MAX_HANDLES};
 use constant_time_eq::constant_time_eq_16;
-use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes};
+use zerocopy::{FromBytes, FromZeros, Immutable, IntoBytes, KnownLayout};
 use zeroize::Zeroize;
 
 #[cfg(test)]
 use std::fmt::Debug;
 
 #[repr(C, align(4))]
-#[derive(IntoBytes, TryFromBytes, KnownLayout, Immutable, Copy, Clone, PartialEq, Eq, Zeroize)]
+#[derive(IntoBytes, FromZeros, KnownLayout, Immutable, Copy, Clone, PartialEq, Eq, Zeroize)]
 pub struct Context {
     pub handle: ContextHandle,
     pub tci: TciNodeData,
@@ -161,7 +161,7 @@ impl ContextHandle {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, IntoBytes, TryFromBytes, KnownLayout, Immutable, Copy, Clone, Zeroize)]
+#[derive(Debug, PartialEq, Eq, IntoBytes, FromZeros, KnownLayout, Immutable, Copy, Clone, Zeroize)]
 #[repr(u8, align(1))]
 #[rustfmt::skip]
 pub enum ContextState {
@@ -176,7 +176,7 @@ pub enum ContextState {
     Retired,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy, IntoBytes, TryFromBytes, KnownLayout, Immutable, Zeroize)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, IntoBytes, FromZeros, KnownLayout, Immutable, Zeroize)]
 #[repr(u8, align(1))]
 #[rustfmt::skip]
 pub enum ContextType {
