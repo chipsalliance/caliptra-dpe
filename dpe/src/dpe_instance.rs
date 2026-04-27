@@ -26,7 +26,7 @@ use crypto::{Crypto, Digest, Hasher};
 use platform::Platform;
 #[cfg(not(feature = "disable_internal_dice"))]
 use platform::MAX_CHUNK_SIZE;
-use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes};
+use zerocopy::{FromZeros, Immutable, IntoBytes, KnownLayout};
 use zeroize::Zeroize;
 
 pub trait DpeTypes {
@@ -64,7 +64,7 @@ bitflags! {
 }
 
 #[repr(C, align(4))]
-#[derive(IntoBytes, TryFromBytes, KnownLayout, Immutable, Zeroize)]
+#[derive(IntoBytes, FromZeros, KnownLayout, Immutable, Zeroize)]
 pub struct DpeInstance {
     pub contexts: [Context; MAX_HANDLES],
     pub support: Support,
