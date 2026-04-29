@@ -8,7 +8,7 @@ use crate::{
 };
 use bitflags::bitflags;
 use core::mem::align_of;
-use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes};
+use zerocopy::{FromBytes, FromZeros, Immutable, IntoBytes, KnownLayout};
 use zeroize::Zeroize;
 
 #[cfg(feature = "cfi")]
@@ -26,7 +26,7 @@ bitflags! {
 }
 
 #[repr(C, align(4))]
-#[derive(IntoBytes, TryFromBytes, KnownLayout, Immutable, Zeroize)]
+#[derive(IntoBytes, FromZeros, KnownLayout, Immutable, Zeroize)]
 pub struct State {
     /// Magic marker indicating the data is a DPE state. This is just a quick sanity check.
     pub marker: u32,

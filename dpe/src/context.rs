@@ -10,14 +10,14 @@ use caliptra_cfi_derive::Launder;
 #[cfg(feature = "cfi")]
 use caliptra_cfi_lib::cfi_launder;
 use constant_time_eq::constant_time_eq_16;
-use zerocopy::{little_endian::U64, FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes};
+use zerocopy::{little_endian::U64, FromBytes, FromZeros, Immutable, IntoBytes, KnownLayout};
 use zeroize::Zeroize;
 
 #[cfg(test)]
 use std::fmt::Debug;
 
 #[repr(C, align(4))]
-#[derive(IntoBytes, TryFromBytes, KnownLayout, Immutable, Copy, Clone, PartialEq, Eq, Zeroize)]
+#[derive(IntoBytes, FromZeros, KnownLayout, Immutable, Copy, Clone, PartialEq, Eq, Zeroize)]
 pub struct Context {
     pub handle: ContextHandle,
     pub tci: TciNodeData,
@@ -209,7 +209,7 @@ impl ContextHandle {
 
 #[repr(C, align(4))]
 #[derive(
-    Default, Debug, IntoBytes, TryFromBytes, KnownLayout, Immutable, Copy, Clone, PartialEq, Eq,
+    Default, Debug, IntoBytes, FromZeros, KnownLayout, Immutable, Copy, Clone, PartialEq, Eq,
 )]
 pub struct Children(U64);
 
@@ -292,7 +292,7 @@ impl From<u64> for Children {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, IntoBytes, TryFromBytes, KnownLayout, Immutable, Copy, Clone, Zeroize)]
+#[derive(Debug, PartialEq, Eq, IntoBytes, FromZeros, KnownLayout, Immutable, Copy, Clone, Zeroize)]
 #[cfg_attr(feature = "cfi", derive(Launder))]
 #[repr(u8, align(1))]
 #[rustfmt::skip]
@@ -308,7 +308,7 @@ pub enum ContextState {
     Retired,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy, IntoBytes, TryFromBytes, KnownLayout, Immutable, Zeroize)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, IntoBytes, FromZeros, KnownLayout, Immutable, Zeroize)]
 #[cfg_attr(feature = "cfi", derive(Launder))]
 #[repr(u8, align(1))]
 #[rustfmt::skip]
