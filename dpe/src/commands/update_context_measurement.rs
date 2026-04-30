@@ -71,19 +71,33 @@ impl CommandExecution for UpdateContextMeasurementCmd {
 
         // Identify the direct child of parent_handle by INPUT_TYPE (tci_type).
         // Children is a Copy type so this does not hold a borrow on env.state().
-        let parent_children = env.state().contexts[parent_idx].children;
+        let parent_children = env
+            .state()
+            .contexts
+            .get(parent_idx)
+            .ok_or(DpeErrorCode::InternalError)?
+            .children;
         let child_idx = parent_children
             .iter()
             .find(|&idx| {
-                let ctx = &env.state().contexts[idx];
-                ctx.state == ContextState::Active && ctx.tci.tci_type == self.tci_type
+                env.state()
+                    .contexts
+                    .get(idx)
+                    .map(|ctx| {
+                        ctx.state == ContextState::Active && ctx.tci.tci_type == self.tci_type
+                    })
+                    .unwrap_or(false)
             })
             .ok_or(DpeErrorCode::InvalidArgument)?;
 
         let response = mutresp::<UpdateContextMeasurementResp>(dpe.profile, out)?;
 
         // Copy the child context for mutation to avoid touching internal state on error.
-        let mut tmp_child = env.state().contexts[child_idx];
+        let mut tmp_child = *env
+            .state()
+            .contexts
+            .get(child_idx)
+            .ok_or(DpeErrorCode::InternalError)?;
         // The child's locality authorizes the TCI update (parent provides the authorization).
         let child_locality = tmp_child.locality;
 
@@ -97,15 +111,28 @@ impl CommandExecution for UpdateContextMeasurementCmd {
         dpe.roll_onetime_use_handle(env, child_idx)?;
 
         // Commit the updated child TCI, preserving the newly rotated handle.
-        env.state().contexts[child_idx] = Context {
-            handle: env.state().contexts[child_idx].handle,
+        let child_ctx = env
+            .state()
+            .contexts
+            .get_mut(child_idx)
+            .ok_or(DpeErrorCode::InternalError)?;
+        let new_child_handle = child_ctx.handle;
+        *child_ctx = Context {
+            handle: new_child_handle,
             ..tmp_child
         };
 
+        let new_parent_handle = env
+            .state()
+            .contexts
+            .get(parent_idx)
+            .ok_or(DpeErrorCode::InternalError)?
+            .handle;
+
         *response = UpdateContextMeasurementResp {
             resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
-            new_context_handle: env.state().contexts[child_idx].handle,
-            new_parent_context_handle: env.state().contexts[parent_idx].handle,
+            new_context_handle: new_child_handle,
+            new_parent_context_handle: new_parent_handle,
         };
         Ok(size_of_val(response))
     }

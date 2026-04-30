@@ -33,6 +33,7 @@
             # Ensure the toolchains are installed
             rustup toolchain install $(grep channel rust-toolchain.toml | cut -d'"' -f2)
             rustup toolchain install nightly-2025-07-08
+            rustup target add riscv32imc-unknown-none-elf
           '';
         };
       }

@@ -48,6 +48,8 @@ pub enum TestSubcommands {
     Verification,
     /// Run cert parser tests
     Certs,
+    /// Run panic check (verify firmware has no panic symbols)
+    PanicCheck,
 }
 
 #[derive(Parser)]
@@ -121,6 +123,9 @@ fn run_ci() -> Result<()> {
     // Build fuzz target
     run_fuzz_checks()?;
 
+    // Run panic checks for all profiles
+    run_panic_checks()?;
+
     Ok(())
 }
 
@@ -159,6 +164,7 @@ fn run_test_command(args: &TestArgs) -> Result<()> {
         Some(TestSubcommands::Unit) => run_unit_tests()?,
         Some(TestSubcommands::Verification) => run_verification_tests()?,
         Some(TestSubcommands::Certs) => run_cert_parser_tests()?,
+        Some(TestSubcommands::PanicCheck) => run_panic_checks()?,
         None => run_tests()?,
     }
     Ok(())
@@ -395,6 +401,13 @@ fn run_fuzz_checks() -> Result<()> {
         .dir(fuzz_dir)
         .run()?;
     Ok(())
+}
+
+fn run_panic_checks() -> Result<()> {
+    println!("Running panic checks via panic-check-checker tests...");
+    cargo()
+        .args(["test", "-p", "panic-check-checker", "--", "--nocapture"])
+        .run()
 }
 
 struct Cmd(Command);
