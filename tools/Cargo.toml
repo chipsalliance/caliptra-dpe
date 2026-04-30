@@ -1,12 +1,12 @@
 # Licensed under the Apache-2.0 license
 
 [package]
-name = "caliptra-dpe-tools"
-version.workspace = true
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
+name = "caliptra-dpe-tools"
 publish.workspace = true
+version.workspace = true
 
 [features]
 default = ["p384"]
@@ -15,19 +15,22 @@ arbitrary_max_handles = ["caliptra-dpe/arbitrary_max_handles"]
 p256 = ["caliptra-dpe/p256"]
 p384 = ["caliptra-dpe/p384"]
 # TODO(clundin): Placeholder name until we decide pattern for DPE profiles and feature flags.
-ml-dsa = [
-  "caliptra-dpe/ml-dsa"
-]
-hybrid = ["p384", "ml-dsa"]
 cfi = ["caliptra-dpe/cfi"]
+hybrid = ["p384", "ml-dsa"]
+ml-dsa = ["caliptra-dpe/ml-dsa"]
 
 [dependencies]
 anyhow.workspace = true
 caliptra-dpe = { workspace = true, default-features = false }
+caliptra-dpe-crypto = { workspace = true, default-features = false, features = [
+  "deterministic_rand",
+  "rustcrypto",
+] }
+caliptra-dpe-platform = { workspace = true, default-features = false, features = [
+  "rustcrypto",
+] }
 clap.workspace = true
-caliptra-dpe-crypto = { workspace = true, default-features = false, features = ["deterministic_rand", "rustcrypto"] }
 pem = "2"
-caliptra-dpe-platform = { workspace = true, default-features = false, features = ["rustcrypto"] }
 zerocopy.workspace = true
 
 

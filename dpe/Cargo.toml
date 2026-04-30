@@ -1,59 +1,68 @@
 # Licensed under the Apache-2.0 license
 
 [package]
-name = "caliptra-dpe"
-version.workspace = true
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
+name = "caliptra-dpe"
 publish.workspace = true
+version.workspace = true
 
 [features]
 default = ["p384", "cfi"]
+hybrid = ["p384", "ml-dsa"]
+ml-dsa = ["caliptra-dpe-crypto/ml-dsa"]
 p256 = []
 p384 = []
-ml-dsa = ["caliptra-dpe-crypto/ml-dsa"]
-hybrid = ["p384", "ml-dsa"]
 # Run ARBITRARY_MAX_HANDLES=n cargo build --features arbitrary_max_handles to use this feature
 arbitrary_max_handles = []
-disable_simulation = []
-disable_recursive = []
+cfi = [
+  "caliptra-dpe-crypto/cfi",
+  "caliptra-cfi-lib/cfi",
+  "caliptra-cfi-lib/cfi-counter",
+]
 disable_auto_init = []
-disable_rotate_context = []
-disable_x509 = []
 disable_csr = []
-disable_internal_info = []
-disable_internal_dice = []
-disable_retain_parent_context = []
 disable_export_cdi = []
-cfi = ["caliptra-dpe-crypto/cfi", "caliptra-cfi-lib/cfi", "caliptra-cfi-lib/cfi-counter"]
+disable_internal_dice = []
+disable_internal_info = []
+disable_recursive = []
+disable_retain_parent_context = []
+disable_rotate_context = []
+disable_simulation = []
+disable_x509 = []
 log = ["dep:log"]
 
 [dependencies]
 bitflags = "2.4.0"
-caliptra-cfi-lib = { workspace = true, default-features = false }
 caliptra-cfi-derive.workspace = true
-constant_time_eq.workspace = true
+caliptra-cfi-lib = { workspace = true, default-features = false }
 caliptra-dpe-crypto = { workspace = true, default-features = false }
 caliptra-dpe-platform = { workspace = true, default-features = false }
+cfg-if.workspace = true
+constant_time_eq.workspace = true
+log = { version = "0.4.28", optional = true }
 ufmt.workspace = true
 zerocopy.workspace = true
 zeroize.workspace = true
-cfg-if.workspace = true
-log = { version = "0.4.28", optional = true }
 
 [dev-dependencies]
 asn1 = "0.13.0"
 caliptra-cfi-lib = { workspace = true, features = ["cfi-test"] }
-const-oid = "0.10.2"
-x509-parser = "0.15.1"
-caliptra-dpe-crypto = { workspace = true, features = ["deterministic_rand", "rustcrypto"] }
-caliptra-dpe-platform = { workspace = true, default-features = false, features = ["rustcrypto"] }
+caliptra-dpe-crypto = { workspace = true, features = [
+  "deterministic_rand",
+  "rustcrypto",
+] }
+caliptra-dpe-platform = { workspace = true, default-features = false, features = [
+  "rustcrypto",
+] }
 cms = "0.2.2"
+const-oid = "0.10.2"
 der = "0.7.8"
-spki = "0.7.2"
-rand = "0.8.5"
-openssl = "0.10.64"
-ml-dsa = "0.1.0-rc.2"
-pkcs8 = "0.11.0-rc.6"
 flexi_logger = "0.31.7"
+ml-dsa = "0.1.0-rc.2"
+openssl = "0.10.64"
+pkcs8 = "0.11.0-rc.6"
+rand = "0.8.5"
+spki = "0.7.2"
+x509-parser = "0.15.1"

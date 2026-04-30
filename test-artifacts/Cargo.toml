@@ -1,12 +1,12 @@
 # Licensed under the Apache-2.0 license
 
 [package]
-name = "caliptra-dpe-test-artifacts"
-version.workspace = true
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
+name = "caliptra-dpe-test-artifacts"
 publish.workspace = true
+version.workspace = true
 
 [features]
 
