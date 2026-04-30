@@ -87,7 +87,8 @@ impl DeriveContextFlags {
     }
 }
 
-#[repr(C)]
+// miri alignment: align(4) ensures zerocopy can safely reference from byte slices
+#[repr(C, align(4))]
 #[derive(Debug, PartialEq, Eq, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct DeriveContextCmd {
     pub handle: ContextHandle,
@@ -734,6 +735,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     #[cfg(not(feature = "ml-dsa"))] // TODO https://github.com/chipsalliance/caliptra-dpe/issues/450
     fn test_full_attestation_flow() {
         CfiCounter::reset_for_test();
@@ -1743,6 +1745,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_create_ca() {
         for mark_dice_extensions_critical in [true, false] {
             CfiCounter::reset_for_test();
@@ -1882,7 +1885,11 @@ mod tests {
     }
 
     #[test]
+    // Skip under Miri: ML-DSA signature generation is too slow under Miri's interpreter.
+    // This is acceptable since Miri checks memory safety, not crypto correctness.
+    #[cfg_attr(miri, ignore)]
     fn test_correct_subject_name_for_exported_cdi() {
+        CfiCounter::reset_for_test();
         let mut state = State::new(Support::X509 | Support::CDI_EXPORT, DpeFlags::empty());
         test_env!(env, &mut state);
         let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();

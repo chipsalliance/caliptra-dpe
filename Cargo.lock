@@ -208,7 +208,6 @@ checksum = "46c5e41b57b8bba42a04676d81cb89e9ee8e859a1a66f80a5a72e1cb76b34d43"
 [[package]]
 name = "caliptra-cfi-derive"
 version = "0.1.0"
-source = "git+https://github.com/chipsalliance/caliptra-cfi.git?rev=aa96c53073ce7f298f7482c1ac57f5f65ffc115e#aa96c53073ce7f298f7482c1ac57f5f65ffc115e"
 dependencies = [
  "pastey",
  "proc-macro2",
@@ -219,7 +218,6 @@ dependencies = [
 [[package]]
 name = "caliptra-cfi-lib"
 version = "0.1.0"
-source = "git+https://github.com/chipsalliance/caliptra-cfi.git?rev=aa96c53073ce7f298f7482c1ac57f5f65ffc115e#aa96c53073ce7f298f7482c1ac57f5f65ffc115e"
 
 [[package]]
 name = "caliptra-dpe"
@@ -414,9 +412,9 @@ checksum = "a6ef517f0926dd24a1582492c791b6a4818a4d94e789a334894aa15b0d12f55c"
 
 [[package]]
 name = "constant_time_eq"
-version = "0.3.0"
+version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f7144d30dcf0fafbce74250a3963025d8d52177934239851c917d29f1df280c2"
+checksum = "3d52eff69cd5e647efe296129160853a42795992097e8af39800e1060caeea9b"
 
 [[package]]
 name = "core-foundation-sys"

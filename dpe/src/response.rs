@@ -183,7 +183,8 @@ impl Response {
 
 // ABI Response structures
 
-#[repr(C)]
+// miri alignment: align(4) ensures zerocopy can safely reference from byte slices
+#[repr(C, align(4))]
 #[derive(Debug, PartialEq, Eq, IntoBytes, TryFromBytes, Immutable, KnownLayout)]
 pub struct ResponseHdr {
     pub magic: u32,
@@ -203,7 +204,8 @@ impl ResponseHdr {
     }
 }
 
-#[repr(C)]
+// miri alignment: align(4) ensures zerocopy can safely reference from byte slices
+#[repr(C, align(4))]
 #[derive(Debug, PartialEq, Eq, IntoBytes, TryFromBytes, Immutable, KnownLayout)]
 pub struct GetProfileResp {
     pub resp_hdr: ResponseHdr,
@@ -238,14 +240,16 @@ impl GetProfileResp {
     }
 }
 
-#[repr(C)]
+// miri alignment: align(4) ensures zerocopy can safely reference from byte slices
+#[repr(C, align(4))]
 #[derive(Debug, PartialEq, Eq, IntoBytes, TryFromBytes, KnownLayout, Immutable)]
 pub struct NewHandleResp {
     pub resp_hdr: ResponseHdr,
     pub handle: ContextHandle,
 }
 
-#[repr(C)]
+// miri alignment: align(4) ensures zerocopy can safely reference from byte slices
+#[repr(C, align(4))]
 #[derive(Debug, PartialEq, Eq, IntoBytes, TryFromBytes, Immutable, KnownLayout)]
 pub struct DeriveContextResp {
     pub resp_hdr: ResponseHdr,
@@ -254,7 +258,8 @@ pub struct DeriveContextResp {
 }
 
 /// Response for the UpdateContextMeasurement vendor command.
-#[repr(C)]
+// miri alignment: align(4) ensures zerocopy can safely reference from byte slices
+#[repr(C, align(4))]
 #[derive(Debug, PartialEq, Eq, IntoBytes, TryFromBytes, Immutable, KnownLayout)]
 pub struct UpdateContextMeasurementResp {
     pub resp_hdr: ResponseHdr,
@@ -264,7 +269,8 @@ pub struct UpdateContextMeasurementResp {
     pub new_parent_context_handle: ContextHandle,
 }
 
-#[repr(C)]
+// miri alignment: align(4) ensures zerocopy can safely reference from byte slices
+#[repr(C, align(4))]
 #[derive(Debug, PartialEq, Eq, IntoBytes, TryFromBytes, Immutable, KnownLayout)]
 pub struct DeriveContextExportedCdiResp {
     pub resp_hdr: ResponseHdr,
@@ -353,7 +359,8 @@ impl CertifyKeyResp {
     }
 }
 
-#[repr(C)]
+// miri alignment: align(4) ensures zerocopy can safely reference from byte slices
+#[repr(C, align(4))]
 #[derive(Debug, PartialEq, Eq, IntoBytes, TryFromBytes, Immutable, KnownLayout)]
 pub struct CertifyKeyP256Resp {
     pub resp_hdr: ResponseHdr,
@@ -373,7 +380,8 @@ impl CertifyKeyP256Resp {
     }
 }
 
-#[repr(C)]
+// miri alignment: align(4) ensures zerocopy can safely reference from byte slices
+#[repr(C, align(4))]
 #[derive(Debug, PartialEq, Eq, IntoBytes, TryFromBytes, Immutable, KnownLayout)]
 pub struct CertifyKeyP384Resp {
     pub resp_hdr: ResponseHdr,
@@ -393,7 +401,8 @@ impl CertifyKeyP384Resp {
     }
 }
 
-#[repr(C)]
+// miri alignment: align(4) ensures zerocopy can safely reference from byte slices
+#[repr(C, align(4))]
 #[derive(Debug, PartialEq, Eq, IntoBytes, TryFromBytes, Immutable, KnownLayout)]
 #[cfg(feature = "ml-dsa")]
 pub struct CertifyKeyMldsa87Resp {
@@ -460,7 +469,8 @@ impl SignResp {
     }
 }
 
-#[repr(C)]
+// miri alignment: align(4) ensures zerocopy can safely reference from byte slices
+#[repr(C, align(4))]
 #[derive(Debug, PartialEq, Eq, IntoBytes, TryFromBytes, Immutable, KnownLayout)]
 pub struct SignP256Resp {
     pub resp_hdr: ResponseHdr,
@@ -469,7 +479,8 @@ pub struct SignP256Resp {
     pub sig_s: [u8; 32],
 }
 
-#[repr(C)]
+// miri alignment: align(4) ensures zerocopy can safely reference from byte slices
+#[repr(C, align(4))]
 #[derive(Debug, PartialEq, Eq, IntoBytes, TryFromBytes, Immutable, KnownLayout)]
 pub struct SignP384Resp {
     pub resp_hdr: ResponseHdr,
@@ -478,7 +489,8 @@ pub struct SignP384Resp {
     pub sig_s: [u8; 48],
 }
 
-#[repr(C)]
+// miri alignment: align(4) ensures zerocopy can safely reference from byte slices
+#[repr(C, align(4))]
 #[derive(Debug, PartialEq, Eq, IntoBytes, TryFromBytes, Immutable, KnownLayout)]
 #[cfg(feature = "ml-dsa")]
 pub struct SignMlDsaResp {
@@ -488,7 +500,8 @@ pub struct SignMlDsaResp {
     pub _padding: [u8; 1],
 }
 
-#[repr(C)]
+// miri alignment: align(4) ensures zerocopy can safely reference from byte slices
+#[repr(C, align(4))]
 #[derive(Debug, PartialEq, Eq, IntoBytes, TryFromBytes, Immutable, KnownLayout)]
 pub struct GetCertificateChainResp {
     pub resp_hdr: ResponseHdr,

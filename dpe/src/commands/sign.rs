@@ -22,7 +22,8 @@ use core::mem::size_of;
 use core::mem::size_of_val;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
-#[repr(C)]
+// miri alignment: align(4) ensures zerocopy can safely reference from byte slices
+#[repr(C, align(4))]
 #[derive(Debug, PartialEq, Eq, IntoBytes, FromBytes, Immutable, KnownLayout)]
 pub struct SignFlags(pub u32);
 
@@ -36,7 +37,8 @@ bitflags! {
 const MLDSA87_RAW_MAX_SIZE: usize = 1024;
 
 #[cfg(feature = "ml-dsa")]
-#[repr(C)]
+// miri alignment: align(4) ensures zerocopy can safely reference from byte slices
+#[repr(C, align(4))]
 #[derive(Debug, PartialEq, Eq, IntoBytes, FromBytes, Immutable, KnownLayout)]
 struct SignMldsa87Header {
     pub handle: ContextHandle,
@@ -45,7 +47,8 @@ struct SignMldsa87Header {
 }
 
 #[cfg(feature = "ml-dsa")]
-#[repr(C)]
+// miri alignment: align(4) ensures zerocopy can safely reference from byte slices
+#[repr(C, align(4))]
 #[derive(Debug, PartialEq, Eq, IntoBytes, FromBytes, Immutable, KnownLayout)]
 pub struct SignMldsa87RawCmd {
     pub handle: ContextHandle,
@@ -270,7 +273,8 @@ fn sign(
     Ok(signer.sign(data)?)
 }
 
-#[repr(C)]
+// miri alignment: align(4) ensures zerocopy can safely reference from byte slices
+#[repr(C, align(4))]
 #[derive(Debug, PartialEq, Eq, IntoBytes, FromBytes, Immutable, KnownLayout)]
 pub struct SignP256Cmd {
     pub handle: ContextHandle,
@@ -293,7 +297,8 @@ impl CommandExecution for SignP256Cmd {
     }
 }
 
-#[repr(C)]
+// miri alignment: align(4) ensures zerocopy can safely reference from byte slices
+#[repr(C, align(4))]
 #[derive(Debug, PartialEq, Eq, IntoBytes, FromBytes, Immutable, KnownLayout)]
 pub struct SignP384Cmd {
     pub handle: ContextHandle,
@@ -316,7 +321,8 @@ impl CommandExecution for SignP384Cmd {
     }
 }
 
-#[repr(C)]
+// miri alignment: align(4) ensures zerocopy can safely reference from byte slices
+#[repr(C, align(4))]
 #[derive(Debug, PartialEq, Eq, IntoBytes, FromBytes, Immutable, KnownLayout)]
 pub struct SignMldsa87Cmd {
     pub handle: ContextHandle,
@@ -470,6 +476,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_asymmetric() {
         CfiCounter::reset_for_test();
         let mut state = test_state();

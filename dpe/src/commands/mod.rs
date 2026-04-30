@@ -44,6 +44,7 @@ mod update_context_measurement;
 
 #[derive(Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "cfi", derive(Launder))]
+#[repr(align(4))]
 pub enum Command<'a> {
     GetProfile(&'a GetProfileCmd),
     InitCtx(&'a InitCtxCmd),
@@ -76,7 +77,7 @@ impl Command<'_> {
     /// # Arguments
     ///
     /// * `bytes` - serialized command
-    pub fn deserialize(profile: DpeProfile, bytes: &[u8]) -> Result<Command, DpeErrorCode> {
+    pub fn deserialize(profile: DpeProfile, bytes: &'_ [u8]) -> Result<Command, DpeErrorCode> {
         let header = CommandHdr::try_from_with_profile(profile, bytes)?;
         let bytes = &bytes[size_of::<CommandHdr>()..];
 
@@ -325,9 +326,10 @@ pub trait CommandExecution {
     where
         Command<'a>: From<&'a Self>,
     {
-        let mut buf = [0u8; size_of::<Response>()];
-        self.execute_serialized(dpe, env, locality, &mut buf)?;
-        Response::try_read_from_bytes(&Command::from(self), &buf)
+        // miri alignment: use u32 buffer to ensure 4-byte alignment for zerocopy
+        let mut buf = [0u32; size_of::<Response>() / 4];
+        self.execute_serialized(dpe, env, locality, buf.as_mut_bytes())?;
+        Response::try_read_from_bytes(&Command::from(self), buf.as_bytes())
     }
 
     /// CFI wrapper around execute
@@ -344,9 +346,10 @@ pub trait CommandExecution {
     where
         Command<'a>: From<&'a Self>,
     {
-        let mut buf = [0u8; size_of::<Response>()];
-        self.execute_serialized(dpe, env, locality, &mut buf)?;
-        Response::try_read_from_bytes(&Command::from(self), &buf)
+        // miri alignment: use u32 buffer to ensure 4-byte alignment for zerocopy
+        let mut buf = [0u32; size_of::<Response>() / 4];
+        self.execute_serialized(dpe, env, locality, buf.as_mut_bytes())?;
+        Response::try_read_from_bytes(&Command::from(self), buf.as_bytes())
     }
 
     fn execute_serialized(
@@ -383,6 +386,8 @@ pub trait CommandExecution {
     zerocopy::Immutable,
     zerocopy::KnownLayout,
 )]
+// miri: enforce zerocopy 4-byte alignment
+#[repr(align(4))]
 pub struct CommandHdr {
     pub magic: u32,
     pub cmd_id: u32,
