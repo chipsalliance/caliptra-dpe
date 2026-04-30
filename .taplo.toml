@@ -1,0 +1,12 @@
+# Licensed under the Apache-2.0 license
+include = ["**/Cargo.toml"]
+
+[formatting]
+align_entries = false
+reorder_keys = true
+
+[[rule]]
+include = ["**/Cargo.toml"]
+keys = ["dependencies", "dev-dependencies", "build-dependencies"]
+[rule.formatting]
+reorder_keys = true
