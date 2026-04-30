@@ -21,11 +21,8 @@ license = "Apache-2.0"
 publish = false
 
 [workspace.dependencies]
-# caliptra-cfi-lib = { git = "https://github.com/chipsalliance/caliptra-cfi.git", package = "caliptra-cfi-lib", rev = "aa96c53073ce7f298f7482c1ac57f5f65ffc115e", default-features = false }
-# caliptra-cfi-derive = { git = "https://github.com/chipsalliance/caliptra-cfi.git", package = "caliptra-cfi-derive", rev = "aa96c53073ce7f298f7482c1ac57f5f65ffc115e"}
-# 
-caliptra-cfi-lib = { path = "../caliptra-cfi/lib", default-features = false }
-caliptra-cfi-derive = { path = "../caliptra-cfi/derive" }
+caliptra-cfi-lib = { git = "https://github.com/leongross/caliptra-cfi.git", package = "caliptra-cfi-lib", branch = "miri", default-features = false }
+caliptra-cfi-derive = { git = "https://github.com/leongross/caliptra-cfi.git", package = "caliptra-cfi-derive", branch = "main"}
 
 zerocopy = { version = "0.8.17", features = ["derive"] }
 constant_time_eq = "0.4.2"
