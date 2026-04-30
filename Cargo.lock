@@ -1092,14 +1092,20 @@ dependencies = [
 ]
 
 [[package]]
-name = "panic-check"
+name = "panic-check-checker"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "elf",
+]
+
+[[package]]
+name = "panic-check-firmware"
+version = "0.1.0"
+dependencies = [
  "caliptra-dpe",
  "caliptra-dpe-crypto",
  "caliptra-dpe-platform",
- "elf",
 ]
 
 [[package]]

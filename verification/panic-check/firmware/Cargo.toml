@@ -1,0 +1,21 @@
+# Licensed under the Apache-2.0 license
+
+[package]
+name = "panic-check-firmware"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = ["hybrid"]
+p256 = ["dpe/p256"]
+p384 = ["dpe/p384"]
+ml-dsa = ["dpe/ml-dsa"]
+hybrid = ["p384", "ml-dsa"]
+# Intentionally introduces panic-able code to verify the checker detects it.
+# Build with this feature should FAIL the panic check.
+should-fail = []
+
+[dependencies]
+dpe = { path = "../../../dpe", package = "caliptra-dpe", default-features = false }
+platform = { path = "../../../platform", package = "caliptra-dpe-platform", default-features = false }
+crypto = { path = "../../../crypto", package = "caliptra-dpe-crypto", default-features = false, features = ["dummy"] }

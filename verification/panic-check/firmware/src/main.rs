@@ -17,8 +17,18 @@ use dpe::DpeProfile;
 use platform::dummy::{DefaultPlatform, DefaultPlatformProfile};
 
 #[panic_handler]
-fn panic(_info: &core::panic::PanicInfo) -> ! {
+#[inline(never)]
+fn panic_handler(_: &core::panic::PanicInfo) -> ! {
+    panic_is_possible();
     loop {}
+}
+
+#[unsafe(no_mangle)]
+#[inline(never)]
+fn panic_is_possible() {
+    black_box(());
+    // The existence of this symbol is used to inform test_panic_missing
+    // that panics are possible. Do not remove or rename this symbol.
 }
 
 #[unsafe(no_mangle)]
@@ -71,7 +81,4 @@ fn main() {
     };
 
     let _ = black_box(dpe.execute_serialized_command(&mut env, 1, black_box(&[0])));
-    let _ = black_box(dpe.roll_onetime_use_handle(&mut env, black_box(1)));
-    let _ = black_box(dpe.get_profile(env.platform, black_box(env.state.support)));
-    let _ = black_box(dpe.deserialize_command(black_box(&[0])));
 }
