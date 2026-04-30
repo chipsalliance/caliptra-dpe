@@ -27,6 +27,7 @@
             uv
             openssl
             pkg-config
+            taplo
           ];
 
           shellHook = ''

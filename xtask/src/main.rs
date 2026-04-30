@@ -303,8 +303,6 @@ fn format_rust_targets() -> Result<()> {
 }
 
 fn format_toml_targets() -> Result<()> {
-    println!("Installing taplo");
-    cargo().args(["install", "taplo-cli", "--locked"]).run()?;
     let res = Cmd::new("taplo")
         .args(["format", "--check", "--diff"])
         .output()?;
