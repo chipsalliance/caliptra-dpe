@@ -1,12 +1,12 @@
 # Licensed under the Apache-2.0 license
 
 [package]
-name = "caliptra-dpe-platform"
-version.workspace = true
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
+name = "caliptra-dpe-platform"
 publish.workspace = true
+version.workspace = true
 
 [features]
 default = []
@@ -16,9 +16,9 @@ arbitrary_issuer_name_size = []
 
 [dependencies]
 arrayvec.workspace = true
+caliptra-dpe-crypto = { workspace = true, default-features = false }
 cfg-if.workspace = true
 ufmt.workspace = true
-caliptra-dpe-crypto = { workspace = true, default-features = false }
 x509-cert = { workspace = true, optional = true }
 
 [dev-dependencies]

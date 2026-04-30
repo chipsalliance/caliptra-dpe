@@ -1,49 +1,73 @@
 # Licensed under the Apache-2.0 license
 
 [package]
-name = "caliptra-dpe-crypto"
-version.workspace = true
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
+name = "caliptra-dpe-crypto"
 publish.workspace = true
+version.workspace = true
 
 [features]
-default = ["cfi"]
-test-artifacts = ["dep:caliptra-dpe-test-artifacts"]
-rustcrypto = ["dep:hkdf", "dep:p256", "dep:p384", "dep:rand", "dep:sha2", "dep:base64ct", "dep:ecdsa", "dep:sec1", "dep:ml-dsa", "dep:pkcs8", "test-artifacts"]
-ml-dsa = []
-deterministic_rand = ["dep:rand"]
 cfi = ["caliptra-cfi-lib/cfi", "caliptra-cfi-lib/cfi-counter"]
+default = ["cfi"]
+deterministic_rand = ["dep:rand"]
+ml-dsa = []
+rustcrypto = [
+  "dep:hkdf",
+  "dep:p256",
+  "dep:p384",
+  "dep:rand",
+  "dep:sha2",
+  "dep:base64ct",
+  "dep:ecdsa",
+  "dep:sec1",
+  "dep:ml-dsa",
+  "dep:pkcs8",
+  "test-artifacts",
+]
+test-artifacts = ["dep:caliptra-dpe-test-artifacts"]
 
 [dependencies]
-caliptra-dpe-test-artifacts = { workspace = true, optional = true }
 arrayvec.workspace = true
-caliptra-cfi-lib = { workspace = true, default-features = false }
 caliptra-cfi-derive.workspace = true
+caliptra-cfi-lib = { workspace = true, default-features = false }
+caliptra-dpe-test-artifacts = { workspace = true, optional = true }
 constant_time_eq.workspace = true
-ecdsa = { version = "0.16.9", optional = true, features = ["pem"]}
+ecdsa = { version = "0.16.9", optional = true, features = ["pem"] }
 hkdf = { version = "0.12.3", optional = true }
-p256 = {version= "0.13.2", optional = true}
-p384 = {version= "0.13.0", optional = true}
+ml-dsa = { version = "0.1.0-rc.2", optional = true, features = [
+  "pkcs8",
+  "alloc",
+] }
+p256 = { version = "0.13.2", optional = true }
+p384 = { version = "0.13.0", optional = true }
+pkcs8 = { version = "0.11.0-rc.6", optional = true, features = [
+  "pem",
+  "alloc",
+] }
 rand = { version = "0.8.5", optional = true }
-sec1 = {version="0.7.3", optional = true}
+sec1 = { version = "0.7.3", optional = true }
 sha2 = { version = "0.10.6", optional = true }
-zeroize.workspace = true
-ml-dsa = { version = "0.1.0-rc.2", optional = true, features = ["pkcs8", "alloc"]}
-pkcs8 = { version = "0.11.0-rc.6", optional = true, features = ["pem", "alloc"] }
 zerocopy.workspace = true
+zeroize.workspace = true
 
 [dev-dependencies]
 strum = "0.24"
 strum_macros = "0.24"
 
 [build-dependencies]
-ml-dsa = { version = "0.1.0-rc.2", optional = true, features = ["pkcs8", "alloc"]}
-pkcs8 = { version = "0.11.0-rc.6", optional = true, features = ["pem", "alloc"] }
-rand = {version = "0.8.5", optional = true}
-p256 = {version= "0.13.2", optional = true}
-p384 = {version= "0.13.0", optional = true}
-ecdsa = { version = "0.16.9", optional = true, features = ["pem"]}
-base64ct = {version= "1.6.0", optional= true}
-sec1 = {version="0.7.3", optional = true}
+base64ct = { version = "1.6.0", optional = true }
+ecdsa = { version = "0.16.9", optional = true, features = ["pem"] }
+ml-dsa = { version = "0.1.0-rc.2", optional = true, features = [
+  "pkcs8",
+  "alloc",
+] }
+p256 = { version = "0.13.2", optional = true }
+p384 = { version = "0.13.0", optional = true }
+pkcs8 = { version = "0.11.0-rc.6", optional = true, features = [
+  "pem",
+  "alloc",
+] }
+rand = { version = "0.8.5", optional = true }
+sec1 = { version = "0.7.3", optional = true }

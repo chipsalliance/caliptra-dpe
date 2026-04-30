@@ -144,6 +144,7 @@ fn run_precheckin() -> Result<()> {
 fn run_format() -> Result<()> {
     format_rust_targets()?;
     format_go_targets()?;
+    format_toml_targets()?;
     Ok(())
 }
 
@@ -298,6 +299,26 @@ fn format_rust_targets() -> Result<()> {
             .args(["fmt", "--manifest-path", manifest, "--check"])
             .run()?;
     }
+    Ok(())
+}
+
+fn format_toml_targets() -> Result<()> {
+    let res = Cmd::new("taplo")
+        .args(["format", "--check", "--diff"])
+        .output()?;
+
+    if !res.status.success() {
+        if !res.stderr.is_empty() {
+            let err = String::from_utf8(res.stdout).unwrap();
+            eprintln!("{}", err);
+            return Err(anyhow!(
+                "Toml files have format errors. To fix, run 'taplo format'"
+            ));
+        } else {
+            return Err(anyhow!("Could not parse topl output."));
+        }
+    }
+
     Ok(())
 }
 
