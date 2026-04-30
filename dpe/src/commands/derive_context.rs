@@ -164,14 +164,15 @@ impl DeriveContextCmd {
     /// # Arguments
     ///
     /// * `state` - Current DPE state.
-    /// * `parent_idx` - Index of the parent context.
+    /// * `parent_ctx` - The parent's context.
     /// * `tci_type` - INPUT_TYPE to check for uniqueness.
-    fn tci_type_is_unique_among_children(state: &State, parent_idx: usize, tci_type: u32) -> bool {
-        let Some(parent) = state.contexts.get(parent_idx) else {
-            return false;
-        };
-        let parent_children = parent.children;
-        parent_children.iter().all(|idx| {
+    fn tci_type_is_unique_among_children(
+        state: &State,
+        parent_ctx: &Context,
+        tci_type: u32,
+    ) -> bool {
+        // let parent_children = parent_ctx.children;
+        parent_ctx.children.iter().all(|idx| {
             state
                 .contexts
                 .get(idx)
@@ -252,7 +253,9 @@ impl CommandExecution for DeriveContextCmd {
             return Err(DpeErrorCode::ArgumentNotSupported);
         }
 
-        let (parent_ctx, parent_idx) = env.state().get_active_context_and_idx(handle, locality)?;
+        let (parent_ctx_ref, parent_idx) =
+            env.state().get_active_context_and_idx(handle, locality)?;
+        let parent_ctx = *parent_ctx_ref;
 
         if (!parent_ctx.allow_x509() && flags.allows_x509())
             || (flags.exports_cdi() && !flags.creates_certificate())
@@ -337,7 +340,7 @@ impl CommandExecution for DeriveContextCmd {
         }
 
         // Each INPUT_TYPE value SHALL be unique among the direct children of a given context.
-        if !Self::tci_type_is_unique_among_children(env.state(), parent_idx, tci_type) {
+        if !Self::tci_type_is_unique_among_children(env.state(), &parent_ctx, tci_type) {
             return Err(DpeErrorCode::InvalidArgument);
         }
 
@@ -347,6 +350,7 @@ impl CommandExecution for DeriveContextCmd {
             .contexts
             .get(parent_idx)
             .ok_or(DpeErrorCode::InternalError)?;
+
         if flags.retains_parent() {
             if !tmp_parent_context.handle.is_default() {
                 tmp_parent_context.handle = dpe.generate_new_handle(env)?;
@@ -400,7 +404,7 @@ impl CommandExecution for DeriveContextCmd {
                     }
 
                     response.handle = ContextHandle::new_invalid();
-                    response.parent_handle = env.state().contexts.get(parent_idx).ok_or(DpeErrorCode::InternalError)?.handle;
+                    #[allow(clippy::indexing_slicing)] { response.parent_handle = env.state().contexts[parent_idx].handle; }
                     response.resp_hdr = dpe.response_hdr(DpeErrorCode::NoError);
                     response.exported_cdi = *exported_cdi_handle;
                     response.certificate_size = *cert_size;
@@ -473,22 +477,17 @@ impl CommandExecution for DeriveContextCmd {
         tmp_parent_context.children = children_with_child_idx;
 
         // At this point we cannot error out anymore, so it is safe to set the updated child and parent contexts.
-        *env.state()
-            .contexts
-            .get_mut(child_idx)
-            .ok_or(DpeErrorCode::InternalError)? = tmp_child_context;
-        let parent = env
-            .state()
-            .contexts
-            .get_mut(parent_idx)
-            .ok_or(DpeErrorCode::InternalError)?;
-        *parent = tmp_parent_context;
+        #[allow(clippy::indexing_slicing)]
+        {
+            env.state().contexts[child_idx] = tmp_child_context;
+            env.state().contexts[parent_idx] = tmp_parent_context;
 
-        *response = DeriveContextResp {
-            handle: child_handle,
-            parent_handle: parent.handle,
-            resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
-        };
+            *response = DeriveContextResp {
+                handle: child_handle,
+                parent_handle: env.state().contexts[parent_idx].handle,
+                resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
+            };
+        }
         Ok(size_of_val(response))
     }
 }

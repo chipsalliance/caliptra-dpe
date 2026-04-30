@@ -72,13 +72,8 @@ impl DpeValidator<'_> {
         if self.dpe.version != State::VERSION {
             return Err(ValidationError::VersionMismatch);
         }
-        for i in 0..MAX_HANDLES {
-            let context = self
-                .dpe
-                .contexts
-                .get(i)
-                .ok_or(ValidationError::BadContextState)?;
 
+        for (i, context) in self.dpe.contexts.iter().enumerate() {
             self.check_support(context)?;
 
             match context.state {
