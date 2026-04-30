@@ -3168,4 +3168,266 @@ pub(crate) mod tests {
             Err(_) => panic!("multiple authority key identifier extensions found"),
         }
     }
+
+    fn build_test_node() -> TciNodeData {
+        use crate::tci::TciMeasurement;
+
+        let mut node = TciNodeData::new();
+        node.tci_type = 0x01020304;
+        node.tci_current = TciMeasurement([0xAA; DPE_PROFILE.get_tci_size()]);
+        node.tci_cumulative = TciMeasurement([0xBB; DPE_PROFILE.get_tci_size()]);
+        node.locality = 0x05060708;
+        node
+    }
+
+    fn build_test_measurements<'a>(nodes: &'a [TciNodeData], is_ca: bool) -> MeasurementData<'a> {
+        MeasurementData {
+            label: &[0xAA; 4],
+            tci_nodes: nodes,
+            is_ca,
+            supports_recursive: true,
+            subject_key_identifier: [0xBB; MAX_KEY_IDENTIFIER_SIZE],
+            authority_key_identifier: [0xCC; MAX_KEY_IDENTIFIER_SIZE],
+            subject_alt_name: None,
+        }
+    }
+
+    #[test]
+    fn test_encode_multi_tcb_info_bytes() {
+        let node = build_test_node();
+        let nodes = [node];
+        let measurements = build_test_measurements(&nodes, true);
+
+        let mut buf = [0u8; 1024];
+        let mut w = CertWriter::new(&mut buf, true);
+        let n = w.encode_multi_tcb_info(&measurements).unwrap();
+
+        let expected: &[u8] = match DPE_PROFILE {
+            DpeProfile::P256Sha256 => &[
+                0x30, 0x81, 0x86, // SEQUENCE
+                0x06, 0x06, 0x67, 0x81, 0x05, 0x05, 0x04, 0x05, // OID 2.23.133.5.4.5
+                0x01, 0x01, 0xff, // BOOLEAN critical
+                0x04, 0x79, // OCTET STRING
+                0x30, 0x77, // SEQUENCE OF
+                0x30, 0x75, // TcbInfo SEQUENCE
+                0xa6, 0x2f, // [6] fwids
+                0x30, 0x2d, // FWID SEQUENCE
+                0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, // hashAlg
+                0x04, 0x02, 0x01, // SHA-256
+                0x04, 0x20, // digest OCTET STRING (32 bytes)
+                0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, //
+                0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, //
+                0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, //
+                0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, //
+                0x88, 0x04, 0x05, 0x06, 0x07, 0x08, // [8] vendorInfo (locality)
+                0x89, 0x04, 0x04, 0x03, 0x02, 0x01, // [9] tci_type
+                0xab, 0x36, // [11] integrityRegisters
+                0x30, 0x34, // IntegrityRegister SEQUENCE
+                0x81, 0x01, 0x00, // [1] registerNum
+                0xa2, 0x2f, // [2] registerDigests
+                0x30, 0x2d, // FWID SEQUENCE
+                0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, // hashAlg
+                0x04, 0x02, 0x01, // SHA-256
+                0x04, 0x20, // digest OCTET STRING (32 bytes)
+                0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, //
+                0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, //
+                0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, //
+                0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, //
+            ],
+            DpeProfile::P384Sha384 => &[
+                0x30, 0x81, 0xa9, // SEQUENCE
+                0x06, 0x06, 0x67, 0x81, 0x05, 0x05, 0x04, 0x05, // OID 2.23.133.5.4.5
+                0x01, 0x01, 0xff, // BOOLEAN critical
+                0x04, 0x81, 0x9b, // OCTET STRING
+                0x30, 0x81, 0x98, // SEQUENCE OF
+                0x30, 0x81, 0x95, // TcbInfo SEQUENCE
+                0xa6, 0x3f, // [6] fwids
+                0x30, 0x3d, // FWID SEQUENCE
+                0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, // hashAlg
+                0x04, 0x02, 0x02, // SHA-384
+                0x04, 0x30, // digest OCTET STRING (48 bytes)
+                0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, //
+                0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, //
+                0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, //
+                0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, //
+                0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, //
+                0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, //
+                0x88, 0x04, 0x05, 0x06, 0x07, 0x08, // [8] vendorInfo (locality)
+                0x89, 0x04, 0x04, 0x03, 0x02, 0x01, // [9] tci_type
+                0xab, 0x46, // [11] integrityRegisters
+                0x30, 0x44, // IntegrityRegister SEQUENCE
+                0x81, 0x01, 0x00, // [1] registerNum
+                0xa2, 0x3f, // [2] registerDigests
+                0x30, 0x3d, // FWID SEQUENCE
+                0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, // hashAlg
+                0x04, 0x02, 0x02, // SHA-384
+                0x04, 0x30, // digest OCTET STRING (48 bytes)
+                0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, //
+                0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, //
+                0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, //
+                0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, //
+                0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, //
+                0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, //
+            ],
+        };
+        assert_eq!(&buf[..n], expected);
+    }
+
+    #[test]
+    fn test_encode_ueid_bytes() {
+        let node = build_test_node();
+        let nodes = [node];
+        let measurements = build_test_measurements(&nodes, true);
+
+        let mut buf = [0u8; 1024];
+        let mut w = CertWriter::new(&mut buf, true);
+        let n = w.encode_ueid(&measurements).unwrap();
+
+        let expected: &[u8] = &[
+            0x30, 0x15, // SEQUENCE
+            0x06, 0x06, 0x67, 0x81, 0x05, 0x05, 0x04, 0x04, // OID 2.23.133.5.4.4
+            0x01, 0x01, 0xff, // BOOLEAN critical
+            0x04, 0x08, // OCTET STRING
+            0x30, 0x06, // SEQUENCE
+            0x04, 0x04, 0xaa, 0xaa, 0xaa, 0xaa, // OCTET STRING (ueid)
+        ];
+        assert_eq!(&buf[..n], expected);
+    }
+
+    #[test]
+    fn test_encode_basic_constraints_bytes() {
+        let node = build_test_node();
+        let nodes = [node];
+        let measurements = build_test_measurements(&nodes, true);
+
+        let mut buf = [0u8; 1024];
+        let mut w = CertWriter::new(&mut buf, true);
+        let n = w.encode_basic_constraints(&measurements).unwrap();
+
+        let expected: &[u8] = &[
+            0x30, 0x0f, // SEQUENCE
+            0x06, 0x03, 0x55, 0x1d, 0x13, // OID 2.5.29.19
+            0x01, 0x01, 0xff, // BOOLEAN critical
+            0x04, 0x05, // OCTET STRING
+            0x30, 0x03, // SEQUENCE
+            0x01, 0x01, 0xff, // BOOLEAN cA=TRUE
+        ];
+        assert_eq!(&buf[..n], expected);
+    }
+
+    #[test]
+    fn test_encode_key_usage_bytes() {
+        let mut buf = [0u8; 1024];
+        let mut w = CertWriter::new(&mut buf, true);
+        let n = w.encode_key_usage(true).unwrap();
+
+        let expected: &[u8] = &[
+            0x30, 0x0e, // SEQUENCE
+            0x06, 0x03, 0x55, 0x1d, 0x0f, // OID 2.5.29.15
+            0x01, 0x01, 0xff, // BOOLEAN critical
+            0x04, 0x04, // OCTET STRING
+            0x03, 0x02, 0x02, 0x84, // BIT STRING (digitalSignature | keyCertSign)
+        ];
+        assert_eq!(&buf[..n], expected);
+    }
+
+    #[test]
+    fn test_encode_extended_key_usage_bytes() {
+        let node = build_test_node();
+        let nodes = [node];
+        let measurements = build_test_measurements(&nodes, true);
+
+        let mut buf = [0u8; 1024];
+        let mut w = CertWriter::new(&mut buf, true);
+        let n = w.encode_extended_key_usage(&measurements).unwrap();
+
+        let expected: &[u8] = &[
+            0x30, 0x15, // SEQUENCE
+            0x06, 0x03, 0x55, 0x1d, 0x25, // OID 2.5.29.37
+            0x01, 0x01, 0xff, // BOOLEAN critical
+            0x04, 0x0b, // OCTET STRING
+            0x30, 0x09, // SEQUENCE
+            0x06, 0x07, 0x67, 0x81, 0x05, 0x05, 0x04, 0x64, 0x0c, // OID tcg-dice-kp-eca
+        ];
+        assert_eq!(&buf[..n], expected);
+    }
+
+    #[test]
+    fn test_encode_subject_alt_name_extension_bytes() {
+        let node = build_test_node();
+        let nodes = [node];
+        let mut measurements = build_test_measurements(&nodes, true);
+
+        let mut other_name_val = ArrayVec::new();
+        other_name_val.try_extend_from_slice(b"test").unwrap();
+        let san = SubjectAltName::OtherName(OtherName {
+            oid: &[0x01, 0x02, 0x03],
+            other_name: other_name_val,
+        });
+        measurements.subject_alt_name = Some(san);
+
+        let mut buf = [0u8; 1024];
+        let mut w = CertWriter::new(&mut buf, true);
+        let n = w.encode_subject_alt_name_extension(&measurements).unwrap();
+
+        let expected: &[u8] = &[
+            0x30, 0x18, // SEQUENCE
+            0x06, 0x03, 0x55, 0x1d, 0x11, // OID 2.5.29.17
+            0x04, 0x11, // OCTET STRING
+            0x30, 0x0f, // SEQUENCE (GeneralNames)
+            0xa0, 0x0d, // [0] otherName
+            0x06, 0x03, 0x01, 0x02, 0x03, // type-id OID
+            0xa0, 0x06, 0x0c, 0x04, 0x74, 0x65, 0x73, 0x74, // [0] EXPLICIT UTF8 "test"
+        ];
+        assert_eq!(&buf[..n], expected);
+    }
+
+    #[test]
+    fn test_encode_authority_key_identifier_extension_bytes() {
+        let node = build_test_node();
+        let nodes = [node];
+        let measurements = build_test_measurements(&nodes, true);
+
+        let mut buf = [0u8; 1024];
+        let mut w = CertWriter::new(&mut buf, true);
+        let n = w
+            .encode_authority_key_identifier_extension(&measurements, true)
+            .unwrap();
+
+        let expected: &[u8] = &[
+            0x30, 0x1f, // SEQUENCE
+            0x06, 0x03, 0x55, 0x1d, 0x23, // OID 2.5.29.35
+            0x04, 0x18, // OCTET STRING
+            0x30, 0x16, // SEQUENCE
+            0x80, 0x14, // [0] keyIdentifier
+            0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, //
+            0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, //
+            0xcc, 0xcc, 0xcc, 0xcc, //
+        ];
+        assert_eq!(&buf[..n], expected);
+    }
+
+    #[test]
+    fn test_encode_subject_key_identifier_extension_bytes() {
+        let node = build_test_node();
+        let nodes = [node];
+        let measurements = build_test_measurements(&nodes, true);
+
+        let mut buf = [0u8; 1024];
+        let mut w = CertWriter::new(&mut buf, true);
+        let n = w
+            .encode_subject_key_identifier_extension(&measurements, true)
+            .unwrap();
+
+        let expected: &[u8] = &[
+            0x30, 0x1d, // SEQUENCE
+            0x06, 0x03, 0x55, 0x1d, 0x0e, // OID 2.5.29.14
+            0x04, 0x16, // OCTET STRING
+            0x04, 0x14, // OCTET STRING (subjectKeyIdentifier)
+            0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, //
+            0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, //
+            0xbb, 0xbb, 0xbb, 0xbb, //
+        ];
+        assert_eq!(&buf[..n], expected);
+    }
 }
