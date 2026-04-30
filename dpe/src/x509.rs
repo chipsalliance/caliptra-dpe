@@ -588,6 +588,52 @@ impl CertWriter<'_> {
         Self::get_structure_size(size, tagged)
     }
 
+    /// Get the size of an X.509 extension wrapper: SEQUENCE { OID, [BOOLEAN], OCTET STRING { content } }.
+    /// `critical`: if true, includes the critical BOOLEAN field in the size.
+    fn get_extension_size(
+        oid: &[u8],
+        critical: bool,
+        content_size: usize,
+        tagged: bool,
+    ) -> Result<usize, DpeErrorCode> {
+        let oid_size = Self::get_structure_size(oid.len(), /*tagged=*/ true)?;
+        let crit_size = if critical {
+            Self::get_structure_size(Self::BOOL_SIZE, /*tagged=*/ true)?
+        } else {
+            0
+        };
+        let octet_size = Self::get_structure_size(content_size, /*tagged=*/ true)?;
+        let inner = oid_size + crit_size + octet_size;
+        Self::get_structure_size(inner, tagged)
+    }
+
+    /// Encode the header of an X.509 extension: SEQUENCE tag+len, OID, [BOOLEAN critical], OCTET STRING tag+len.
+    /// The caller encodes the extension-specific content bytes after this returns.
+    fn encode_extension_header(
+        &mut self,
+        oid: &[u8],
+        critical: Option<u8>,
+        content_size: usize,
+    ) -> Result<usize, DpeErrorCode> {
+        let total_size = Self::get_extension_size(
+            oid,
+            critical.is_some(),
+            content_size,
+            /*tagged=*/ false,
+        )?;
+        let mut bytes_written = self.encode_byte(Self::SEQUENCE_TAG)?;
+        bytes_written += self.encode_size_field(total_size)?;
+        bytes_written += self.encode_oid(oid)?;
+        if let Some(crit_val) = critical {
+            bytes_written += self.encode_byte(Self::BOOL_TAG)?;
+            bytes_written += self.encode_size_field(Self::BOOL_SIZE)?;
+            bytes_written += self.encode_byte(crit_val)?;
+        }
+        bytes_written += self.encode_byte(Self::OCTET_STRING_TAG)?;
+        bytes_written += self.encode_size_field(content_size)?;
+        Ok(bytes_written)
+    }
+
     /// Get the size of a tcg-dice-MultiTcbInfo extension, including the extension
     /// OID and critical bits.
     fn get_multi_tcb_info_size(
@@ -610,14 +656,12 @@ impl CertWriter<'_> {
         // Size of tcb infos including SEQUENCE OF tag/size
         let multi_tcb_info_size = Self::get_structure_size(tcb_infos_size, /*tagged=*/ true)?;
 
-        let mut size = Self::get_structure_size(Self::MULTI_TCBINFO_OID.len(), /*tagged=*/true)? // Extension OID
-            + Self::get_structure_size(multi_tcb_info_size, /*tagged=*/true)?; // OCTET STRING
-
-        if self.crit_dice {
-            size += Self::get_structure_size(1, /*tagged=*/ true)?; // Critical bool
-        }
-
-        Self::get_structure_size(size, tagged)
+        Self::get_extension_size(
+            Self::MULTI_TCBINFO_OID,
+            self.crit_dice,
+            multi_tcb_info_size,
+            tagged,
+        )
     }
 
     /// Get the size of a tcg-dice-Ueid extension, including the extension
@@ -633,15 +677,8 @@ impl CertWriter<'_> {
             Self::get_structure_size(measurements.label.len(), /*tagged=*/ true)?,
             /*tagged=*/ true,
         )?;
-        let mut size = Self::get_structure_size(Self::UEID_OID.len(), /*tagged=*/true)? // Extension OID
-            + Self::get_structure_size(ext_size, /*tagged=*/true)?; // OCTET STRING
 
-        if self.crit_dice {
-            size += Self::get_structure_size(Self::BOOL_SIZE, /*tagged=*/ true)?;
-            // Critical bool
-        }
-
-        Self::get_structure_size(size, tagged)
+        Self::get_extension_size(Self::UEID_OID, self.crit_dice, ext_size, tagged)
     }
 
     /// Get the size of a basicConstraints extension, including the extension
@@ -658,11 +695,8 @@ impl CertWriter<'_> {
             0
         };
         let ext_size = Self::get_structure_size(ca_size, /*tagged=*/ true)?;
-        let size = Self::get_structure_size(Self::BASIC_CONSTRAINTS_OID.len(), /*tagged=*/true)? // Extension OID
-            + Self::get_structure_size(Self::BOOL_SIZE, /*tagged=*/true)? // Critical bool
-            + Self::get_structure_size(ext_size, /*tagged=*/true)?; // OCTET STRING
 
-        Self::get_structure_size(size, tagged)
+        Self::get_extension_size(Self::BASIC_CONSTRAINTS_OID, true, ext_size, tagged)
     }
 
     /// Get the size of a keyUsage extension, including the extension
@@ -670,11 +704,8 @@ impl CertWriter<'_> {
     fn get_key_usage_size(tagged: bool) -> Result<usize, DpeErrorCode> {
         // Extension data is a 2-byte BIT STRING
         let ext_size = Self::get_structure_size(2, /*tagged=*/ true)?;
-        let size = Self::get_structure_size(Self::KEY_USAGE_OID.len(), /*tagged=*/true)? // Extension OID
-            + Self::get_structure_size(Self::BOOL_SIZE, /*tagged=*/true)? // Critical bool
-            + Self::get_structure_size(ext_size, /*tagged=*/true)?; // OCTET STRING
 
-        Self::get_structure_size(size, tagged)
+        Self::get_extension_size(Self::KEY_USAGE_OID, true, ext_size, tagged)
     }
 
     /// Get the size of an extendedKeyUsage extension, including the extension
@@ -695,11 +726,8 @@ impl CertWriter<'_> {
             Self::get_structure_size(policy_oid_size, /*tagged=*/ true)?,
             /*tagged=*/ true,
         )?;
-        let size = Self::get_structure_size(Self::EXTENDED_KEY_USAGE_OID.len(), /*tagged=*/true)? // Extension OID
-            + Self::get_structure_size(Self::BOOL_SIZE, /*tagged=*/true)? // Critical bool
-            + Self::get_structure_size(ext_size, /*tagged=*/true)?; // OCTET STRING
 
-        Self::get_structure_size(size, tagged)
+        Self::get_extension_size(Self::EXTENDED_KEY_USAGE_OID, true, ext_size, tagged)
     }
 
     /// Get the size of an subjectKeyIdentifier extension, including the extension
@@ -717,10 +745,8 @@ impl CertWriter<'_> {
         // Extension data is sequence -> octet string. To compute size, wrap
         // in tagging twice.
         let ext_size = Self::get_structure_size(ski_size, /*tagged=*/ true)?;
-        let size = Self::get_structure_size(Self::SUBJECT_KEY_IDENTIFIER_OID.len(), /*tagged=*/true)? // Extension OID
-            + Self::get_structure_size(ext_size, /*tagged=*/true)?; // OCTET STRING
 
-        Self::get_structure_size(size, tagged)
+        Self::get_extension_size(Self::SUBJECT_KEY_IDENTIFIER_OID, false, ext_size, tagged)
     }
 
     /// Get the size of an authorityKeyIdentifier extension, including the extension
@@ -742,10 +768,8 @@ impl CertWriter<'_> {
         // Extension data is sequence -> octet string. To compute size, wrap
         // in tagging twice.
         let ext_size = Self::get_structure_size(aki_size, /*tagged=*/ true)?;
-        let size = Self::get_structure_size(Self::AUTHORITY_KEY_IDENTIFIER_OID.len(), /*tagged=*/true)? // Extension OID
-            + Self::get_structure_size(ext_size, /*tagged=*/true)?; // OCTET STRING
 
-        Self::get_structure_size(size, tagged)
+        Self::get_extension_size(Self::AUTHORITY_KEY_IDENTIFIER_OID, false, ext_size, tagged)
     }
 
     fn get_subject_alt_name_extension_size(
@@ -760,10 +784,13 @@ impl CertWriter<'_> {
                 // Extension data is sequence -> octet string. To compute size, wrap
                 // in tagging twice.
                 let ext_size = Self::get_structure_size(san_size, /*tagged=*/ true)?;
-                let size = Self::get_structure_size(Self::SUBJECT_ALTERNATIVE_NAME_OID.len(), /*tagged=*/true)? // Extension OID
-                    + Self::get_structure_size(ext_size, /*tagged=*/true)?; // OCTET STRING
 
-                Self::get_structure_size(size, tagged)
+                Self::get_extension_size(
+                    Self::SUBJECT_ALTERNATIVE_NAME_OID,
+                    false,
+                    ext_size,
+                    tagged,
+                )
             }
         }
     }
@@ -1648,20 +1675,6 @@ impl CertWriter<'_> {
         &mut self,
         measurements: &MeasurementData,
     ) -> Result<usize, DpeErrorCode> {
-        let multi_tcb_info_size =
-            self.get_multi_tcb_info_size(measurements, /*tagged=*/ false)?;
-
-        // Encode Extension
-        let mut bytes_written = self.encode_byte(Self::SEQUENCE_TAG)?;
-        bytes_written += self.encode_size_field(multi_tcb_info_size)?;
-        bytes_written += self.encode_oid(Self::MULTI_TCBINFO_OID)?;
-
-        if self.crit_dice {
-            bytes_written += self.encode_byte(Self::BOOL_TAG)?;
-            bytes_written += self.encode_size_field(Self::BOOL_SIZE)?;
-            bytes_written += self.encode_byte(0xFF)?;
-        }
-
         let tcb_infos_size = if !measurements.tci_nodes.is_empty() {
             self.get_tcb_info_size(
                 &measurements.tci_nodes[0],
@@ -1671,11 +1684,10 @@ impl CertWriter<'_> {
         } else {
             0
         };
-        bytes_written += self.encode_byte(Self::OCTET_STRING_TAG)?;
-        bytes_written += self.encode_size_field(Self::get_structure_size(
-            tcb_infos_size,
-            /*tagged=*/ true,
-        )?)?;
+        let multi_tcb_info_size = Self::get_structure_size(tcb_infos_size, /*tagged=*/ true)?;
+        let critical = if self.crit_dice { Some(0xFF) } else { None };
+        let mut bytes_written =
+            self.encode_extension_header(Self::MULTI_TCBINFO_OID, critical, multi_tcb_info_size)?;
 
         // Encode MultiTcbInfo
         bytes_written += self.encode_byte(Self::SEQUENCE_OF_TAG)?;
@@ -1693,26 +1705,12 @@ impl CertWriter<'_> {
     ///
     /// https://trustedcomputinggroup.org/wp-content/uploads/TCG_DICE_Attestation_Architecture_r22_02dec2020.pdf
     fn encode_ueid(&mut self, measurements: &MeasurementData) -> Result<usize, DpeErrorCode> {
-        let ueid_size = self.get_ueid_size(measurements, /*tagged=*/ false)?;
-
-        // Encode Extension
-        let mut bytes_written = self.encode_byte(Self::SEQUENCE_TAG)?;
-        bytes_written += self.encode_size_field(ueid_size)?;
-        bytes_written += self.encode_oid(Self::UEID_OID)?;
-
-        if self.crit_dice {
-            bytes_written += self.encode_byte(Self::BOOL_TAG)?;
-            bytes_written += self.encode_size_field(Self::BOOL_SIZE)?;
-            bytes_written += self.encode_byte(0xFF)?;
-        }
-
-        // Extension data is sequence -> octet string. To compute size, wrap
-        // in tagging twice.
-        bytes_written += self.encode_byte(Self::OCTET_STRING_TAG)?;
-        bytes_written += self.encode_size_field(Self::get_structure_size(
+        let ext_size = Self::get_structure_size(
             Self::get_structure_size(measurements.label.len(), /*tagged=*/ true)?,
             /*tagged=*/ true,
-        )?)?;
+        )?;
+        let critical = if self.crit_dice { Some(0xFF) } else { None };
+        let mut bytes_written = self.encode_extension_header(Self::UEID_OID, critical, ext_size)?;
 
         // Sequence size to just a tagged OCTET_STRING
         bytes_written += self.encode_byte(Self::SEQUENCE_TAG)?;
@@ -1739,30 +1737,17 @@ impl CertWriter<'_> {
         &mut self,
         measurements: &MeasurementData,
     ) -> Result<usize, DpeErrorCode> {
-        let basic_constraints_size =
-            Self::get_basic_constraints_size(measurements, /*tagged=*/ false)?;
-
-        // Encode Extension
-        let mut bytes_written = self.encode_byte(Self::SEQUENCE_TAG)?;
-        bytes_written += self.encode_size_field(basic_constraints_size)?;
-        bytes_written += self.encode_oid(Self::BASIC_CONSTRAINTS_OID)?;
-
-        bytes_written += self.encode_byte(Self::BOOL_TAG)?;
-        bytes_written += self.encode_size_field(Self::BOOL_SIZE)?;
-        bytes_written += self.encode_byte(0xFF)?;
-
         // Extension data is sequence -> octet string. To compute size, wrap
         // in tagging twice.
         let ca_size = if measurements.is_ca {
-            Self::get_structure_size(1, /*tagged=*/ true)?
+            Self::get_structure_size(Self::BOOL_SIZE, /*tagged=*/ true)?
         } else {
             0
         };
-        bytes_written += self.encode_byte(Self::OCTET_STRING_TAG)?;
-        bytes_written +=
-            self.encode_size_field(Self::get_structure_size(ca_size, /*tagged=*/ true)?)?;
+        let ext_size = Self::get_structure_size(ca_size, /*tagged=*/ true)?;
+        let mut bytes_written =
+            self.encode_extension_header(Self::BASIC_CONSTRAINTS_OID, Some(0xFF), ext_size)?;
 
-        // Sequence size to just a tagged bool
         bytes_written += self.encode_byte(Self::SEQUENCE_TAG)?;
         bytes_written += self.encode_size_field(ca_size)?;
 
@@ -1779,22 +1764,9 @@ impl CertWriter<'_> {
     ///
     /// https://datatracker.ietf.org/doc/html/rfc5280
     fn encode_key_usage(&mut self, is_ca: bool) -> Result<usize, DpeErrorCode> {
-        let key_usage_size = Self::get_key_usage_size(/*tagged=*/ false)?;
-
-        // Encode Extension
-        let mut bytes_written = self.encode_byte(Self::SEQUENCE_TAG)?;
-        bytes_written += self.encode_size_field(key_usage_size)?;
-        bytes_written += self.encode_oid(Self::KEY_USAGE_OID)?;
-
-        bytes_written += self.encode_byte(Self::BOOL_TAG)?;
-        bytes_written += self.encode_size_field(Self::BOOL_SIZE)?;
-        bytes_written += self.encode_byte(0xFF)?;
-
-        // Extension data is sequence -> octet string. To compute size, wrap
-        // in tagging twice.
-        bytes_written += self.encode_byte(Self::OCTET_STRING_TAG)?;
-        bytes_written +=
-            self.encode_size_field(Self::get_structure_size(2, /*tagged=*/ true)?)?;
+        let ext_size = Self::get_structure_size(2, /*tagged=*/ true)?;
+        let mut bytes_written =
+            self.encode_extension_header(Self::KEY_USAGE_OID, Some(0xFF), ext_size)?;
 
         bytes_written += self.encode_byte(Self::BIT_STRING_TAG)?;
 
@@ -1839,25 +1811,12 @@ impl CertWriter<'_> {
             Self::ATTEST_LOC_OID
         };
 
-        // Assumes only one certificate policy is supported.
-        let extended_key_usage_size = Self::get_extended_key_usage_size(measurements, false)?;
-
-        // Encode Extension
-        let mut bytes_written = self.encode_byte(Self::SEQUENCE_TAG)?;
-        bytes_written += self.encode_size_field(extended_key_usage_size)?;
-        bytes_written += self.encode_oid(Self::EXTENDED_KEY_USAGE_OID)?;
-
-        bytes_written += self.encode_byte(Self::BOOL_TAG)?;
-        bytes_written += self.encode_size_field(Self::BOOL_SIZE)?;
-        bytes_written += self.encode_byte(0xFF)?;
-
-        // Extension data is sequence -> octet string. To compute size, wrap
-        // in tagging twice.
-        bytes_written += self.encode_byte(Self::OCTET_STRING_TAG)?;
-        bytes_written += self.encode_size_field(Self::get_structure_size(
+        let ext_size = Self::get_structure_size(
             Self::get_structure_size(policy_oid.len(), /*tagged=*/ true)?,
             /*tagged=*/ true,
-        )?)?;
+        )?;
+        let mut bytes_written =
+            self.encode_extension_header(Self::EXTENDED_KEY_USAGE_OID, Some(0xFF), ext_size)?;
 
         // Sequence size is the size of all the EKU OIDs.
         bytes_written += self.encode_byte(Self::SEQUENCE_TAG)?;
@@ -1937,23 +1896,13 @@ impl CertWriter<'_> {
         match &measurements.subject_alt_name {
             None => Ok(0),
             Some(SubjectAltName::OtherName(other_name)) => {
-                // Encode Extension
-                let san_extension_size = Self::get_subject_alt_name_extension_size(
-                    measurements,
-                    /*tagged=*/ false,
-                )?;
-                let mut bytes_written = self.encode_byte(Self::SEQUENCE_TAG)?;
-                bytes_written += self.encode_size_field(san_extension_size)?;
-                bytes_written += self.encode_oid(Self::SUBJECT_ALTERNATIVE_NAME_OID)?;
-
-                // Extension data is sequence -> octet string. To compute size, wrap
-                // in tagging once.
                 let other_name_size = Self::get_other_name_size(other_name, /*tagged=*/ true)?;
-                bytes_written += self.encode_byte(Self::OCTET_STRING_TAG)?;
-                bytes_written += self.encode_size_field(Self::get_structure_size(
-                    other_name_size,
-                    /*tagged=*/ true,
-                )?)?;
+                let ext_size = Self::get_structure_size(other_name_size, /*tagged=*/ true)?;
+                let mut bytes_written = self.encode_extension_header(
+                    Self::SUBJECT_ALTERNATIVE_NAME_OID,
+                    None,
+                    ext_size,
+                )?;
 
                 bytes_written += self.encode_byte(Self::SEQUENCE_TAG)?;
                 bytes_written += self.encode_size_field(other_name_size)?;
@@ -1978,29 +1927,14 @@ impl CertWriter<'_> {
             return Ok(0);
         }
 
-        let aki_extension_size = Self::get_authority_key_identifier_extension_size(
-            measurements,
-            /*tagged=*/ false,
-            is_x509,
-        )?;
-
-        // Encode Extension
-        let mut bytes_written = self.encode_byte(Self::SEQUENCE_TAG)?;
-        bytes_written += self.encode_size_field(aki_extension_size)?;
-        bytes_written += self.encode_oid(Self::AUTHORITY_KEY_IDENTIFIER_OID)?;
-
-        // Extension data is sequence -> octet string. To compute size, wrap
-        // in tagging once.
         let key_identifier_size = Self::get_key_identifier_size(
             &measurements.authority_key_identifier,
             /*tagged=*/ true,
             /*explicit=*/ false,
         )?;
-        bytes_written += self.encode_byte(Self::OCTET_STRING_TAG)?;
-        bytes_written += self.encode_size_field(Self::get_structure_size(
-            key_identifier_size,
-            /*tagged=*/ true,
-        )?)?;
+        let ext_size = Self::get_structure_size(key_identifier_size, /*tagged=*/ true)?;
+        let mut bytes_written =
+            self.encode_extension_header(Self::AUTHORITY_KEY_IDENTIFIER_OID, None, ext_size)?;
 
         // Encode extension data sequence
         bytes_written += self.encode_byte(Self::SEQUENCE_TAG)?;
@@ -2018,24 +1952,12 @@ impl CertWriter<'_> {
         if !measurements.is_ca || !is_x509 {
             return Ok(0);
         }
-        let ski_extension_size = Self::get_subject_key_identifier_extension_size(
-            measurements,
-            /*tagged=*/ false,
-            is_x509,
-        )?;
-
-        // Encode Extension
-        let mut bytes_written = self.encode_byte(Self::SEQUENCE_TAG)?;
-        bytes_written += self.encode_size_field(ski_extension_size)?;
-        bytes_written += self.encode_oid(Self::SUBJECT_KEY_IDENTIFIER_OID)?;
-
-        // Extension data is sequence -> octet string. To compute size, wrap
-        // in tagging once.
-        bytes_written += self.encode_byte(Self::OCTET_STRING_TAG)?;
-        bytes_written += self.encode_size_field(Self::get_structure_size(
+        let ext_size = Self::get_structure_size(
             measurements.subject_key_identifier.len(),
             /*tagged=*/ true,
-        )?)?;
+        )?;
+        let mut bytes_written =
+            self.encode_extension_header(Self::SUBJECT_KEY_IDENTIFIER_OID, None, ext_size)?;
 
         // SubjectKeyIdentifier := OCTET STRING
         bytes_written += self.encode_byte(Self::OCTET_STRING_TAG)?;
