@@ -7,14 +7,17 @@
 compile_error!("select one of the features p256, p384, ml-dsa");
 
 use core::hint::black_box;
-
-use crypto::dummy::DummyCrypto;
 use dpe::dpe_instance::DpeEnvImpl;
 use dpe::support::Support;
 use dpe::DpeFlags;
 use dpe::DpeInstance;
 use dpe::DpeProfile;
-use platform::dummy::{DefaultPlatform, DefaultPlatformProfile};
+
+mod crypto_dummy;
+mod platform_dummy;
+
+use crypto_dummy::DummyCrypto;
+use platform_dummy::{DefaultPlatform, DefaultPlatformProfile};
 
 #[panic_handler]
 #[inline(never)]
@@ -29,6 +32,23 @@ fn panic_is_possible() {
     black_box(());
     // The existence of this symbol is used to inform test_panic_missing
     // that panics are possible. Do not remove or rename this symbol.
+}
+
+// CFI support: provide the symbols required by caliptra-cfi-lib when the
+// `cfi` feature is active (without `cfi-test`).
+#[cfg(feature = "cfi")]
+mod cfi_support {
+    /// State storage for the CFI counter.
+    #[unsafe(no_mangle)]
+    static mut CFI_STATE_ORG: [u32; 4] = [0; 4];
+
+    /// Panic handler invoked by the CFI library on integrity violations.
+    /// This is NOT a Rust panic — it must not reference `panic_is_possible`
+    /// so the checker can distinguish CFI traps from real Rust panics.
+    #[unsafe(no_mangle)]
+    extern "C" fn cfi_panic_handler(_code: u32) -> ! {
+        loop {}
+    }
 }
 
 #[unsafe(no_mangle)]

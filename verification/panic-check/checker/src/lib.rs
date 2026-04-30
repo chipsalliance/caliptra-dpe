@@ -36,7 +36,9 @@ mod tests {
     use std::process::Command;
 
     const RISCV_TARGET: &str = "riscv32imc-unknown-none-elf";
-    const PROFILES: &[&str] = &["ml-dsa", "p256", "p384", "hybrid"];
+    /// Each entry is the feature string passed to `cargo build --features`.
+    /// The `cfi` feature mirrors how xtask builds with CFI instrumentation.
+    const PROFILES: &[&str] = &["ml-dsa,cfi", "p256,cfi", "p384,cfi", "hybrid,cfi"];
 
     fn workspace_root() -> PathBuf {
         // CARGO_MANIFEST_DIR points to verification/panic-check/checker/
@@ -157,8 +159,8 @@ mod tests {
             assert_no_panic_symbols(&elf_path);
         }
 
-        println!("profile: hybrid (should-fail)");
-        build_firmware("hybrid,should-fail");
+        println!("profile: hybrid,cfi (should-fail)");
+        build_firmware("hybrid,cfi,should-fail");
         assert_has_panic_symbols(&elf_path);
     }
 }

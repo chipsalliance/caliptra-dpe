@@ -5,25 +5,25 @@
 //! Most of the implementations just return a `NotImplemented`.
 //! Usefull for compiletime assertions.
 
-use crate::{
+use platform::{
     CertValidity, Platform, PlatformError, SignerIdentifier, SubjectAltName, Ueid, MAX_CHUNK_SIZE,
     MAX_ISSUER_NAME_SIZE, MAX_KEY_IDENTIFIER_SIZE,
 };
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[allow(dead_code)]
 pub enum DefaultPlatformProfile {
     P256,
     P384,
     Mldsa87,
 }
 
+#[allow(dead_code)]
 pub struct DefaultPlatform(pub DefaultPlatformProfile);
 
 pub const AUTO_INIT_LOCALITY: u32 = 0;
 pub const VENDOR_ID: u32 = 0;
 pub const VENDOR_SKU: u32 = 0;
-pub const NOT_BEFORE: &str = "20230227000000Z";
-pub const NOT_AFTER: &str = "99991231235959Z";
 pub const TEST_UEID: [u8; 17] = [0xA; 17];
 
 impl Platform for DefaultPlatform {

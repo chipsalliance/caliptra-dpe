@@ -11,6 +11,7 @@ p256 = ["dpe/p256"]
 p384 = ["dpe/p384"]
 ml-dsa = ["dpe/ml-dsa"]
 hybrid = ["p384", "ml-dsa"]
+cfi = ["dpe/cfi", "crypto/cfi", "caliptra-cfi-lib/cfi", "caliptra-cfi-lib/cfi-counter"]
 # Intentionally introduces panic-able code to verify the checker detects it.
 # Build with this feature should FAIL the panic check.
 should-fail = []
@@ -18,4 +19,6 @@ should-fail = []
 [dependencies]
 dpe = { path = "../../../dpe", package = "caliptra-dpe", default-features = false }
 platform = { path = "../../../platform", package = "caliptra-dpe-platform", default-features = false }
-crypto = { path = "../../../crypto", package = "caliptra-dpe-crypto", default-features = false, features = ["dummy"] }
+crypto = { path = "../../../crypto", package = "caliptra-dpe-crypto", default-features = false }
+caliptra-cfi-lib = { workspace = true, default-features = false }
+caliptra-cfi-derive = { workspace = true }

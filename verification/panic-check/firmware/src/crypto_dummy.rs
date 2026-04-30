@@ -1,11 +1,11 @@
 // Licensed under the Apache-2.0 license
 
-use crate::{
+use crypto::{
     CdiManager, CryptoError, CryptoSuite, Digest, DigestAlgorithm, DigestType, ExportedCdiHandle,
     Hasher, PubKey, SignData, SignatureAlgorithm, SignatureType, Signer,
 };
 
-use super::Crypto;
+use crypto::Crypto;
 
 pub struct DummyCrypto {
     hasher: DummyHasher,
@@ -74,7 +74,7 @@ impl Crypto for DummyCrypto {
         Err(CryptoError::NotImplemented)
     }
 
-    fn sign_with_alias(&mut self, data: &SignData) -> Result<crate::Signature, CryptoError> {
+    fn sign_with_alias(&mut self, data: &SignData) -> Result<crypto::Signature, CryptoError> {
         let _ = data;
         Err(CryptoError::NotImplemented)
     }
@@ -84,7 +84,7 @@ impl CryptoSuite for DummyCrypto {}
 
 impl SignatureType for DummyCrypto {
     fn signature_algorithm(&self) -> SignatureAlgorithm {
-        SignatureAlgorithm::Ecdsa(crate::ecdsa::EcdsaAlgorithm::Bit256)
+        SignatureAlgorithm::Ecdsa(crypto::ecdsa::EcdsaAlgorithm::Bit256)
     }
 }
 
@@ -135,7 +135,7 @@ impl CdiManager for DummyCdiManager {
 pub struct DummySigner;
 
 impl Signer for DummySigner {
-    fn sign(&mut self, data: &SignData) -> Result<crate::Signature, CryptoError> {
+    fn sign(&mut self, data: &SignData) -> Result<crypto::Signature, CryptoError> {
         let _ = data;
         Err(CryptoError::NotImplemented)
     }

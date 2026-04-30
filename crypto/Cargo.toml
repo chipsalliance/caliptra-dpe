@@ -24,7 +24,6 @@ rustcrypto = [
     "dep:pkcs8",
     "test-artifacts",
 ]
-dummy = [] # Dummy trait implementations that do nothing
 ml-dsa = []
 deterministic_rand = ["dep:rand"]
 cfi = ["caliptra-cfi-lib/cfi", "caliptra-cfi-lib/cfi-counter"]
