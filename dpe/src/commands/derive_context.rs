@@ -359,12 +359,18 @@ impl CommandExecution for DeriveContextCmd {
                     let response = mutresp::<DeriveContextExportedCdiResp>(dpe.profile, out)?;
                     let ueid = &env.platform().get_ueid()?;
                     let ueid = ueid.get()?;
+                    let profile_descriptor = match dpe.profile {
+                        crate::DpeProfile::P256Sha256 => b"Exported ECC".as_slice(),
+                        crate::DpeProfile::P384Sha384 => b"Exported ECC".as_slice(),
+                        #[cfg(feature = "ml-dsa")]
+                        crate::DpeProfile::Mldsa87 => b"Exported ML-DSA".as_slice(),
+                    };
                     let args = CreateDpeCertArgs {
                         handle,
                         locality,
                         cdi_label: b"Exported CDI",
-                        key_label: b"Exported ECC",
-                        context: b"Exported ECC",
+                        key_label: profile_descriptor,
+                        context: profile_descriptor,
                         ueid,
                         dice_extensions_are_critical: env.state().flags.contains(DpeFlags::MARK_DICE_EXTENSIONS_CRITICAL),
                     };
