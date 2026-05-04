@@ -100,10 +100,17 @@ pub enum CryptoError {
 
 impl CryptoError {
     pub fn discriminant(&self) -> u16 {
-        // SAFETY: Because `Self` is marked `repr(u16)`, its layout is a `repr(C)` `union`
-        // between `repr(C)` structs, each of which has the `u16` discriminant as its first
-        // field, so we can read the discriminant without offsetting the pointer.
-        unsafe { *<*const _>::from(self).cast::<u16>() }
+        match self {
+            Self::AbstractionLayer(_) => 0x1,
+            Self::CryptoLibError(_) => 0x2,
+            Self::Size => 0x3,
+            Self::NotImplemented => 0x4,
+            Self::HashError(_) => 0x5,
+            Self::InvalidExportedCdiHandle => 0x6,
+            Self::ExportedCdiHandleDuplicateCdi => 0x7,
+            Self::ExportedCdiHandleLimitExceeded => 0x8,
+            Self::MismatchedAlgorithm => 0x9,
+        }
     }
 
     pub fn get_error_detail(&self) -> Option<u32> {
