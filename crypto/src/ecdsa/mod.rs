@@ -16,6 +16,9 @@ pub struct EcdsaPub<const K: usize> {
 }
 
 impl<const K: usize> EcdsaPub<K> {
+    /// Creates an ECDSA Public Key from the raw X and Y points.
+    /// NOTE: Caller is responsible for passing a valid public key. `EcdsaPub::from_slice` does not validate the
+    /// public key.
     pub fn from_slice(x: &[u8; K], y: &[u8; K]) -> Self {
         let mut key = Self::default();
         key.x.clone_from_slice(x);
