@@ -135,6 +135,7 @@ fn run(env: &mut dyn DpeEnv, args: &Args) -> Result<()> {
     for i in 0..args.num_contexts - 1 {
         let _resp = DeriveContextCmd {
             flags,
+            tci_type: i as u32 + 1,
             ..Default::default()
         }
         .execute(&mut dpe, env, 0)
