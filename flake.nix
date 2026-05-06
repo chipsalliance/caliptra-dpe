@@ -28,6 +28,7 @@
             openssl
             pkg-config
             taplo
+            cargo-nextest
           ];
           shellHook = ''
             # Ensure the toolchains are installed
