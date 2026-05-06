@@ -148,13 +148,15 @@ mod tests {
     fn test_deserialize_init_ctx() {
         CfiCounter::reset_for_test();
         for p in PROFILES {
-            let mut command = CommandHdr::new(p, Command::INITIALIZE_CONTEXT)
-                .as_bytes()
-                .to_vec();
-            command.extend(TEST_INIT_CTX_CMD.as_bytes());
+            // miri alignment: use u32 buffer to ensure 4-byte alignment for zerocopy
+            let hdr = CommandHdr::new(p, Command::INITIALIZE_CONTEXT);
+            let mut buf = [0u32; (size_of::<CommandHdr>() + size_of::<InitCtxCmd>()) / 4];
+            let command = buf.as_mut_bytes();
+            command[..size_of::<CommandHdr>()].copy_from_slice(hdr.as_bytes());
+            command[size_of::<CommandHdr>()..].copy_from_slice(TEST_INIT_CTX_CMD.as_bytes());
             assert_eq!(
                 Ok(Command::InitCtx(&TEST_INIT_CTX_CMD)),
-                Command::deserialize(p, &command)
+                Command::deserialize(p, command)
             );
         }
     }

@@ -168,8 +168,7 @@ impl Context {
     }
 }
 
-// miri alignment: align(4) ensures zerocopy can safely reference from byte slices
-#[repr(C, align(4))]
+#[repr(C)]
 #[derive(
     Debug,
     Default,

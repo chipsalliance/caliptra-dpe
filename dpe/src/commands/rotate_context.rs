@@ -160,13 +160,16 @@ mod tests {
     fn test_deserialize_rotate_context() {
         CfiCounter::reset_for_test();
         for p in PROFILES {
-            let mut command = CommandHdr::new(p, Command::ROTATE_CONTEXT_HANDLE)
-                .as_bytes()
-                .to_vec();
-            command.extend(TEST_ROTATE_CTX_CMD.as_bytes());
+            // miri alignment: use u32 buffer to ensure 4-byte alignment for zerocopy
+            let hdr = CommandHdr::new(p, Command::ROTATE_CONTEXT_HANDLE);
+            let mut buf = [0u32; (size_of::<CommandHdr>() + size_of::<RotateCtxCmd>()) / 4];
+            let command = buf.as_mut_bytes();
+            command[..size_of::<CommandHdr>()].copy_from_slice(hdr.as_bytes());
+            command[size_of::<CommandHdr>()..].copy_from_slice(TEST_ROTATE_CTX_CMD.as_bytes());
+
             assert_eq!(
                 Ok(Command::RotateCtx(&TEST_ROTATE_CTX_CMD)),
-                Command::deserialize(p, &command)
+                Command::deserialize(p, command)
             );
         }
     }

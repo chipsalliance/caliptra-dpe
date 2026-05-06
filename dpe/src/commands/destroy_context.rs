@@ -13,8 +13,7 @@ use caliptra_cfi_lib::cfi_launder;
 #[cfg(feature = "cfi")]
 use caliptra_cfi_lib::{cfi_assert, cfi_assert_bool, cfi_assert_eq};
 
-// miri alignment: align(4) ensures zerocopy can safely reference from byte slices
-#[repr(C, align(4))]
+#[repr(C)]
 #[derive(
     Debug,
     PartialEq,
