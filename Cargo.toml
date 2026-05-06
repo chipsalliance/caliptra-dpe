@@ -27,8 +27,8 @@ anyhow = "1.0.70"
 arrayvec = { version = "0.7.4", default-features = false, features = [
   "zeroize",
 ] }
-caliptra-cfi-derive = { git = "https://github.com/chipsalliance/caliptra-cfi.git", package = "caliptra-cfi-derive", rev = "aa96c53073ce7f298f7482c1ac57f5f65ffc115e" }
-caliptra-cfi-lib = { git = "https://github.com/chipsalliance/caliptra-cfi.git", package = "caliptra-cfi-lib", rev = "aa96c53073ce7f298f7482c1ac57f5f65ffc115e", default-features = false }
+caliptra-cfi-derive = { git = "https://github.com/leongross/caliptra-cfi.git", package = "caliptra-cfi-derive", branch = "miri" }
+caliptra-cfi-lib = { git = "https://github.com/leongross/caliptra-cfi.git", package = "caliptra-cfi-lib", branch = "miri", default-features = false }
 caliptra-dpe = { path = "dpe", default-features = false }
 caliptra-dpe-crypto = { path = "crypto", default-features = false }
 caliptra-dpe-platform = { path = "platform", default-features = false }
