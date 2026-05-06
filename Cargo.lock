@@ -1103,6 +1103,8 @@ dependencies = [
 name = "panic-check-firmware"
 version = "0.1.0"
 dependencies = [
+ "caliptra-cfi-derive",
+ "caliptra-cfi-lib",
  "caliptra-dpe",
  "caliptra-dpe-crypto",
  "caliptra-dpe-platform",
