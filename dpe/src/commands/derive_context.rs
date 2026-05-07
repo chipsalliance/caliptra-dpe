@@ -517,10 +517,11 @@ mod tests {
         support::Support,
         test_env,
         validation::DpeValidator,
-        DpeProfile, MAX_CERT_SIZE, MAX_EXPORTED_CDI_SIZE, MAX_HANDLES, TCI_SIZE,
+        AlignedBuf, DpeProfile, MAX_CERT_SIZE, MAX_EXPORTED_CDI_SIZE, MAX_HANDLES, TCI_SIZE,
     };
     use caliptra_cfi_lib::CfiCounter;
     use caliptra_dpe_platform::MAX_KEY_IDENTIFIER_SIZE;
+    use core::mem::size_of;
     use openssl::{
         bn::BigNum,
         ecdsa::EcdsaSig,
@@ -543,13 +544,15 @@ mod tests {
     fn test_deserialize_derive_context() {
         CfiCounter::reset_for_test();
         for p in PROFILES {
-            let mut command = CommandHdr::new(p, Command::DERIVE_CONTEXT)
-                .as_bytes()
-                .to_vec();
-            command.extend(TEST_DERIVE_CONTEXT_CMD.as_bytes());
+            let hdr = CommandHdr::new(p, Command::DERIVE_CONTEXT);
+            let mut buf =
+                AlignedBuf::<{ size_of::<CommandHdr>() + size_of::<DeriveContextCmd>() }>::new();
+            let command = buf.as_mut_bytes();
+            command[..size_of::<CommandHdr>()].copy_from_slice(hdr.as_bytes());
+            command[size_of::<CommandHdr>()..].copy_from_slice(TEST_DERIVE_CONTEXT_CMD.as_bytes());
             assert_eq!(
                 Ok(Command::DeriveContext(&TEST_DERIVE_CONTEXT_CMD)),
-                Command::deserialize(p, &command)
+                Command::deserialize(p, command)
             );
         }
     }

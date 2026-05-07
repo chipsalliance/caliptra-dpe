@@ -8,8 +8,8 @@ use crate::{
     commands::{CertifyKeyCommand, Command, DeriveContextCmd, SignCommand},
     context::ContextHandle,
     validation::ValidationError,
-    DpeProfile, CURRENT_PROFILE_MAJOR_VERSION, CURRENT_PROFILE_MINOR_VERSION, MAX_CERT_SIZE,
-    MAX_EXPORTED_CDI_SIZE, MAX_HANDLES,
+    AlignedBuf, DpeProfile, CURRENT_PROFILE_MAJOR_VERSION, CURRENT_PROFILE_MINOR_VERSION,
+    MAX_CERT_SIZE, MAX_EXPORTED_CDI_SIZE, MAX_HANDLES,
 };
 use caliptra_dpe_crypto::{ecdsa::EcdsaAlgorithm, CryptoError};
 use caliptra_dpe_platform::{PlatformError, MAX_CHUNK_SIZE};
@@ -79,6 +79,12 @@ impl Response {
     /// This is useful for parsing the data as it was received "over the wire". This also works with
     /// the output of `as_bytes_partial`.
     pub fn try_read_from_bytes(cmd: &Command, bytes: &[u8]) -> Result<Response, DpeErrorCode> {
+        // miri alignment: copy into an aligned buffer so zerocopy reads from 4-byte aligned memory
+        let mut buf = AlignedBuf::<{ size_of::<Self>() }>::new();
+        let copy_len = bytes.len().min(buf.as_bytes().len());
+        buf.as_mut_bytes()[..copy_len].copy_from_slice(&bytes[..copy_len]);
+        let bytes = buf.as_bytes();
+
         let r = match cmd {
             #[cfg(feature = "p256")]
             Command::CertifyKey(CertifyKeyCommand::P256(_)) => {

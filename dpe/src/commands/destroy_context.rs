@@ -113,9 +113,10 @@ mod tests {
             test_state, DPE_PROFILE, SIMULATION_HANDLE, TEST_HANDLE, TEST_LOCALITIES,
         },
         response::Response,
-        test_env,
+        test_env, AlignedBuf,
     };
     use caliptra_cfi_lib::CfiCounter;
+    use core::mem::size_of;
     use zerocopy::IntoBytes;
 
     const TEST_DESTROY_CTX_CMD: DestroyCtxCmd = DestroyCtxCmd {
@@ -126,13 +127,15 @@ mod tests {
     fn test_deserialize_destroy_context() {
         CfiCounter::reset_for_test();
         for p in PROFILES {
-            let mut command = CommandHdr::new(p, Command::DESTROY_CONTEXT)
-                .as_bytes()
-                .to_vec();
-            command.extend(TEST_DESTROY_CTX_CMD.as_bytes());
+            let hdr = CommandHdr::new(p, Command::DESTROY_CONTEXT);
+            let mut buf =
+                AlignedBuf::<{ size_of::<CommandHdr>() + size_of::<DestroyCtxCmd>() }>::new();
+            let command = buf.as_mut_bytes();
+            command[..size_of::<CommandHdr>()].copy_from_slice(hdr.as_bytes());
+            command[size_of::<CommandHdr>()..].copy_from_slice(TEST_DESTROY_CTX_CMD.as_bytes());
             assert_eq!(
                 Ok(Command::DestroyCtx(&TEST_DESTROY_CTX_CMD)),
-                Command::deserialize(p, &command)
+                Command::deserialize(p, command)
             );
         }
     }

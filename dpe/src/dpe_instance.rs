@@ -413,10 +413,11 @@ pub mod tests {
     use crate::response::NewHandleResp;
     use crate::support::test::SUPPORT;
     use crate::tci::TciMeasurement;
-    use crate::{DpeFlags, CURRENT_PROFILE_MAJOR_VERSION};
+    use crate::{AlignedBuf, DpeFlags, CURRENT_PROFILE_MAJOR_VERSION};
     use caliptra_cfi_lib::CfiCounter;
     use caliptra_dpe_crypto::RustCryptoImpl;
     use caliptra_dpe_platform::default::AUTO_INIT_LOCALITY;
+    use core::mem::size_of;
     use zerocopy::IntoBytes;
 
     #[cfg(feature = "p256")]
@@ -492,17 +493,17 @@ pub mod tests {
 
         // The default context was initialized while creating the instance. Now lets create a
         // simulation context.
-        let mut command = dpe
-            .command_hdr(Command::INITIALIZE_CONTEXT)
-            .as_bytes()
-            .to_vec();
-        command.extend(InitCtxCmd::new_simulation().as_bytes());
+        let hdr = dpe.command_hdr(Command::INITIALIZE_CONTEXT);
+        let mut buf = AlignedBuf::<{ size_of::<CommandHdr>() + size_of::<InitCtxCmd>() }>::new();
+        let command = buf.as_mut_bytes();
+        command[..size_of::<CommandHdr>()].copy_from_slice(hdr.as_bytes());
+        command[size_of::<CommandHdr>()..].copy_from_slice(InitCtxCmd::new_simulation().as_bytes());
         assert_eq!(
             Response::InitCtx(NewHandleResp {
                 handle: RANDOM_HANDLE,
                 resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
             }),
-            dpe.execute_serialized_command(&mut env, TEST_LOCALITIES[0], &command)
+            dpe.execute_serialized_command(&mut env, TEST_LOCALITIES[0], command)
                 .unwrap()
         );
     }

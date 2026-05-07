@@ -137,7 +137,7 @@ mod tests {
         dpe_instance::tests::{DPE_PROFILE, TEST_LOCALITIES},
         response::Response,
         support::Support,
-        test_env, DpeFlags, State,
+        test_env, AlignedBuf, DpeFlags, State,
     };
     use caliptra_cfi_lib::CfiCounter;
     use zerocopy::IntoBytes;
@@ -148,9 +148,9 @@ mod tests {
     fn test_deserialize_init_ctx() {
         CfiCounter::reset_for_test();
         for p in PROFILES {
-            // miri alignment: use u32 buffer to ensure 4-byte alignment for zerocopy
             let hdr = CommandHdr::new(p, Command::INITIALIZE_CONTEXT);
-            let mut buf = [0u32; (size_of::<CommandHdr>() + size_of::<InitCtxCmd>()) / 4];
+            let mut buf =
+                AlignedBuf::<{ size_of::<CommandHdr>() + size_of::<InitCtxCmd>() }>::new();
             let command = buf.as_mut_bytes();
             command[..size_of::<CommandHdr>()].copy_from_slice(hdr.as_bytes());
             command[size_of::<CommandHdr>()..].copy_from_slice(TEST_INIT_CTX_CMD.as_bytes());

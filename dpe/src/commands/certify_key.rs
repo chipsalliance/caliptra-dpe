@@ -439,7 +439,7 @@ mod tests {
         tci::TciMeasurement,
         test_env,
         x509::{tests::TcbInfo, DirectoryString, Name},
-        State, MAX_HANDLES, TCI_SIZE,
+        AlignedBuf, State, MAX_HANDLES, TCI_SIZE,
     };
     use caliptra_cfi_lib::CfiCounter;
     use caliptra_dpe_crypto::artifacts;
@@ -483,11 +483,9 @@ mod tests {
     fn test_deserialize_certify_key() {
         use core::mem::size_of;
         CfiCounter::reset_for_test();
-        // miri alignment: use u32 buffer to ensure 4-byte alignment for zerocopy
-        const BUF_SIZE: usize = (size_of::<CommandHdr>() + size_of::<CertifyKeyCmd>() + 3) / 4;
-        let mut command_buf = [0u32; BUF_SIZE];
-        let command = command_buf.as_mut_bytes();
         let header = CommandHdr::new(DPE_PROFILE, Command::CERTIFY_KEY);
+        let mut buf = AlignedBuf::<{ size_of::<CommandHdr>() + size_of::<CertifyKeyCmd>() }>::new();
+        let command = buf.as_mut_bytes();
         command[..size_of::<CommandHdr>()].copy_from_slice(header.as_bytes());
         command[size_of::<CommandHdr>()..][..size_of::<CertifyKeyCmd>()]
             .copy_from_slice(TEST_CERTIFY_KEY_CMD.as_bytes());
