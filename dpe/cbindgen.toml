@@ -1,0 +1,76 @@
+# Licensed under the Apache-2.0 license
+
+language = "C"
+cpp_compat = true
+
+header = """// Licensed under the Apache-2.0 license
+
+#ifndef MAX_CERT_SIZE
+#ifdef DPE_PROFILE_HYBRID
+#define MAX_CERT_SIZE (22 * 1024)
+#else
+#define MAX_CERT_SIZE (11 * 1024)
+#endif
+#endif
+
+#ifndef MAX_EXPORTED_CDI_SIZE
+#define MAX_EXPORTED_CDI_SIZE 32
+#endif
+
+#ifndef MAX_CHUNK_SIZE
+#define MAX_CHUNK_SIZE 2048
+#endif
+
+#ifndef SIZE
+#define SIZE 16
+#endif
+"""
+
+after_includes = """
+#ifdef __cplusplus
+extern "C" {
+#endif
+"""
+
+trailer = """
+#ifdef __cplusplus
+} // extern "C"
+#endif
+"""
+
+[parse]
+parse_deps = true
+include = ["caliptra-dpe-platform", "caliptra-dpe-crypto"]
+
+[enum]
+prefix_with_name = true
+
+[export]
+include = [
+    "CommandHdr",
+    "InitCtxCmd",
+    "DeriveContextCmd",
+    "CertifyKeyP256Cmd",
+    "CertifyKeyP384Cmd",
+    "SignP256Cmd",
+    "SignP384Cmd",
+    "DestroyCtxCmd",
+    "GetCertificateChainCmd",
+    "UpdateContextMeasurementCmd",
+    "ResponseHdr",
+    "GetProfileResp",
+    "NewHandleResp",
+    "DeriveContextResp",
+    "UpdateContextMeasurementResp",
+    "DeriveContextExportedCdiResp",
+    "CertifyKeyP256Resp",
+    "CertifyKeyP384Resp",
+    "SignP256Resp",
+    "SignP384Resp",
+    "GetCertificateChainResp",
+    "DpeProfile",
+    "DpeErrorCode",
+    "ContextHandle",
+    "PlatformError",
+    "CryptoError"
+]

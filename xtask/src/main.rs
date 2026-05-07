@@ -32,6 +32,10 @@ enum Commands {
     Precheckin(PrecheckinArgs),
     /// Run a tool from the tools/ folder
     RunTool(RunToolArgs),
+    /// Generate C header for DPE ABI
+    GenerateAbi,
+    /// Check if generated C headers are up-to-date
+    CheckAbi,
 }
 
 #[derive(Parser)]
@@ -98,6 +102,8 @@ fn main() -> Result<()> {
         Commands::Test(args) => run_test_command(args)?,
         Commands::Precheckin(args) => run_precheckin_command(args)?,
         Commands::RunTool(args) => run_tool_command(args)?,
+        Commands::GenerateAbi => run_generate_abi()?,
+        Commands::CheckAbi => run_check_abi()?,
     }
 
     Ok(())
@@ -106,6 +112,7 @@ fn main() -> Result<()> {
 fn run_ci() -> Result<()> {
     run_precheckin()?;
     run_tests()?;
+    run_check_abi()?;
 
     // Additional checks for specific binaries/tools
     cargo_run(
@@ -192,6 +199,103 @@ fn run_tool_command(args: &RunToolArgs) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn generate_abi_string(profile: &str, base_config: &cbindgen::Config) -> Result<String> {
+    let crate_dir = Path::new("dpe");
+    let mut config = base_config.clone();
+
+    if profile == "hybrid" {
+        if let Some(ref mut header) = config.header {
+            let license = "// Licensed under the Apache-2.0 license";
+            *header = header.replace(
+                license,
+                &format!("{}\n\n#define DPE_PROFILE_HYBRID", license),
+            );
+        }
+    }
+
+    let bindings = cbindgen::Builder::new()
+        .with_crate(crate_dir)
+        .with_config(config)
+        .generate()
+        .map_err(|e| anyhow!("Failed to generate bindings for {}: {:?}", profile, e))?;
+
+    let mut buffer = Vec::new();
+    bindings.write(&mut buffer);
+    let mut content = String::from_utf8(buffer)
+        .map_err(|e| anyhow!("Failed to convert bindings to string: {:?}", e))?;
+
+    // Post-process to fix TCI_SIZE and DpeProfile_Mldsa87
+    if profile == "p256" {
+        content = content.replace("#define TCI_SIZE 48", "");
+        content = content.replace("\n  DpeProfile_Mldsa87 = 5,", "");
+    } else if profile == "p384" {
+        content = content.replace("#define TCI_SIZE 32", "");
+        content = content.replace("\n  DpeProfile_Mldsa87 = 5,", "");
+    } else {
+        content = content.replace("#define TCI_SIZE 32", "");
+    }
+
+    Ok(content)
+}
+
+fn run_generate_abi() -> Result<()> {
+    println!("Generating DPE ABI C headers...");
+    let config_file = Path::new("dpe/cbindgen.toml");
+    let base_config = cbindgen::Config::from_file(config_file)
+        .map_err(|e| anyhow!("Failed to load cbindgen config: {:?}", e))?;
+
+    let profiles = ["p256", "p384", "hybrid"];
+
+    for profile in profiles {
+        let content = generate_abi_string(profile, &base_config)?;
+        let output_file = format!("dpe/dpe_abi_{}.h", profile);
+        let output_path = Path::new(&output_file);
+        println!(
+            "Writing header for profile: {} -> {:?}",
+            profile, output_path
+        );
+        std::fs::write(output_path, content)?;
+    }
+
+    Ok(())
+}
+
+fn run_check_abi() -> Result<()> {
+    println!("Checking DPE ABI C headers...");
+    let config_file = Path::new("dpe/cbindgen.toml");
+    let base_config = cbindgen::Config::from_file(config_file)
+        .map_err(|e| anyhow!("Failed to load cbindgen config: {:?}", e))?;
+
+    let profiles = ["p256", "p384", "hybrid"];
+    let mut stale = false;
+
+    for profile in profiles {
+        let generated = generate_abi_string(profile, &base_config)?;
+        let output_file = format!("dpe/dpe_abi_{}.h", profile);
+        let output_path = Path::new(&output_file);
+
+        if !output_path.exists() {
+            println!("Header for {} does not exist: {:?}", profile, output_path);
+            stale = true;
+            continue;
+        }
+
+        let existing = std::fs::read_to_string(output_path)?;
+
+        if generated != existing {
+            println!("Header for {} is stale!", profile);
+            stale = true;
+        }
+    }
+
+    if stale {
+        Err(anyhow!("DPE ABI C headers are stale. Please run 'cargo xtask generate-abi' to regenerate them."))
+    } else {
+        println!("DPE ABI C headers are up-to-date.");
+        Ok(())
+    }
 }
 
 fn run_unit_tests() -> Result<()> {
