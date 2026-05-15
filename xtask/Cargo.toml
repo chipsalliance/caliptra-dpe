@@ -11,3 +11,4 @@ version.workspace = true
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
+num_cpus = "1.17.0"

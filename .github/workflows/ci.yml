@@ -38,10 +38,4 @@ jobs:
       - name: Run CI tests
         run: |
           export NIX_REMOTE=local
-          nix develop --command cargo xtask ci
-
-      - name: Run miri tests
-        run: |
-          export NIX_REMOTE=local
-          nix develop --command cargo xtask test miri --nextest --nthreads $(nproc)
-        
+          nix develop --command cargo xtask ci --miri
