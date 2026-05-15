@@ -87,7 +87,6 @@ impl DeriveContextFlags {
     }
 }
 
-// miri alignment: align(4) ensures zerocopy can safely reference from byte slices
 #[repr(C, align(4))]
 #[derive(Debug, PartialEq, Eq, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct DeriveContextCmd {

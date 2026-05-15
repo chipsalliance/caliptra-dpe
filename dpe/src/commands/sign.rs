@@ -22,7 +22,6 @@ use core::mem::size_of;
 use core::mem::size_of_val;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
-// miri alignment: align(4) ensures zerocopy can safely reference from byte slices
 #[repr(C, align(4))]
 #[derive(Debug, PartialEq, Eq, IntoBytes, FromBytes, Immutable, KnownLayout)]
 pub struct SignFlags(pub u32);
@@ -37,7 +36,6 @@ bitflags! {
 const MLDSA87_RAW_MAX_SIZE: usize = 1024;
 
 #[cfg(feature = "ml-dsa")]
-// miri alignment: align(4) ensures zerocopy can safely reference from byte slices
 #[repr(C, align(4))]
 #[derive(Debug, PartialEq, Eq, IntoBytes, FromBytes, Immutable, KnownLayout)]
 struct SignMldsa87Header {
@@ -47,7 +45,6 @@ struct SignMldsa87Header {
 }
 
 #[cfg(feature = "ml-dsa")]
-// miri alignment: align(4) ensures zerocopy can safely reference from byte slices
 #[repr(C, align(4))]
 #[derive(Debug, PartialEq, Eq, IntoBytes, FromBytes, Immutable, KnownLayout)]
 pub struct SignMldsa87RawCmd {
@@ -283,7 +280,6 @@ fn sign(
     Ok(signer.sign(data)?)
 }
 
-// miri alignment: align(4) ensures zerocopy can safely reference from byte slices
 #[repr(C, align(4))]
 #[derive(Debug, PartialEq, Eq, IntoBytes, FromBytes, Immutable, KnownLayout)]
 pub struct SignP256Cmd {
@@ -307,7 +303,6 @@ impl CommandExecution for SignP256Cmd {
     }
 }
 
-// miri alignment: align(4) ensures zerocopy can safely reference from byte slices
 #[repr(C, align(4))]
 #[derive(Debug, PartialEq, Eq, IntoBytes, FromBytes, Immutable, KnownLayout)]
 pub struct SignP384Cmd {
@@ -331,7 +326,6 @@ impl CommandExecution for SignP384Cmd {
     }
 }
 
-// miri alignment: align(4) ensures zerocopy can safely reference from byte slices
 #[repr(C, align(4))]
 #[derive(Debug, PartialEq, Eq, IntoBytes, FromBytes, Immutable, KnownLayout)]
 pub struct SignMldsa87Cmd {
