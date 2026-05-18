@@ -206,7 +206,7 @@ pub(crate) struct ChildToRootIter<'a> {
 
 impl ChildToRootIter<'_> {
     /// Create a new iterator that will start at the leaf and go to the root node.
-    pub fn new(leaf_idx: usize, contexts: &[Context]) -> ChildToRootIter {
+    pub fn new(leaf_idx: usize, contexts: &[Context]) -> ChildToRootIter<'_> {
         ChildToRootIter {
             idx: leaf_idx,
             contexts,
