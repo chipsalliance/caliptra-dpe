@@ -60,7 +60,7 @@ impl Command<'_> {
     /// # Arguments
     ///
     /// * `bytes` - serialized command
-    pub fn deserialize(bytes: &[u8]) -> Result<Command, DpeErrorCode> {
+    pub fn deserialize(bytes: &[u8]) -> Result<Command<'_>, DpeErrorCode> {
         let header = CommandHdr::try_from(bytes)?;
         let bytes = &bytes[size_of::<CommandHdr>()..];
 

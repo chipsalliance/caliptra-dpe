@@ -189,7 +189,7 @@ impl CertWriter<'_> {
     ///
     /// If `crit_dice`, all tcg-dice-* extensions will be marked as critical.
     /// Else they will be marked as non-critical.
-    pub fn new(cert: &mut [u8], crit_dice: bool) -> CertWriter {
+    pub fn new(cert: &mut [u8], crit_dice: bool) -> CertWriter<'_> {
         CertWriter {
             certificate: cert,
             offset: 0,
