@@ -13,9 +13,9 @@ use crate::{
     DpeInstance, DpeProfile, DPE_PROFILE, MAX_CERT_SIZE, MAX_HANDLES,
 };
 use bitflags::bitflags;
-use caliptra_cfi_lib_git::cfi_launder;
+use caliptra_cfi_lib::cfi_launder;
 #[cfg(not(feature = "no-cfi"))]
-use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq};
+use caliptra_cfi_lib::{cfi_assert, cfi_assert_bool};
 use crypto::{Crypto, Digest, EcdsaPub, EcdsaSig, Hasher, MAX_EXPORTED_CDI_SIZE};
 #[cfg(not(feature = "disable_x509"))]
 use platform::CertValidity;

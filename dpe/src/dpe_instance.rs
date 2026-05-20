@@ -16,10 +16,10 @@ use crate::{
 };
 use bitflags::bitflags;
 #[cfg(not(feature = "no-cfi"))]
-use caliptra_cfi_derive_git::cfi_impl_fn;
-use caliptra_cfi_lib_git::cfi_launder;
+use caliptra_cfi_derive::cfi_impl_fn;
+use caliptra_cfi_lib::cfi_launder;
 #[cfg(not(feature = "no-cfi"))]
-use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq};
+use caliptra_cfi_lib::{cfi_assert, cfi_assert_bool, cfi_assert_eq};
 use cfg_if::cfg_if;
 use core::mem::align_of;
 use crypto::{Crypto, Digest, Hasher};
@@ -188,7 +188,9 @@ impl DpeInstance {
         cmd: &[u8],
     ) -> Result<Response, DpeErrorCode> {
         let command = Command::deserialize(cmd)?;
-        let resp = match cfi_launder(command) {
+        #[cfg(not(feature = "no-cfi"))]
+        let command = cfi_launder(command);
+        let resp = match command {
             Command::GetProfile => Ok(Response::GetProfile(self.get_profile(&mut env.platform)?)),
             Command::InitCtx(cmd) => cmd.execute(self, env, locality),
             Command::DeriveContext(cmd) => cmd.execute(self, env, locality),
@@ -552,7 +554,7 @@ pub mod tests {
     use crate::response::NewHandleResp;
     use crate::support::test::SUPPORT;
     use crate::{commands::CommandHdr, CURRENT_PROFILE_MAJOR_VERSION};
-    use caliptra_cfi_lib_git::CfiCounter;
+    use caliptra_cfi_lib::CfiCounter;
     use crypto::OpensslCrypto;
     use platform::default::{DefaultPlatform, AUTO_INIT_LOCALITY, TEST_CERT_CHAIN};
     use zerocopy::IntoBytes;

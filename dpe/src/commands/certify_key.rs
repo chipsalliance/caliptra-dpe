@@ -9,9 +9,9 @@ use crate::{
 };
 use bitflags::bitflags;
 #[cfg(not(feature = "no-cfi"))]
-use caliptra_cfi_derive_git::cfi_impl_fn;
+use caliptra_cfi_derive::cfi_impl_fn;
 #[cfg(not(feature = "no-cfi"))]
-use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq};
+use caliptra_cfi_lib::{cfi_assert, cfi_assert_bool, cfi_assert_eq};
 use cfg_if::cfg_if;
 #[cfg(not(feature = "disable_x509"))]
 #[repr(C)]
@@ -165,7 +165,7 @@ mod tests {
         support::Support,
         x509::{tests::TcbInfo, DirectoryString, Name},
     };
-    use caliptra_cfi_lib_git::CfiCounter;
+    use caliptra_cfi_lib::CfiCounter;
     use cms::{
         content_info::{CmsVersion, ContentInfo},
         signed_data::{SignedData, SignerIdentifier},

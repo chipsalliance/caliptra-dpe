@@ -164,6 +164,7 @@ impl ContextHandle {
 #[derive(Debug, PartialEq, Eq, IntoBytes, FromZeros, KnownLayout, Immutable, Copy, Clone, Zeroize)]
 #[repr(u8, align(1))]
 #[rustfmt::skip]
+#[cfg_attr(not(feature = "no-cfi"), derive(caliptra_cfi_derive::Launder))]
 pub enum ContextState {
     /// Inactive or uninitialized.
     Inactive,
@@ -179,6 +180,7 @@ pub enum ContextState {
 #[derive(Debug, PartialEq, Eq, Clone, Copy, IntoBytes, FromZeros, KnownLayout, Immutable, Zeroize)]
 #[repr(u8, align(1))]
 #[rustfmt::skip]
+#[cfg_attr(not(feature = "no-cfi"), derive(caliptra_cfi_derive::Launder))]
 pub enum ContextType {
     /// Typical context.
     Normal,
