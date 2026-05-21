@@ -4,6 +4,8 @@ Licensed under the Apache-2.0 license.
 Abstract:
     Defines an instance of DPE and all of its contexts.
 --*/
+#[cfg(feature = "ml-dsa")]
+use crate::DPE_PROFILE_MLDSA87;
 #[cfg(not(feature = "disable_internal_info"))]
 use crate::INTERNAL_INPUT_INFO_SIZE;
 use crate::{
@@ -12,7 +14,7 @@ use crate::{
     response::{DpeErrorCode, GetProfileResp, Response, ResponseHdr},
     support::Support,
     tci::TciMeasurement,
-    DpeProfile, State, MAX_HANDLES,
+    DpeProfile, State, DPE_PROFILE_SHA256, DPE_PROFILE_SHA384, MAX_HANDLES,
 };
 #[cfg(feature = "cfi")]
 use caliptra_cfi_derive::cfi_impl_fn;
@@ -24,7 +26,7 @@ use caliptra_dpe_platform::Platform;
 #[cfg(not(feature = "disable_internal_dice"))]
 use caliptra_dpe_platform::MAX_CHUNK_SIZE;
 use cfg_if::cfg_if;
-use zerocopy::IntoBytes;
+use zerocopy::{FromZeros, IntoBytes};
 
 pub trait DpeEnv {
     fn crypto(&mut self) -> &mut dyn CryptoSuite;
@@ -54,8 +56,9 @@ impl DpeEnv for DpeEnvImpl<'_> {
     }
 }
 
+#[derive(FromZeros, IntoBytes)]
 pub struct DpeInstance {
-    pub profile: DpeProfile,
+    profile: u32,
 }
 
 impl DpeInstance {
@@ -63,7 +66,19 @@ impl DpeInstance {
 
     /// Create a new DPE instance without initializing.
     pub const fn initialized(profile: DpeProfile) -> Self {
-        Self { profile }
+        Self {
+            profile: profile as u32,
+        }
+    }
+
+    pub fn profile(&self) -> Result<DpeProfile, DpeErrorCode> {
+        match self.profile {
+            DPE_PROFILE_SHA256 => Ok(DpeProfile::P256Sha256),
+            DPE_PROFILE_SHA384 => Ok(DpeProfile::P384Sha384),
+            #[cfg(feature = "ml-dsa")]
+            DPE_PROFILE_MLDSA87 => Ok(DpeProfile::Mldsa87),
+            _ => Err(DpeErrorCode::InvalideProfile),
+        }
     }
 
     /// Create a new DPE instance.
@@ -133,7 +148,7 @@ impl DpeInstance {
         let vendor_id = platform.get_vendor_id()?;
         let vendor_sku = platform.get_vendor_sku()?;
         Ok(GetProfileResp::new(
-            self.profile,
+            self.profile()?,
             support.bits(),
             vendor_id,
             vendor_sku,
@@ -172,20 +187,20 @@ impl DpeInstance {
 
         match resp {
             Ok(resp) => Ok(resp),
-            Err(err_code) => Ok(Response::Error(self.response_hdr(err_code))),
+            Err(err_code) => Ok(Response::Error(self.response_hdr(err_code)?)),
         }
     }
 
-    pub fn response_hdr(&self, err_code: DpeErrorCode) -> ResponseHdr {
-        ResponseHdr::new(self.profile, err_code)
+    pub fn response_hdr(&self, err_code: DpeErrorCode) -> Result<ResponseHdr, DpeErrorCode> {
+        Ok(ResponseHdr::new(self.profile()?, err_code))
     }
 
-    pub fn command_hdr(&self, cmd_id: u32) -> CommandHdr {
-        CommandHdr::new(self.profile, cmd_id)
+    pub fn command_hdr(&self, cmd_id: u32) -> Result<CommandHdr, DpeErrorCode> {
+        Ok(CommandHdr::new(self.profile()?, cmd_id))
     }
 
     pub fn deserialize_command<'a>(&self, cmd: &'a [u8]) -> Result<Command<'a>, DpeErrorCode> {
-        Command::deserialize(self.profile, cmd)
+        Command::deserialize(self.profile()?, cmd)
     }
 
     /// Generates a random context handle that is unique from all other context handles
@@ -306,7 +321,7 @@ impl DpeInstance {
         internal_input_info
             .get_mut(profile_bytes.len()..)
             .ok_or(DpeErrorCode::InternalError)?
-            .copy_from_slice(&(u32::from(self.profile)).to_le_bytes());
+            .copy_from_slice(&(u32::from(self.profile()?)).to_le_bytes());
 
         Ok(())
     }
@@ -480,7 +495,7 @@ pub mod tests {
 
         assert_eq!(
             Response::GetProfile(GetProfileResp::new(
-                dpe.profile,
+                dpe.profile().unwrap(),
                 SUPPORT.bits(),
                 env.platform.get_vendor_id().unwrap(),
                 env.platform.get_vendor_sku().unwrap()
@@ -488,7 +503,7 @@ pub mod tests {
             dpe.execute_serialized_command(
                 &mut env,
                 TEST_LOCALITIES[0],
-                dpe.command_hdr(Command::GET_PROFILE).as_bytes(),
+                dpe.command_hdr(Command::GET_PROFILE).unwrap().as_bytes(),
             )
             .unwrap()
         );
@@ -497,13 +512,14 @@ pub mod tests {
         // simulation context.
         let mut command = dpe
             .command_hdr(Command::INITIALIZE_CONTEXT)
+            .unwrap()
             .as_bytes()
             .to_vec();
         command.extend(InitCtxCmd::new_simulation().as_bytes());
         assert_eq!(
             Response::InitCtx(NewHandleResp {
                 handle: RANDOM_HANDLE,
-                resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
+                resp_hdr: dpe.response_hdr(DpeErrorCode::NoError).unwrap(),
             }),
             dpe.execute_serialized_command(&mut env, TEST_LOCALITIES[0], &command)
                 .unwrap()

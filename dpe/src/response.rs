@@ -521,6 +521,7 @@ pub enum DpeErrorCode {
     Platform(PlatformError) = 0x01000000,
     Crypto(CryptoError) = 0x02000000,
     Validation(ValidationError) = 0x03000000,
+    InvalideProfile = 0x04000000,
 }
 
 impl From<PlatformError> for DpeErrorCode {

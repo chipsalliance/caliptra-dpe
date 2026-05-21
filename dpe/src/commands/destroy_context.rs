@@ -94,9 +94,9 @@ impl CommandExecution for DestroyCtxCmd {
         locality: u32,
         out: &mut [u8],
     ) -> Result<usize, DpeErrorCode> {
-        let response = mutresp::<ResponseHdr>(dpe.profile, out)?;
+        let response = mutresp::<ResponseHdr>(dpe.profile()?, out)?;
         destroy_context(&self.handle, env.state(), locality)?;
-        *response = dpe.response_hdr(DpeErrorCode::NoError);
+        *response = dpe.response_hdr(DpeErrorCode::NoError)?;
         Ok(size_of_val(response))
     }
 }
@@ -163,7 +163,7 @@ mod tests {
         // destroy context[1]
         assert_eq!(
             Ok(Response::DestroyCtx(
-                dpe.response_hdr(DpeErrorCode::NoError)
+                dpe.response_hdr(DpeErrorCode::NoError).unwrap()
             )),
             DestroyCtxCmd {
                 handle: ContextHandle::default()
@@ -175,7 +175,7 @@ mod tests {
         // destroy context[0]
         assert_eq!(
             Ok(Response::DestroyCtx(
-                dpe.response_hdr(DpeErrorCode::NoError)
+                dpe.response_hdr(DpeErrorCode::NoError).unwrap()
             )),
             DestroyCtxCmd {
                 handle: TEST_HANDLE
@@ -237,7 +237,7 @@ mod tests {
         // destroy context[0] and all descendents
         assert_eq!(
             Ok(Response::DestroyCtx(
-                dpe.response_hdr(DpeErrorCode::NoError)
+                dpe.response_hdr(DpeErrorCode::NoError).unwrap()
             )),
             DestroyCtxCmd {
                 handle: ContextHandle::default()
@@ -280,7 +280,7 @@ mod tests {
         // destroy context[1]
         assert_eq!(
             Ok(Response::DestroyCtx(
-                dpe.response_hdr(DpeErrorCode::NoError)
+                dpe.response_hdr(DpeErrorCode::NoError).unwrap()
             )),
             DestroyCtxCmd {
                 handle: ContextHandle([1; ContextHandle::SIZE])

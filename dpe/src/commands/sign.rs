@@ -190,7 +190,7 @@ impl CommandExecution for SignCommand<'_> {
             #[cfg(feature = "p256")]
             Signature::Ecdsa(EcdsaSignature::Ecdsa256(sig)) => {
                 use crate::response::SignP256Resp;
-                let response = mutresp::<SignP256Resp>(dpe.profile, out)?;
+                let response = mutresp::<SignP256Resp>(dpe.profile()?, out)?;
 
                 // Rotate the handle if it isn't the default context.
                 dpe.roll_onetime_use_handle(env, idx)?;
@@ -199,14 +199,14 @@ impl CommandExecution for SignCommand<'_> {
                     new_context_handle: env.state().contexts[idx].handle,
                     sig_r,
                     sig_s,
-                    resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
+                    resp_hdr: dpe.response_hdr(DpeErrorCode::NoError)?,
                 };
                 Ok(size_of_val(response))
             }
             #[cfg(feature = "p384")]
             Signature::Ecdsa(EcdsaSignature::Ecdsa384(sig)) => {
                 use crate::response::SignP384Resp;
-                let response = mutresp::<SignP384Resp>(dpe.profile, out)?;
+                let response = mutresp::<SignP384Resp>(dpe.profile()?, out)?;
 
                 // Rotate the handle if it isn't the default context.
                 dpe.roll_onetime_use_handle(env, idx)?;
@@ -215,14 +215,14 @@ impl CommandExecution for SignCommand<'_> {
                     new_context_handle: env.state().contexts[idx].handle,
                     sig_r,
                     sig_s,
-                    resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
+                    resp_hdr: dpe.response_hdr(DpeErrorCode::NoError)?,
                 };
                 Ok(size_of_val(response))
             }
             #[cfg(feature = "ml-dsa")]
             Signature::Mldsa(caliptra_dpe_crypto::ml_dsa::MldsaSignature(sig)) => {
                 use crate::response::SignMlDsaResp;
-                let response = mutresp::<SignMlDsaResp>(dpe.profile, out)?;
+                let response = mutresp::<SignMlDsaResp>(dpe.profile()?, out)?;
 
                 // Rotate the handle if it isn't the default context.
                 dpe.roll_onetime_use_handle(env, idx)?;
@@ -230,7 +230,7 @@ impl CommandExecution for SignCommand<'_> {
                     new_context_handle: env.state().contexts[idx].handle,
                     sig: *sig,
                     _padding: [0; 1],
-                    resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
+                    resp_hdr: dpe.response_hdr(DpeErrorCode::NoError)?,
                 };
                 Ok(size_of_val(response))
             }
@@ -256,7 +256,7 @@ fn sign(
 ) -> Result<Signature, DpeErrorCode> {
     let cdi_digest = dpe.compute_measurement_hash(env, idx)?;
     let cdi = env.crypto().derive_cdi(&cdi_digest, b"DPE")?;
-    let profile = dpe.profile;
+    let profile = dpe.profile()?;
     let context = profile.key_context();
     let key_pair = cdi.derive_key_pair(label, context);
     if cfi_launder(key_pair.is_ok()) {

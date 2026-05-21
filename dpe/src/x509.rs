@@ -2963,7 +2963,7 @@ fn create_dpe_cert_or_csr(
 
     let cert_size = generate_cert_or_csr(
         format_specific_args,
-        dpe.profile,
+        dpe.profile()?,
         args.dice_extensions_are_critical,
         &subject_name,
         pub_key,

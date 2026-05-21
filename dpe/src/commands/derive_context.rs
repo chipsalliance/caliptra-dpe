@@ -291,7 +291,7 @@ impl CommandExecution for DeriveContextCmd {
         if flags.is_recursive() {
             cfg_if! {
                 if #[cfg(not(feature = "disable_recursive"))] {
-                    let response = mutresp::<DeriveContextResp>(dpe.profile, out)?;
+                    let response = mutresp::<DeriveContextResp>(dpe.profile()?, out)?;
                     let mut tmp_context = env.state().contexts[parent_idx];
                     if tmp_context.tci.tci_type != tci_type {
                         return Err(DpeErrorCode::InvalidArgument);
@@ -319,7 +319,7 @@ impl CommandExecution for DeriveContextCmd {
                         handle: env.state().contexts[parent_idx].handle,
                         // Should be ignored since retain_parent cannot be true
                         parent_handle: ContextHandle::default(),
-                        resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
+                        resp_hdr: dpe.response_hdr(DpeErrorCode::NoError)?,
                     };
                     return Ok(size_of_val(response));
                 } else {
@@ -356,10 +356,10 @@ impl CommandExecution for DeriveContextCmd {
         if flags.creates_certificate() && flags.exports_cdi() {
             cfg_if! {
                 if #[cfg(not(feature = "disable_export_cdi"))] {
-                    let response = mutresp::<DeriveContextExportedCdiResp>(dpe.profile, out)?;
+                    let response = mutresp::<DeriveContextExportedCdiResp>(dpe.profile()?, out)?;
                     let ueid = &env.platform().get_ueid()?;
                     let ueid = ueid.get()?;
-                    let profile_descriptor = match dpe.profile {
+                    let profile_descriptor = match dpe.profile()? {
                         crate::DpeProfile::P256Sha256 => b"Exported ECC".as_slice(),
                         crate::DpeProfile::P384Sha384 => b"Exported ECC".as_slice(),
                         #[cfg(feature = "ml-dsa")]
@@ -395,7 +395,7 @@ impl CommandExecution for DeriveContextCmd {
 
                     response.handle = ContextHandle::new_invalid();
                     response.parent_handle = env.state().contexts[parent_idx].handle;
-                    response.resp_hdr = dpe.response_hdr(DpeErrorCode::NoError);
+                    response.resp_hdr = dpe.response_hdr(DpeErrorCode::NoError)?;
                     response.exported_cdi = *exported_cdi_handle;
                     response.certificate_size = *cert_size;
                     let response_size = size_of_val(response) - size_of_val(&response.new_certificate) + *cert_size as usize;
@@ -405,7 +405,7 @@ impl CommandExecution for DeriveContextCmd {
                 }
             }
         }
-        let response = mutresp::<DeriveContextResp>(dpe.profile, out)?;
+        let response = mutresp::<DeriveContextResp>(dpe.profile()?, out)?;
 
         let child_idx = env
             .state()
@@ -468,7 +468,7 @@ impl CommandExecution for DeriveContextCmd {
         *response = DeriveContextResp {
             handle: child_handle,
             parent_handle: env.state().contexts[parent_idx].handle,
-            resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
+            resp_hdr: dpe.response_hdr(DpeErrorCode::NoError)?,
         };
         Ok(size_of_val(response))
     }
@@ -713,7 +713,7 @@ mod tests {
             Ok(Response::DeriveContext(DeriveContextResp {
                 handle: ContextHandle::default(),
                 parent_handle: ContextHandle([0xff; ContextHandle::SIZE]),
-                resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
+                resp_hdr: dpe.response_hdr(DpeErrorCode::NoError).unwrap(),
             })),
             DeriveContextCmd {
                 flags: DeriveContextFlags::MAKE_DEFAULT,
@@ -728,7 +728,7 @@ mod tests {
             Ok(Response::DeriveContext(DeriveContextResp {
                 handle: RANDOM_HANDLE,
                 parent_handle: ContextHandle([0xff; ContextHandle::SIZE]),
-                resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
+                resp_hdr: dpe.response_hdr(DpeErrorCode::NoError).unwrap(),
             })),
             DeriveContextCmd {
                 handle: ContextHandle::default(),
@@ -899,7 +899,7 @@ mod tests {
             Ok(Response::DeriveContext(DeriveContextResp {
                 handle: ContextHandle::default(),
                 parent_handle: ContextHandle([0xff; ContextHandle::SIZE]),
-                resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
+                resp_hdr: dpe.response_hdr(DpeErrorCode::NoError).unwrap(),
             })),
             DeriveContextCmd {
                 flags: DeriveContextFlags::MAKE_DEFAULT,
@@ -914,7 +914,7 @@ mod tests {
             Ok(Response::DeriveContext(DeriveContextResp {
                 handle: ContextHandle::default(),
                 parent_handle: ContextHandle::default(),
-                resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
+                resp_hdr: dpe.response_hdr(DpeErrorCode::NoError).unwrap(),
             })),
             DeriveContextCmd {
                 flags: DeriveContextFlags::RETAIN_PARENT_CONTEXT
@@ -965,7 +965,7 @@ mod tests {
         assert_eq!(parent_handle, RANDOM_HANDLE);
         assert_eq!(handle, next_random_handle);
         assert_ne!(parent_handle, ContextHandle::default());
-        assert_eq!(resp_hdr, dpe.response_hdr(DpeErrorCode::NoError));
+        assert_eq!(resp_hdr, dpe.response_hdr(DpeErrorCode::NoError).unwrap());
     }
 
     #[test]
@@ -1089,7 +1089,7 @@ mod tests {
             Ok(Response::DeriveContext(DeriveContextResp {
                 handle: ContextHandle::default(),
                 parent_handle: ContextHandle::default(),
-                resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
+                resp_hdr: dpe.response_hdr(DpeErrorCode::NoError).unwrap(),
             })),
             DeriveContextCmd {
                 handle: ContextHandle::default(),

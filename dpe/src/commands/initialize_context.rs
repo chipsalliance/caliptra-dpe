@@ -60,7 +60,7 @@ impl CommandExecution for InitCtxCmd {
         locality: u32,
         out: &mut [u8],
     ) -> Result<usize, DpeErrorCode> {
-        let response = mutresp::<NewHandleResp>(dpe.profile, out)?;
+        let response = mutresp::<NewHandleResp>(dpe.profile()?, out)?;
 
         // This function can only be called once for non-simulation contexts.
         if (self.flag_is_default() && env.state().has_initialized())
@@ -121,7 +121,7 @@ impl CommandExecution for InitCtxCmd {
             });
         *response = NewHandleResp {
             handle,
-            resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
+            resp_hdr: dpe.response_hdr(DpeErrorCode::NoError)?,
         };
         Ok(size_of_val(response))
     }

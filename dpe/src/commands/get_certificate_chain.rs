@@ -38,7 +38,7 @@ impl CommandExecution for GetCertificateChainCmd {
         if self.size > MAX_CHUNK_SIZE as u32 {
             return Err(DpeErrorCode::InvalidArgument);
         }
-        let response = mutresp::<GetCertificateChainResp>(dpe.profile, out)?;
+        let response = mutresp::<GetCertificateChainResp>(dpe.profile()?, out)?;
 
         let mut cert_chunk = [0u8; MAX_CHUNK_SIZE];
         let len = env
@@ -47,7 +47,7 @@ impl CommandExecution for GetCertificateChainCmd {
         *response = GetCertificateChainResp {
             certificate_chain: cert_chunk,
             certificate_size: len,
-            resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
+            resp_hdr: dpe.response_hdr(DpeErrorCode::NoError)?,
         };
         Ok(size_of_val(response))
     }

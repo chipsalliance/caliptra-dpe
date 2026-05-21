@@ -178,7 +178,7 @@ impl CommandExecution for CertifyKeyCommand<'_> {
             }
         }
 
-        let profile = dpe.profile;
+        let profile = dpe.profile()?;
         let args = CreateDpeCertArgs {
             handle,
             locality,
@@ -192,7 +192,7 @@ impl CommandExecution for CertifyKeyCommand<'_> {
                 .contains(DpeFlags::MARK_DICE_EXTENSIONS_CRITICAL),
         };
 
-        let mut response = self.response_bytes(dpe.profile, out)?;
+        let mut response = self.response_bytes(dpe.profile()?, out)?;
         let cert = response.cert_mut();
 
         let result = match format {
@@ -238,7 +238,7 @@ impl CommandExecution for CertifyKeyCommand<'_> {
                 resp.derived_pubkey_x = *x;
                 resp.derived_pubkey_y = *y;
                 resp.cert_size = cert_size;
-                resp.resp_hdr = dpe.response_hdr(DpeErrorCode::NoError);
+                resp.resp_hdr = dpe.response_hdr(DpeErrorCode::NoError)?;
             }
             #[cfg(feature = "p384")]
             (
@@ -250,7 +250,7 @@ impl CommandExecution for CertifyKeyCommand<'_> {
                 resp.derived_pubkey_x = *x;
                 resp.derived_pubkey_y = *y;
                 resp.cert_size = cert_size;
-                resp.resp_hdr = dpe.response_hdr(DpeErrorCode::NoError);
+                resp.resp_hdr = dpe.response_hdr(DpeErrorCode::NoError)?;
             }
             #[cfg(feature = "ml-dsa")]
             (
@@ -260,7 +260,7 @@ impl CommandExecution for CertifyKeyCommand<'_> {
                 resp.new_context_handle = ContextHandle::new_invalid();
                 resp.pubkey = *pubkey;
                 resp.cert_size = cert_size;
-                resp.resp_hdr = dpe.response_hdr(DpeErrorCode::NoError);
+                resp.resp_hdr = dpe.response_hdr(DpeErrorCode::NoError)?;
             }
             _ => Err(DpeErrorCode::InvalidArgument)?,
         };

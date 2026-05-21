@@ -94,7 +94,7 @@ impl CommandExecution for RotateCtxCmd {
             #[cfg(feature = "cfi")]
             cfi_assert!(env.state().support.rotate_context());
         }
-        let response = mutresp::<NewHandleResp>(dpe.profile, out)?;
+        let response = mutresp::<NewHandleResp>(dpe.profile()?, out)?;
         let idx = env.state().get_active_context_pos(&self.handle, locality)?;
 
         // Make sure caller's locality does not already have a default context.
@@ -124,7 +124,7 @@ impl CommandExecution for RotateCtxCmd {
 
         *response = NewHandleResp {
             handle: new_handle,
-            resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
+            resp_hdr: dpe.response_hdr(DpeErrorCode::NoError)?,
         };
         Ok(size_of_val(response))
     }
@@ -222,7 +222,7 @@ mod tests {
         assert_eq!(
             Ok(Response::RotateCtx(NewHandleResp {
                 handle: RANDOM_HANDLE,
-                resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
+                resp_hdr: dpe.response_hdr(DpeErrorCode::NoError).unwrap(),
             })),
             RotateCtxCmd {
                 handle: ContextHandle::default(),
@@ -250,7 +250,7 @@ mod tests {
         assert_eq!(
             Ok(Response::RotateCtx(NewHandleResp {
                 handle: ContextHandle::default(),
-                resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
+                resp_hdr: dpe.response_hdr(DpeErrorCode::NoError).unwrap(),
             })),
             RotateCtxCmd {
                 handle: RANDOM_HANDLE,

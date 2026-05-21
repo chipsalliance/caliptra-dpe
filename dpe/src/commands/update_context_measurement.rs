@@ -80,7 +80,7 @@ impl CommandExecution for UpdateContextMeasurementCmd {
             })
             .ok_or(DpeErrorCode::InvalidArgument)?;
 
-        let response = mutresp::<UpdateContextMeasurementResp>(dpe.profile, out)?;
+        let response = mutresp::<UpdateContextMeasurementResp>(dpe.profile()?, out)?;
 
         // Copy the child context for mutation to avoid touching internal state on error.
         let mut tmp_child = env.state().contexts[child_idx];
@@ -103,7 +103,7 @@ impl CommandExecution for UpdateContextMeasurementCmd {
         };
 
         *response = UpdateContextMeasurementResp {
-            resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
+            resp_hdr: dpe.response_hdr(DpeErrorCode::NoError)?,
             new_context_handle: env.state().contexts[child_idx].handle,
             new_parent_context_handle: env.state().contexts[parent_idx].handle,
         };

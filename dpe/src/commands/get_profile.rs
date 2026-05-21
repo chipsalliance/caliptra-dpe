@@ -32,7 +32,7 @@ impl CommandExecution for GetProfileCmd {
         _locality: u32,
         out: &mut [u8],
     ) -> Result<usize, DpeErrorCode> {
-        let response = mutresp::<GetProfileResp>(dpe.profile, out)?;
+        let response = mutresp::<GetProfileResp>(dpe.profile()?, out)?;
         let support = env.state().support;
         *response = dpe.get_profile(env.platform(), support)?;
 

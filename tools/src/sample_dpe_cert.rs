@@ -70,6 +70,7 @@ fn add_tcb_info(
     let cmd_body = cmd.as_bytes().to_vec();
     let cmd_hdr = dpe
         .command_hdr(caliptra_dpe::commands::Command::DERIVE_CONTEXT)
+        .unwrap_or_else(|e| panic!("Error building command header {:?}", e))
         .as_bytes()
         .to_vec();
     let mut command = cmd_hdr;
@@ -95,6 +96,7 @@ fn certify_key(dpe: &mut DpeInstance, env: &mut dyn DpeEnv, format: u32) -> Vec<
     let cmd_body = certify_key_cmd.as_bytes().to_vec();
     let cmd_hdr = dpe
         .command_hdr(caliptra_dpe::commands::Command::CERTIFY_KEY)
+        .unwrap_or_else(|e| panic!("Error building command header {:?}", e))
         .as_bytes()
         .to_vec();
     let mut command = cmd_hdr;

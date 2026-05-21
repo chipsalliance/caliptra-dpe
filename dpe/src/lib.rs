@@ -83,17 +83,22 @@ impl From<bool> for U8Bool {
     }
 }
 
+pub const DPE_PROFILE_SHA256: u32 = 3;
+pub const DPE_PROFILE_SHA384: u32 = 4;
+#[cfg(feature = "ml-dsa")]
+pub const DPE_PROFILE_MLDSA87: u32 = 5;
+
 #[derive(
     Copy, Clone, Debug, PartialEq, Eq, IntoBytes, TryFromBytes, KnownLayout, Immutable, Zeroize,
 )]
 #[repr(u32)]
 pub enum DpeProfile {
     // Note: Min profiles (1 & 2) are not supported by this implementation
-    P256Sha256 = 3,
-    P384Sha384 = 4,
+    P256Sha256 = DPE_PROFILE_SHA256,
+    P384Sha384 = DPE_PROFILE_SHA384,
     #[cfg(feature = "ml-dsa")]
-    Mldsa87 = 5, // TODO(clundin): Added this to get past compiler / feature flags. We
-                 // will want a real solution here.
+    Mldsa87 = DPE_PROFILE_MLDSA87, // TODO(clundin): Added this to get past compiler / feature flags. We
+                                   // will want a real solution here.
 }
 
 impl DpeProfile {
