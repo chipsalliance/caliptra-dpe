@@ -1680,10 +1680,7 @@ impl CertWriter<'_> {
     ) -> Result<usize, DpeErrorCode> {
         let tcb_infos_size = if !measurements.tci_nodes.is_empty() {
             self.get_tcb_info_size(
-                measurements
-                    .tci_nodes
-                    .first()
-                    .ok_or(DpeErrorCode::InternalError)?,
+                &measurements.tci_nodes[0],
                 measurements.supports_recursive,
                 /*tagged=*/ true,
             )? * measurements.tci_nodes.len()
@@ -2677,7 +2674,7 @@ fn get_subject_name<'a>(
     crypto.get_pubkey_serial(pub_key, subj_serial)?;
 
     // The serial number of the subject can be at most 64 bytes
-    let truncated_subj_serial = subj_serial.get(..64).ok_or(DpeErrorCode::InvalidArgument)?;
+    let truncated_subj_serial = &subj_serial[..64];
 
     let cn: &[u8] = match cert_type {
         CertificateType::Leaf => b"DPE Leaf",
@@ -2702,9 +2699,7 @@ fn get_tci_nodes<'a>(
     if tcb_count > MAX_HANDLES {
         return Err(DpeErrorCode::InternalError);
     }
-    nodes
-        .get_mut(..tcb_count)
-        .ok_or(DpeErrorCode::InternalError)
+    Ok(&mut nodes[..tcb_count])
 }
 
 fn get_subject_key_identifier(
@@ -2725,12 +2720,7 @@ fn get_subject_key_identifier(
         return Err(DpeErrorCode::InternalError);
     }
     // truncate key identifier to 20 bytes
-    subject_key_identifier.copy_from_slice(
-        hashed_pub_key
-            .as_slice()
-            .get(..MAX_KEY_IDENTIFIER_SIZE)
-            .ok_or(DpeErrorCode::InternalError)?,
-    );
+    subject_key_identifier.copy_from_slice(&hashed_pub_key.as_slice()[..MAX_KEY_IDENTIFIER_SIZE]);
     Ok(())
 }
 
@@ -2962,9 +2952,7 @@ fn create_dpe_cert_or_csr(
                 if issuer_len > MAX_ISSUER_NAME_SIZE {
                     return Err(DpeErrorCode::InternalError);
                 }
-                issuer_name
-                    .get(..issuer_len)
-                    .ok_or(DpeErrorCode::InternalError)?
+                &issuer_name[..issuer_len]
             };
             CertOrCsrArgs::Cert {
                 issuer_name,

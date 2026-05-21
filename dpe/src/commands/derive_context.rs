@@ -171,14 +171,10 @@ impl DeriveContextCmd {
         parent_ctx: &Context,
         tci_type: u32,
     ) -> bool {
-        // let parent_children = parent_ctx.children;
-        parent_ctx.children.iter().all(|idx| {
-            state
-                .contexts
-                .get(idx)
-                .map(|ctx| ctx.tci.tci_type != tci_type)
-                .unwrap_or(false)
-        })
+        parent_ctx
+            .children
+            .iter()
+            .all(|idx| state.contexts[idx].tci.tci_type != tci_type)
     }
 
     /// Whether it is okay to create a child in the given environment.
@@ -318,7 +314,7 @@ impl CommandExecution for DeriveContextCmd {
                     // Rotate the handle if it isn't the default context.
                     dpe.roll_onetime_use_handle(env, &mut tmp_context)?;
 
-                    *env.state().contexts.get_mut(parent_idx).ok_or(DpeErrorCode::InternalError)? = tmp_context;
+                    env.state().contexts[parent_idx] = tmp_context;
 
                     // Return new handle in new_context_handle
                     *response = DeriveContextResp {

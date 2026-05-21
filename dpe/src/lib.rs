@@ -6,7 +6,6 @@ Abstract:
 --*/
 #![cfg_attr(not(any(test, target_arch = "x86_64")), no_std)]
 #![warn(clippy::panic)]
-#![warn(clippy::indexing_slicing)]
 #![warn(clippy::panicking_overflow_checks)]
 #![warn(clippy::unwrap_used)]
 

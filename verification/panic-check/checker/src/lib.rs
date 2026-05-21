@@ -5,27 +5,28 @@ use std::fs;
 use std::path::PathBuf;
 
 /// Symbols whose presence in the ELF binary indicates that panics are possible.
-pub const PANIC_SYMBOLS: &[&str] = &["panic_is_possible"];
+pub const PANIC_SYMBOL: &str = "panic_is_possible";
 
-/// Check if the symbol table of the ELF binary at [path] contains one
-/// of the `&str` needles to be found in the haystack.
-/// As soon as one match is found the function returns `true`.
-/// If none of the symbols in [needles] can be found in the binary, this function
-/// returns `false`.
-pub fn elf_sym_contain_one_of(path: PathBuf, needles: Vec<&str>) -> Result<bool, anyhow::Error> {
+/// Check if the symbol table of the ELF binary at [path] contains the symbol [needle].
+fn elf_contains_symbol(path: PathBuf, needle: &str) -> Result<bool, anyhow::Error> {
     let elf: Vec<u8> = fs::read(&path)?;
     let elf = elf::ElfBytes::<LittleEndian>::minimal_parse(&elf[..])?;
 
     if let Some((symbols, strings)) = elf.symbol_table().map_err(|e| anyhow::anyhow!("{e}"))? {
         for sym in symbols {
             let sym_name = strings.get(sym.st_name as usize)?;
-            if needles.iter().any(|needle| sym_name == *needle) {
-                eprintln!("Found panic symbol: {sym_name}");
+            if sym_name == needle {
+                eprintln!("found needle symbol: {sym_name}");
                 return Ok(true);
             }
         }
     }
     Ok(false)
+}
+
+/// Check if the ELF binary at [path] contains the panic symbol [PANIC_SYMBOL].
+pub fn elf_contains_panic(path: PathBuf) -> Result<bool, anyhow::Error> {
+    elf_contains_symbol(path, PANIC_SYMBOL)
 }
 
 #[cfg(test)]
@@ -96,36 +97,23 @@ mod tests {
     fn test_elf_sym_lookup() {
         black_box(_panic_check_checker_test_sym());
         let elf = env::args().next().unwrap();
-        assert!(
-            elf_sym_contain_one_of(PathBuf::from(&elf), vec!["_panic_check_checker_test_sym"])
-                .unwrap()
-        );
-
-        assert!(elf_sym_contain_one_of(
-            PathBuf::from(&elf),
-            vec!["_panic_check_checker_test_sym", "DUMMY_NOT_A_SYMBOL"]
-        )
-        .unwrap());
-        // No needle matches → false.
-        assert!(!elf_sym_contain_one_of(PathBuf::from(&elf), vec!["DUMMY_NOT_A_SYMBOL"]).unwrap());
+        assert!(elf_contains_symbol(PathBuf::from(&elf), "_panic_check_checker_test_sym").unwrap());
+        assert!(!elf_contains_symbol(PathBuf::from(&elf), "DUMMY_NOT_A_SYMBOL").unwrap());
     }
 
     /// Checks that the firmware ELF at [elf_path] does **not** contain
-    /// any of the [`PANIC_SYMBOLS`].
+    /// the [`PANIC_SYMBOL`].
     fn assert_no_panic_symbols(elf_path: &PathBuf) {
         assert!(
             elf_path.exists(),
             "Firmware ELF not found at: {}",
             elf_path.display()
         );
-        assert!(
-            !elf_sym_contain_one_of(elf_path.clone(), PANIC_SYMBOLS.to_vec())
-                .expect("failed to analyze firmware ELF"),
-        );
+        assert!(!elf_contains_panic(elf_path.clone()).expect("failed to analyze firmware ELF"),);
     }
 
     /// Checks that the firmware ELF at [elf_path] **does** contain
-    /// at least one of the [`PANIC_SYMBOLS`].
+    /// the [`PANIC_SYMBOL`].
     fn assert_has_panic_symbols(elf_path: &PathBuf) {
         assert!(
             elf_path.exists(),
@@ -137,8 +125,7 @@ mod tests {
             elf_path.display()
         );
         assert!(
-            elf_sym_contain_one_of(elf_path.clone(), PANIC_SYMBOLS.to_vec())
-                .expect("failed to analyze firmware ELF"),
+            elf_contains_panic(elf_path.clone()).expect("failed to analyze firmware ELF"),
             "UNEXPECTED PASS: Expected panic symbols but none found. \
              The should-fail test should have detected panic symbols!"
         );
