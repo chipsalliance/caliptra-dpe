@@ -14,7 +14,7 @@ use crate::{
 };
 use bitflags::bitflags;
 use caliptra_cfi_lib::cfi_launder;
-#[cfg(not(feature = "no-cfi"))]
+#[cfg(feature = "cfi")]
 use caliptra_cfi_lib::{cfi_assert, cfi_assert_bool};
 use crypto::{Crypto, Digest, EcdsaPub, EcdsaSig, Hasher, MAX_EXPORTED_CDI_SIZE};
 #[cfg(not(feature = "disable_x509"))]
@@ -2383,10 +2383,10 @@ fn create_dpe_cert_or_csr(
         }
     };
     if cfi_launder(key_pair.is_ok()) {
-        #[cfg(not(feature = "no-cfi"))]
+        #[cfg(feature = "cfi")]
         cfi_assert!(key_pair.is_ok());
     } else {
-        #[cfg(not(feature = "no-cfi"))]
+        #[cfg(feature = "cfi")]
         cfi_assert!(key_pair.is_err());
     }
     let (priv_key, pub_key) = key_pair?;

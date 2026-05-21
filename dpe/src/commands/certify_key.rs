@@ -8,9 +8,9 @@ use crate::{
     DPE_PROFILE, MAX_CERT_SIZE,
 };
 use bitflags::bitflags;
-#[cfg(not(feature = "no-cfi"))]
+#[cfg(feature = "cfi")]
 use caliptra_cfi_derive::cfi_impl_fn;
-#[cfg(not(feature = "no-cfi"))]
+#[cfg(feature = "cfi")]
 use caliptra_cfi_lib::{cfi_assert, cfi_assert_bool, cfi_assert_eq};
 use cfg_if::cfg_if;
 #[cfg(not(feature = "disable_x509"))]
@@ -53,7 +53,7 @@ impl CertifyKeyCmd {
 }
 
 impl CommandExecution for CertifyKeyCmd {
-    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    #[cfg_attr(feature = "cfi", cfi_impl_fn)]
     fn execute(
         &self,
         dpe: &mut DpeInstance,
@@ -80,7 +80,7 @@ impl CommandExecution for CertifyKeyCmd {
         }
 
         cfg_if! {
-            if #[cfg(not(feature = "no-cfi"))] {
+            if #[cfg(feature = "cfi")] {
                 cfi_assert!(self.format != Self::FORMAT_X509 || dpe.support.x509());
                 cfi_assert!(self.format != Self::FORMAT_X509 || context.allow_x509());
                 cfi_assert!(self.format != Self::FORMAT_CSR || dpe.support.csr());
@@ -107,7 +107,7 @@ impl CommandExecution for CertifyKeyCmd {
             Self::FORMAT_X509 => {
                 cfg_if! {
                     if #[cfg(not(feature = "disable_x509"))] {
-                        #[cfg(not(feature = "no-cfi"))]
+                        #[cfg(feature = "cfi")]
                         cfi_assert_eq(self.format, Self::FORMAT_X509);
                         create_dpe_cert(&args, dpe, env, &mut cert)
                     } else {
@@ -118,7 +118,7 @@ impl CommandExecution for CertifyKeyCmd {
             Self::FORMAT_CSR => {
                 cfg_if! {
                     if #[cfg(not(feature = "disable_csr"))] {
-                        #[cfg(not(feature = "no-cfi"))]
+                        #[cfg(feature = "cfi")]
                         cfi_assert_eq(self.format, Self::FORMAT_CSR);
                         create_dpe_csr(&args, dpe, env, &mut cert)
                     } else {

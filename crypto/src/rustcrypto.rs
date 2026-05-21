@@ -134,7 +134,7 @@ impl Crypto for RustCryptoImpl {
         Ok(())
     }
 
-    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    #[cfg_attr(feature = "cfi", cfi_impl_fn)]
     fn derive_cdi(
         &mut self,
         algs: AlgLen,
@@ -144,7 +144,7 @@ impl Crypto for RustCryptoImpl {
         hkdf_derive_cdi(algs, measurement, info)
     }
 
-    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    #[cfg_attr(feature = "cfi", cfi_impl_fn)]
     fn derive_exported_cdi(
         &mut self,
         algs: AlgLen,
@@ -169,7 +169,7 @@ impl Crypto for RustCryptoImpl {
         Ok(exported_cdi_handle)
     }
 
-    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    #[cfg_attr(feature = "cfi", cfi_impl_fn)]
     fn derive_key_pair(
         &mut self,
         algs: AlgLen,
@@ -180,7 +180,7 @@ impl Crypto for RustCryptoImpl {
         self.derive_key_pair_inner(algs, cdi, label, info)
     }
 
-    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    #[cfg_attr(feature = "cfi", cfi_impl_fn)]
     fn derive_key_pair_exported(
         &mut self,
         algs: AlgLen,

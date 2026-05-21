@@ -15,10 +15,10 @@ use crate::{
     U8Bool, DPE_PROFILE, MAX_HANDLES,
 };
 use bitflags::bitflags;
-#[cfg(not(feature = "no-cfi"))]
+#[cfg(feature = "cfi")]
 use caliptra_cfi_derive::cfi_impl_fn;
 use caliptra_cfi_lib::cfi_launder;
-#[cfg(not(feature = "no-cfi"))]
+#[cfg(feature = "cfi")]
 use caliptra_cfi_lib::{cfi_assert, cfi_assert_bool, cfi_assert_eq};
 use cfg_if::cfg_if;
 use core::mem::align_of;
@@ -87,7 +87,7 @@ impl DpeInstance {
     /// * `env` - DPE environment containing Crypto and Platform implementations
     /// * `support` - optional functionality the instance supports
     /// * `flags` - configures `Self` behaviors.
-    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    #[cfg_attr(feature = "cfi", cfi_impl_fn)]
     pub fn new(
         env: &mut DpeEnv<impl DpeTypes>,
         support: Support,
@@ -107,7 +107,7 @@ impl DpeInstance {
             let locality = env.platform.get_auto_init_locality()?;
             InitCtxCmd::new_use_default().execute(&mut dpe, env, locality)?;
         } else {
-            #[cfg(not(feature = "no-cfi"))]
+            #[cfg(feature = "cfi")]
             cfi_assert!(!dpe.support.auto_init());
         }
         Ok(dpe)
@@ -122,7 +122,7 @@ impl DpeInstance {
     /// * `tci_type`- tci_type of initialized context
     /// * `auto_init_measurement` - TCI data of initialized context
     /// * `flags` - configures `Self` behaviors.
-    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    #[cfg_attr(feature = "cfi", cfi_impl_fn)]
     #[cfg(not(feature = "disable_auto_init"))]
     pub fn new_auto_init(
         env: &mut DpeEnv<impl DpeTypes>,
@@ -136,7 +136,7 @@ impl DpeInstance {
         if !updated_support.auto_init() {
             return Err(DpeErrorCode::ArgumentNotSupported);
         } else {
-            #[cfg(not(feature = "no-cfi"))]
+            #[cfg(feature = "cfi")]
             cfi_assert!(updated_support.auto_init());
         }
         let mut dpe = Self::new(env, updated_support, flags)?;
@@ -180,7 +180,7 @@ impl DpeInstance {
     /// * `env` - DPE environment containing Crypto and Platform implementations
     /// * `locality` - which hardware locality is making the request
     /// * `cmd` - serialized command
-    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    #[cfg_attr(feature = "cfi", cfi_impl_fn)]
     pub fn execute_serialized_command(
         &mut self,
         env: &mut DpeEnv<impl DpeTypes>,
@@ -188,7 +188,7 @@ impl DpeInstance {
         cmd: &[u8],
     ) -> Result<Response, DpeErrorCode> {
         let command = Command::deserialize(cmd)?;
-        #[cfg(not(feature = "no-cfi"))]
+        #[cfg(feature = "cfi")]
         let command = cfi_launder(command);
         let resp = match command {
             Command::GetProfile => Ok(Response::GetProfile(self.get_profile(&mut env.platform)?)),
@@ -329,7 +329,7 @@ impl DpeInstance {
         if !self.contexts[idx].handle.is_default() {
             self.contexts[idx].handle = self.generate_new_handle(env)?;
         } else {
-            #[cfg(not(feature = "no-cfi"))]
+            #[cfg(feature = "cfi")]
             cfi_assert!(self.contexts[idx].handle.is_default());
         }
         Ok(())
@@ -345,7 +345,7 @@ impl DpeInstance {
     /// * `nodes` - Array to write TCI nodes to
     ///
     /// Returns the number of TCIs written to `nodes`
-    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    #[cfg_attr(feature = "cfi", cfi_impl_fn)]
     pub(crate) fn get_tcb_nodes(
         &self,
         start_idx: usize,
@@ -380,7 +380,7 @@ impl DpeInstance {
     /// * `context` - context to add `measurement`` to
     /// * `measurement` - measurement to add to `context``
     /// * `locality` - locality that `context`'s locality must match
-    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    #[cfg_attr(feature = "cfi", cfi_impl_fn)]
     pub(crate) fn add_tci_measurement(
         &self,
         env: &mut DpeEnv<impl DpeTypes>,
@@ -395,7 +395,7 @@ impl DpeInstance {
             return Err(DpeErrorCode::InvalidLocality);
         }
         cfg_if! {
-            if #[cfg(not(feature = "no-cfi"))] {
+            if #[cfg(feature = "cfi")] {
                 cfi_assert_eq(context.state, ContextState::Active);
                 cfi_assert_eq(context.locality, locality);
             }
@@ -454,7 +454,7 @@ impl DpeInstance {
     ///
     /// * `env` - DPE environment containing Crypto and Platform implementations
     /// * `start_idx` - index of the leaf context
-    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    #[cfg_attr(feature = "cfi", cfi_impl_fn)]
     pub(crate) fn compute_measurement_hash(
         &mut self,
         env: &mut DpeEnv<impl DpeTypes>,

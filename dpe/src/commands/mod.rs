@@ -32,7 +32,7 @@ mod rotate_context;
 mod sign;
 
 #[derive(Debug, PartialEq, Eq)]
-#[cfg_attr(not(feature = "no-cfi"), derive(caliptra_cfi_derive::Launder))]
+#[cfg_attr(feature = "cfi", derive(caliptra_cfi_derive::Launder))]
 pub enum Command<'a> {
     GetProfile,
     InitCtx(&'a InitCtxCmd),
@@ -119,7 +119,7 @@ pub trait CommandExecution {
     ///
     /// To implement this function, you need to add the
     /// cfi_impl_fn proc_macro to execute.
-    #[cfg(not(feature = "no-cfi"))]
+    #[cfg(feature = "cfi")]
     fn __cfi_execute(
         &self,
         dpe: &mut DpeInstance,

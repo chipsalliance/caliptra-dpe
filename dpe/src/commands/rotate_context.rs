@@ -6,10 +6,10 @@ use crate::{
     response::{DpeErrorCode, NewHandleResp, Response, ResponseHdr},
 };
 use bitflags::bitflags;
-#[cfg(not(feature = "no-cfi"))]
+#[cfg(feature = "cfi")]
 use caliptra_cfi_derive::cfi_impl_fn;
 use caliptra_cfi_lib::cfi_launder;
-#[cfg(not(feature = "no-cfi"))]
+#[cfg(feature = "cfi")]
 use caliptra_cfi_lib::{cfi_assert, cfi_assert_bool};
 
 #[repr(C)]
@@ -77,7 +77,7 @@ impl RotateCtxCmd {
 }
 
 impl CommandExecution for RotateCtxCmd {
-    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    #[cfg_attr(feature = "cfi", cfi_impl_fn)]
     fn execute(
         &self,
         dpe: &mut DpeInstance,
@@ -87,7 +87,7 @@ impl CommandExecution for RotateCtxCmd {
         if !dpe.support.rotate_context() {
             return Err(DpeErrorCode::InvalidCommand);
         } else {
-            #[cfg(not(feature = "no-cfi"))]
+            #[cfg(feature = "cfi")]
             cfi_assert!(dpe.support.rotate_context());
         }
         let idx = dpe.get_active_context_pos(&self.handle, locality)?;
@@ -101,11 +101,11 @@ impl CommandExecution for RotateCtxCmd {
             if default_context_idx.is_ok() || cfi_launder(non_default_valid_handles_exist) {
                 return Err(DpeErrorCode::InvalidArgument);
             } else {
-                #[cfg(not(feature = "no-cfi"))]
+                #[cfg(feature = "cfi")]
                 cfi_assert!(default_context_idx.is_err() && !non_default_valid_handles_exist);
             }
         } else {
-            #[cfg(not(feature = "no-cfi"))]
+            #[cfg(feature = "cfi")]
             cfi_assert!(!self.uses_target_is_default());
         }
 

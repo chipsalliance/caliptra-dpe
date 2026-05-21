@@ -6,7 +6,7 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = ["dpe_profile_p256_sha256", "no-cfi"]
+default = ["dpe_profile_p256_sha256"]
 dpe_profile_p256_sha256 = ["platform/dpe_profile_p256_sha256"]
 dpe_profile_p384_sha384 = ["platform/dpe_profile_p384_sha384"]
 # Run ARBITRARY_MAX_HANDLES=n cargo build --features arbitrary_max_handles to use this feature
@@ -21,7 +21,7 @@ disable_internal_info = []
 disable_internal_dice = []
 disable_retain_parent_context = []
 disable_export_cdi = []
-no-cfi = ["crypto/no-cfi"]
+cfi = ["crypto/cfi"]
 
 [dependencies]
 bitflags = "2.4.0"

@@ -4,7 +4,7 @@ use crate::{
     dpe_instance::{DpeEnv, DpeInstance, DpeTypes},
     response::{DpeErrorCode, GetCertificateChainResp, Response, ResponseHdr},
 };
-#[cfg(not(feature = "no-cfi"))]
+#[cfg(feature = "cfi")]
 use caliptra_cfi_derive::cfi_impl_fn;
 use platform::{Platform, MAX_CHUNK_SIZE};
 
@@ -24,7 +24,7 @@ pub struct GetCertificateChainCmd {
 }
 
 impl CommandExecution for GetCertificateChainCmd {
-    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    #[cfg_attr(feature = "cfi", cfi_impl_fn)]
     fn execute(
         &self,
         _dpe: &mut DpeInstance,

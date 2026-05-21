@@ -4,7 +4,7 @@ use crate::{
     hkdf::*, AlgLen, Crypto, CryptoBuf, CryptoError, Digest, EcdsaPub, ExportedCdiHandle, Hasher,
     MAX_EXPORTED_CDI_SIZE,
 };
-#[cfg(not(feature = "no-cfi"))]
+#[cfg(feature = "cfi")]
 use caliptra_cfi_derive::cfi_impl_fn;
 use openssl::{
     bn::{BigNum, BigNumContext},
@@ -171,7 +171,7 @@ impl Crypto for OpensslCrypto {
         Ok(OpensslHasher(openssl::hash::Hasher::new(md)?))
     }
 
-    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    #[cfg_attr(feature = "cfi", cfi_impl_fn)]
     fn derive_cdi(
         &mut self,
         algs: AlgLen,
@@ -182,7 +182,7 @@ impl Crypto for OpensslCrypto {
         Ok(cdi)
     }
 
-    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    #[cfg_attr(feature = "cfi", cfi_impl_fn)]
     fn derive_exported_cdi(
         &mut self,
         algs: AlgLen,
@@ -207,7 +207,7 @@ impl Crypto for OpensslCrypto {
         Ok(exported_cdi_handle)
     }
 
-    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    #[cfg_attr(feature = "cfi", cfi_impl_fn)]
     fn derive_key_pair(
         &mut self,
         algs: AlgLen,
@@ -218,7 +218,7 @@ impl Crypto for OpensslCrypto {
         self.derive_key_pair_inner(algs, cdi, label, info)
     }
 
-    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    #[cfg_attr(feature = "cfi", cfi_impl_fn)]
     fn derive_key_pair_exported(
         &mut self,
         algs: AlgLen,
