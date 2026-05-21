@@ -193,10 +193,12 @@ impl CommandExecution for SignCommand<'_> {
                 let response = mutresp::<SignP256Resp>(dpe.profile, out)?;
 
                 // Rotate the handle if it isn't the default context.
-                dpe.roll_onetime_use_handle(env, idx)?;
+                let mut ctx = env.state().contexts[idx];
+                dpe.roll_onetime_use_handle(env, &mut ctx)?;
+                env.state().contexts[idx] = ctx;
                 let (&sig_r, &sig_s) = sig.as_slice();
                 *response = SignP256Resp {
-                    new_context_handle: env.state().contexts[idx].handle,
+                    new_context_handle: ctx.handle,
                     sig_r,
                     sig_s,
                     resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
@@ -209,10 +211,12 @@ impl CommandExecution for SignCommand<'_> {
                 let response = mutresp::<SignP384Resp>(dpe.profile, out)?;
 
                 // Rotate the handle if it isn't the default context.
-                dpe.roll_onetime_use_handle(env, idx)?;
+                let mut ctx = env.state().contexts[idx];
+                dpe.roll_onetime_use_handle(env, &mut ctx)?;
+                env.state().contexts[idx] = ctx;
                 let (&sig_r, &sig_s) = sig.as_slice();
                 *response = SignP384Resp {
-                    new_context_handle: env.state().contexts[idx].handle,
+                    new_context_handle: ctx.handle,
                     sig_r,
                     sig_s,
                     resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
@@ -225,9 +229,11 @@ impl CommandExecution for SignCommand<'_> {
                 let response = mutresp::<SignMlDsaResp>(dpe.profile, out)?;
 
                 // Rotate the handle if it isn't the default context.
-                dpe.roll_onetime_use_handle(env, idx)?;
+                let mut ctx = env.state().contexts[idx];
+                dpe.roll_onetime_use_handle(env, &mut ctx)?;
+                env.state().contexts[idx] = ctx;
                 *response = SignMlDsaResp {
-                    new_context_handle: env.state().contexts[idx].handle,
+                    new_context_handle: ctx.handle,
                     sig: *sig,
                     _padding: [0; 1],
                     resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
