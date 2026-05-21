@@ -145,6 +145,20 @@ impl From<DpeProfile> for u32 {
     }
 }
 
+impl TryFrom<u32> for DpeProfile {
+    type Error = DpeErrorCode;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
+            DPE_PROFILE_SHA256 => Ok(Self::P256Sha256),
+            DPE_PROFILE_SHA384 => Ok(Self::P384Sha384),
+            #[cfg(feature = "ml-dsa")]
+            DPE_PROFILE_MLDSA87 => Ok(Self::Mldsa87),
+            _ => Err(Self::Error::InvalideProfile),
+        }
+    }
+}
+
 #[cfg(feature = "p256")]
 pub const TCI_SIZE: usize = 32;
 

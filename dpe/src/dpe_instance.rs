@@ -4,8 +4,6 @@ Licensed under the Apache-2.0 license.
 Abstract:
     Defines an instance of DPE and all of its contexts.
 --*/
-#[cfg(feature = "ml-dsa")]
-use crate::DPE_PROFILE_MLDSA87;
 #[cfg(not(feature = "disable_internal_info"))]
 use crate::INTERNAL_INPUT_INFO_SIZE;
 use crate::{
@@ -14,7 +12,7 @@ use crate::{
     response::{DpeErrorCode, GetProfileResp, Response, ResponseHdr},
     support::Support,
     tci::TciMeasurement,
-    DpeProfile, State, DPE_PROFILE_SHA256, DPE_PROFILE_SHA384, MAX_HANDLES,
+    DpeProfile, State, MAX_HANDLES,
 };
 #[cfg(feature = "cfi")]
 use caliptra_cfi_derive::cfi_impl_fn;
@@ -72,13 +70,7 @@ impl DpeInstance {
     }
 
     pub fn profile(&self) -> Result<DpeProfile, DpeErrorCode> {
-        match self.profile {
-            DPE_PROFILE_SHA256 => Ok(DpeProfile::P256Sha256),
-            DPE_PROFILE_SHA384 => Ok(DpeProfile::P384Sha384),
-            #[cfg(feature = "ml-dsa")]
-            DPE_PROFILE_MLDSA87 => Ok(DpeProfile::Mldsa87),
-            _ => Err(DpeErrorCode::InvalideProfile),
-        }
+        self.profile.try_into()
     }
 
     /// Create a new DPE instance.
