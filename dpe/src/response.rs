@@ -11,6 +11,9 @@ use crate::{
     AlignedBuf, DpeProfile, CURRENT_PROFILE_MAJOR_VERSION, CURRENT_PROFILE_MINOR_VERSION,
     MAX_CERT_SIZE, MAX_EXPORTED_CDI_SIZE, MAX_HANDLES,
 };
+use core::error::Error;
+use core::fmt::Display;
+
 use caliptra_dpe_crypto::{ecdsa::EcdsaAlgorithm, CryptoError};
 use caliptra_dpe_platform::{PlatformError, MAX_CHUNK_SIZE};
 use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes};
@@ -281,7 +284,9 @@ impl DeriveContextExportedCdiResp {
         let len = size_of::<Self>() - MAX_CERT_SIZE + self.certificate_size as usize;
         self.as_bytes()
             .get(..len)
-            .ok_or(DpeErrorCode::InternalError)
+            .ok_or(DpeErrorCode::InternalError(
+                InternalErrorCode::DeriveCtxRespSliceOob,
+            ))
     }
 }
 
@@ -350,7 +355,9 @@ impl CertifyKeyResp {
             #[cfg(feature = "ml-dsa")]
             CertifyKeyResp::Mldsa87(r) => (&r.cert, r.cert_size),
         };
-        buf.get(..size as usize).ok_or(DpeErrorCode::InternalError)
+        buf.get(..size as usize).ok_or(DpeErrorCode::InternalError(
+            InternalErrorCode::CertifyKeyCertSliceOob,
+        ))
     }
 }
 
@@ -370,7 +377,9 @@ impl CertifyKeyP256Resp {
         let len = size_of::<Self>() - MAX_CERT_SIZE + self.cert_size as usize;
         self.as_bytes()
             .get(..len)
-            .ok_or(DpeErrorCode::InternalError)
+            .ok_or(DpeErrorCode::InternalError(
+                InternalErrorCode::CertifyKeyP256RespSliceOob,
+            ))
     }
 }
 
@@ -390,7 +399,9 @@ impl CertifyKeyP384Resp {
         let len = size_of::<Self>() - MAX_CERT_SIZE + self.cert_size as usize;
         self.as_bytes()
             .get(..len)
-            .ok_or(DpeErrorCode::InternalError)
+            .ok_or(DpeErrorCode::InternalError(
+                InternalErrorCode::CertifyKeyP384RespSliceOob,
+            ))
     }
 }
 
@@ -411,7 +422,9 @@ impl CertifyKeyMldsa87Resp {
         let len = size_of::<Self>() - MAX_CERT_SIZE + self.cert_size as usize;
         self.as_bytes()
             .get(..len)
-            .ok_or(DpeErrorCode::InternalError)
+            .ok_or(DpeErrorCode::InternalError(
+                InternalErrorCode::CertifyKeyMldsa87RespSliceOob,
+            ))
     }
 }
 
@@ -497,11 +510,144 @@ pub struct GetCertificateChainResp {
     pub certificate_chain: [u8; MAX_CHUNK_SIZE],
 }
 
+/// Internal error code identifying a specific invariant violation.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[repr(u16)]
+pub enum InternalErrorCode {
+    DeriveCtxRespSliceOob = 1,
+    CertifyKeyCertSliceOob = 2,
+    CertifyKeyP256RespSliceOob = 3,
+    CertifyKeyP384RespSliceOob = 4,
+    CertifyKeyMldsa87RespSliceOob = 5,
+    Asn1SizeOverflow = 6,
+    EmptyTciNodes = 7,
+    EncodeBytesOverflow = 8,
+    EncodeBytesSliceOob = 9,
+    EncodeByteOverflow = 10,
+    IntegerOffsetOob = 11,
+    TbsSliceOob = 12,
+    CsrTbsSliceOob = 13,
+    CmsCsrRangeOob = 14,
+    TcbCountOverflow = 15,
+    KeyIdHashTooSmall = 16,
+    SerialNumberSliceOob = 17,
+    CertSizeOverflow = 18,
+    CsrSizeOverflow = 19,
+    IssuerNameTooLong = 20,
+    MissingExportedCdiHandle = 21,
+    HandleGenerationExhausted = 22,
+    DigestLengthMismatch = 23,
+    InputInfoProfileSliceOob = 24,
+    InputInfoRemainderSliceOob = 25,
+    CertChainChunkSliceOob = 26,
+    ChildIndexOob = 27,
+    ChildrenBitmapIndexOob = 28,
+    ParentChainIndexOob = 29,
+    ContextIndexOob = 30,
+    ActiveContextNotFound = 31,
+    DescendantIndexOob = 32,
+    TciNodeArrayOverflow = 33,
+    TciNodeCountExceeded = 34,
+    DestroyParentIndexOob = 35,
+    InitContextIndexOob = 36,
+    ResponseDeserializationFailed = 37,
+}
+
+impl InternalErrorCode {
+    pub const fn discriminant(self) -> u16 {
+        self as u16
+    }
+}
+
+impl Display for InternalErrorCode {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::DeriveCtxRespSliceOob => {
+                f.write_str("derive context response slice out of bounds")
+            }
+            Self::CertifyKeyCertSliceOob => {
+                f.write_str("certify key certificate slice out of bounds")
+            }
+            Self::CertifyKeyP256RespSliceOob => {
+                f.write_str("certify key P256 response slice out of bounds")
+            }
+            Self::CertifyKeyP384RespSliceOob => {
+                f.write_str("certify key P384 response slice out of bounds")
+            }
+            Self::CertifyKeyMldsa87RespSliceOob => {
+                f.write_str("certify key ML-DSA-87 response slice out of bounds")
+            }
+            Self::Asn1SizeOverflow => f.write_str("ASN.1 size exceeds maximum representable value"),
+            Self::EmptyTciNodes => f.write_str("TCI nodes slice is unexpectedly empty"),
+            Self::EncodeBytesOverflow => {
+                f.write_str("encode_bytes: write would exceed certificate buffer")
+            }
+            Self::EncodeBytesSliceOob => {
+                f.write_str("encode_bytes: certificate buffer slice out of bounds")
+            }
+            Self::EncodeByteOverflow => {
+                f.write_str("encode_byte: write offset past end of certificate buffer")
+            }
+            Self::IntegerOffsetOob => f.write_str("integer encoding offset out of bounds"),
+            Self::TbsSliceOob => f.write_str("TBS data slice out of bounds"),
+            Self::CsrTbsSliceOob => {
+                f.write_str("CSR certification request info slice out of bounds")
+            }
+            Self::CmsCsrRangeOob => f.write_str("CMS CSR range slice out of bounds"),
+            Self::TcbCountOverflow => f.write_str("TCB node count exceeds MAX_HANDLES"),
+            Self::KeyIdHashTooSmall => {
+                f.write_str("hashed public key too small for key identifier")
+            }
+            Self::SerialNumberSliceOob => f.write_str("serial number slice out of bounds"),
+            Self::CertSizeOverflow => f.write_str("certificate size exceeds u32"),
+            Self::CsrSizeOverflow => f.write_str("CSR size exceeds u32"),
+            Self::IssuerNameTooLong => f.write_str("issuer name length exceeds maximum"),
+            Self::MissingExportedCdiHandle => {
+                f.write_str("exported CDI handle is unexpectedly missing")
+            }
+            Self::HandleGenerationExhausted => {
+                f.write_str("no unique handle found after max attempts")
+            }
+            Self::DigestLengthMismatch => {
+                f.write_str("hash digest length does not match TCI buffer")
+            }
+            Self::InputInfoProfileSliceOob => {
+                f.write_str("internal input info profile slice out of bounds")
+            }
+            Self::InputInfoRemainderSliceOob => {
+                f.write_str("internal input info remainder slice out of bounds")
+            }
+            Self::CertChainChunkSliceOob => f.write_str("cert chain chunk slice out of bounds"),
+            Self::ChildIndexOob => f.write_str("child index exceeds MAX_HANDLES"),
+            Self::ChildrenBitmapIndexOob => {
+                f.write_str("children bitmap index exceeds MAX_HANDLES")
+            }
+            Self::ParentChainIndexOob => f.write_str("parent chain iterator index out of bounds"),
+            Self::ContextIndexOob => f.write_str("context index out of bounds"),
+            Self::ActiveContextNotFound => f.write_str("no matching active context found"),
+            Self::DescendantIndexOob => f.write_str("descendant index out of bounds"),
+            Self::TciNodeArrayOverflow => f.write_str("TCI node output array overflow"),
+            Self::TciNodeCountExceeded => f.write_str("TCI node count exceeds array length"),
+            Self::DestroyParentIndexOob => {
+                f.write_str("parent index out of bounds during context destruction")
+            }
+            Self::InitContextIndexOob => {
+                f.write_str("context index out of bounds during initialization")
+            }
+            Self::ResponseDeserializationFailed => {
+                f.write_str("response deserialization from bytes failed")
+            }
+        }
+    }
+}
+
+impl Error for InternalErrorCode {}
+
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 #[repr(u32)]
 pub enum DpeErrorCode {
     NoError = 0,
-    InternalError = 1,
+    InternalError(InternalErrorCode) = 1,
     InvalidCommand = 2,
     InvalidArgument = 3,
     ArgumentNotSupported = 4,
@@ -556,15 +702,42 @@ impl DpeErrorCode {
         }
     }
 
-    /// For error variants which have extended error info returned from
-    /// underlying libraries (Platform and Crypto), return that extended error
-    /// code. For all other variants, return None.
-    ///
-    /// Reporting of detailed error information is platform-defined.
-    pub fn get_error_detail(&self) -> Option<u32> {
+}
+
+impl Display for DpeErrorCode {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            DpeErrorCode::Platform(e) => e.get_error_detail(),
-            DpeErrorCode::Crypto(e) => e.get_error_detail(),
+            Self::NoError => f.write_str("no error"),
+            Self::InternalError(code) => write!(f, "{code}"),
+            Self::InvalidCommand => f.write_str("invalid command"),
+            Self::InvalidArgument => f.write_str("invalid argument"),
+            Self::ArgumentNotSupported => f.write_str("argument not supported"),
+            Self::X509CsrUnset => f.write_str("x509 CSR unset"),
+            Self::X509InvalidState => f.write_str("x509 invalid state"),
+            Self::X509SkipsExhausted => f.write_str("x509 skips exhausted"),
+            Self::X509InvalidWidth => f.write_str("x509 invalid width"),
+            Self::X509AlgorithmMismatch => f.write_str("x509 algorithm mismatch"),
+            Self::InvalidHandle => f.write_str("invalid handle"),
+            Self::InvalidLocality => f.write_str("invalid locality"),
+            Self::MaxTcis => f.write_str("max TCIs reached"),
+            Self::InvalidMutRefBuf => f.write_str("invalid mutable reference buffer"),
+            Self::InvalidResponseBuf => f.write_str("invalid response buffer"),
+            Self::UninitializedResponseHeader => f.write_str("uninitialized response header"),
+            Self::InvalidParentLocality => f.write_str("invalid parent locality"),
+            Self::Platform(e) => write!(f, "platform error: {e}"),
+            Self::Crypto(e) => write!(f, "crypto error: {e}"),
+            Self::Validation(e) => write!(f, "validation error: {e}"),
+        }
+    }
+}
+
+impl Error for DpeErrorCode {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::InternalError(e) => Some(e),
+            Self::Platform(e) => Some(e),
+            Self::Crypto(e) => Some(e),
+            Self::Validation(e) => Some(e),
             _ => None,
         }
     }

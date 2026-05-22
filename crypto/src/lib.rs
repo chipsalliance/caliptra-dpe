@@ -112,21 +112,27 @@ impl CryptoError {
             Self::MismatchedAlgorithm => 0x9,
         }
     }
+}
 
-    pub fn get_error_detail(&self) -> Option<u32> {
+impl core::fmt::Display for CryptoError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            CryptoError::AbstractionLayer(code)
-            | CryptoError::CryptoLibError(code)
-            | CryptoError::HashError(code) => Some(*code),
-            CryptoError::Size
-            | CryptoError::InvalidExportedCdiHandle
-            | CryptoError::ExportedCdiHandleLimitExceeded
-            | CryptoError::ExportedCdiHandleDuplicateCdi
-            | CryptoError::MismatchedAlgorithm
-            | CryptoError::NotImplemented => None,
+            Self::AbstractionLayer(code) => write!(f, "abstraction layer error (code: {code})"),
+            Self::CryptoLibError(code) => write!(f, "crypto library error (code: {code})"),
+            Self::Size => f.write_str("size error"),
+            Self::NotImplemented => f.write_str("not implemented"),
+            Self::HashError(code) => write!(f, "hash error (code: {code})"),
+            Self::InvalidExportedCdiHandle => f.write_str("invalid exported CDI handle"),
+            Self::ExportedCdiHandleDuplicateCdi => f.write_str("exported CDI handle duplicate CDI"),
+            Self::ExportedCdiHandleLimitExceeded => {
+                f.write_str("exported CDI handle limit exceeded")
+            }
+            Self::MismatchedAlgorithm => f.write_str("mismatched algorithm"),
         }
     }
 }
+
+impl core::error::Error for CryptoError {}
 
 pub trait Hasher {
     /// Initialize a running hash operation.

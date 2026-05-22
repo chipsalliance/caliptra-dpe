@@ -4,7 +4,7 @@ use crate::{
     context::{ContextHandle, ContextState},
     dpe_instance::{DpeEnv, DpeInstance},
     mutresp,
-    response::{DpeErrorCode, NewHandleResp},
+    response::{DpeErrorCode, InternalErrorCode, NewHandleResp},
     State,
 };
 use bitflags::bitflags;
@@ -123,7 +123,7 @@ impl CommandExecution for RotateCtxCmd {
         env.state()
             .contexts
             .get_mut(idx)
-            .ok_or(DpeErrorCode::InternalError)?
+            .ok_or(DpeErrorCode::InternalError(InternalErrorCode::ContextIndexOob))?
             .handle = new_handle;
 
         *response = NewHandleResp {

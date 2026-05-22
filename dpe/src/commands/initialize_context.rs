@@ -4,7 +4,7 @@ use crate::{
     context::{ActiveContextArgs, Context, ContextHandle, ContextType},
     dpe_instance::{DpeEnv, DpeInstance},
     mutresp,
-    response::{DpeErrorCode, NewHandleResp},
+    response::{DpeErrorCode, InternalErrorCode, NewHandleResp},
 };
 use bitflags::bitflags;
 #[cfg(feature = "cfi")]
@@ -99,7 +99,7 @@ impl CommandExecution for InitCtxCmd {
         env.state()
             .contexts
             .get_mut(idx)
-            .ok_or(DpeErrorCode::InternalError)?
+            .ok_or(DpeErrorCode::InternalError(InternalErrorCode::InitContextIndexOob))?
             .activate(&ActiveContextArgs {
                 context_type,
                 locality,

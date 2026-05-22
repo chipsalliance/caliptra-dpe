@@ -9,7 +9,7 @@ use crate::{
     context::{ChildToRootIter, Context, ContextHandle},
     dpe_instance::DpeEnv,
     okref,
-    response::DpeErrorCode,
+    response::{DpeErrorCode, InternalErrorCode},
     tci::{TciMeasurement, TciNodeData},
     DpeInstance, DpeProfile, MAX_HANDLES,
 };
@@ -2376,7 +2376,7 @@ impl CertWriter<'_> {
             let signed = self
                 .certificate
                 .get(offset..payload_bytes_written + offset)
-                .ok_or(DpeErrorCode::InternalError)?;
+                .ok_or(DpeErrorCode::InternalError(InternalErrorCode::TbsSliceOob))?;
             sign_cb(signed, is_csr)
         };
         let sig = okref(&sig)?;
@@ -2545,7 +2545,7 @@ impl CertWriter<'_> {
             };
             self.certificate
                 .get(csr_range.0..csr_range.1)
-                .ok_or(DpeErrorCode::InternalError)?
+                .ok_or(DpeErrorCode::InternalError(InternalErrorCode::CmsCsrRangeOob))?
         };
 
         let sig = sign_cb(csr, false)?;
@@ -2676,7 +2676,7 @@ fn get_subject_key_identifier(
         PubKey::Mldsa(pub_key) => crypto.hash(pub_key.as_slice())?,
     };
     if hashed_pub_key.size() < MAX_KEY_IDENTIFIER_SIZE {
-        return Err(DpeErrorCode::InternalError);
+        return Err(DpeErrorCode::InternalError(InternalErrorCode::KeyIdHashTooSmall));
     }
     // truncate key identifier to 20 bytes
     subject_key_identifier.copy_from_slice(&hashed_pub_key.as_slice()[..MAX_KEY_IDENTIFIER_SIZE]);
@@ -2794,7 +2794,7 @@ fn generate_cert_or_csr(
                     .serial
                     .bytes()
                     .get(..20)
-                    .ok_or(DpeErrorCode::InternalError)?;
+                    .ok_or(DpeErrorCode::InternalError(InternalErrorCode::SerialNumberSliceOob))?;
                 let bytes_written = cert_writer.encode_certificate(
                     sign_cb,
                     serial_number,
@@ -2804,7 +2804,7 @@ fn generate_cert_or_csr(
                     measurements,
                     cert_validity,
                 )?;
-                u32::try_from(bytes_written).map_err(|_| DpeErrorCode::InternalError)
+                u32::try_from(bytes_written).map_err(|_| DpeErrorCode::InternalError(InternalErrorCode::CertSizeOverflow))
             }
         }
         #[cfg(not(feature = "disable_csr"))]
@@ -2821,7 +2821,7 @@ fn generate_cert_or_csr(
                 measurements,
                 signer_identifier,
             )?;
-            u32::try_from(bytes_written).map_err(|_| DpeErrorCode::InternalError)
+            u32::try_from(bytes_written).map_err(|_| DpeErrorCode::InternalError(InternalErrorCode::CsrSizeOverflow))
         }
     }
 }
@@ -2928,7 +2928,7 @@ fn create_dpe_cert_or_csr(
             let issuer_name = {
                 let issuer_len = platform.get_issuer_name(&mut issuer_name)?;
                 if issuer_len > MAX_ISSUER_NAME_SIZE {
-                    return Err(DpeErrorCode::InternalError);
+                    return Err(DpeErrorCode::InternalError(InternalErrorCode::IssuerNameTooLong));
                 }
                 &issuer_name[..issuer_len]
             };
@@ -2955,7 +2955,7 @@ fn create_dpe_cert_or_csr(
 
     let exported_cdi_handle = match cert_type {
         // If the `CertificateType::Exported` is set then we should have a valid exported_cdi_handle at this point.
-        CertificateType::Exported => exported_cdi_handle.ok_or(DpeErrorCode::InternalError)?,
+        CertificateType::Exported => exported_cdi_handle.ok_or(DpeErrorCode::InternalError(InternalErrorCode::MissingExportedCdiHandle))?,
         _ => [0; MAX_EXPORTED_CDI_SIZE],
     };
 

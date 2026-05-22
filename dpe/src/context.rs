@@ -1,7 +1,7 @@
 // Licensed under the Apache-2.0 license.
 use crate::{
     dpe_instance::{flags_iter, FlagsIter},
-    response::DpeErrorCode,
+    response::{DpeErrorCode, InternalErrorCode},
     tci::TciNodeData,
     U8Bool, MAX_HANDLES,
 };
@@ -155,7 +155,7 @@ impl Context {
     /// This function does not mutate DPE state.
     pub fn add_child(&mut self, idx: usize) -> Result<Children, DpeErrorCode> {
         if idx >= MAX_HANDLES {
-            return Err(DpeErrorCode::InternalError);
+            return Err(DpeErrorCode::InternalError(InternalErrorCode::ChildIndexOob));
         }
         let mut children_with_idx = self.children;
         children_with_idx.add_child(idx)?;
@@ -232,7 +232,7 @@ impl Children {
     /// Add a child to the bitmap.
     pub fn add_child(&mut self, idx: usize) -> Result<(), DpeErrorCode> {
         if idx >= MAX_HANDLES {
-            return Err(DpeErrorCode::InternalError);
+            return Err(DpeErrorCode::InternalError(InternalErrorCode::ChildrenBitmapIndexOob));
         }
         self.0 |= 1 << idx;
         Ok(())
@@ -583,7 +583,7 @@ mod tests {
         let mut contexts = [CONTEXT_INITIALIZER; MAX_HANDLES];
         assert_eq!(
             contexts[0].add_child(MAX_HANDLES + 1),
-            Err(DpeErrorCode::InternalError)
+            Err(DpeErrorCode::InternalError(InternalErrorCode::ChildIndexOob))
         );
     }
 
