@@ -6,11 +6,11 @@ use crate::{
     response::{DpeErrorCode, Response, ResponseHdr},
     MAX_HANDLES,
 };
-#[cfg(not(feature = "no-cfi"))]
-use caliptra_cfi_derive_git::cfi_impl_fn;
-use caliptra_cfi_lib_git::cfi_launder;
-#[cfg(not(feature = "no-cfi"))]
-use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq};
+#[cfg(feature = "cfi")]
+use caliptra_cfi_derive::cfi_impl_fn;
+use caliptra_cfi_lib::cfi_launder;
+#[cfg(feature = "cfi")]
+use caliptra_cfi_lib::{cfi_assert, cfi_assert_bool, cfi_assert_eq};
 
 #[repr(C)]
 #[derive(
@@ -37,7 +37,7 @@ pub(crate) fn destroy_context(
     if context.locality != locality {
         return Err(DpeErrorCode::InvalidLocality);
     } else {
-        #[cfg(not(feature = "no-cfi"))]
+        #[cfg(feature = "cfi")]
         cfi_assert_eq(context.locality, locality);
     }
 
@@ -56,7 +56,7 @@ pub(crate) fn destroy_context(
         if parent_context.state == ContextState::Retired && cfi_launder(child_context_count) == 1 {
             retired_contexts |= 1 << parent_idx;
         } else {
-            #[cfg(not(feature = "no-cfi"))]
+            #[cfg(feature = "cfi")]
             cfi_assert!(parent_context.state != ContextState::Retired || child_context_count != 1);
             break;
         }
@@ -74,7 +74,7 @@ pub(crate) fn destroy_context(
         if to_destroy & (1 << idx) != 0 {
             c.destroy();
         } else {
-            #[cfg(not(feature = "no-cfi"))]
+            #[cfg(feature = "cfi")]
             cfi_assert_eq(to_destroy & (1 << idx), 0);
         }
     }
@@ -82,7 +82,7 @@ pub(crate) fn destroy_context(
 }
 
 impl CommandExecution for DestroyCtxCmd {
-    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    #[cfg_attr(feature = "cfi", cfi_impl_fn)]
     fn execute(
         &self,
         dpe: &mut DpeInstance,
@@ -109,7 +109,7 @@ mod tests {
         support::{test::SUPPORT, Support},
         DPE_PROFILE,
     };
-    use caliptra_cfi_lib_git::CfiCounter;
+    use caliptra_cfi_lib::CfiCounter;
     use crypto::OpensslCrypto;
     use platform::default::DefaultPlatform;
     use zerocopy::IntoBytes;

@@ -6,10 +6,10 @@ use crate::{
     response::{DpeErrorCode, NewHandleResp, Response, ResponseHdr},
 };
 use bitflags::bitflags;
-#[cfg(not(feature = "no-cfi"))]
-use caliptra_cfi_derive_git::cfi_impl_fn;
-#[cfg(not(feature = "no-cfi"))]
-use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq};
+#[cfg(feature = "cfi")]
+use caliptra_cfi_derive::cfi_impl_fn;
+#[cfg(feature = "cfi")]
+use caliptra_cfi_lib::{cfi_assert, cfi_assert_bool};
 use cfg_if::cfg_if;
 
 #[repr(C)]
@@ -50,7 +50,7 @@ impl InitCtxCmd {
 }
 
 impl CommandExecution for InitCtxCmd {
-    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    #[cfg_attr(feature = "cfi", cfi_impl_fn)]
     fn execute(
         &self,
         dpe: &mut DpeInstance,
@@ -72,7 +72,7 @@ impl CommandExecution for InitCtxCmd {
         }
 
         cfg_if! {
-            if #[cfg(not(feature = "no-cfi"))] {
+            if #[cfg(feature = "cfi")] {
                 cfi_assert!(!self.flag_is_default() || !dpe.has_initialized());
                 cfi_assert!(!self.flag_is_simulation() || dpe.support.simulation());
                 cfi_assert!(self.flag_is_default() ^ self.flag_is_simulation());
@@ -119,7 +119,7 @@ mod tests {
         },
         support::Support,
     };
-    use caliptra_cfi_lib_git::CfiCounter;
+    use caliptra_cfi_lib::CfiCounter;
     use crypto::OpensslCrypto;
     use platform::default::DefaultPlatform;
     use zerocopy::IntoBytes;

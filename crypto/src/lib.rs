@@ -197,7 +197,7 @@ pub trait Crypto {
     ///
     /// To implement this function, you need to add the
     /// cfi_impl_fn proc_macro to derive_cdi.
-    #[cfg(not(feature = "no-cfi"))]
+    #[cfg(feature = "cfi")]
     fn __cfi_derive_cdi(
         &mut self,
         algs: AlgLen,
@@ -209,7 +209,7 @@ pub trait Crypto {
     ///
     /// To implement this function, you need to add the
     /// cfi_impl_fn proc_macro to derive_exported_cdi.
-    #[cfg(not(feature = "no-cfi"))]
+    #[cfg(feature = "cfi")]
     fn __cfi_derive_exported_cdi(
         &mut self,
         algs: AlgLen,
@@ -256,7 +256,7 @@ pub trait Crypto {
     ///
     /// To implement this function, you need to add the
     /// cfi_impl_fn proc_macro to derive_key_pair.
-    #[cfg(not(feature = "no-cfi"))]
+    #[cfg(feature = "cfi")]
     fn __cfi_derive_key_pair(
         &mut self,
         algs: AlgLen,
@@ -269,7 +269,7 @@ pub trait Crypto {
     ///
     /// To implement this function, you need to add the
     /// cfi_impl_fn proc_macro to derive_key_pair.
-    #[cfg(not(feature = "no-cfi"))]
+    #[cfg(feature = "cfi")]
     fn __cfi_derive_key_pair_exported(
         &mut self,
         algs: AlgLen,

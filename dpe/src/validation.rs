@@ -280,7 +280,7 @@ impl DpeValidator<'_> {
 
 #[cfg(test)]
 pub mod tests {
-    use caliptra_cfi_lib_git::CfiCounter;
+    use caliptra_cfi_lib::CfiCounter;
     use crypto::OpensslCrypto;
     use platform::default::DefaultPlatform;
 

@@ -32,6 +32,7 @@ mod rotate_context;
 mod sign;
 
 #[derive(Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "cfi", derive(caliptra_cfi_derive::Launder))]
 pub enum Command<'a> {
     GetProfile,
     InitCtx(&'a InitCtxCmd),
@@ -118,7 +119,7 @@ pub trait CommandExecution {
     ///
     /// To implement this function, you need to add the
     /// cfi_impl_fn proc_macro to execute.
-    #[cfg(not(feature = "no-cfi"))]
+    #[cfg(feature = "cfi")]
     fn __cfi_execute(
         &self,
         dpe: &mut DpeInstance,
@@ -179,7 +180,7 @@ impl TryFrom<&[u8]> for CommandHdr {
 pub mod tests {
     use super::*;
     use crate::{DpeProfile, DPE_PROFILE};
-    use caliptra_cfi_lib_git::CfiCounter;
+    use caliptra_cfi_lib::CfiCounter;
     use zerocopy::IntoBytes;
 
     #[cfg(feature = "dpe_profile_p256_sha256")]

@@ -7,7 +7,7 @@ set -ex
 function build_rust_targets() {
   profile=$1
 
-  cargo build --release --manifest-path dpe/Cargo.toml --features=$profile,no-cfi --no-default-features
+  cargo build --release --manifest-path dpe/Cargo.toml --features=$profile --no-default-features
 
   cargo build --release --manifest-path crypto/Cargo.toml --no-default-features
   cargo build --release --manifest-path platform/Cargo.toml --features=$profile --no-default-features

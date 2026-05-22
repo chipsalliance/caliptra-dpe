@@ -7,11 +7,11 @@ use crate::{
     DPE_PROFILE,
 };
 use bitflags::bitflags;
-#[cfg(not(feature = "no-cfi"))]
-use caliptra_cfi_derive_git::cfi_impl_fn;
-use caliptra_cfi_lib_git::cfi_launder;
-#[cfg(not(feature = "no-cfi"))]
-use caliptra_cfi_lib_git::{cfi_assert, cfi_assert_eq, cfi_assert_ne};
+#[cfg(feature = "cfi")]
+use caliptra_cfi_derive::cfi_impl_fn;
+use caliptra_cfi_lib::cfi_launder;
+#[cfg(feature = "cfi")]
+use caliptra_cfi_lib::{cfi_assert, cfi_assert_bool, cfi_assert_ne};
 use cfg_if::cfg_if;
 use crypto::{Crypto, Digest, EcdsaSig};
 
@@ -57,7 +57,7 @@ impl SignCmd {
     /// * `env` - DPE environment containing Crypto and Platform implementations
     /// * `idx` - The index of the context where the measurement hash is computed from
     /// * `digest` - The data to be signed
-    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    #[cfg_attr(feature = "cfi", cfi_impl_fn)]
     fn ecdsa_sign(
         &self,
         dpe: &mut DpeInstance,
@@ -72,10 +72,10 @@ impl SignCmd {
             .derive_cdi(DPE_PROFILE.alg_len(), &cdi_digest, b"DPE")?;
         let key_pair = env.crypto.derive_key_pair(algs, &cdi, &self.label, b"ECC");
         if cfi_launder(key_pair.is_ok()) {
-            #[cfg(not(feature = "no-cfi"))]
+            #[cfg(feature = "cfi")]
             cfi_assert!(key_pair.is_ok());
         } else {
-            #[cfg(not(feature = "no-cfi"))]
+            #[cfg(feature = "cfi")]
             cfi_assert!(key_pair.is_err());
         }
         let (priv_key, pub_key) = key_pair?;
@@ -89,7 +89,7 @@ impl SignCmd {
 }
 
 impl CommandExecution for SignCmd {
-    #[cfg_attr(not(feature = "no-cfi"), cfi_impl_fn)]
+    #[cfg_attr(feature = "cfi", cfi_impl_fn)]
     fn execute(
         &self,
         dpe: &mut DpeInstance,
@@ -104,7 +104,7 @@ impl CommandExecution for SignCmd {
         }
 
         cfg_if! {
-            if #[cfg(not(feature = "no-cfi"))] {
+            if #[cfg(feature = "cfi")] {
                 cfi_assert_ne(context.context_type, ContextType::Simulation);
             }
         }
@@ -150,7 +150,7 @@ mod tests {
         },
         support::test::SUPPORT,
     };
-    use caliptra_cfi_lib_git::CfiCounter;
+    use caliptra_cfi_lib::CfiCounter;
     use crypto::OpensslCrypto;
     use openssl::x509::X509;
     use openssl::{bn::BigNum, ecdsa::EcdsaSig};
