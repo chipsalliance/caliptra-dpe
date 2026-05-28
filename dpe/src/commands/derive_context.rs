@@ -300,7 +300,7 @@ impl CommandExecution for DeriveContextCmd {
                         cfi_assert_eq(tmp_context.tci.tci_type, tci_type);
                     }
                     dpe.add_tci_measurement(
-                        env,
+                        env.crypto(),
                         &mut tmp_context,
                         data,
                         target_locality,
@@ -455,7 +455,7 @@ impl CommandExecution for DeriveContextCmd {
             allow_recursive: flags.allows_recursive() & tmp_parent_context.allow_recursive(),
         });
 
-        dpe.add_tci_measurement(env, &mut tmp_child_context, data, target_locality)?;
+        dpe.add_tci_measurement(env.crypto(), &mut tmp_child_context, data, target_locality)?;
 
         // Add child to the parent's list of children.
         let children_with_child_idx = tmp_parent_context.add_child(child_idx)?;

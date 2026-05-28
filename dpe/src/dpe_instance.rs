@@ -9,7 +9,7 @@ use crate::INTERNAL_INPUT_INFO_SIZE;
 use crate::{
     commands::{Command, CommandExecution, CommandHdr, InitCtxCmd},
     context::{ChildToRootIter, Context, ContextHandle, ContextState},
-    response::{DpeErrorCode, GetProfileResp, Response, ResponseHdr},
+    response::{DpeErrorCode, GetProfileResp, NewHandleResp, Response, ResponseHdr},
     support::Support,
     tci::TciMeasurement,
     DpeProfile, State, MAX_HANDLES,
@@ -79,7 +79,8 @@ impl DpeInstance {
 
         if env.state().support.auto_init() {
             let locality = env.platform().get_auto_init_locality()?;
-            InitCtxCmd::new_use_default().execute(&mut dpe, env, locality)?;
+            let mut buf = [0u8; size_of::<NewHandleResp>()];
+            InitCtxCmd::new_use_default().execute_serialized(&mut dpe, env, locality, &mut buf)?;
         } else {
             #[cfg(feature = "cfi")]
             cfi_assert!(!env.state().support.auto_init());
@@ -114,14 +115,16 @@ impl DpeInstance {
         let dpe = Self::new(env, profile)?;
 
         let locality = env.platform().get_auto_init_locality()?;
-        let idx = env
-            .state()
-            .get_active_context_pos(&ContextHandle::default(), locality)?;
-        let mut tmp_context = env.state().contexts[idx];
+        let (crypto, _, state) = env.get();
+        let idx = state.get_active_context_pos(&ContextHandle::default(), locality)?;
         // add measurement to auto-initialized context
-        dpe.add_tci_measurement(env, &mut tmp_context, auto_init_measurement, locality)?;
-        env.state().contexts[idx] = tmp_context;
-        env.state().contexts[idx].tci.tci_type = tci_type;
+        dpe.add_tci_measurement(
+            crypto,
+            &mut state.contexts[idx],
+            auto_init_measurement,
+            locality,
+        )?;
+        state.contexts[idx].tci.tci_type = tci_type;
         Ok(dpe)
     }
 
@@ -241,14 +244,14 @@ impl DpeInstance {
     ///
     /// # Arguments
     ///
-    /// * `env` - DPE environment containing Crypto and Platform implementations
+    /// * `crypto` - crypto implementation used by the DPE
     /// * `context` - context to add `measurement`` to
     /// * `measurement` - measurement to add to `context``
     /// * `locality` - locality that `context`'s locality must match
     #[cfg_attr(feature = "cfi", cfi_impl_fn)]
     pub(crate) fn add_tci_measurement(
         &self,
-        env: &mut dyn DpeEnv,
+        crypto: &mut dyn CryptoSuite,
         context: &mut Context,
         measurement: &TciMeasurement,
         locality: u32,
@@ -267,9 +270,7 @@ impl DpeInstance {
         }
 
         // Derive the new TCI as HASH(TCI_CUMULATIVE || INPUT_DATA).
-        let digest = env
-            .crypto()
-            .hash_all(&[&context.tci.tci_cumulative.0, &measurement.0])?;
+        let digest = crypto.hash_all(&[&context.tci.tci_cumulative.0, &measurement.0])?;
 
         let digest_bytes = digest.as_slice();
 
@@ -532,7 +533,7 @@ pub mod tests {
         let data = [1; DPE_PROFILE.hash_size()];
         let mut context = env.state.contexts[0];
         dpe.add_tci_measurement(
-            &mut env,
+            env.crypto(),
             &mut context,
             &TciMeasurement(data),
             TEST_LOCALITIES[0],
@@ -552,7 +553,7 @@ pub mod tests {
 
         let data = [2; DPE_PROFILE.hash_size()];
         dpe.add_tci_measurement(
-            &mut env,
+            env.crypto(),
             &mut context,
             &TciMeasurement(data),
             TEST_LOCALITIES[0],
