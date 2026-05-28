@@ -88,7 +88,7 @@ impl CommandExecution for UpdateContextMeasurementCmd {
         let child_locality = tmp_child.locality;
 
         // Extend the child's TCI: tci_cumulative = HASH(tci_cumulative || INPUT_DATA).
-        dpe.add_tci_measurement(env, &mut tmp_child, &self.data, child_locality)?;
+        dpe.add_tci_measurement(env.crypto(), &mut tmp_child, &self.data, child_locality)?;
 
         // Rotate the parent handle; parent is always retained (as if RETAIN_PARENT_CONTEXT).
         let mut tmp_parent = env.state().contexts[parent_idx];
