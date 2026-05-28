@@ -267,8 +267,10 @@ impl CommandExecution for CertifyKeyCommand<'_> {
 
         let len = response.size()?;
         // Rotate handle if it isn't the default
-        dpe.roll_onetime_use_handle(env, idx)?;
-        response.set_handle(env.state().contexts[idx].handle);
+        let mut ctx = env.state().contexts[idx];
+        dpe.roll_onetime_use_handle(env, &mut ctx)?;
+        env.state().contexts[idx] = ctx;
+        response.set_handle(ctx.handle);
 
         Ok(len)
     }

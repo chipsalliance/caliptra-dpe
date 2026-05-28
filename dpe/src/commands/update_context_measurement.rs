@@ -10,7 +10,7 @@
 
 use super::CommandExecution;
 use crate::{
-    context::{Context, ContextState},
+    context::ContextState,
     dpe_instance::{DpeEnv, DpeInstance},
     mutresp,
     response::{DpeErrorCode, UpdateContextMeasurementResp},
@@ -91,21 +91,20 @@ impl CommandExecution for UpdateContextMeasurementCmd {
         dpe.add_tci_measurement(env, &mut tmp_child, &self.data, child_locality)?;
 
         // Rotate the parent handle; parent is always retained (as if RETAIN_PARENT_CONTEXT).
-        dpe.roll_onetime_use_handle(env, parent_idx)?;
+        let mut tmp_parent = env.state().contexts[parent_idx];
+        dpe.roll_onetime_use_handle(env, &mut tmp_parent)?;
+        env.state().contexts[parent_idx] = tmp_parent;
 
         // Rotate the child handle.
-        dpe.roll_onetime_use_handle(env, child_idx)?;
+        dpe.roll_onetime_use_handle(env, &mut tmp_child)?;
 
-        // Commit the updated child TCI, preserving the newly rotated handle.
-        env.state().contexts[child_idx] = Context {
-            handle: env.state().contexts[child_idx].handle,
-            ..tmp_child
-        };
+        // Commit the updated child context (TCI + rotated handle) atomically.
+        env.state().contexts[child_idx] = tmp_child;
 
         *response = UpdateContextMeasurementResp {
             resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
-            new_context_handle: env.state().contexts[child_idx].handle,
-            new_parent_context_handle: env.state().contexts[parent_idx].handle,
+            new_context_handle: tmp_child.handle,
+            new_parent_context_handle: tmp_parent.handle,
         };
         Ok(size_of_val(response))
     }

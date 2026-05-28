@@ -307,16 +307,13 @@ impl CommandExecution for DeriveContextCmd {
                     )?;
 
                     // Rotate the handle if it isn't the default context.
-                    dpe.roll_onetime_use_handle(env, parent_idx)?;
+                    dpe.roll_onetime_use_handle(env, &mut tmp_context)?;
 
-                    env.state().contexts[parent_idx] = Context {
-                        handle: env.state().contexts[parent_idx].handle,
-                        ..tmp_context
-                    };
+                    env.state().contexts[parent_idx] = tmp_context;
 
                     // Return new handle in new_context_handle
                     *response = DeriveContextResp {
-                        handle: env.state().contexts[parent_idx].handle,
+                        handle: tmp_context.handle,
                         // Should be ignored since retain_parent cannot be true
                         parent_handle: ContextHandle::default(),
                         resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),

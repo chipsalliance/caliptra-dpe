@@ -12,7 +12,7 @@ use crate::{
     response::{DpeErrorCode, GetProfileResp, Response, ResponseHdr},
     support::Support,
     tci::TciMeasurement,
-    DpeProfile, State, MAX_HANDLES,
+    DpeProfile, State,
 };
 #[cfg(feature = "cfi")]
 use caliptra_cfi_derive::cfi_impl_fn;
@@ -218,20 +218,17 @@ impl DpeInstance {
     /// # Arguments
     ///
     /// * `env` - DPE environment containing Crypto and Platform implementations
-    /// * `idx` - the index of the context
+    /// * `context` - mutable reference to the context whose handle should be rolled
     pub fn roll_onetime_use_handle(
         &mut self,
         env: &mut dyn DpeEnv,
-        idx: usize,
+        context: &mut Context,
     ) -> Result<(), DpeErrorCode> {
-        if idx >= MAX_HANDLES {
-            return Err(DpeErrorCode::MaxTcis);
-        }
-        if !env.state().contexts[idx].handle.is_default() {
-            env.state().contexts[idx].handle = self.generate_new_handle(env)?;
+        if !context.handle.is_default() {
+            context.handle = self.generate_new_handle(env)?;
         } else {
             #[cfg(feature = "cfi")]
-            cfi_assert!(env.state().contexts[idx].handle.is_default());
+            cfi_assert!(context.handle.is_default());
         }
         Ok(())
     }
