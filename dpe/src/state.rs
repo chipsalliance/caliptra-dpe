@@ -111,7 +111,9 @@ impl State {
     ) -> Result<(&Context, usize), DpeErrorCode> {
         let idx = self.get_active_context_pos(handle, locality)?;
         Ok((
-            self.contexts.get(idx).ok_or(DpeErrorCode::from(InternalErrorCode::ContextIndexOob))?,
+            self.contexts
+                .get(idx)
+                .ok_or(DpeErrorCode::from(InternalErrorCode::ContextIndexOob))?,
             idx,
         ))
     }
@@ -177,7 +179,6 @@ impl State {
                 .get(idx)
                 .ok_or(DpeErrorCode::from(InternalErrorCode::DescendantIndexOob))?;
             descendants.add_children(self.get_descendants(ctx)?);
-
         }
         Ok(descendants)
     }

@@ -5,7 +5,10 @@
 #[cfg(all(not(feature = "libfuzzer-sys"), not(feature = "afl")))]
 compile_error!("Either feature \"libfuzzer-sys\" or \"afl\" must be enabled!");
 
-use caliptra_dpe::{error::{DpeErrorCode, InternalErrorCode}, DpeFlags};
+use caliptra_dpe::{
+    error::{DpeErrorCode, InternalErrorCode},
+    DpeFlags,
+};
 #[cfg(feature = "libfuzzer-sys")]
 use libfuzzer_sys::fuzz_target;
 
@@ -82,7 +85,8 @@ fn harness(data: &[u8]) {
     if env.state.contexts != prev_contexts && response_code != 0 {
         panic!("Error: DPE state changes upon a failed DPE command.");
     }
-    if response_code == DpeErrorCode::from(InternalErrorCode::DeriveCtxRespSliceOob).discriminant() {
+    if response_code == DpeErrorCode::from(InternalErrorCode::DeriveCtxRespSliceOob).discriminant()
+    {
         panic!("Error: DPE reached a state that should be unreachable.");
     }
     trace!("----------------------------------");

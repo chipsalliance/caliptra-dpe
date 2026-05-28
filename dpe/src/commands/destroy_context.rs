@@ -48,8 +48,6 @@ pub(crate) fn destroy_context(
     loop {
         if parent_idx == Context::ROOT_INDEX as usize {
             break;
-
-
         }
         let parent_context = state
             .contexts

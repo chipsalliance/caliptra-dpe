@@ -498,4 +498,3 @@ pub struct GetCertificateChainResp {
     pub certificate_size: u32,
     pub certificate_chain: [u8; MAX_CHUNK_SIZE],
 }
-
