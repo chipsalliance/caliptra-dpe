@@ -31,9 +31,10 @@ use crate::response::{CertifyKeyP256Resp, SignP256Resp};
 use crate::response::{CertifyKeyP384Resp, SignP384Resp};
 use crate::{
     dpe_instance::{DpeEnv, DpeInstance},
+    error::{DpeErrorCode, InternalErrorCode},
     response::{
-        CertifyKeyResp, DeriveContextExportedCdiResp, DeriveContextResp, DpeErrorCode,
-        GetCertificateChainResp, GetProfileResp, InternalErrorCode, NewHandleResp, Response,
+        CertifyKeyResp, DeriveContextExportedCdiResp, DeriveContextResp,
+        GetCertificateChainResp, GetProfileResp, NewHandleResp, Response,
         ResponseHdr, SignResp, UpdateContextMeasurementResp,
     },
     DpeProfile,

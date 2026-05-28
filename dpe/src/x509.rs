@@ -9,7 +9,7 @@ use crate::{
     context::{ChildToRootIter, Context, ContextHandle},
     dpe_instance::DpeEnv,
     okref,
-    response::{DpeErrorCode, InternalErrorCode},
+    error::{DpeErrorCode, InternalErrorCode},
     tci::{TciMeasurement, TciNodeData},
     DpeInstance, DpeProfile, MAX_HANDLES,
 };

@@ -3,7 +3,7 @@
 use crate::{
     context::{Context, ContextState, ContextType},
     dpe_instance::flags_iter,
-    response::DpeErrorCode,
+    error::DpeErrorCode,
     tci::TciNodeData,
     State, MAX_HANDLES,
 };

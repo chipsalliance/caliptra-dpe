@@ -4,7 +4,8 @@ use crate::{
     context::{Children, Context, ContextHandle, ContextState},
     dpe_instance::{DpeEnv, DpeInstance},
     mutresp,
-    response::{DpeErrorCode, InternalErrorCode, ResponseHdr},
+    error::{DpeErrorCode, InternalErrorCode},
+    response::ResponseHdr,
     State,
 };
 #[cfg(feature = "cfi")]

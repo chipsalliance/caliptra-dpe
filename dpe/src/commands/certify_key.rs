@@ -4,7 +4,7 @@ use crate::{
     context::ContextHandle,
     dpe_instance::{DpeEnv, DpeInstance},
     mutresp, okref,
-    response::{DpeErrorCode, InternalErrorCode},
+    error::{DpeErrorCode, InternalErrorCode},
     x509::{create_dpe_cert, CreateDpeCertArgs, CreateDpeCertResult},
     DpeFlags, DpeProfile,
 };

@@ -1,7 +1,7 @@
 // Licensed under the Apache-2.0 license.
 use crate::{
     dpe_instance::{flags_iter, FlagsIter},
-    response::{DpeErrorCode, InternalErrorCode},
+    error::{DpeErrorCode, InternalErrorCode},
     tci::TciNodeData,
     U8Bool, MAX_HANDLES,
 };

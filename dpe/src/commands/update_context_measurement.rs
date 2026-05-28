@@ -13,7 +13,8 @@ use crate::{
     context::ContextState,
     dpe_instance::{DpeEnv, DpeInstance},
     mutresp,
-    response::{DpeErrorCode, InternalErrorCode, UpdateContextMeasurementResp},
+    error::{DpeErrorCode, InternalErrorCode},
+    response::UpdateContextMeasurementResp,
     tci::TciMeasurement,
 };
 #[cfg(feature = "cfi")]
@@ -145,7 +146,8 @@ mod tests {
         },
         context::ContextHandle,
         dpe_instance::{tests::TEST_LOCALITIES, DpeInstance},
-        response::{DpeErrorCode, Response},
+        error::DpeErrorCode,
+        response::Response,
         support::Support,
         test_env, DpeFlags, State, TCI_SIZE,
     };

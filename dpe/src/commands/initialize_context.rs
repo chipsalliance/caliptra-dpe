@@ -4,7 +4,8 @@ use crate::{
     context::{ActiveContextArgs, Context, ContextHandle, ContextType},
     dpe_instance::{DpeEnv, DpeInstance},
     mutresp,
-    response::{DpeErrorCode, InternalErrorCode, NewHandleResp},
+    error::{DpeErrorCode, InternalErrorCode},
+    response::NewHandleResp,
 };
 use bitflags::bitflags;
 #[cfg(feature = "cfi")]

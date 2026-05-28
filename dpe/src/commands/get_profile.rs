@@ -4,7 +4,8 @@ use super::CommandExecution;
 use crate::{
     dpe_instance::{DpeEnv, DpeInstance},
     mutresp,
-    response::{DpeErrorCode, GetProfileResp},
+    error::DpeErrorCode,
+    response::GetProfileResp,
 };
 #[cfg(feature = "cfi")]
 use caliptra_cfi_derive::cfi_impl_fn;

@@ -5,7 +5,7 @@
 #[cfg(all(not(feature = "libfuzzer-sys"), not(feature = "afl")))]
 compile_error!("Either feature \"libfuzzer-sys\" or \"afl\" must be enabled!");
 
-use caliptra_dpe::{response::{DpeErrorCode, InternalErrorCode}, DpeFlags};
+use caliptra_dpe::{error::{DpeErrorCode, InternalErrorCode}, DpeFlags};
 #[cfg(feature = "libfuzzer-sys")]
 use libfuzzer_sys::fuzz_target;
 
