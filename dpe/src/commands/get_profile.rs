@@ -3,8 +3,8 @@
 use super::CommandExecution;
 use crate::{
     dpe_instance::{DpeEnv, DpeInstance},
-    mutresp,
     error::DpeErrorCode,
+    mutresp,
     response::GetProfileResp,
 };
 #[cfg(feature = "cfi")]

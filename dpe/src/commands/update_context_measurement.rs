@@ -12,8 +12,8 @@ use super::CommandExecution;
 use crate::{
     context::ContextState,
     dpe_instance::{DpeEnv, DpeInstance},
-    mutresp,
     error::{DpeErrorCode, InternalErrorCode},
+    mutresp,
     response::UpdateContextMeasurementResp,
     tci::TciMeasurement,
 };

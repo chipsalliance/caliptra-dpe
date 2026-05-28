@@ -3,8 +3,8 @@ use super::CommandExecution;
 use crate::{
     context::{ContextHandle, ContextType},
     dpe_instance::{DpeEnv, DpeInstance},
-    mutresp, okref,
     error::{DpeErrorCode, InternalErrorCode},
+    mutresp, okref,
     DpeProfile,
 };
 use bitflags::bitflags;

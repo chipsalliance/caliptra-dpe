@@ -3,8 +3,8 @@ use super::CommandExecution;
 use crate::{
     context::ContextHandle,
     dpe_instance::{DpeEnv, DpeInstance},
-    mutresp, okref,
     error::{DpeErrorCode, InternalErrorCode},
+    mutresp, okref,
     x509::{create_dpe_cert, CreateDpeCertArgs, CreateDpeCertResult},
     DpeFlags, DpeProfile,
 };

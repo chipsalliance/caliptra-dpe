@@ -101,8 +101,6 @@ impl PlatformError {
         // field, so we can read the discriminant without offsetting the pointer.
         unsafe { *<*const _>::from(self).cast::<u16>() }
     }
-
-
 }
 
 impl Display for PlatformError {

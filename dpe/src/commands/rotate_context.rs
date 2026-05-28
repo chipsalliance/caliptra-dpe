@@ -3,8 +3,8 @@ use super::CommandExecution;
 use crate::{
     context::{ContextHandle, ContextState},
     dpe_instance::{DpeEnv, DpeInstance},
-    mutresp,
     error::{DpeErrorCode, InternalErrorCode},
+    mutresp,
     response::NewHandleResp,
     State,
 };

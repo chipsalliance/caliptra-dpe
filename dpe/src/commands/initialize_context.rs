@@ -3,8 +3,8 @@ use super::CommandExecution;
 use crate::{
     context::{ActiveContextArgs, Context, ContextHandle, ContextType},
     dpe_instance::{DpeEnv, DpeInstance},
-    mutresp,
     error::{DpeErrorCode, InternalErrorCode},
+    mutresp,
     response::NewHandleResp,
 };
 use bitflags::bitflags;
@@ -100,7 +100,9 @@ impl CommandExecution for InitCtxCmd {
         env.state()
             .contexts
             .get_mut(idx)
-            .ok_or(DpeErrorCode::InternalError(InternalErrorCode::InitContextIndexOob))?
+            .ok_or(DpeErrorCode::InternalError(
+                InternalErrorCode::InitContextIndexOob,
+            ))?
             .activate(&ActiveContextArgs {
                 context_type,
                 locality,
