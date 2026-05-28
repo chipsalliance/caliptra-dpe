@@ -349,7 +349,7 @@ pub trait CommandExecution {
                 self.execute_serialized(dpe, env, locality, buf.as_mut_bytes())?;
                 <$resp_type>::try_read_from_bytes(buf.as_bytes())
                     .map($f)
-                    .map_err(|_| DpeErrorCode::InternalError(InternalErrorCode::ResponseDeserializationFailed))
+                    .map_err(|_| DpeErrorCode::from(InternalErrorCode::ResponseDeserializationFailed))
             }};
         }
 

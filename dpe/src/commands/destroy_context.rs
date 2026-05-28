@@ -49,11 +49,12 @@ pub(crate) fn destroy_context(
         if parent_idx == Context::ROOT_INDEX as usize {
             break;
 
+
         }
         let parent_context = state
             .contexts
             .get(parent_idx)
-            .ok_or(DpeErrorCode::InternalError(InternalErrorCode::DestroyParentIndexOob))?;
+            .ok_or(DpeErrorCode::from(InternalErrorCode::DestroyParentIndexOob))?;
         // make sure the retired context does not have other active child contexts
         let child_context_count = parent_context.children.iter().count();
         if parent_context.state == ContextState::Retired && cfi_launder(child_context_count) == 1 {

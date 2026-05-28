@@ -100,9 +100,7 @@ impl CommandExecution for InitCtxCmd {
         env.state()
             .contexts
             .get_mut(idx)
-            .ok_or(DpeErrorCode::InternalError(
-                InternalErrorCode::InitContextIndexOob,
-            ))?
+            .ok_or(DpeErrorCode::from(InternalErrorCode::InitContextIndexOob))?
             .activate(&ActiveContextArgs {
                 context_type,
                 locality,

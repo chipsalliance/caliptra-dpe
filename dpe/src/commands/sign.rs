@@ -177,7 +177,7 @@ impl CommandExecution for SignCommand<'_> {
             .state()
             .contexts
             .get(idx)
-            .ok_or(DpeErrorCode::InternalError(InternalErrorCode::ContextIndexOob))?;
+            .ok_or(DpeErrorCode::from(InternalErrorCode::ContextIndexOob))?;
 
         if context.context_type == ContextType::Simulation {
             return Err(DpeErrorCode::InvalidArgument);

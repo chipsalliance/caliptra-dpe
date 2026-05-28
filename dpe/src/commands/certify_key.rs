@@ -155,7 +155,7 @@ impl CommandExecution for CertifyKeyCommand<'_> {
             .state()
             .contexts
             .get(idx)
-            .ok_or(DpeErrorCode::InternalError(InternalErrorCode::ContextIndexOob))?;
+            .ok_or(DpeErrorCode::from(InternalErrorCode::ContextIndexOob))?;
 
         if format == Self::FORMAT_X509 {
             if !env.state().support.x509() {

@@ -76,7 +76,7 @@ impl CommandExecution for UpdateContextMeasurementCmd {
             .state()
             .contexts
             .get(parent_idx)
-            .ok_or(DpeErrorCode::InternalError(InternalErrorCode::ContextIndexOob))?
+            .ok_or(DpeErrorCode::from(InternalErrorCode::ContextIndexOob))?
             .children;
         let child_idx = parent_children
             .iter()
@@ -98,7 +98,7 @@ impl CommandExecution for UpdateContextMeasurementCmd {
             .state()
             .contexts
             .get(child_idx)
-            .ok_or(DpeErrorCode::InternalError(InternalErrorCode::ChildIndexOob))?;
+            .ok_or(DpeErrorCode::from(InternalErrorCode::ChildIndexOob))?;
         // The child's locality authorizes the TCI update (parent provides the authorization).
         let child_locality = tmp_child.locality;
 
@@ -110,12 +110,12 @@ impl CommandExecution for UpdateContextMeasurementCmd {
             .state()
             .contexts
             .get(parent_idx)
-            .ok_or(DpeErrorCode::InternalError(InternalErrorCode::ContextIndexOob))?;
+            .ok_or(DpeErrorCode::from(InternalErrorCode::ContextIndexOob))?;
         dpe.roll_onetime_use_handle(env, &mut tmp_parent)?;
         *env.state()
             .contexts
             .get_mut(parent_idx)
-            .ok_or(DpeErrorCode::InternalError(InternalErrorCode::ContextIndexOob))? = tmp_parent;
+            .ok_or(DpeErrorCode::from(InternalErrorCode::ContextIndexOob))? = tmp_parent;
 
         // Rotate the child handle.
         dpe.roll_onetime_use_handle(env, &mut tmp_child)?;
@@ -124,7 +124,7 @@ impl CommandExecution for UpdateContextMeasurementCmd {
         *env.state()
             .contexts
             .get_mut(child_idx)
-            .ok_or(DpeErrorCode::InternalError(InternalErrorCode::ChildIndexOob))? = tmp_child;
+            .ok_or(DpeErrorCode::from(InternalErrorCode::ChildIndexOob))? = tmp_child;
 
         *response = UpdateContextMeasurementResp {
             resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),

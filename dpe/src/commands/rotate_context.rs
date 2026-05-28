@@ -124,7 +124,7 @@ impl CommandExecution for RotateCtxCmd {
         env.state()
             .contexts
             .get_mut(idx)
-            .ok_or(DpeErrorCode::InternalError(InternalErrorCode::ContextIndexOob))?
+            .ok_or(DpeErrorCode::from(InternalErrorCode::ContextIndexOob))?
             .handle = new_handle;
 
         *response = NewHandleResp {

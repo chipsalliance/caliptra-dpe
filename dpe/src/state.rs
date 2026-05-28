@@ -93,9 +93,7 @@ impl State {
     ) -> Result<usize, DpeErrorCode> {
         let idx = self.get_active_context_pos_internal(handle, locality)?;
         if idx >= self.contexts.len() {
-            return Err(DpeErrorCode::InternalError(
-                InternalErrorCode::ContextIndexOob,
-            ));
+            return Err(InternalErrorCode::ContextIndexOob.into());
         }
         Ok(idx)
     }
@@ -113,7 +111,7 @@ impl State {
     ) -> Result<(&Context, usize), DpeErrorCode> {
         let idx = self.get_active_context_pos(handle, locality)?;
         Ok((
-            self.contexts.get(idx).ok_or(DpeErrorCode::InternalError(InternalErrorCode::ContextIndexOob))?,
+            self.contexts.get(idx).ok_or(DpeErrorCode::from(InternalErrorCode::ContextIndexOob))?,
             idx,
         ))
     }
@@ -150,9 +148,7 @@ impl State {
                     && context.handle.equals(handle)
                     && context.locality == locality
             })
-            .ok_or(DpeErrorCode::InternalError(
-                InternalErrorCode::ActiveContextNotFound,
-            ))?;
+            .ok_or(DpeErrorCode::from(InternalErrorCode::ActiveContextNotFound))?;
         Ok(i)
     }
 
@@ -176,9 +172,10 @@ impl State {
 
         let mut descendants = context.children;
         for idx in context.children.iter() {
-            let ctx = self.contexts.get(idx).ok_or(DpeErrorCode::InternalError(
-                InternalErrorCode::DescendantIndexOob,
-            ))?;
+            let ctx = self
+                .contexts
+                .get(idx)
+                .ok_or(DpeErrorCode::from(InternalErrorCode::DescendantIndexOob))?;
             descendants.add_children(self.get_descendants(ctx)?);
 
         }

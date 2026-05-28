@@ -281,9 +281,7 @@ impl DeriveContextExportedCdiResp {
         let len = size_of::<Self>() - MAX_CERT_SIZE + self.certificate_size as usize;
         self.as_bytes()
             .get(..len)
-            .ok_or(DpeErrorCode::InternalError(
-                InternalErrorCode::DeriveCtxRespSliceOob,
-            ))
+            .ok_or(DpeErrorCode::from(InternalErrorCode::DeriveCtxRespSliceOob))
     }
 }
 
@@ -352,7 +350,7 @@ impl CertifyKeyResp {
             #[cfg(feature = "ml-dsa")]
             CertifyKeyResp::Mldsa87(r) => (&r.cert, r.cert_size),
         };
-        buf.get(..size as usize).ok_or(DpeErrorCode::InternalError(
+        buf.get(..size as usize).ok_or(DpeErrorCode::from(
             InternalErrorCode::CertifyKeyCertSliceOob,
         ))
     }
@@ -372,11 +370,9 @@ pub struct CertifyKeyP256Resp {
 impl CertifyKeyP256Resp {
     pub fn as_bytes_partial(&self) -> Result<&[u8], DpeErrorCode> {
         let len = size_of::<Self>() - MAX_CERT_SIZE + self.cert_size as usize;
-        self.as_bytes()
-            .get(..len)
-            .ok_or(DpeErrorCode::InternalError(
-                InternalErrorCode::CertifyKeyP256RespSliceOob,
-            ))
+        self.as_bytes().get(..len).ok_or(DpeErrorCode::from(
+            InternalErrorCode::CertifyKeyP256RespSliceOob,
+        ))
     }
 }
 
@@ -394,11 +390,9 @@ pub struct CertifyKeyP384Resp {
 impl CertifyKeyP384Resp {
     pub fn as_bytes_partial(&self) -> Result<&[u8], DpeErrorCode> {
         let len = size_of::<Self>() - MAX_CERT_SIZE + self.cert_size as usize;
-        self.as_bytes()
-            .get(..len)
-            .ok_or(DpeErrorCode::InternalError(
-                InternalErrorCode::CertifyKeyP384RespSliceOob,
-            ))
+        self.as_bytes().get(..len).ok_or(DpeErrorCode::from(
+            InternalErrorCode::CertifyKeyP384RespSliceOob,
+        ))
     }
 }
 
@@ -417,11 +411,9 @@ pub struct CertifyKeyMldsa87Resp {
 impl CertifyKeyMldsa87Resp {
     pub fn as_bytes_partial(&self) -> Result<&[u8], DpeErrorCode> {
         let len = size_of::<Self>() - MAX_CERT_SIZE + self.cert_size as usize;
-        self.as_bytes()
-            .get(..len)
-            .ok_or(DpeErrorCode::InternalError(
-                InternalErrorCode::CertifyKeyMldsa87RespSliceOob,
-            ))
+        self.as_bytes().get(..len).ok_or(DpeErrorCode::from(
+            InternalErrorCode::CertifyKeyMldsa87RespSliceOob,
+        ))
     }
 }
 

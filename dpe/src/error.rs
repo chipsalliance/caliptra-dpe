@@ -186,6 +186,18 @@ impl From<CryptoError> for DpeErrorCode {
     }
 }
 
+impl From<ValidationError> for DpeErrorCode {
+    fn from(e: ValidationError) -> Self {
+        DpeErrorCode::Validation(e)
+    }
+}
+
+impl From<InternalErrorCode> for DpeErrorCode {
+    fn from(e: InternalErrorCode) -> Self {
+        DpeErrorCode::InternalError(e)
+    }
+}
+
 impl DpeErrorCode {
     /// Get the spec-defined numeric error code. This does not include the
     /// extended error information returned from the Platform and Crypto
