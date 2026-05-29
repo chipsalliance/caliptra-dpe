@@ -23,13 +23,23 @@ pub use {self::certify_key::CertifyKeyMldsa87Cmd, sign::SignMldsa87Cmd, sign::Si
 #[cfg(not(feature = "disable_rotate_context"))]
 pub use self::rotate_context::{RotateCtxCmd, RotateCtxFlags};
 
+#[cfg(feature = "ml-dsa")]
+use crate::response::{CertifyKeyMldsa87Resp, SignMlDsaResp};
+#[cfg(feature = "p256")]
+use crate::response::{CertifyKeyP256Resp, SignP256Resp};
+#[cfg(feature = "p384")]
+use crate::response::{CertifyKeyP384Resp, SignP384Resp};
 use crate::{
     dpe_instance::{DpeEnv, DpeInstance},
-    response::{DpeErrorCode, Response},
+    response::{
+        CertifyKeyResp, DeriveContextExportedCdiResp, DeriveContextResp, DpeErrorCode,
+        GetCertificateChainResp, GetProfileResp, NewHandleResp, Response, ResponseHdr, SignResp,
+        UpdateContextMeasurementResp,
+    },
     DpeProfile,
 };
 use core::mem::size_of;
-use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes};
 
 mod certify_key;
 mod derive_context;
@@ -325,9 +335,67 @@ pub trait CommandExecution {
     where
         Command<'a>: From<&'a Self>,
     {
-        let mut buf = [0u8; size_of::<Response>()];
-        self.execute_serialized(dpe, env, locality, &mut buf)?;
-        Response::try_read_from_bytes(&Command::from(self), &buf)
+        // This macro creates an on-stack buffer whose size is determined by the specific response
+        // type rather than the generic `Response`, in order to reduce stack usage caused by
+        // calling `try_read_from_bytes` on a generic `Response`.
+        macro_rules! exec {
+            ($resp_type:ty, $f:expr) => {{
+                let mut buf = [0u8; size_of::<$resp_type>()];
+                self.execute_serialized(dpe, env, locality, &mut buf)?;
+                <$resp_type>::try_read_from_bytes(&buf)
+                    .map($f)
+                    .map_err(|_| DpeErrorCode::InternalError)
+            }};
+        }
+
+        match Command::from(self) {
+            Command::GetProfile(_) => exec!(GetProfileResp, Response::GetProfile),
+            Command::InitCtx(_) => exec!(NewHandleResp, Response::InitCtx),
+            Command::DeriveContext(cmd) if cmd.flags.exports_cdi() => exec!(
+                DeriveContextExportedCdiResp,
+                Response::DeriveContextExportedCdi
+            ),
+            Command::DeriveContext(_) => exec!(DeriveContextResp, Response::DeriveContext),
+            #[cfg(feature = "p384")]
+            Command::CertifyKey(CertifyKeyCommand::P384(_)) => {
+                exec!(CertifyKeyP384Resp, |r| Response::CertifyKey(
+                    CertifyKeyResp::P384(r)
+                ))
+            }
+            #[cfg(feature = "p256")]
+            Command::CertifyKey(CertifyKeyCommand::P256(_)) => {
+                exec!(CertifyKeyP256Resp, |r| Response::CertifyKey(
+                    CertifyKeyResp::P256(r)
+                ))
+            }
+            #[cfg(feature = "ml-dsa")]
+            Command::CertifyKey(CertifyKeyCommand::Mldsa87(_)) => exec!(
+                CertifyKeyMldsa87Resp,
+                |r| Response::CertifyKey(CertifyKeyResp::Mldsa87(r))
+            ),
+            #[cfg(feature = "p384")]
+            Command::Sign(SignCommand::P384(_)) => {
+                exec!(SignP384Resp, |r| Response::Sign(SignResp::P384(r)))
+            }
+            #[cfg(feature = "p256")]
+            Command::Sign(SignCommand::P256(_)) => {
+                exec!(SignP256Resp, |r| Response::Sign(SignResp::P256(r)))
+            }
+            #[cfg(feature = "ml-dsa")]
+            Command::Sign(SignCommand::Mldsa87(_)) | Command::Sign(SignCommand::Mldsa87Raw(_)) => {
+                exec!(SignMlDsaResp, |r| Response::Sign(SignResp::Mldsa87(r)))
+            }
+            Command::DestroyCtx(_) => exec!(ResponseHdr, Response::DestroyCtx),
+            Command::GetCertificateChain(_) => {
+                exec!(GetCertificateChainResp, Response::GetCertificateChain)
+            }
+            #[cfg(not(feature = "disable_rotate_context"))]
+            Command::RotateCtx(_) => exec!(NewHandleResp, Response::RotateCtx),
+            Command::UpdateContextMeasurement(_) => exec!(
+                UpdateContextMeasurementResp,
+                Response::UpdateContextMeasurement
+            ),
+        }
     }
 
     /// CFI wrapper around execute
@@ -344,9 +412,7 @@ pub trait CommandExecution {
     where
         Command<'a>: From<&'a Self>,
     {
-        let mut buf = [0u8; size_of::<Response>()];
-        self.execute_serialized(dpe, env, locality, &mut buf)?;
-        Response::try_read_from_bytes(&Command::from(self), &buf)
+        self.execute(dpe, env, locality)
     }
 
     fn execute_serialized(
