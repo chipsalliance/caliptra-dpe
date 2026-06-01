@@ -6,8 +6,8 @@
 //! Usefull for compiletime assertions.
 
 use platform::{
-    CertValidity, Platform, PlatformError, SignerIdentifier, SubjectAltName, Ueid, MAX_CHUNK_SIZE,
-    MAX_ISSUER_NAME_SIZE, MAX_KEY_IDENTIFIER_SIZE,
+    CertValidity, MAX_CHUNK_SIZE, MAX_ISSUER_NAME_SIZE, MAX_KEY_IDENTIFIER_SIZE, Platform,
+    PlatformError, SignerIdentifier, SubjectAltName, Ueid,
 };
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]

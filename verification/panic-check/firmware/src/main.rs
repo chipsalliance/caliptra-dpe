@@ -7,11 +7,11 @@
 compile_error!("select one of the features p256, p384, ml-dsa");
 
 use core::hint::black_box;
-use dpe::dpe_instance::DpeEnvImpl;
-use dpe::support::Support;
 use dpe::DpeFlags;
 use dpe::DpeInstance;
 use dpe::DpeProfile;
+use dpe::dpe_instance::DpeEnvImpl;
+use dpe::support::Support;
 
 mod crypto_dummy;
 mod platform_dummy;
