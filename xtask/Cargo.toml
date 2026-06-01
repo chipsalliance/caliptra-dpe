@@ -10,4 +10,5 @@ version.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+cbindgen.workspace = true
 clap.workspace = true
