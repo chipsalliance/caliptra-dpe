@@ -12,7 +12,7 @@ use crate::{
     response::{DpeErrorCode, GetProfileResp, NewHandleResp, Response, ResponseHdr},
     support::Support,
     tci::TciMeasurement,
-    DpeProfile, State,
+    AlignedBuf, DpeProfile, State,
 };
 #[cfg(feature = "cfi")]
 use caliptra_cfi_derive::cfi_impl_fn;
@@ -79,8 +79,13 @@ impl DpeInstance {
 
         if env.state().support.auto_init() {
             let locality = env.platform().get_auto_init_locality()?;
-            let mut buf = [0u8; size_of::<NewHandleResp>()];
-            InitCtxCmd::new_use_default().execute_serialized(&mut dpe, env, locality, &mut buf)?;
+            let mut buf = AlignedBuf::<{ size_of::<NewHandleResp>() }>::new();
+            InitCtxCmd::new_use_default().execute_serialized(
+                &mut dpe,
+                env,
+                locality,
+                buf.as_mut_bytes(),
+            )?;
         } else {
             #[cfg(feature = "cfi")]
             cfi_assert!(!env.state().support.auto_init());
