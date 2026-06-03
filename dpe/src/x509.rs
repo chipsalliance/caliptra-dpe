@@ -648,7 +648,10 @@ impl CertWriter<'_> {
         // Size of concatenated tcb infos
         let tcb_infos_size = measurements.tci_nodes.len()
             * self.get_tcb_info_size(
-                &measurements.tci_nodes[0],
+                measurements
+                    .tci_nodes
+                    .first()
+                    .ok_or(DpeErrorCode::InternalError)?,
                 measurements.supports_recursive,
                 /*tagged=*/ true,
             )?;
@@ -1114,11 +1117,10 @@ impl CertWriter<'_> {
 
     /// Write a single `byte` to the certificate buffer
     fn encode_byte(&mut self, byte: u8) -> Result<usize, DpeErrorCode> {
-        if self.offset >= self.certificate.len() {
-            return Err(DpeErrorCode::InternalError);
-        }
-
-        self.certificate[self.offset] = byte;
+        *self
+            .certificate
+            .get_mut(self.offset)
+            .ok_or(DpeErrorCode::InternalError)? = byte;
         self.offset += 1;
         Ok(1)
     }
@@ -1169,10 +1171,11 @@ impl CertWriter<'_> {
             bytes_written += self.encode_byte(0)?;
         }
 
-        if integer_offset >= integer.len() {
-            return Err(DpeErrorCode::InternalError);
-        }
-        bytes_written += self.encode_bytes(&integer[integer_offset..])?;
+        bytes_written += self.encode_bytes(
+            integer
+                .get(integer_offset..)
+                .ok_or(DpeErrorCode::InternalError)?,
+        )?;
 
         Ok(bytes_written)
     }

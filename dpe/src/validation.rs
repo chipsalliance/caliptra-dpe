@@ -72,9 +72,8 @@ impl DpeValidator<'_> {
         if self.dpe.version != State::VERSION {
             return Err(ValidationError::VersionMismatch);
         }
-        for i in 0..MAX_HANDLES {
-            let context = &self.dpe.contexts[i];
 
+        for (i, context) in self.dpe.contexts.iter().enumerate() {
             self.check_support(context)?;
 
             match context.state {
@@ -155,33 +154,41 @@ impl DpeValidator<'_> {
 
     /// Checks that children and parent indices of a context are valid
     fn check_children_and_parent(&self, idx: usize) -> Result<(), ValidationError> {
-        let context = &self.dpe.contexts[idx];
+        let context = self
+            .dpe
+            .contexts
+            .get(idx)
+            .ok_or(ValidationError::BadContextState)?;
         // Check if parent does not exist
         if context.parent_idx as usize >= MAX_HANDLES && context.parent_idx != Context::ROOT_INDEX {
             return Err(ValidationError::ParentDoesNotExist);
         }
         if context.parent_idx != Context::ROOT_INDEX {
-            if self.dpe.contexts[context.parent_idx as usize].state == ContextState::Inactive {
+            let parent_context = self
+                .dpe
+                .contexts
+                .get(context.parent_idx as usize)
+                .ok_or(ValidationError::ParentDoesNotExist)?;
+            if parent_context.state == ContextState::Inactive {
                 return Err(ValidationError::InactiveParent);
             }
             // Check that parent's children contains idx
-            if !self.dpe.contexts[context.parent_idx as usize]
-                .children
-                .has_child(idx)
-            {
+            if !parent_context.children.has_child(idx) {
                 return Err(ValidationError::ParentChildLinksCorrupted);
             }
         }
         // Check if any children do not exist
-        for child in flags_iter(context.children.into(), 64) {
-            if child >= MAX_HANDLES {
-                return Err(ValidationError::ChildDoesNotExist);
-            }
-            if self.dpe.contexts[child].state == ContextState::Inactive {
+        for child_idx in flags_iter(context.children.into(), 64) {
+            let child = self
+                .dpe
+                .contexts
+                .get(child_idx)
+                .ok_or(ValidationError::ChildDoesNotExist)?;
+            if child.state == ContextState::Inactive {
                 return Err(ValidationError::InactiveChild);
             }
             // Check that each child's parent is idx
-            if self.dpe.contexts[child].parent_idx as usize != idx {
+            if child.parent_idx as usize != idx {
                 return Err(ValidationError::ParentChildLinksCorrupted);
             }
         }
@@ -223,10 +230,9 @@ impl DpeValidator<'_> {
         // count in degree of each node
         for context in self.dpe.contexts.iter() {
             for child in context.children.iter() {
-                if child >= MAX_HANDLES {
-                    return Err(ValidationError::ChildDoesNotExist);
-                }
-                in_degree[child] += 1;
+                *in_degree
+                    .get_mut(child)
+                    .ok_or(ValidationError::ChildDoesNotExist)? += 1;
             }
         }
 
@@ -269,20 +275,29 @@ impl DpeValidator<'_> {
         seen: &mut [bool; MAX_HANDLES],
         context_type: ContextType,
     ) -> Result<(), ValidationError> {
+        let current_context = self
+            .dpe
+            .contexts
+            .get(curr_idx)
+            .ok_or(ValidationError::BadContextState)?;
+        let current_seen = seen
+            .get_mut(curr_idx)
+            .ok_or(ValidationError::BadContextState)?;
+
         // if the current node was already visited we have a cycle
         if curr_idx >= MAX_HANDLES
-            || self.dpe.contexts[curr_idx].state == ContextState::Inactive
-            || seen[curr_idx]
+            || current_context.state == ContextState::Inactive
+            || *current_seen
         {
             return Err(ValidationError::CyclesInTree);
         }
         // all nodes in the tree must have the same ContextType
-        if self.dpe.contexts[curr_idx].context_type != context_type {
+        if current_context.context_type != context_type {
             return Err(ValidationError::MixedContextTypeConnectedComponents);
         }
-        seen[curr_idx] = true;
+        *current_seen = true;
         // dfs on all child nodes
-        for child_idx in self.dpe.contexts[curr_idx].children.iter() {
+        for child_idx in current_context.children.iter() {
             self.detect_invalid_subtree(child_idx, seen, context_type)?;
         }
         Ok(())

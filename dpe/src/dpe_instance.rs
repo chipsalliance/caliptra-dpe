@@ -117,14 +117,13 @@ impl DpeInstance {
         let locality = env.platform().get_auto_init_locality()?;
         let (crypto, _, state) = env.get();
         let idx = state.get_active_context_pos(&ContextHandle::default(), locality)?;
+        let context = state
+            .contexts
+            .get_mut(idx)
+            .ok_or(DpeErrorCode::InternalError)?;
         // add measurement to auto-initialized context
-        dpe.add_tci_measurement(
-            crypto,
-            &mut state.contexts[idx],
-            auto_init_measurement,
-            locality,
-        )?;
-        state.contexts[idx].tci.tci_type = tci_type;
+        dpe.add_tci_measurement(crypto, context, auto_init_measurement, locality)?;
+        context.tci.tci_type = tci_type;
         Ok(dpe)
     }
 

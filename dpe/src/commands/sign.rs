@@ -173,7 +173,11 @@ impl CommandExecution for SignCommand<'_> {
             ),
         };
         let idx = env.state().get_active_context_pos(handle, locality)?;
-        let context = &env.state().contexts[idx];
+        let context = env
+            .state()
+            .contexts
+            .get(idx)
+            .ok_or(DpeErrorCode::InternalError)?;
 
         if context.context_type == ContextType::Simulation {
             return Err(DpeErrorCode::InvalidArgument);

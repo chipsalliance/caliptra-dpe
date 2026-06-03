@@ -14,7 +14,10 @@ use crate::{
 #[cfg(feature = "ml-dsa")]
 use {
     crate::ml_dsa::{MldsaAlgorithm, MldsaPublicKey, MldsaSignature},
-    ml_dsa::{signature::Signer, KeyGen, KeyPair, MlDsa87},
+    ml_dsa::{
+        signature::{Keypair, Signer},
+        KeyGen, MlDsa87, SigningKey,
+    },
     pkcs8::DecodePrivateKey,
     zerocopy::{IntoBytes, SizeError},
 };
@@ -69,8 +72,8 @@ impl From<Signature<NistP256>> for EcdsaSignature256 {
     fn from(value: Signature<NistP256>) -> Self {
         let mut r = [0; EcdsaAlgorithm::Bit256.curve_size()];
         let mut s = [0; EcdsaAlgorithm::Bit256.curve_size()];
-        r.clone_from_slice(value.r().deref().to_bytes().as_slice());
-        s.clone_from_slice(value.s().deref().to_bytes().as_slice());
+        r.clone_from_slice(value.r().deref().to_bytes().as_ref());
+        s.clone_from_slice(value.s().deref().to_bytes().as_ref());
 
         EcdsaSignature256::from_slice(&r, &s)
     }
@@ -79,8 +82,8 @@ impl From<Signature<NistP384>> for EcdsaSignature384 {
     fn from(value: Signature<NistP384>) -> Self {
         let mut r = [0; EcdsaAlgorithm::Bit384.curve_size()];
         let mut s = [0; EcdsaAlgorithm::Bit384.curve_size()];
-        r.clone_from_slice(value.r().deref().to_bytes().as_slice());
-        s.clone_from_slice(value.s().deref().to_bytes().as_slice());
+        r.clone_from_slice(value.r().deref().to_bytes().as_ref());
+        s.clone_from_slice(value.s().deref().to_bytes().as_ref());
 
         EcdsaSignature384::from_slice(&r, &s)
     }
@@ -183,8 +186,8 @@ impl crate::Signer for RustCryptoSigner {
 
                 let mut x = [0; EcdsaAlgorithm::Bit256.curve_size()];
                 let mut y = [0; EcdsaAlgorithm::Bit256.curve_size()];
-                x.clone_from_slice(point.x().ok_or(RUSTCRYPTO_ECDSA_ERROR)?.as_slice());
-                y.clone_from_slice(point.y().ok_or(RUSTCRYPTO_ECDSA_ERROR)?.as_slice());
+                x.clone_from_slice(point.x().ok_or(RUSTCRYPTO_ECDSA_ERROR)?.as_ref());
+                y.clone_from_slice(point.y().ok_or(RUSTCRYPTO_ECDSA_ERROR)?.as_ref());
 
                 Ok(EcdsaPub::from_slice(&x, &y).into())
             }
@@ -195,8 +198,8 @@ impl crate::Signer for RustCryptoSigner {
 
                 let mut x = [0; EcdsaAlgorithm::Bit384.curve_size()];
                 let mut y = [0; EcdsaAlgorithm::Bit384.curve_size()];
-                x.clone_from_slice(point.x().ok_or(RUSTCRYPTO_ECDSA_ERROR)?.as_slice());
-                y.clone_from_slice(point.y().ok_or(RUSTCRYPTO_ECDSA_ERROR)?.as_slice());
+                x.clone_from_slice(point.x().ok_or(RUSTCRYPTO_ECDSA_ERROR)?.as_ref());
+                y.clone_from_slice(point.y().ok_or(RUSTCRYPTO_ECDSA_ERROR)?.as_ref());
 
                 Ok(EcdsaPub::from_slice(&x, &y).into())
             }
@@ -376,12 +379,12 @@ impl RustCryptoImpl {
 
     #[cfg(feature = "ml-dsa")]
     fn mldsa_sign_data_inner(
-        key: &KeyPair<MlDsa87>,
+        key: &SigningKey<MlDsa87>,
         data: &SignData,
     ) -> Result<super::Signature, CryptoError> {
         let sig = match data {
             SignData::Mu(mu) => key.signing_key().sign_mu_deterministic((&mu.0).into()),
-            SignData::Raw(raw) => key.signing_key().sign(raw),
+            SignData::Raw(raw) => key.sign(raw),
             SignData::Digest(_) => return Err(CryptoError::MismatchedAlgorithm),
         };
         let sig = sig.encode();
@@ -472,7 +475,7 @@ impl Crypto for RustCryptoImpl {
             #[cfg(feature = "ml-dsa")]
             SignatureAlgorithm::Mldsa(MldsaAlgorithm::Mldsa87) => {
                 let ml_dsa_secret =
-                    KeyPair::<MlDsa87>::from_pkcs8_pem(artifacts::KEY_MLDSA_87_PEM)?;
+                    SigningKey::<MlDsa87>::from_pkcs8_pem(artifacts::KEY_MLDSA_87_PEM)?;
                 Self::mldsa_sign_data_inner(&ml_dsa_secret, data)
             }
         }
