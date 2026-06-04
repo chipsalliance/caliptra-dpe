@@ -7,6 +7,8 @@ use std::process::Command;
 
 // TODO(clundin): Support "hybrid"
 const PROFILES: &[&str] = &["ml-dsa", "p256", "p384"];
+/// Pinned nightly toolchain version. Must match the version in flake.nix shellHook.
+const NIGHTLY: &str = "nightly-2025-07-08";
 const MANIFESTS: &[&str] = &[
     "crypto/Cargo.toml",
     "platform/Cargo.toml",
@@ -473,22 +475,12 @@ fn run_fuzz_checks() -> Result<()> {
         .run()?;
     cargo()
         .env("RUSTUP_TOOLCHAIN", &fuzzer_toolchain)
-        .args([
-            "fuzz",
-            "build",
-            "--features",
-            "libfuzzer-sys",
-        ])
+        .args(["fuzz", "build", "--features", "libfuzzer-sys"])
         .dir(fuzz_dir)
         .run()?;
     cargo()
         .env("RUSTUP_TOOLCHAIN", &fuzzer_toolchain)
-        .args([
-            "afl",
-            "build",
-            "--features",
-            "afl",
-        ])
+        .args(["afl", "build", "--features", "afl"])
         .dir(fuzz_dir)
         .run()?;
     Ok(())
@@ -540,7 +532,7 @@ impl Cmd {
             .map_err(|e| anyhow!("Failed to execute {:?}: {}", self.0, e))
     }
     fn nightly(mut self) -> Self {
-        self.0.arg("+nightly");
+        self.0.arg(format!("+{}", NIGHTLY));
         self
     }
 }
