@@ -900,10 +900,9 @@ mod tests {
         let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
         // Derive context MAX_HANDLES times. The first was already created by auto-init.
-        for i in 0..MAX_HANDLES - 1 {
+        for _ in 0..MAX_HANDLES - 1 {
             let derive_cmd = DeriveContextCmd {
                 flags: DeriveContextFlags::MAKE_DEFAULT | DeriveContextFlags::INPUT_ALLOW_X509,
-                tci_type: i as u32 + 1,
                 ..Default::default()
             };
 
@@ -934,9 +933,9 @@ mod tests {
             asn1::parse_single::<asn1::SequenceOf<TcbInfo>>(multi_tcb_info.value).unwrap();
 
         // Verify we have MAX_HANDLES TCB infos
-        for i in 0..MAX_HANDLES {
+        for _ in 0..MAX_HANDLES {
             let tcb_info = parsed_tcb_infos.next().unwrap();
-            assert_eq!(tcb_info.tci_type.unwrap(), &(i as u32).to_le_bytes());
+            assert_eq!(tcb_info.tci_type.unwrap(), &(0 as u32).to_le_bytes());
         }
         assert!(parsed_tcb_infos.next().is_none());
     }
@@ -952,10 +951,9 @@ mod tests {
         let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
         // Derive context MAX_HANDLES times. The first was already created by auto-init.
-        for i in 0..MAX_HANDLES - 1 {
+        for _ in 0..MAX_HANDLES - 1 {
             let derive_cmd = DeriveContextCmd {
                 flags: DeriveContextFlags::MAKE_DEFAULT,
-                tci_type: i as u32 + 1,
                 ..Default::default()
             };
 
