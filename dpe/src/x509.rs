@@ -293,33 +293,33 @@ impl CertWriter<'_> {
     }
 
     /// Calculate the number of bytes the ASN.1 size field will be
-    fn get_size_width(size: usize) -> Result<usize, DpeErrorCode> {
-        if size <= 127 {
-            Ok(1)
-        } else if size <= 255 {
-            Ok(2)
-        } else if size <= 65535 {
-            Ok(3)
-        } else {
-            Err(DpeErrorCode::InternalError)
+    fn get_size_width(size: usize) -> usize {
+        // The ASN.1 field is 1 byte if less than 128, and for every size larger is 1 byte
+        // for the sentinal value, and then the number of bytes required to represent the size.
+        //
+        // Since usize on target platforms is only 32 bits, the max representation is 5 bytes.
+        match size {
+            ..128 => 1,
+            128..256 => 2,
+            256..65536 => 3,
+            65536..16777216 => 4,
+            _ => 5,
         }
     }
 
     /// Get the size of an ASN.1 structure
     /// If tagged, includes the tag and size
-    fn get_structure_size(data_size: usize, tagged: bool) -> Result<usize, DpeErrorCode> {
-        let size = if tagged {
-            1 + Self::get_size_width(data_size)? + data_size
+    fn get_structure_size(data_size: usize, tagged: bool) -> usize {
+        if tagged {
+            1 + Self::get_size_width(data_size) + data_size
         } else {
             data_size
-        };
-
-        Ok(size)
+        }
     }
 
     /// Calculate the number of bytes the ASN.1 INTEGER will be
     /// If `tagged`, include the tag and size fields
-    fn get_integer_bytes_size(integer: &[u8], tagged: bool) -> Result<usize, DpeErrorCode> {
+    fn get_integer_bytes_size(integer: &[u8], tagged: bool) -> usize {
         let mut len = integer.len();
         for (i, &byte) in integer.iter().enumerate() {
             if byte == 0 && i != integer.len() - 1 {
@@ -337,7 +337,7 @@ impl CertWriter<'_> {
 
     /// Calculate the number of bytes the ASN.1 INTEGER will be
     /// If `tagged`, include the tag and size fields
-    fn get_integer_size(integer: u64, tagged: bool) -> Result<usize, DpeErrorCode> {
+    fn get_integer_size(integer: u64, tagged: bool) -> usize {
         let bytes = integer.to_be_bytes();
         Self::get_integer_bytes_size(&bytes, tagged)
     }
@@ -345,26 +345,26 @@ impl CertWriter<'_> {
     /// Calculate the number of bytes an ASN.1 raw bytes field will be.
     /// Can be used for OCTET STRING, OID, UTF8 STRING, etc.
     /// If `tagged`, include the tag and size fields
-    fn get_bytes_size(bytes: &[u8], tagged: bool) -> Result<usize, DpeErrorCode> {
+    fn get_bytes_size(bytes: &[u8], tagged: bool) -> usize {
         Self::get_structure_size(bytes.len(), tagged)
     }
 
     /// If `tagged`, include the tag and size fields
-    fn get_rdn_size(name: &Name, tagged: bool) -> Result<usize, DpeErrorCode> {
+    fn get_rdn_size(name: &Name, tagged: bool) -> usize {
         let cn_seq_size = Self::get_structure_size(
-            Self::get_bytes_size(&Self::RDN_COMMON_NAME_OID, /*tagged=*/ true)?
-                + Self::get_bytes_size(name.cn.bytes(), true)?,
+            Self::get_bytes_size(&Self::RDN_COMMON_NAME_OID, /*tagged=*/ true)
+                + Self::get_bytes_size(name.cn.bytes(), true),
             /*tagged=*/ true,
-        )?;
+        );
         let serialnumber_seq_size = Self::get_structure_size(
-            Self::get_bytes_size(&Self::RDN_COMMON_NAME_OID, /*tagged=*/ true)?
-                + Self::get_bytes_size(name.serial.bytes(), /*tagged=*/ true)?,
+            Self::get_bytes_size(&Self::RDN_COMMON_NAME_OID, /*tagged=*/ true)
+                + Self::get_bytes_size(name.serial.bytes(), /*tagged=*/ true),
             /*tagged=*/ true,
-        )?;
+        );
 
-        let cn_set_size = Self::get_structure_size(cn_seq_size, /*tagged=*/ true)?;
+        let cn_set_size = Self::get_structure_size(cn_seq_size, /*tagged=*/ true);
         let serialnumber_set_size =
-            Self::get_structure_size(serialnumber_seq_size, /*tagged=*/ true)?;
+            Self::get_structure_size(serialnumber_seq_size, /*tagged=*/ true);
 
         Self::get_structure_size(cn_set_size + serialnumber_set_size, tagged)
     }
@@ -406,39 +406,39 @@ impl CertWriter<'_> {
     /// Calculate the number of bytes for an ECC Public Key AlgorithmIdentifier
     /// If `tagged`, include the tag and size fields
     fn get_ec_pub_alg_id_size(&self, tagged: bool) -> Result<usize, DpeErrorCode> {
-        let len = Self::get_bytes_size(Self::EC_PUB_OID, true)?
-            + Self::get_bytes_size(self.curve_oid()?, true)?;
-        Self::get_structure_size(len, tagged)
+        let len = Self::get_bytes_size(Self::EC_PUB_OID, true)
+            + Self::get_bytes_size(self.curve_oid()?, true);
+        Ok(Self::get_structure_size(len, tagged))
     }
 
     /// Calculate the number of bytes for an ECDSA signature AlgorithmIdentifier
     /// If `tagged`, include the tag and size fields
     fn get_ecdsa_sig_alg_id_size(&self, tagged: bool) -> Result<usize, DpeErrorCode> {
-        let len = Self::get_bytes_size(self.sig_oid()?, true)?;
-        Self::get_structure_size(len, tagged)
+        let len = Self::get_bytes_size(self.sig_oid()?, true);
+        Ok(Self::get_structure_size(len, tagged))
     }
 
     /// Calculate the number of bytes for an MLDSA-87 signature AlgorithmIdentifier
     /// If `tagged`, include the tag and size fields
     #[cfg(feature = "ml-dsa")]
     fn get_mldsa_sig_alg_id_size(&self, tagged: bool) -> Result<usize, DpeErrorCode> {
-        let len = Self::get_bytes_size(self.sig_oid()?, true)?;
-        Self::get_structure_size(len, tagged)
+        let len = Self::get_bytes_size(self.sig_oid()?, true);
+        Ok(Self::get_structure_size(len, tagged))
     }
 
     /// Calculate the number of bytes for a Hash AlgorithmIdentifier
     /// If `tagged`, include the tag and size fields
     #[cfg(not(feature = "disable_csr"))]
     fn get_hash_alg_id_size(&self, tagged: bool) -> Result<usize, DpeErrorCode> {
-        let len = Self::get_bytes_size(self.hash_oid()?, true)?;
-        Self::get_structure_size(len, tagged)
+        let len = Self::get_bytes_size(self.hash_oid()?, true);
+        Ok(Self::get_structure_size(len, tagged))
     }
 
     /// If `tagged`, include the tag and size fields
     #[cfg(not(feature = "disable_x509"))]
-    fn get_validity_size(validity: &CertValidity, tagged: bool) -> Result<usize, DpeErrorCode> {
-        let len = Self::get_bytes_size(validity.not_before.as_slice(), true)?
-            + Self::get_bytes_size(validity.not_after.as_slice(), true)?;
+    fn get_validity_size(validity: &CertValidity, tagged: bool) -> usize {
+        let len = Self::get_bytes_size(validity.not_before.as_slice(), true)
+            + Self::get_bytes_size(validity.not_after.as_slice(), true);
         Self::get_structure_size(len, tagged)
     }
 
@@ -450,10 +450,10 @@ impl CertWriter<'_> {
         pubkey: &MldsaPublicKey,
         tagged: bool,
     ) -> Result<usize, DpeErrorCode> {
-        let bitstring_size = Self::get_structure_size(1 + pubkey.0.len(), true)?;
+        let bitstring_size = Self::get_structure_size(1 + pubkey.0.len(), true);
         let seq_size = bitstring_size + self.get_mldsa_sig_alg_id_size(true)?;
 
-        Self::get_structure_size(seq_size, tagged)
+        Ok(Self::get_structure_size(seq_size, tagged))
     }
 
     /// Calculate the number of bytes an ECC SubjectPublicKeyInfo will be
@@ -465,10 +465,10 @@ impl CertWriter<'_> {
     ) -> Result<usize, DpeErrorCode> {
         let point_size = 1 + pubkey.curve_size() + pubkey.curve_size();
         let bitstring_size = 1 + point_size;
-        let seq_size = Self::get_structure_size(bitstring_size, /*tagged=*/ true)?
+        let seq_size = Self::get_structure_size(bitstring_size, /*tagged=*/ true)
             + self.get_ec_pub_alg_id_size(/*tagged=*/ true)?;
 
-        Self::get_structure_size(seq_size, tagged)
+        Ok(Self::get_structure_size(seq_size, tagged))
     }
 
     /// Calculate the number of bytes an SubjectPublicKeyInfo will be
@@ -502,12 +502,12 @@ impl CertWriter<'_> {
         let signature_size = match sig {
             Signature::Ecdsa(sig) => {
                 self.get_ecdsa_sig_alg_id_size(tagged)?
-                    + Self::get_ecdsa_signature_octet_string_size(sig, tagged)?
+                    + Self::get_ecdsa_signature_octet_string_size(sig, tagged)
             }
             #[cfg(feature = "ml-dsa")]
             Signature::Mldsa(sig) => {
                 self.get_mldsa_sig_alg_id_size(tagged)?
-                    + Self::get_mldsa_signature_octet_string_size(sig, tagged)?
+                    + Self::get_mldsa_signature_octet_string_size(sig, tagged)
             }
         };
         Ok(signature_size)
@@ -515,25 +515,19 @@ impl CertWriter<'_> {
 
     /// If `tagged`, include the tag and size fields
     #[cfg(all(not(feature = "disable_csr"), feature = "ml-dsa"))]
-    fn get_mldsa_signature_octet_string_size(
-        sig: &MldsaSignature,
-        tagged: bool,
-    ) -> Result<usize, DpeErrorCode> {
+    fn get_mldsa_signature_octet_string_size(sig: &MldsaSignature, tagged: bool) -> usize {
         Self::get_structure_size(sig.as_slice().len(), tagged)
     }
 
     /// If `tagged`, include the tag and size fields
     #[cfg(not(feature = "disable_csr"))]
-    fn get_ecdsa_signature_octet_string_size(
-        sig: &EcdsaSignature,
-        tagged: bool,
-    ) -> Result<usize, DpeErrorCode> {
+    fn get_ecdsa_signature_octet_string_size(sig: &EcdsaSignature, tagged: bool) -> usize {
         let (r, s) = sig.as_slice();
         let seq_size = Self::get_structure_size(
-            Self::get_integer_bytes_size(r, /*tagged=*/ true)?
-                + Self::get_integer_bytes_size(s, /*tagged=*/ true)?,
+            Self::get_integer_bytes_size(r, /*tagged=*/ true)
+                + Self::get_integer_bytes_size(s, /*tagged=*/ true),
             /*tagged=*/ true,
-        )?;
+        );
 
         // Wrapping structure size
         Self::get_structure_size(seq_size, tagged)
@@ -542,8 +536,8 @@ impl CertWriter<'_> {
     /// version is marked as EXPLICIT [0]
     /// If `tagged`, include the explicit tag and size fields
     #[cfg(not(feature = "disable_x509"))]
-    fn get_version_size(tagged: bool) -> Result<usize, DpeErrorCode> {
-        let integer_size = Self::get_integer_size(Self::X509_V3, /*tagged=*/ true)?;
+    fn get_version_size(tagged: bool) -> usize {
+        let integer_size = Self::get_integer_size(Self::X509_V3, /*tagged=*/ true);
 
         // If tagged, also add explicit wrapping
         Self::get_structure_size(integer_size, tagged)
@@ -551,10 +545,10 @@ impl CertWriter<'_> {
 
     /// Get the size of a DICE FWID structure
     fn get_fwid_size(&self, digest: &[u8], tagged: bool) -> Result<usize, DpeErrorCode> {
-        let size = Self::get_structure_size(self.hash_oid()?.len(), /*tagged=*/ true)?
-            + Self::get_structure_size(digest.len(), /*tagged=*/ true)?;
+        let size = Self::get_structure_size(self.hash_oid()?.len(), /*tagged=*/ true)
+            + Self::get_structure_size(digest.len(), /*tagged=*/ true);
 
-        Self::get_structure_size(size, tagged)
+        Ok(Self::get_structure_size(size, tagged))
     }
 
     /// Get the size of a tcg-dice-TcbInfo structure. For DPE, this is only used
@@ -567,42 +561,37 @@ impl CertWriter<'_> {
         tagged: bool,
     ) -> Result<usize, DpeErrorCode> {
         let fwid_size = self.get_fwid_size(&node.tci_current.0, /*tagged=*/ true)?;
-        let svn_size = Self::get_integer_size(node.svn.into(), true)?;
+        let svn_size = Self::get_integer_size(node.svn.into(), true);
         let integrity_registers_size = if supports_recursive {
             let fwid_size = self.get_fwid_size(&node.tci_cumulative.0, /*tagged=*/ true)?;
-            let fwid_list_size = Self::get_structure_size(fwid_size, /*tagged=*/ true)?;
-            let ir_num_size = Self::get_integer_size(Self::INTEGRITY_REGISTER_NUM, true)?;
+            let fwid_list_size = Self::get_structure_size(fwid_size, /*tagged=*/ true);
+            let ir_num_size = Self::get_integer_size(Self::INTEGRITY_REGISTER_NUM, true);
             let integrity_register_size =
-                Self::get_structure_size(ir_num_size + fwid_list_size, /*tagged=*/ true)?;
-            Self::get_structure_size(integrity_register_size, /*tagged=*/ true)?
+                Self::get_structure_size(ir_num_size + fwid_list_size, /*tagged=*/ true);
+            Self::get_structure_size(integrity_register_size, /*tagged=*/ true)
         } else {
             0
         };
-        let fwids_size = Self::get_structure_size(fwid_size, /*tagged=*/ true)?;
+        let fwids_size = Self::get_structure_size(fwid_size, /*tagged=*/ true);
 
         let size = fwids_size
-            + (2 * Self::get_structure_size(core::mem::size_of::<u32>(), /*tagged=*/ true)?) // vendorInfo and type
+            + (2 * Self::get_structure_size(core::mem::size_of::<u32>(), /*tagged=*/ true)) // vendorInfo and type
             + integrity_registers_size
             + svn_size;
 
-        Self::get_structure_size(size, tagged)
+        Ok(Self::get_structure_size(size, tagged))
     }
 
     /// Get the size of an X.509 extension wrapper: SEQUENCE { OID, [BOOLEAN], OCTET STRING { content } }.
     /// `critical`: if true, includes the critical BOOLEAN field in the size.
-    fn get_extension_size(
-        oid: &[u8],
-        critical: bool,
-        content_size: usize,
-        tagged: bool,
-    ) -> Result<usize, DpeErrorCode> {
-        let oid_size = Self::get_structure_size(oid.len(), /*tagged=*/ true)?;
+    fn get_extension_size(oid: &[u8], critical: bool, content_size: usize, tagged: bool) -> usize {
+        let oid_size = Self::get_structure_size(oid.len(), /*tagged=*/ true);
         let crit_size = if critical {
-            Self::get_structure_size(Self::BOOL_SIZE, /*tagged=*/ true)?
+            Self::get_structure_size(Self::BOOL_SIZE, /*tagged=*/ true)
         } else {
             0
         };
-        let octet_size = Self::get_structure_size(content_size, /*tagged=*/ true)?;
+        let octet_size = Self::get_structure_size(content_size, /*tagged=*/ true);
         let inner = oid_size + crit_size + octet_size;
         Self::get_structure_size(inner, tagged)
     }
@@ -620,7 +609,7 @@ impl CertWriter<'_> {
             critical.is_some(),
             content_size,
             /*tagged=*/ false,
-        )?;
+        );
         let mut bytes_written = self.encode_byte(Self::SEQUENCE_TAG)?;
         bytes_written += self.encode_size_field(total_size)?;
         bytes_written += self.encode_oid(oid)?;
@@ -657,66 +646,56 @@ impl CertWriter<'_> {
             )?;
 
         // Size of tcb infos including SEQUENCE OF tag/size
-        let multi_tcb_info_size = Self::get_structure_size(tcb_infos_size, /*tagged=*/ true)?;
+        let multi_tcb_info_size = Self::get_structure_size(tcb_infos_size, /*tagged=*/ true);
 
-        Self::get_extension_size(
+        Ok(Self::get_extension_size(
             Self::MULTI_TCBINFO_OID,
             self.crit_dice,
             multi_tcb_info_size,
             tagged,
-        )
+        ))
     }
 
     /// Get the size of a tcg-dice-Ueid extension, including the extension
     /// OID and critical bits.
-    fn get_ueid_size(
-        &self,
-        measurements: &MeasurementData,
-        tagged: bool,
-    ) -> Result<usize, DpeErrorCode> {
+    fn get_ueid_size(&self, measurements: &MeasurementData, tagged: bool) -> usize {
         // Extension data is sequence -> octet string. To compute size, wrap
         // in tagging twice.
         let ext_size = Self::get_structure_size(
-            Self::get_structure_size(measurements.label.len(), /*tagged=*/ true)?,
+            Self::get_structure_size(measurements.label.len(), /*tagged=*/ true),
             /*tagged=*/ true,
-        )?;
+        );
 
         Self::get_extension_size(Self::UEID_OID, self.crit_dice, ext_size, tagged)
     }
 
     /// Get the size of a basicConstraints extension, including the extension
     /// OID and critical bits.
-    fn get_basic_constraints_size(
-        measurements: &MeasurementData,
-        tagged: bool,
-    ) -> Result<usize, DpeErrorCode> {
+    fn get_basic_constraints_size(measurements: &MeasurementData, tagged: bool) -> usize {
         // Extension data is sequence -> octet string. To compute size, wrap
         // in tagging twice.
         let ca_size = if measurements.is_ca {
-            Self::get_structure_size(Self::BOOL_SIZE, /*tagged=*/ true)?
+            Self::get_structure_size(Self::BOOL_SIZE, /*tagged=*/ true)
         } else {
             0
         };
-        let ext_size = Self::get_structure_size(ca_size, /*tagged=*/ true)?;
+        let ext_size = Self::get_structure_size(ca_size, /*tagged=*/ true);
 
         Self::get_extension_size(Self::BASIC_CONSTRAINTS_OID, true, ext_size, tagged)
     }
 
     /// Get the size of a keyUsage extension, including the extension
     /// OID and critical bits.
-    fn get_key_usage_size(tagged: bool) -> Result<usize, DpeErrorCode> {
+    fn get_key_usage_size(tagged: bool) -> usize {
         // Extension data is a 2-byte BIT STRING
-        let ext_size = Self::get_structure_size(2, /*tagged=*/ true)?;
+        let ext_size = Self::get_structure_size(2, /*tagged=*/ true);
 
         Self::get_extension_size(Self::KEY_USAGE_OID, true, ext_size, tagged)
     }
 
     /// Get the size of an extendedKeyUsage extension, including the extension
     /// OID and critical bits.
-    fn get_extended_key_usage_size(
-        measurements: &MeasurementData,
-        tagged: bool,
-    ) -> Result<usize, DpeErrorCode> {
+    fn get_extended_key_usage_size(measurements: &MeasurementData, tagged: bool) -> usize {
         let policy_oid_size = if measurements.is_ca {
             Self::ECA_OID.len()
         } else {
@@ -726,9 +705,9 @@ impl CertWriter<'_> {
         // Extension data is sequence -> octet string. To compute size, wrap
         // in tagging twice.
         let ext_size = Self::get_structure_size(
-            Self::get_structure_size(policy_oid_size, /*tagged=*/ true)?,
+            Self::get_structure_size(policy_oid_size, /*tagged=*/ true),
             /*tagged=*/ true,
-        )?;
+        );
 
         Self::get_extension_size(Self::EXTENDED_KEY_USAGE_OID, true, ext_size, tagged)
     }
@@ -739,15 +718,15 @@ impl CertWriter<'_> {
         measurements: &MeasurementData,
         tagged: bool,
         is_x509: bool,
-    ) -> Result<usize, DpeErrorCode> {
+    ) -> usize {
         if !measurements.is_ca || !is_x509 {
-            return Ok(0);
+            return 0;
         }
         let ski_size = measurements.subject_key_identifier.len();
 
         // Extension data is sequence -> octet string. To compute size, wrap
         // in tagging twice.
-        let ext_size = Self::get_structure_size(ski_size, /*tagged=*/ true)?;
+        let ext_size = Self::get_structure_size(ski_size, /*tagged=*/ true);
 
         Self::get_extension_size(Self::SUBJECT_KEY_IDENTIFIER_OID, false, ext_size, tagged)
     }
@@ -758,35 +737,32 @@ impl CertWriter<'_> {
         measurements: &MeasurementData,
         tagged: bool,
         is_x509: bool,
-    ) -> Result<usize, DpeErrorCode> {
+    ) -> usize {
         if !is_x509 {
-            return Ok(0);
+            return 0;
         }
         let aki_size = Self::get_key_identifier_size(
             &measurements.authority_key_identifier,
             true,
             /*explicit=*/ false,
-        )?;
+        );
 
         // Extension data is sequence -> octet string. To compute size, wrap
         // in tagging twice.
-        let ext_size = Self::get_structure_size(aki_size, /*tagged=*/ true)?;
+        let ext_size = Self::get_structure_size(aki_size, /*tagged=*/ true);
 
         Self::get_extension_size(Self::AUTHORITY_KEY_IDENTIFIER_OID, false, ext_size, tagged)
     }
 
-    fn get_subject_alt_name_extension_size(
-        measurements: &MeasurementData,
-        tagged: bool,
-    ) -> Result<usize, DpeErrorCode> {
+    fn get_subject_alt_name_extension_size(measurements: &MeasurementData, tagged: bool) -> usize {
         match &measurements.subject_alt_name {
-            None => Ok(0),
+            None => 0,
             Some(SubjectAltName::OtherName(other_name)) => {
-                let san_size = Self::get_other_name_size(other_name, /*tagged=*/ true)?;
+                let san_size = Self::get_other_name_size(other_name, /*tagged=*/ true);
 
                 // Extension data is sequence -> octet string. To compute size, wrap
                 // in tagging twice.
-                let ext_size = Self::get_structure_size(san_size, /*tagged=*/ true)?;
+                let ext_size = Self::get_structure_size(san_size, /*tagged=*/ true);
 
                 Self::get_extension_size(
                     Self::SUBJECT_ALTERNATIVE_NAME_OID,
@@ -798,24 +774,20 @@ impl CertWriter<'_> {
         }
     }
 
-    fn get_other_name_size(other_name: &OtherName, tagged: bool) -> Result<usize, DpeErrorCode> {
-        let size = Self::get_structure_size(other_name.oid.len(), /*tagged=*/ true)?
+    fn get_other_name_size(other_name: &OtherName, tagged: bool) -> usize {
+        let size = Self::get_structure_size(other_name.oid.len(), /*tagged=*/ true)
             + Self::get_other_name_value_size(
                 other_name.other_name.as_slice(),
                 /*tagged=*/ true,
                 /*explicit=*/ true,
-            )?;
+            );
 
         Self::get_structure_size(size, tagged)
     }
 
-    fn get_other_name_value_size(
-        other_name_value: &[u8],
-        tagged: bool,
-        explicit: bool,
-    ) -> Result<usize, DpeErrorCode> {
+    fn get_other_name_value_size(other_name_value: &[u8], tagged: bool, explicit: bool) -> usize {
         // Determine whether to include the explicit tag wrapping in the size calculation
-        let size = Self::get_structure_size(other_name_value.len(), explicit)?;
+        let size = Self::get_structure_size(other_name_value.len(), explicit);
 
         Self::get_structure_size(size, tagged)
     }
@@ -829,26 +801,26 @@ impl CertWriter<'_> {
         is_x509: bool,
     ) -> Result<usize, DpeErrorCode> {
         let mut size = self.get_multi_tcb_info_size(measurements, /*tagged=*/ true)?
-            + self.get_ueid_size(measurements, /*tagged=*/ true)?
-            + Self::get_basic_constraints_size(measurements, /*tagged=*/ true)?
-            + Self::get_key_usage_size(/*tagged=*/ true)?
-            + Self::get_extended_key_usage_size(measurements, /*tagged=*/ true)?
+            + self.get_ueid_size(measurements, /*tagged=*/ true)
+            + Self::get_basic_constraints_size(measurements, /*tagged=*/ true)
+            + Self::get_key_usage_size(/*tagged=*/ true)
+            + Self::get_extended_key_usage_size(measurements, /*tagged=*/ true)
             + Self::get_subject_key_identifier_extension_size(
                 measurements,
                 /*tagged=*/ true,
                 is_x509,
-            )?
+            )
             + Self::get_authority_key_identifier_extension_size(
                 measurements,
                 /*tagged=*/ true,
                 is_x509,
-            )?
-            + Self::get_subject_alt_name_extension_size(measurements, /*tagged=*/ true)?;
+            )
+            + Self::get_subject_alt_name_extension_size(measurements, /*tagged=*/ true);
 
         // Determine whether to include the explicit tag wrapping in the size calculation
-        size = Self::get_structure_size(size, /*tagged=*/ explicit)?;
+        size = Self::get_structure_size(size, /*tagged=*/ explicit);
 
-        Self::get_structure_size(size, tagged)
+        Ok(Self::get_structure_size(size, tagged))
     }
 
     /// Get the size of the ASN.1 TBSCertificate structure
@@ -865,12 +837,12 @@ impl CertWriter<'_> {
         validity: &CertValidity,
         tagged: bool,
     ) -> Result<usize, DpeErrorCode> {
-        let tbs_size = Self::get_version_size(/*tagged=*/ true)?
-            + Self::get_integer_bytes_size(serial_number, /*tagged=*/ true)?
+        let tbs_size = Self::get_version_size(/*tagged=*/ true)
+            + Self::get_integer_bytes_size(serial_number, /*tagged=*/ true)
             + self.get_subject_pubkey_info_size(pubkey, true)?
             + issuer_der.len()
-            + Self::get_validity_size(validity, /*tagged=*/ true)?
-            + Self::get_rdn_size(subject_name, /*tagged=*/ true)?
+            + Self::get_validity_size(validity, /*tagged=*/ true)
+            + Self::get_rdn_size(subject_name, /*tagged=*/ true)
             + self.get_extensions_size(
                 measurements,
                 /*tagged=*/ true,
@@ -878,7 +850,7 @@ impl CertWriter<'_> {
                 /*is_x509=*/ true,
             )?;
 
-        Self::get_structure_size(tbs_size, tagged)
+        Ok(Self::get_structure_size(tbs_size, tagged))
     }
 
     /// Get the size of the ASN.1 CertificationRequestInfo structure
@@ -896,17 +868,17 @@ impl CertWriter<'_> {
             #[cfg(feature = "ml-dsa")]
             PubKey::Mldsa(pubkey) => self.get_mldsa_subject_pubkey_info_size(pubkey, true)?,
         };
-        let cert_req_info_size = Self::get_integer_size(Self::CSR_V0, true)?
-            + Self::get_rdn_size(subject_name, /*tagged=*/ true)?
+        let cert_req_info_size = Self::get_integer_size(Self::CSR_V0, true)
+            + Self::get_rdn_size(subject_name, /*tagged=*/ true)
             + self.get_attributes_size(measurements, /*tagged=*/ true)?
             + pubkey_size;
 
-        Self::get_structure_size(cert_req_info_size, tagged)
+        Ok(Self::get_structure_size(cert_req_info_size, tagged))
     }
 
     /// Get the size of the CMS version which differs based on the SignerIdentifier
     #[cfg(not(feature = "disable_csr"))]
-    fn get_cms_version_size(sid: &SignerIdentifier) -> Result<usize, DpeErrorCode> {
+    fn get_cms_version_size(sid: &SignerIdentifier) -> usize {
         match sid {
             SignerIdentifier::IssuerAndSerialNumber {
                 issuer_name: _,
@@ -925,12 +897,12 @@ impl CertWriter<'_> {
         sid: &SignerIdentifier,
         tagged: bool,
     ) -> Result<usize, DpeErrorCode> {
-        let signer_info_size = Self::get_cms_version_size(sid)?
-            + Self::get_signer_identifier_size(sid, /*tagged=*/ true)?
+        let signer_info_size = Self::get_cms_version_size(sid)
+            + Self::get_signer_identifier_size(sid, /*tagged=*/ true)
             + self.get_hash_alg_id_size(/*tagged=*/ true)?
             + self.get_signature_octet_string_size(sig, true)?;
 
-        Self::get_structure_size(signer_info_size, tagged)
+        Ok(Self::get_structure_size(signer_info_size, tagged))
     }
 
     /// Get the size of the ASN.1 SignedData structure
@@ -944,30 +916,27 @@ impl CertWriter<'_> {
         tagged: bool,
         explicit: bool,
     ) -> Result<usize, DpeErrorCode> {
-        let signed_data_size = Self::get_cms_version_size(sid)?
+        let signed_data_size = Self::get_cms_version_size(sid)
             + Self::get_structure_size(
                 self.get_hash_alg_id_size(/*tagged=*/ true)?,
                 /*tagged=*/ true,
-            )?
-            + Self::get_encap_content_info_size(csr.len(), /*tagged=*/ true)?
+            )
+            + Self::get_encap_content_info_size(csr.len(), /*tagged=*/ true)
             + Self::get_structure_size(
                 self.get_signer_info_size(sig, sid, /*tagged=*/ true)?,
                 /*tagged=*/ true,
-            )?;
+            );
 
         // Determine whether to include the explicit tag wrapping in the size calculation
-        let explicit_signed_data_size = Self::get_structure_size(signed_data_size, explicit)?;
+        let explicit_signed_data_size = Self::get_structure_size(signed_data_size, explicit);
 
-        Self::get_structure_size(explicit_signed_data_size, tagged)
+        Ok(Self::get_structure_size(explicit_signed_data_size, tagged))
     }
 
     /// Get the size of the ASN.1 SignerIdentifier structure
     /// If `tagged`, include the tag and size fields
     #[cfg(not(feature = "disable_csr"))]
-    fn get_signer_identifier_size(
-        sid: &SignerIdentifier,
-        tagged: bool,
-    ) -> Result<usize, DpeErrorCode> {
+    fn get_signer_identifier_size(sid: &SignerIdentifier, tagged: bool) -> usize {
         match sid {
             SignerIdentifier::IssuerAndSerialNumber {
                 issuer_name,
@@ -978,11 +947,11 @@ impl CertWriter<'_> {
                 /*tagged=*/ tagged,
             ),
             SignerIdentifier::SubjectKeyIdentifier(subject_key_identifier) => {
-                Ok(Self::get_subject_key_identifier_size(
+                Self::get_subject_key_identifier_size(
                     subject_key_identifier,
                     /*tagged=*/ tagged,
                     /*explicit=*/ true,
-                )?)
+                )
             }
         }
     }
@@ -994,9 +963,9 @@ impl CertWriter<'_> {
         serial_number: &[u8],
         issuer_der: &[u8],
         tagged: bool,
-    ) -> Result<usize, DpeErrorCode> {
+    ) -> usize {
         let issuer_and_serial_number_size =
-            Self::get_integer_bytes_size(serial_number, /*tagged=*/ true)? + issuer_der.len();
+            Self::get_integer_bytes_size(serial_number, /*tagged=*/ true) + issuer_der.len();
 
         Self::get_structure_size(issuer_and_serial_number_size, tagged)
     }
@@ -1008,38 +977,30 @@ impl CertWriter<'_> {
         subject_key_identifier: &[u8],
         tagged: bool,
         explicit: bool,
-    ) -> Result<usize, DpeErrorCode> {
+    ) -> usize {
         let subject_key_identifier_size = subject_key_identifier.len();
 
         // Determine whether to include the explicit tag wrapping in the size calculation
-        let explicit_bytes_size = Self::get_structure_size(subject_key_identifier_size, explicit)?;
+        let explicit_bytes_size = Self::get_structure_size(subject_key_identifier_size, explicit);
 
         Self::get_structure_size(explicit_bytes_size, tagged)
     }
 
     /// Get the size of the ASN.1 KeyIdentifier structure
     /// If `tagged`, include the tag and size fields
-    fn get_key_identifier_size(
-        key_identifier: &[u8],
-        tagged: bool,
-        explicit: bool,
-    ) -> Result<usize, DpeErrorCode> {
+    fn get_key_identifier_size(key_identifier: &[u8], tagged: bool, explicit: bool) -> usize {
         let key_identifier_size = key_identifier.len();
 
         // Determine whether to include the explicit tag wrapping in the size calculation
-        let explicit_bytes_size = Self::get_structure_size(key_identifier_size, explicit)?;
+        let explicit_bytes_size = Self::get_structure_size(key_identifier_size, explicit);
 
         Self::get_structure_size(explicit_bytes_size, tagged)
     }
 
     #[cfg(not(feature = "disable_csr"))]
-    fn get_econtent_size(
-        bytes_size: usize,
-        tagged: bool,
-        explicit: bool,
-    ) -> Result<usize, DpeErrorCode> {
+    fn get_econtent_size(bytes_size: usize, tagged: bool, explicit: bool) -> usize {
         // Determine whether to include the explicit tag wrapping in the size calculation
-        let explicit_bytes_size = Self::get_structure_size(bytes_size, explicit)?;
+        let explicit_bytes_size = Self::get_structure_size(bytes_size, explicit);
 
         Self::get_structure_size(explicit_bytes_size, tagged)
     }
@@ -1047,17 +1008,14 @@ impl CertWriter<'_> {
     /// Get the size of the ASN.1 EncapsulatedContentInfo structure
     /// If `tagged`, include the tag and size fields
     #[cfg(not(feature = "disable_csr"))]
-    fn get_encap_content_info_size(
-        csr_bytes_written: usize,
-        tagged: bool,
-    ) -> Result<usize, DpeErrorCode> {
+    fn get_encap_content_info_size(csr_bytes_written: usize, tagged: bool) -> usize {
         let encap_content_info_size =
-            Self::get_structure_size(Self::ID_DATA_OID.len(), /*tagged=*/ true)?
+            Self::get_structure_size(Self::ID_DATA_OID.len(), /*tagged=*/ true)
                 + Self::get_econtent_size(
                     csr_bytes_written,
                     /*tagged=*/ true,
                     /*explicit=*/ true,
-                )?;
+                );
 
         Self::get_structure_size(encap_content_info_size, tagged)
     }
@@ -1071,7 +1029,7 @@ impl CertWriter<'_> {
         tagged: bool,
     ) -> Result<usize, DpeErrorCode> {
         let attribute_size =
-            Self::get_structure_size(Self::ID_DATA_OID.len(), /*tagged=*/ true)?
+            Self::get_structure_size(Self::ID_DATA_OID.len(), /*tagged=*/ true)
                 + Self::get_structure_size(
                     self.get_extensions_size(
                         measurements,
@@ -1080,9 +1038,9 @@ impl CertWriter<'_> {
                         /*is_x509=*/ false,
                     )?,
                     /*tagged=*/ true,
-                )?;
+                );
 
-        Self::get_structure_size(attribute_size, tagged)
+        Ok(Self::get_structure_size(attribute_size, tagged))
     }
 
     /// Get the size of the ASN.1 Attributes structure
@@ -1095,7 +1053,7 @@ impl CertWriter<'_> {
     ) -> Result<usize, DpeErrorCode> {
         let attribute_size = self.get_attribute_size(measurements, /*tagged=*/ true)?;
 
-        Self::get_structure_size(attribute_size, tagged)
+        Ok(Self::get_structure_size(attribute_size, tagged))
     }
 
     /// Write all of `bytes` to the certificate buffer
@@ -1132,7 +1090,7 @@ impl CertWriter<'_> {
 
     /// DER-encodes the size field of an ASN.1 type)
     fn encode_size_field(&mut self, size: usize) -> Result<usize, DpeErrorCode> {
-        let size_width = Self::get_size_width(size)?;
+        let size_width = Self::get_size_width(size);
 
         if size_width == 1 {
             self.encode_byte(size as u8)?;
@@ -1160,7 +1118,7 @@ impl CertWriter<'_> {
             0
         };
 
-        let size = Self::get_integer_bytes_size(integer, false)?;
+        let size = Self::get_integer_bytes_size(integer, false);
         bytes_written += self.encode_size_field(size)?;
 
         // Compute where to start reading from integer (strips leading zeros)
@@ -1232,17 +1190,17 @@ impl CertWriter<'_> {
     ///     }
     pub fn encode_rdn(&mut self, name: &Name) -> Result<usize, DpeErrorCode> {
         let cn_size =
-            Self::get_structure_size(Self::RDN_COMMON_NAME_OID.len(), /*tagged=*/ true)?
-                + Self::get_structure_size(name.cn.len(), /*tagged=*/ true)?;
+            Self::get_structure_size(Self::RDN_COMMON_NAME_OID.len(), /*tagged=*/ true)
+                + Self::get_structure_size(name.cn.len(), /*tagged=*/ true);
         let serialnumber_size =
-            Self::get_structure_size(Self::RDN_SERIALNUMBER_OID.len(), /*tagged=*/ true)?
-                + Self::get_structure_size(name.serial.len(), /*tagged=*/ true)?;
+            Self::get_structure_size(Self::RDN_SERIALNUMBER_OID.len(), /*tagged=*/ true)
+                + Self::get_structure_size(name.serial.len(), /*tagged=*/ true);
 
-        let rdn_name_set_size = Self::get_structure_size(cn_size, /*tagged=*/ true)?;
+        let rdn_name_set_size = Self::get_structure_size(cn_size, /*tagged=*/ true);
         let rnd_serial_set_size =
-            Self::get_structure_size(serialnumber_size, /*tagged=*/ true)?;
-        let rdn_seq_size = Self::get_structure_size(rdn_name_set_size, /*tagged=*/ true)?
-            + Self::get_structure_size(rnd_serial_set_size, /*tagged=*/ true)?;
+            Self::get_structure_size(serialnumber_size, /*tagged=*/ true);
+        let rdn_seq_size = Self::get_structure_size(rdn_name_set_size, /*tagged=*/ true)
+            + Self::get_structure_size(rnd_serial_set_size, /*tagged=*/ true);
 
         // Encode RDN SEQUENCE OF
         let mut bytes_written = self.encode_tag_field(Self::SEQUENCE_OF_TAG)?;
@@ -1333,7 +1291,7 @@ impl CertWriter<'_> {
     // Encode ASN.1 Validity according to Platform
     #[cfg(not(feature = "disable_x509"))]
     fn encode_validity(&mut self, validity: &CertValidity) -> Result<usize, DpeErrorCode> {
-        let seq_size = Self::get_validity_size(validity, /*tagged=*/ false)?;
+        let seq_size = Self::get_validity_size(validity, /*tagged=*/ false);
 
         let mut bytes_written = self.encode_tag_field(Self::SEQUENCE_TAG)?;
         bytes_written += self.encode_size_field(seq_size)?;
@@ -1370,7 +1328,7 @@ impl CertWriter<'_> {
     ) -> Result<usize, DpeErrorCode> {
         let point_size = 1 + pub_key.curve_size() + pub_key.curve_size();
         let bitstring_size = 1 + point_size;
-        let seq_size = Self::get_structure_size(bitstring_size, /*tagged=*/ true)?
+        let seq_size = Self::get_structure_size(bitstring_size, /*tagged=*/ true)
             + self.get_ec_pub_alg_id_size(/*tagged=*/ true)?;
 
         let mut bytes_written = self.encode_tag_field(Self::SEQUENCE_TAG)?;
@@ -1402,15 +1360,15 @@ impl CertWriter<'_> {
         sig: &EcdsaSignature,
     ) -> Result<usize, DpeErrorCode> {
         let (r, s) = sig.as_slice();
-        let seq_size = Self::get_integer_bytes_size(r, /*tagged=*/ true)?
-            + Self::get_integer_bytes_size(s, /*tagged=*/ true)?;
+        let seq_size = Self::get_integer_bytes_size(r, /*tagged=*/ true)
+            + Self::get_integer_bytes_size(s, /*tagged=*/ true);
 
         // Encode BIT STRING
         let mut bytes_written = self.encode_tag_field(Self::BIT_STRING_TAG)?;
         bytes_written += self.encode_size_field(Self::get_structure_size(
             1 + seq_size,
             /*tagged=*/ true,
-        )?)?;
+        ))?;
         // Unused bits
         bytes_written += self.encode_byte(0)?;
 
@@ -1477,13 +1435,13 @@ impl CertWriter<'_> {
         sig: &EcdsaSignature,
     ) -> Result<usize, DpeErrorCode> {
         let (r, s) = sig.as_slice();
-        let seq_size = Self::get_integer_bytes_size(r, /*tagged=*/ true)?
-            + Self::get_integer_bytes_size(s, /*tagged=*/ true)?;
+        let seq_size = Self::get_integer_bytes_size(r, /*tagged=*/ true)
+            + Self::get_integer_bytes_size(s, /*tagged=*/ true);
 
         // Encode OCTET STRING
         let mut bytes_written = self.encode_tag_field(Self::OCTET_STRING_TAG)?;
         bytes_written +=
-            self.encode_size_field(Self::get_structure_size(seq_size, /*tagged=*/ true)?)?;
+            self.encode_size_field(Self::get_structure_size(seq_size, /*tagged=*/ true))?;
 
         // Encode SEQUENCE
         bytes_written += self.encode_tag_field(Self::SEQUENCE_TAG)?;
@@ -1560,10 +1518,8 @@ impl CertWriter<'_> {
     pub fn encode_version(&mut self) -> Result<usize, DpeErrorCode> {
         // Version is EXPLICIT field number 0
         let mut bytes_written = self.encode_byte(Self::CONTEXT_SPECIFIC | Self::CONSTRUCTED)?;
-        bytes_written += self.encode_size_field(Self::get_integer_size(
-            Self::X509_V3,
-            /*tagged=*/ true,
-        )?)?;
+        bytes_written +=
+            self.encode_size_field(Self::get_integer_size(Self::X509_V3, /*tagged=*/ true))?;
         bytes_written += self.encode_integer(Self::X509_V3, true)?;
 
         Ok(bytes_written)
@@ -1635,10 +1591,10 @@ impl CertWriter<'_> {
             // integrityRegisters SEQUENCE OF
             // IMPLICIT [11] Constructed
             let fwid_size = self.get_fwid_size(&node.tci_cumulative.0, /*tagged=*/ true)?;
-            let fwid_list_size = Self::get_structure_size(fwid_size, /*tagged=*/ true)?;
-            let ir_num_size = Self::get_integer_size(Self::INTEGRITY_REGISTER_NUM, true)?;
+            let fwid_list_size = Self::get_structure_size(fwid_size, /*tagged=*/ true);
+            let ir_num_size = Self::get_integer_size(Self::INTEGRITY_REGISTER_NUM, true);
             let integrity_register_size =
-                Self::get_structure_size(ir_num_size + fwid_list_size, /*tagged=*/ true)?;
+                Self::get_structure_size(ir_num_size + fwid_list_size, /*tagged=*/ true);
 
             bytes_written += self.encode_byte(Self::CONTEXT_SPECIFIC | Self::CONSTRUCTED | 11)?;
             bytes_written += self.encode_size_field(integrity_register_size)?;
@@ -1679,7 +1635,7 @@ impl CertWriter<'_> {
         } else {
             0
         };
-        let multi_tcb_info_size = Self::get_structure_size(tcb_infos_size, /*tagged=*/ true)?;
+        let multi_tcb_info_size = Self::get_structure_size(tcb_infos_size, /*tagged=*/ true);
         let critical = if self.crit_dice { Some(0xFF) } else { None };
         let mut bytes_written =
             self.encode_extension_header(Self::MULTI_TCBINFO_OID, critical, multi_tcb_info_size)?;
@@ -1701,9 +1657,9 @@ impl CertWriter<'_> {
     /// https://trustedcomputinggroup.org/wp-content/uploads/TCG_DICE_Attestation_Architecture_r22_02dec2020.pdf
     fn encode_ueid(&mut self, measurements: &MeasurementData) -> Result<usize, DpeErrorCode> {
         let ext_size = Self::get_structure_size(
-            Self::get_structure_size(measurements.label.len(), /*tagged=*/ true)?,
+            Self::get_structure_size(measurements.label.len(), /*tagged=*/ true),
             /*tagged=*/ true,
-        )?;
+        );
         let critical = if self.crit_dice { Some(0xFF) } else { None };
         let mut bytes_written = self.encode_extension_header(Self::UEID_OID, critical, ext_size)?;
 
@@ -1712,13 +1668,13 @@ impl CertWriter<'_> {
         bytes_written += self.encode_size_field(Self::get_structure_size(
             measurements.label.len(),
             /*tagged=*/ true,
-        )?)?;
+        ))?;
 
         bytes_written += self.encode_byte(Self::OCTET_STRING_TAG)?;
         bytes_written += self.encode_size_field(Self::get_structure_size(
             measurements.label.len(),
             /*tagged=*/ false,
-        )?)?;
+        ))?;
 
         bytes_written += self.encode_bytes(measurements.label)?;
 
@@ -1735,11 +1691,11 @@ impl CertWriter<'_> {
         // Extension data is sequence -> octet string. To compute size, wrap
         // in tagging twice.
         let ca_size = if measurements.is_ca {
-            Self::get_structure_size(Self::BOOL_SIZE, /*tagged=*/ true)?
+            Self::get_structure_size(Self::BOOL_SIZE, /*tagged=*/ true)
         } else {
             0
         };
-        let ext_size = Self::get_structure_size(ca_size, /*tagged=*/ true)?;
+        let ext_size = Self::get_structure_size(ca_size, /*tagged=*/ true);
         let mut bytes_written =
             self.encode_extension_header(Self::BASIC_CONSTRAINTS_OID, Some(0xFF), ext_size)?;
 
@@ -1759,7 +1715,7 @@ impl CertWriter<'_> {
     ///
     /// https://datatracker.ietf.org/doc/html/rfc5280
     fn encode_key_usage(&mut self, is_ca: bool) -> Result<usize, DpeErrorCode> {
-        let ext_size = Self::get_structure_size(2, /*tagged=*/ true)?;
+        let ext_size = Self::get_structure_size(2, /*tagged=*/ true);
         let mut bytes_written =
             self.encode_extension_header(Self::KEY_USAGE_OID, Some(0xFF), ext_size)?;
 
@@ -1807,9 +1763,9 @@ impl CertWriter<'_> {
         };
 
         let ext_size = Self::get_structure_size(
-            Self::get_structure_size(policy_oid.len(), /*tagged=*/ true)?,
+            Self::get_structure_size(policy_oid.len(), /*tagged=*/ true),
             /*tagged=*/ true,
-        )?;
+        );
         let mut bytes_written =
             self.encode_extension_header(Self::EXTENDED_KEY_USAGE_OID, Some(0xFF), ext_size)?;
 
@@ -1818,7 +1774,7 @@ impl CertWriter<'_> {
         bytes_written += self.encode_size_field(Self::get_structure_size(
             policy_oid.len(),
             /*tagged=*/ true,
-        )?)?;
+        ))?;
 
         bytes_written += self.encode_oid(policy_oid)?;
 
@@ -1834,7 +1790,7 @@ impl CertWriter<'_> {
             other_name_value,
             /*tagged=*/ true,
             /*explicit=*/ false,
-        )?)?;
+        ))?;
 
         // value := UTF8STRING
         bytes_written += self.encode_tag_field(Self::UTF8_STRING_TAG)?;
@@ -1842,7 +1798,7 @@ impl CertWriter<'_> {
             other_name_value,
             /*tagged=*/ false,
             /*explicit=*/ false,
-        )?)?;
+        ))?;
         bytes_written += self.encode_bytes(other_name_value)?;
 
         Ok(bytes_written)
@@ -1860,7 +1816,7 @@ impl CertWriter<'_> {
 
         bytes_written += self.encode_size_field(Self::get_other_name_size(
             other_name, /*tagged=*/ false,
-        )?)?;
+        ))?;
         bytes_written += self.encode_oid(other_name.oid)?;
         bytes_written += self.encode_other_name_value(other_name.other_name.as_slice())?;
 
@@ -1891,8 +1847,8 @@ impl CertWriter<'_> {
         match &measurements.subject_alt_name {
             None => Ok(0),
             Some(SubjectAltName::OtherName(other_name)) => {
-                let other_name_size = Self::get_other_name_size(other_name, /*tagged=*/ true)?;
-                let ext_size = Self::get_structure_size(other_name_size, /*tagged=*/ true)?;
+                let other_name_size = Self::get_other_name_size(other_name, /*tagged=*/ true);
+                let ext_size = Self::get_structure_size(other_name_size, /*tagged=*/ true);
                 let mut bytes_written = self.encode_extension_header(
                     Self::SUBJECT_ALTERNATIVE_NAME_OID,
                     None,
@@ -1926,8 +1882,8 @@ impl CertWriter<'_> {
             &measurements.authority_key_identifier,
             /*tagged=*/ true,
             /*explicit=*/ false,
-        )?;
-        let ext_size = Self::get_structure_size(key_identifier_size, /*tagged=*/ true)?;
+        );
+        let ext_size = Self::get_structure_size(key_identifier_size, /*tagged=*/ true);
         let mut bytes_written =
             self.encode_extension_header(Self::AUTHORITY_KEY_IDENTIFIER_OID, None, ext_size)?;
 
@@ -1950,7 +1906,7 @@ impl CertWriter<'_> {
         let ext_size = Self::get_structure_size(
             measurements.subject_key_identifier.len(),
             /*tagged=*/ true,
-        )?;
+        );
         let mut bytes_written =
             self.encode_extension_header(Self::SUBJECT_KEY_IDENTIFIER_OID, None, ext_size)?;
 
@@ -2125,7 +2081,7 @@ impl CertWriter<'_> {
             serial_number,
             issuer_name,
             /*tagged=*/ false,
-        )?;
+        );
 
         // IssuerAndSerialNumber sequence
         let mut bytes_written = self.encode_tag_field(Self::SEQUENCE_TAG)?;
@@ -2155,7 +2111,7 @@ impl CertWriter<'_> {
             subject_key_identifier,
             /*tagged=*/ true,
             /*explicit=*/ false,
-        )?)?;
+        ))?;
 
         // SubjectKeyIdentifier OCTET STRING
         bytes_written += self.encode_tag_field(Self::OCTET_STRING_TAG)?;
@@ -2163,7 +2119,7 @@ impl CertWriter<'_> {
             subject_key_identifier,
             /*tagged=*/ false,
             /*explicit=*/ false,
-        )?)?;
+        ))?;
         bytes_written += self.encode_bytes(subject_key_identifier)?;
 
         Ok(bytes_written)
@@ -2180,7 +2136,7 @@ impl CertWriter<'_> {
             key_identifier,
             /*tagged=*/ false,
             /*explicit=*/ false,
-        )?)?;
+        ))?;
 
         bytes_written += self.encode_bytes(key_identifier)?;
 
@@ -2223,23 +2179,23 @@ impl CertWriter<'_> {
             csr_bytes_written,
             /*tagged=*/ false,
             /*explicit=*/ false,
-        )?;
+        );
 
         let econtent_0_size = Self::get_econtent_size(
             csr_bytes_written,
             /*tagged=*/ true,
             /*explicit=*/ false,
-        )?;
+        );
 
         {
             self.start_backtrack()?;
-            self.pop_backtrack(Self::get_size_width(econtent_1_size)?)?;
+            self.pop_backtrack(Self::get_size_width(econtent_1_size))?;
             bytes_written += self.encode_size_field(econtent_1_size)?;
 
-            self.pop_backtrack(Self::get_size_width(econtent_0_size)?)?;
+            self.pop_backtrack(Self::get_size_width(econtent_0_size))?;
             bytes_written += self.encode_size_field(econtent_0_size)?;
 
-            self.pop_backtrack(Self::get_size_width(bytes_written + csr_bytes_written)?)?;
+            self.pop_backtrack(Self::get_size_width(bytes_written + csr_bytes_written))?;
 
             size_bytes_written += self.encode_size_field(bytes_written + csr_bytes_written)?;
             self.end_backtrack()?;
@@ -2433,7 +2389,7 @@ impl CertWriter<'_> {
 
         {
             self.start_backtrack()?;
-            self.pop_backtrack(Self::get_size_width(body_size)?)?;
+            self.pop_backtrack(Self::get_size_width(body_size))?;
 
             prefix_bytes_written += self.encode_size_field(body_size)?;
 
@@ -2616,13 +2572,13 @@ impl CertWriter<'_> {
 
         {
             self.start_backtrack()?;
-            self.pop_backtrack(Self::get_size_width(signed_data_field_1)?)?;
+            self.pop_backtrack(Self::get_size_width(signed_data_field_1))?;
             bytes_written += self.encode_size_field(signed_data_field_1)?;
 
-            self.pop_backtrack(Self::get_size_width(signed_data_field_0)?)?;
+            self.pop_backtrack(Self::get_size_width(signed_data_field_0))?;
             bytes_written += self.encode_size_field(signed_data_field_0)?;
 
-            self.pop_backtrack(Self::get_size_width(bytes_written)?)?;
+            self.pop_backtrack(Self::get_size_width(bytes_written))?;
             size_bytes_written += self.encode_size_field(bytes_written)?;
 
             self.end_backtrack()?;
@@ -3119,10 +3075,7 @@ pub(crate) mod tests {
             let byte_count = w.encode_integer_bytes(&c, true).unwrap();
             let n = asn1::parse_single::<u64>(&cert[..byte_count]).unwrap();
             assert_eq!(n, u64::from_be_bytes(c));
-            assert_eq!(
-                CertWriter::get_integer_bytes_size(&c, true).unwrap(),
-                byte_count
-            );
+            assert_eq!(CertWriter::get_integer_bytes_size(&c, true), byte_count);
         }
 
         let integer_cases = [0xFFFFFFFF00000000, 0x0102030405060708, 0x2];
@@ -3133,7 +3086,7 @@ pub(crate) mod tests {
             let byte_count = w.encode_integer(c, true).unwrap();
             let n = asn1::parse_single::<u64>(&cert[..byte_count]).unwrap();
             assert_eq!(n, c);
-            assert_eq!(CertWriter::get_integer_size(c, true).unwrap(), byte_count);
+            assert_eq!(CertWriter::get_integer_size(c, true), byte_count);
         }
     }
 
@@ -3161,10 +3114,7 @@ pub(crate) mod tests {
         let actual = name.to_string_with_registry(oid_registry()).unwrap();
         assert_eq!(expected, actual);
 
-        assert_eq!(
-            CertWriter::get_rdn_size(&test_name, true).unwrap(),
-            bytes_written
-        );
+        assert_eq!(CertWriter::get_rdn_size(&test_name, true), bytes_written);
     }
 
     #[cfg(not(feature = "ml-dsa"))]
@@ -3277,7 +3227,7 @@ pub(crate) mod tests {
         let bytes_written = w.encode_key_usage(is_ca).unwrap();
         assert_eq!(
             bytes_written,
-            CertWriter::get_key_usage_size(/*tagged=*/ true).unwrap()
+            CertWriter::get_key_usage_size(/*tagged=*/ true)
         );
 
         let mut parser = X509ExtensionParser::new().with_deep_parse_extensions(false);
