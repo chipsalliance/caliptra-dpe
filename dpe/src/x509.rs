@@ -1185,13 +1185,20 @@ impl CertWriter<'_> {
         self.encode_integer_bytes(&integer.to_be_bytes(), tagged)
     }
 
-    /// DER-encodes `oid` as an ASN.1 ObjectIdentifier
-    fn encode_oid(&mut self, oid: &[u8]) -> Result<usize, DpeErrorCode> {
-        let mut bytes_written = self.encode_tag_field(Self::OID_TAG)?;
-        bytes_written += self.encode_size_field(oid.len())?;
-        bytes_written += self.encode_bytes(oid)?;
+    /// DER-encode a primitive TLV: a tag byte, a definite-length size field for
+    /// `val.len()`, then `val` itself. This is the common shape of OID, OCTET
+    /// STRING, UTF8String and IMPLICIT primitive fields.
+    fn encode_tlv(&mut self, tag: u8, val: &[u8]) -> Result<usize, DpeErrorCode> {
+        let mut bytes_written = self.encode_tag_field(tag)?;
+        bytes_written += self.encode_size_field(val.len())?;
+        bytes_written += self.encode_bytes(val)?;
 
         Ok(bytes_written)
+    }
+
+    /// DER-encodes `oid` as an ASN.1 ObjectIdentifier
+    fn encode_oid(&mut self, oid: &[u8]) -> Result<usize, DpeErrorCode> {
+        self.encode_tlv(Self::OID_TAG, oid)
     }
 
     /// Encode a DirectoryString for an RDN. Multiple string types are allowed, so
@@ -1202,11 +1209,7 @@ impl CertWriter<'_> {
             DirectoryString::PrintableString(val) => (val, Self::PRINTABLE_STRING_TAG),
             DirectoryString::Utf8String(val) => (val, Self::UTF8_STRING_TAG),
         };
-        let mut bytes_written = self.encode_tag_field(tag)?;
-        bytes_written += self.encode_size_field(val.len())?;
-        bytes_written += self.encode_bytes(val)?;
-
-        Ok(bytes_written)
+        self.encode_tlv(tag, val)
     }
 
     /// DER-encodes a RelativeDistinguishedName with CommonName and SerialNumber
@@ -1502,11 +1505,7 @@ impl CertWriter<'_> {
         let sig = sig.as_bytes();
 
         // Encode OCTET STRING
-        let mut bytes_written = self.encode_tag_field(Self::OCTET_STRING_TAG)?;
-        bytes_written += self.encode_size_field(sig.len())?;
-        bytes_written += self.encode_bytes(sig)?;
-
-        Ok(bytes_written)
+        self.encode_tlv(Self::OCTET_STRING_TAG, sig)
     }
 
     /// DER-encodes the AlgorithmIdentifier for the MLDSA-87 signature algorithm
@@ -1576,14 +1575,10 @@ impl CertWriter<'_> {
 
         // hashAlg OID
         let oid = self.hash_oid()?;
-        bytes_written += self.encode_byte(Self::OID_TAG)?;
-        bytes_written += self.encode_size_field(oid.len())?;
-        bytes_written += self.encode_bytes(oid)?;
+        bytes_written += self.encode_oid(oid)?;
 
         // digest OCTET STRING
-        bytes_written += self.encode_byte(Self::OCTET_STRING_TAG)?;
-        bytes_written += self.encode_size_field(tci.0.len())?;
-        bytes_written += self.encode_bytes(&tci.0)?;
+        bytes_written += self.encode_tlv(Self::OCTET_STRING_TAG, &tci.0)?;
 
         Ok(bytes_written)
     }
@@ -1628,15 +1623,12 @@ impl CertWriter<'_> {
         // vendorInfo OCTET STRING
         // IMPLICIT[8] Primitive
         let vinfo = &node.locality.to_be_bytes();
-        bytes_written += self.encode_byte(Self::CONTEXT_SPECIFIC | 0x08)?;
-        bytes_written += self.encode_size_field(vinfo.len())?;
-        bytes_written += self.encode_bytes(vinfo)?;
+        bytes_written += self.encode_tlv(Self::CONTEXT_SPECIFIC | 0x08, vinfo)?;
 
         // type OCTET STRING
         // IMPLICIT[9] Primitive
-        bytes_written += self.encode_byte(Self::CONTEXT_SPECIFIC | 0x09)?;
-        bytes_written += self.encode_size_field(core::mem::size_of::<u32>())?;
-        bytes_written += self.encode_bytes(node.tci_type.as_bytes())?;
+        bytes_written +=
+            self.encode_tlv(Self::CONTEXT_SPECIFIC | 0x09, node.tci_type.as_bytes())?;
 
         // Omit integrityRegisters from tcb_info if the profile does not support recursive
         if supports_recursive {
@@ -1963,9 +1955,8 @@ impl CertWriter<'_> {
             self.encode_extension_header(Self::SUBJECT_KEY_IDENTIFIER_OID, None, ext_size)?;
 
         // SubjectKeyIdentifier := OCTET STRING
-        bytes_written += self.encode_byte(Self::OCTET_STRING_TAG)?;
-        bytes_written += self.encode_size_field(measurements.subject_key_identifier.len())?;
-        bytes_written += self.encode_bytes(&measurements.subject_key_identifier)?;
+        bytes_written +=
+            self.encode_tlv(Self::OCTET_STRING_TAG, &measurements.subject_key_identifier)?;
 
         Ok(bytes_written)
     }
