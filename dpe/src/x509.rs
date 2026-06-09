@@ -2362,43 +2362,100 @@ impl CertWriter<'_> {
         measurements: &MeasurementData,
         validity: &CertValidity,
     ) -> Result<usize, DpeErrorCode> {
+        self.encode_signed_payload(
+            sign_cb,
+            SignedPayload::Tbs {
+                serial_number,
+                issuer_name,
+                subject_name,
+                pubkey,
+                measurements,
+                validity,
+            },
+        )
+    }
+
+    /// Encode a signed ASN.1 structure: an outer SEQUENCE wrapping a payload
+    /// followed by its signature BIT STRING. This is the common envelope for
+    /// both an X.509 `Certificate` (TBSCertificate + signature) and a PKCS #10
+    /// `CertificateRequest` (CertificationRequestInfo + signature).
+    ///
+    /// The payload is encoded first, signed via `sign_cb`, and the signature
+    /// appended; the outer SEQUENCE length is backfilled once both sizes are
+    /// known.
+    ///
+    /// Returns number of bytes written.
+    #[cfg(any(not(feature = "disable_x509"), not(feature = "disable_csr")))]
+    fn encode_signed_payload(
+        &mut self,
+        sign_cb: &mut (impl FnMut(&[u8], bool) -> Result<Signature, CryptoError> + ?Sized),
+        payload: SignedPayload,
+    ) -> Result<usize, DpeErrorCode> {
         let mut prefix_bytes_written = self.encode_tag_field(Self::SEQUENCE_TAG)?;
         let offset = self.push_backtrack(SIZE_TAG_OFFSET)?;
 
-        let tbs_bytes_written = self.encode_tbs(
-            serial_number,
-            issuer_name,
-            subject_name,
-            pubkey,
-            measurements,
-            validity,
-        )?;
+        // Encode the payload. `is_csr` selects the domain separation passed to
+        // the signing callback (PKCS #10 requests are signed differently).
+        let (payload_bytes_written, is_csr) = match payload {
+            #[cfg(not(feature = "disable_x509"))]
+            SignedPayload::Tbs {
+                serial_number,
+                issuer_name,
+                subject_name,
+                pubkey,
+                measurements,
+                validity,
+            } => (
+                self.encode_tbs(
+                    serial_number,
+                    issuer_name,
+                    subject_name,
+                    pubkey,
+                    measurements,
+                    validity,
+                )?,
+                false,
+            ),
+            #[cfg(not(feature = "disable_csr"))]
+            SignedPayload::CertReqInfo {
+                pub_key,
+                subject_name,
+                measurements,
+            } => (
+                self.encode_certification_request_info(pub_key, subject_name, measurements)?,
+                true,
+            ),
+        };
 
         let sig = {
-            let tbs = self
+            let signed = self
                 .certificate
-                .get(offset..tbs_bytes_written + offset)
+                .get(offset..payload_bytes_written + offset)
                 .ok_or(DpeErrorCode::InternalError)?;
-            sign_cb(tbs, false)
+            sign_cb(signed, is_csr)
         };
         let sig = okref(&sig)?;
 
         let sig_bytes_written = self.encode_signature_bit_string(sig)?;
 
-        let cert_size = tbs_bytes_written + sig_bytes_written;
+        let body_size = payload_bytes_written + sig_bytes_written;
 
         {
             self.start_backtrack()?;
-            self.pop_backtrack(Self::get_size_width(cert_size)?)?;
+            self.pop_backtrack(Self::get_size_width(body_size)?)?;
 
-            prefix_bytes_written += self.encode_size_field(cert_size)?;
+            prefix_bytes_written += self.encode_size_field(body_size)?;
 
             self.end_backtrack()?;
         }
 
-        let total_size = cert_size + prefix_bytes_written;
+        let total_size = body_size + prefix_bytes_written;
 
-        if !self.backtracks.is_empty() {
+        // A certificate is encoded at the top level, so all backtracks must be
+        // resolved by now. A CSR's CertificationRequestInfo is encoded nested
+        // inside the CMS encapsulated content (which holds its own outstanding
+        // backtrack), so this invariant only applies to the certificate case.
+        if !is_csr && !self.backtracks.is_empty() {
             return Err(DpeErrorCode::X509InvalidState);
         }
 
@@ -2479,40 +2536,14 @@ impl CertWriter<'_> {
         subject_name: &Name,
         measurements: &MeasurementData,
     ) -> Result<usize, DpeErrorCode> {
-        let mut bytes_written = self.encode_tag_field(Self::SEQUENCE_TAG)?;
-        let offset = self.push_backtrack(SIZE_TAG_OFFSET)?;
-
-        // CertificateRequest sequence
-        // CertificationRequestInfo
-        let cert_req_size =
-            self.encode_certification_request_info(pub_key, subject_name, measurements)?;
-
-        let sig = {
-            let tbs = self
-                .certificate
-                .get(offset..cert_req_size + offset)
-                .ok_or(DpeErrorCode::InternalError)?;
-            sign_cb(tbs, true)
-        };
-        let sig = okref(&sig)?;
-
-        // Signature
-        let sig_bytes_written = self.encode_signature_bit_string(sig)?;
-
-        let csr_size = cert_req_size + sig_bytes_written;
-
-        {
-            self.start_backtrack()?;
-            self.pop_backtrack(Self::get_size_width(csr_size)?)?;
-
-            bytes_written += self.encode_size_field(csr_size)?;
-
-            self.end_backtrack()?;
-        }
-
-        let total_size = csr_size + bytes_written;
-
-        Ok(total_size)
+        self.encode_signed_payload(
+            sign_cb,
+            SignedPayload::CertReqInfo {
+                pub_key,
+                subject_name,
+                measurements,
+            },
+        )
     }
 
     /// Encode a CMS ContentInfo message
@@ -2771,6 +2802,26 @@ pub(crate) fn create_dpe_csr(
         CertificateType::Leaf,
         csr,
     )
+}
+
+/// The signed payload variants handled by [`CertWriter::encode_signed_payload`]:
+/// an X.509 TBSCertificate or a PKCS #10 CertificationRequestInfo.
+enum SignedPayload<'a> {
+    #[cfg(not(feature = "disable_x509"))]
+    Tbs {
+        serial_number: &'a [u8],
+        issuer_name: &'a [u8],
+        subject_name: &'a Name<'a>,
+        pubkey: &'a PubKey,
+        measurements: &'a MeasurementData<'a>,
+        validity: &'a CertValidity,
+    },
+    #[cfg(not(feature = "disable_csr"))]
+    CertReqInfo {
+        pub_key: &'a PubKey,
+        subject_name: &'a Name<'a>,
+        measurements: &'a MeasurementData<'a>,
+    },
 }
 
 enum CertOrCsrArgs<'a> {
