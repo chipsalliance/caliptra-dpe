@@ -388,7 +388,18 @@ fn run_fuzz_checks() -> Result<()> {
             &format!("+{}", nightly),
             "install",
             "cargo-fuzz",
+            "--version",
+            "0.13.1",
+            "--locked",
+        ])
+        .run()?;
+    cargo()
+        .args([
+            &format!("+{}", nightly),
+            "install",
             "cargo-afl",
+            "--version",
+            "0.17.0",
             "--locked",
         ])
         .run()?;
