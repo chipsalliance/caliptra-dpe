@@ -3081,6 +3081,173 @@ pub(crate) mod tests {
         assert_eq!(CertWriter::get_rdn_size(&test_name, true), bytes_written);
     }
 
+    /// Run `encode` over three buffers: exactly the required size (must succeed
+    /// with `Ok(exact)`), one byte too small, and half size (each must report a
+    /// truncation `Err`, never a silently-truncated `Ok`). The exact size is
+    /// discovered by encoding once into a generous buffer.
+    ///
+    /// For the truncating cases the writer is handed a slice that is immediately
+    /// followed, in the same allocation, by a canary region; after encoding the
+    /// canary must be untouched, proving no write landed past the writer's slice.
+    fn assert_overflow_detected<F>(mut encode: F)
+    where
+        F: FnMut(&mut CertWriter) -> Result<usize, DpeErrorCode>,
+    {
+        let mut big = vec![0u8; 16384];
+        let exact = encode(&mut CertWriter::new(&mut big, DPE_PROFILE, true))
+            .expect("encoding into a large buffer should succeed");
+
+        let mut buf = vec![0u8; exact];
+        assert_eq!(
+            encode(&mut CertWriter::new(&mut buf, DPE_PROFILE, true)),
+            Ok(exact),
+            "exact-fit buffer ({exact}) should succeed",
+        );
+
+        const CANARY: u8 = 0xA5;
+        const CANARY_LEN: usize = 64;
+        for len in [exact - 1, exact / 2] {
+            // Writable region of `len` bytes followed by a canary region, all in
+            // one allocation so an out-of-bounds write would clobber the canary.
+            let mut backing = vec![CANARY; len + CANARY_LEN];
+            let (writable, canary) = backing.split_at_mut(len);
+            assert_eq!(
+                encode(&mut CertWriter::new(writable, DPE_PROFILE, true)),
+                Err(DpeErrorCode::InternalError),
+                "undersized buffer ({len} of {exact}) must report truncation",
+            );
+            assert!(
+                canary.iter().all(|&b| b == CANARY),
+                "buffer overflow: a write past the {len}-byte buffer clobbered the canary",
+            );
+        }
+    }
+
+    /// Every public `CertWriter` encoder must report truncation rather than
+    /// silently emitting a short structure when the output buffer is too small.
+    #[test]
+    fn test_pub_fn_buffer_overflow_is_detected() {
+        // ----- shared inputs (mirror build_test_cert_*) -----
+        let mut issuer_der = [0u8; 1024];
+        let issuer_len = CertWriter::new(&mut issuer_der, DPE_PROFILE, true)
+            .encode_rdn(&TEST_ISSUER_NAME)
+            .unwrap();
+        let issuer = &issuer_der[..issuer_len];
+
+        let node = TciNodeData::new();
+        let subject_key_identifier = [0u8; MAX_KEY_IDENTIFIER_SIZE];
+        let mut other_name = ArrayVec::new();
+        other_name
+            .try_extend_from_slice(DEFAULT_OTHER_NAME_VALUE.as_bytes())
+            .unwrap();
+        let measurements = MeasurementData {
+            label: &[0; DPE_PROFILE.hash_size()],
+            tci_nodes: &[node],
+            is_ca: false,
+            supports_recursive: true,
+            subject_key_identifier,
+            authority_key_identifier: subject_key_identifier,
+            subject_alt_name: Some(SubjectAltName::OtherName(OtherName {
+                oid: DEFAULT_OTHER_NAME_OID,
+                other_name,
+            })),
+        };
+
+        let mut not_before = ArrayVec::new();
+        not_before
+            .try_extend_from_slice("20230227000000Z".as_bytes())
+            .unwrap();
+        let mut not_after = ArrayVec::new();
+        not_after
+            .try_extend_from_slice("99991231235959Z".as_bytes())
+            .unwrap();
+        let validity = CertValidity {
+            not_before,
+            not_after,
+        };
+
+        // Public key + signature for the active profile.
+        #[cfg(not(feature = "ml-dsa"))]
+        let (pub_key, test_sig) = {
+            let test_pub = EcdsaPub::from_slice(&[0xAA; ECC_INT_SIZE], &[0xBB; ECC_INT_SIZE]);
+            let pub_key = match DPE_PROFILE.alg() {
+                #[cfg(feature = "p256")]
+                SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit256) => {
+                    PubKey::Ecdsa(EcdsaPubKey::Ecdsa256(test_pub))
+                }
+                #[cfg(feature = "p384")]
+                SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384) => {
+                    PubKey::Ecdsa(EcdsaPubKey::Ecdsa384(test_pub))
+                }
+                _ => panic!("Missing signature"),
+            };
+            let sig = Signature::Ecdsa(
+                EcdsaSig::from_slice(&[0xCC; ECC_INT_SIZE], &[0xDD; ECC_INT_SIZE]).into(),
+            );
+            (pub_key, sig)
+        };
+        #[cfg(feature = "ml-dsa")]
+        let (pub_key, test_sig) = {
+            const ALGORITHM: MldsaAlgorithm = match DPE_PROFILE.alg() {
+                SignatureAlgorithm::Mldsa(a) => a,
+                _ => panic!("non ml-dsa profile"),
+            };
+            (
+                PubKey::Mldsa(MldsaPublicKey::from_slice(
+                    &[0xAA; ALGORITHM.public_key_size()],
+                )),
+                Signature::Mldsa(MldsaSignature([0xBB; ALGORITHM.signature_size()])),
+            )
+        };
+
+        let mut sign_cb = |_data: &[u8], _use_derived: bool| Ok(test_sig.clone());
+
+        // SubjectKeyIdentifier keeps the SignerIdentifier setup simple.
+        let mut ski = ArrayVec::new();
+        ski.try_extend_from_slice(&subject_key_identifier).unwrap();
+        let sid = SignerIdentifier::SubjectKeyIdentifier(ski);
+
+        // ----- exercise every public encoder -----
+        assert_overflow_detected(|w| w.encode_rdn(&TEST_SUBJECT_NAME));
+        assert_overflow_detected(|w| {
+            w.encode_tbs(
+                TEST_SERIAL,
+                issuer,
+                &TEST_SUBJECT_NAME,
+                &pub_key,
+                &measurements,
+                &validity,
+            )
+        });
+        assert_overflow_detected(|w| {
+            w.encode_certification_request_info(&pub_key, &TEST_SUBJECT_NAME, &measurements)
+        });
+        assert_overflow_detected(|w| w.encode_signer_info(&test_sig, &sid));
+        assert_overflow_detected(|w| {
+            w.encode_certificate(
+                &mut sign_cb,
+                TEST_SERIAL,
+                issuer,
+                &TEST_SUBJECT_NAME,
+                &pub_key,
+                &measurements,
+                &validity,
+            )
+        });
+        assert_overflow_detected(|w| {
+            w.encode_csr(&mut sign_cb, &pub_key, &TEST_SUBJECT_NAME, &measurements)
+        });
+        assert_overflow_detected(|w| {
+            w.encode_cms(
+                &mut sign_cb,
+                &pub_key,
+                &TEST_SUBJECT_NAME,
+                &measurements,
+                &sid,
+            )
+        });
+    }
+
     #[cfg(not(feature = "ml-dsa"))]
     #[test]
     fn test_subject_pubkey() {
