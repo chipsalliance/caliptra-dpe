@@ -2398,14 +2398,6 @@ impl CertWriter<'_> {
 
         let total_size = body_size + prefix_bytes_written;
 
-        // A certificate is encoded at the top level, so all backtracks must be
-        // resolved by now. A CSR's CertificationRequestInfo is encoded nested
-        // inside the CMS encapsulated content (which holds its own outstanding
-        // backtrack), so this invariant only applies to the certificate case.
-        if !is_csr && !self.backtracks.is_empty() {
-            return Err(DpeErrorCode::X509InvalidState);
-        }
-
         Ok(total_size)
     }
 
@@ -2989,6 +2981,7 @@ fn create_dpe_cert_or_csr(
 #[cfg(test)]
 pub(crate) mod tests {
     use crate::dpe_instance::tests::DPE_PROFILE;
+    use crate::response::DpeErrorCode;
     use crate::tci::{TciMeasurement, TciNodeData};
     use crate::x509::{CertWriter, DirectoryString, MeasurementData, Name};
     use crate::DpeProfile;
@@ -3000,7 +2993,8 @@ pub(crate) mod tests {
     use caliptra_dpe_crypto::ml_dsa::{MldsaAlgorithm, MldsaSignature};
     use caliptra_dpe_crypto::{PubKey, Signature, SignatureAlgorithm};
     use caliptra_dpe_platform::{
-        ArrayVec, CertValidity, OtherName, SubjectAltName, MAX_KEY_IDENTIFIER_SIZE,
+        ArrayVec, CertValidity, OtherName, SignerIdentifier, SubjectAltName,
+        MAX_KEY_IDENTIFIER_SIZE,
     };
     use openssl::hash::{Hasher, MessageDigest};
     use std::str;
@@ -3906,5 +3900,71 @@ pub(crate) mod tests {
             0xbb, 0xbb, 0xbb, 0xbb, //
         ];
         assert_eq!(&buf[..n], expected);
+    }
+
+    #[test]
+    #[cfg(not(feature = "ml-dsa"))]
+    fn test_encode_cms_rejects_unresolved_backtrack() {
+        let mut buf = [0u8; 4096];
+        let mut w = CertWriter::new(&mut buf, DPE_PROFILE, true);
+
+        // Pre-push one extra backtrack to simulate a push/pop imbalance.
+        // encode_cms pushes 3 and pops 3; this extra entry survives those
+        // pops and triggers the X509InvalidState guard at the end of encode_cms.
+        w.push_backtrack(super::SIZE_TAG_OFFSET).unwrap();
+
+        const ECC_INT_SIZE: usize = DPE_PROFILE.ecc_int_size();
+        let test_pub = EcdsaPub::from_slice(&[0xAA; ECC_INT_SIZE], &[0xBB; ECC_INT_SIZE]);
+        let pub_key = match DPE_PROFILE.alg() {
+            #[cfg(feature = "p256")]
+            SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit256) => {
+                PubKey::Ecdsa(EcdsaPubKey::Ecdsa256(test_pub))
+            }
+            #[cfg(feature = "p384")]
+            SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384) => {
+                PubKey::Ecdsa(EcdsaPubKey::Ecdsa384(test_pub))
+            }
+            _ => panic!("unsupported algorithm"),
+        };
+        let test_sig: Signature = match DPE_PROFILE.alg() {
+            #[cfg(feature = "p256")]
+            SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit256) => Signature::Ecdsa(
+                EcdsaSig::from_slice(&[0xCC; ECC_INT_SIZE], &[0xDD; ECC_INT_SIZE]).into(),
+            ),
+            #[cfg(feature = "p384")]
+            SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384) => Signature::Ecdsa(
+                EcdsaSig::from_slice(&[0xCC; ECC_INT_SIZE], &[0xDD; ECC_INT_SIZE]).into(),
+            ),
+            _ => panic!("unsupported algorithm"),
+        };
+        let mut sign_cb = |_data: &[u8], _use_derived: bool| Ok(test_sig.clone());
+
+        let node = TciNodeData::new();
+        let subject_key_identifier = [0xBB; MAX_KEY_IDENTIFIER_SIZE];
+        let measurements = MeasurementData {
+            label: &[0; DPE_PROFILE.hash_size()],
+            tci_nodes: &[node],
+            is_ca: false,
+            supports_recursive: false,
+            subject_key_identifier,
+            authority_key_identifier: subject_key_identifier,
+            subject_alt_name: None,
+        };
+
+        let mut ski = ArrayVec::new();
+        ski.try_extend_from_slice(&[0xBB; MAX_KEY_IDENTIFIER_SIZE])
+            .unwrap();
+        let sid = SignerIdentifier::SubjectKeyIdentifier(ski);
+
+        assert_eq!(
+            w.encode_cms(
+                &mut sign_cb,
+                &pub_key,
+                &TEST_SUBJECT_NAME,
+                &measurements,
+                &sid
+            ),
+            Err(DpeErrorCode::X509InvalidState),
+        );
     }
 }
