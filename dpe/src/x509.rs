@@ -1056,31 +1056,35 @@ impl CertWriter<'_> {
         Ok(Self::get_structure_size(attribute_size, tagged))
     }
 
-    /// Write all of `bytes` to the certificate buffer
-    fn encode_bytes(&mut self, bytes: &[u8]) -> Result<usize, DpeErrorCode> {
+    /// Write all of `bytes` to the certificate buffer.
+    fn encode_bytes(&mut self, bytes: &[u8]) -> usize {
         let size = bytes.len();
-
-        if self.offset >= self.certificate.len() || self.offset + size > self.certificate.len() {
-            return Err(DpeErrorCode::InternalError);
+        match self.certificate.get_mut(self.offset..self.offset + size) {
+            Some(s) => s.copy_from_slice(bytes),
+            // Buffer full: skip the write. The overflow is reported by the
+            // post-serialization `check_not_truncated()` in the public encoders.
+            None => {}
         }
 
-        self.certificate
-            .get_mut(self.offset..self.offset + size)
-            .ok_or(DpeErrorCode::InternalError)?
-            .copy_from_slice(bytes);
+        // Note: Increment the offset regardless of whether the write occurred to allow detection
+        // of encoding overflows.
         self.offset += size;
-
-        Ok(size)
+        size
     }
 
-    /// Write a single `byte` to the certificate buffer
-    fn encode_byte(&mut self, byte: u8) -> Result<usize, DpeErrorCode> {
-        *self
-            .certificate
-            .get_mut(self.offset)
-            .ok_or(DpeErrorCode::InternalError)? = byte;
+    /// Write a single `byte` to the certificate buffer.
+    fn encode_byte(&mut self, byte: u8) -> usize {
+        match self.certificate.get_mut(self.offset) {
+            Some(b) => *b = byte,
+            // Buffer full: skip the write. The overflow is reported by the
+            // post-serialization `check_not_truncated()` in the public encoders.
+            None => {}
+        }
+
+        // Note: Increment the offset regardless of whether the write occurred to allow detection
+        // of encoding overflows.
         self.offset += 1;
-        Ok(1)
+        1
     }
 
     /// DER-encodes the tag field of an ASN.1 type
