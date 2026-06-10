@@ -1397,7 +1397,7 @@ impl CertWriter<'_> {
                 // Alg ID
                 self.encode_mldsa_sig_alg_id()? +
                 // Signature
-                self.encode_mldsa_signature_bit_string(sig)?
+                self.encode_mldsa_signature_bit_string(sig)
             }
         };
         Ok(bytes_written)
@@ -1496,10 +1496,7 @@ impl CertWriter<'_> {
 
     /// BIT STRING containing signature
     #[cfg(feature = "ml-dsa")]
-    fn encode_mldsa_signature_bit_string(
-        &mut self,
-        sig: &MldsaSignature,
-    ) -> Result<usize, DpeErrorCode> {
+    fn encode_mldsa_signature_bit_string(&mut self, sig: &MldsaSignature) -> usize {
         // Encode BIT STRING
         let mut bytes_written = self.encode_tag_field(Self::BIT_STRING_TAG);
         bytes_written += self.encode_size_field(1 + sig.0.len());
@@ -1507,7 +1504,7 @@ impl CertWriter<'_> {
         bytes_written += self.encode_byte(0);
         bytes_written += self.encode_bytes(&sig.0);
 
-        Ok(bytes_written)
+        bytes_written
     }
 
     fn encode_version(&mut self) -> usize {
