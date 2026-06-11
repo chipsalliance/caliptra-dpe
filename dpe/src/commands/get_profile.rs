@@ -3,7 +3,7 @@
 use super::CommandExecution;
 use crate::{
     dpe_instance::{DpeEnv, DpeInstance},
-    error::DpeErrorCode,
+    error::DpeStatus,
     mutresp,
     response::GetProfileResp,
 };
@@ -32,7 +32,7 @@ impl CommandExecution for GetProfileCmd {
         env: &mut dyn DpeEnv,
         _locality: u32,
         out: &mut [u8],
-    ) -> Result<usize, DpeErrorCode> {
+    ) -> Result<usize, DpeStatus> {
         let response = mutresp::<GetProfileResp>(dpe.profile, out)?;
         let support = env.state().support;
         *response = dpe.get_profile(env.platform(), support)?;

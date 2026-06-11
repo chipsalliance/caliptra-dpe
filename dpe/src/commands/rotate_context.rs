@@ -3,7 +3,7 @@ use super::CommandExecution;
 use crate::{
     context::{ContextHandle, ContextState},
     dpe_instance::{DpeEnv, DpeInstance},
-    error::{DpeErrorCode, InternalErrorCode},
+    error::{DpeStatus, InternalErrorCode},
     mutresp,
     response::NewHandleResp,
     State,
@@ -88,9 +88,9 @@ impl CommandExecution for RotateCtxCmd {
         env: &mut dyn DpeEnv,
         locality: u32,
         out: &mut [u8],
-    ) -> Result<usize, DpeErrorCode> {
+    ) -> Result<usize, DpeStatus> {
         if !env.state().support.rotate_context() {
-            return Err(DpeErrorCode::InvalidCommand);
+            return Err(DpeStatus::InvalidCommand);
         } else {
             #[cfg(feature = "cfi")]
             cfi_assert!(env.state().support.rotate_context());
@@ -106,7 +106,7 @@ impl CommandExecution for RotateCtxCmd {
             let non_default_valid_handles_exist =
                 self.non_default_valid_handles_exist(env.state(), locality, idx);
             if default_context_idx.is_ok() || cfi_launder(non_default_valid_handles_exist) {
-                return Err(DpeErrorCode::InvalidArgument);
+                return Err(DpeStatus::InvalidArgument);
             } else {
                 #[cfg(feature = "cfi")]
                 cfi_assert!(default_context_idx.is_err() && !non_default_valid_handles_exist);
@@ -124,12 +124,12 @@ impl CommandExecution for RotateCtxCmd {
         env.state()
             .contexts
             .get_mut(idx)
-            .ok_or(DpeErrorCode::from(InternalErrorCode::ContextIndexOob))?
+            .ok_or(DpeStatus::from(InternalErrorCode::ContextIndexOob))?
             .handle = new_handle;
 
         *response = NewHandleResp {
             handle: new_handle,
-            resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
+            resp_hdr: dpe.response_hdr(DpeStatus::NoError),
         };
         Ok(size_of_val(response))
     }
@@ -181,7 +181,7 @@ mod tests {
         let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
         // Make sure it returns an error if the command is marked unsupported.
         assert_eq!(
-            Err(DpeErrorCode::InvalidCommand),
+            Err(DpeStatus::InvalidCommand),
             RotateCtxCmd {
                 handle: ContextHandle::default(),
                 flags: RotateCtxFlags::empty(),
@@ -198,7 +198,7 @@ mod tests {
 
         // Invalid handle.
         assert_eq!(
-            Err(DpeErrorCode::InvalidHandle),
+            Err(DpeStatus::InvalidHandle),
             RotateCtxCmd {
                 handle: TEST_HANDLE,
                 flags: RotateCtxFlags::empty(),
@@ -208,7 +208,7 @@ mod tests {
 
         // Wrong locality.
         assert_eq!(
-            Err(DpeErrorCode::InvalidLocality),
+            Err(DpeStatus::InvalidLocality),
             RotateCtxCmd {
                 handle: ContextHandle::default(),
                 flags: RotateCtxFlags::empty(),
@@ -218,7 +218,7 @@ mod tests {
 
         // Caller's locality already has default context.
         assert_eq!(
-            Err(DpeErrorCode::InvalidArgument),
+            Err(DpeStatus::InvalidArgument),
             RotateCtxCmd {
                 handle: ContextHandle::default(),
                 flags: RotateCtxFlags::TARGET_IS_DEFAULT,
@@ -230,7 +230,7 @@ mod tests {
         assert_eq!(
             Ok(Response::RotateCtx(NewHandleResp {
                 handle: RANDOM_HANDLE,
-                resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
+                resp_hdr: dpe.response_hdr(DpeStatus::NoError),
             })),
             RotateCtxCmd {
                 handle: ContextHandle::default(),
@@ -245,7 +245,7 @@ mod tests {
         // Check that it returns an error if we try to rotate to a default context
         // when we have other non-default contexts in the same locality.
         assert_eq!(
-            Err(DpeErrorCode::InvalidArgument),
+            Err(DpeStatus::InvalidArgument),
             RotateCtxCmd {
                 handle: SIMULATION_HANDLE,
                 flags: RotateCtxFlags::TARGET_IS_DEFAULT,
@@ -258,7 +258,7 @@ mod tests {
         assert_eq!(
             Ok(Response::RotateCtx(NewHandleResp {
                 handle: ContextHandle::default(),
-                resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
+                resp_hdr: dpe.response_hdr(DpeStatus::NoError),
             })),
             RotateCtxCmd {
                 handle: RANDOM_HANDLE,

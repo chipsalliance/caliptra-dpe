@@ -57,7 +57,7 @@ impl Response {
     ///
     /// For example, in `CertifyKey` there will be empty bytes at the end of the certificate. This
     /// will return the response bytes up until the end of the certificate.
-    pub fn as_bytes_partial(&self) -> Result<&[u8], DpeErrorCode> {
+    pub fn as_bytes_partial(&self) -> Result<&[u8], DpeStatus> {
         match self {
             Response::GetProfile(res) => Ok(res.as_bytes()),
             Response::InitCtx(res) => Ok(res.as_bytes()),
@@ -90,7 +90,7 @@ impl Response {
             Command::CertifyKey(CertifyKeyCommand::P256(_)) => {
                 Response::CertifyKey(CertifyKeyResp::P256(
                     CertifyKeyP256Resp::try_read_from_prefix(bytes)
-                        .map_err(|_| DpeErrorCode::InvalidArgument)?
+                        .map_err(|_| DpeStatus::InvalidArgument)?
                         .0,
                 ))
             }
@@ -98,7 +98,7 @@ impl Response {
             Command::CertifyKey(CertifyKeyCommand::P384(_)) => {
                 Response::CertifyKey(CertifyKeyResp::P384(
                     CertifyKeyP384Resp::try_read_from_prefix(bytes)
-                        .map_err(|_e| DpeErrorCode::InvalidArgument)?
+                        .map_err(|_e| DpeStatus::InvalidArgument)?
                         .0,
                 ))
             }
@@ -106,75 +106,75 @@ impl Response {
             Command::CertifyKey(CertifyKeyCommand::Mldsa87(_)) => {
                 Response::CertifyKey(CertifyKeyResp::Mldsa87(
                     CertifyKeyMldsa87Resp::try_read_from_prefix(bytes)
-                        .map_err(|_| DpeErrorCode::InvalidArgument)?
+                        .map_err(|_| DpeStatus::InvalidArgument)?
                         .0,
                 ))
             }
             Command::DeriveContext(DeriveContextCmd { flags, .. }) if flags.exports_cdi() => {
                 Response::DeriveContextExportedCdi(
                     DeriveContextExportedCdiResp::try_read_from_prefix(bytes)
-                        .map_err(|_| DpeErrorCode::InvalidArgument)?
+                        .map_err(|_| DpeStatus::InvalidArgument)?
                         .0,
                 )
             }
             Command::DeriveContext(_) => Response::DeriveContext(
                 DeriveContextResp::try_read_from_prefix(bytes)
-                    .map_err(|_| DpeErrorCode::InvalidArgument)?
+                    .map_err(|_| DpeStatus::InvalidArgument)?
                     .0,
             ),
             Command::GetCertificateChain(_) => Response::GetCertificateChain(
                 GetCertificateChainResp::try_read_from_prefix(bytes)
-                    .map_err(|_| DpeErrorCode::InvalidArgument)?
+                    .map_err(|_| DpeStatus::InvalidArgument)?
                     .0,
             ),
             Command::DestroyCtx(_) => Response::DestroyCtx(
                 ResponseHdr::try_read_from_prefix(bytes)
-                    .map_err(|_| DpeErrorCode::InvalidArgument)?
+                    .map_err(|_| DpeStatus::InvalidArgument)?
                     .0,
             ),
             Command::GetProfile(_) => Response::GetProfile(
                 GetProfileResp::try_read_from_prefix(bytes)
-                    .map_err(|_| DpeErrorCode::InvalidArgument)?
+                    .map_err(|_| DpeStatus::InvalidArgument)?
                     .0,
             ),
             Command::InitCtx(_) => Response::InitCtx(
                 NewHandleResp::try_read_from_prefix(bytes)
-                    .map_err(|_| DpeErrorCode::InvalidArgument)?
+                    .map_err(|_| DpeStatus::InvalidArgument)?
                     .0,
             ),
             #[cfg(not(feature = "disable_rotate_context"))]
             Command::RotateCtx(_) => Response::RotateCtx(
                 NewHandleResp::try_read_from_prefix(bytes)
-                    .map_err(|_| DpeErrorCode::InvalidArgument)?
+                    .map_err(|_| DpeStatus::InvalidArgument)?
                     .0,
             ),
             #[cfg(feature = "p256")]
             Command::Sign(SignCommand::P256(_)) => Response::Sign(SignResp::P256(
                 SignP256Resp::try_read_from_prefix(bytes)
-                    .map_err(|_| DpeErrorCode::InvalidArgument)?
+                    .map_err(|_| DpeStatus::InvalidArgument)?
                     .0,
             )),
             #[cfg(feature = "p384")]
             Command::Sign(SignCommand::P384(_)) => Response::Sign(SignResp::P384(
                 SignP384Resp::try_read_from_prefix(bytes)
-                    .map_err(|_| DpeErrorCode::InvalidArgument)?
+                    .map_err(|_| DpeStatus::InvalidArgument)?
                     .0,
             )),
             #[cfg(feature = "ml-dsa")]
             Command::Sign(SignCommand::Mldsa87(_)) => Response::Sign(SignResp::Mldsa87(
                 SignMlDsaResp::try_read_from_prefix(bytes)
-                    .map_err(|_| DpeErrorCode::InvalidArgument)?
+                    .map_err(|_| DpeStatus::InvalidArgument)?
                     .0,
             )),
             #[cfg(feature = "ml-dsa")]
             Command::Sign(SignCommand::Mldsa87Raw(_)) => Response::Sign(SignResp::Mldsa87(
                 SignMlDsaResp::try_read_from_prefix(bytes)
-                    .map_err(|_| DpeErrorCode::InvalidArgument)?
+                    .map_err(|_| DpeStatus::InvalidArgument)?
                     .0,
             )),
             Command::UpdateContextMeasurement(_) => Response::UpdateContextMeasurement(
                 UpdateContextMeasurementResp::try_read_from_prefix(bytes)
-                    .map_err(|_| DpeErrorCode::InvalidArgument)?
+                    .map_err(|_| DpeStatus::InvalidArgument)?
                     .0,
             ),
         };
@@ -195,7 +195,7 @@ pub struct ResponseHdr {
 impl ResponseHdr {
     pub const DPE_RESPONSE_MAGIC: u32 = u32::from_be_bytes(*b"DPER");
 
-    pub fn new(profile: DpeProfile, error_code: DpeErrorCode) -> ResponseHdr {
+    pub fn new(profile: DpeProfile, error_code: DpeStatus) -> ResponseHdr {
         ResponseHdr {
             magic: Self::DPE_RESPONSE_MAGIC,
             status: error_code.get_error_code(),
@@ -277,11 +277,11 @@ pub struct DeriveContextExportedCdiResp {
 }
 
 impl DeriveContextExportedCdiResp {
-    pub fn as_bytes_partial(&self) -> Result<&[u8], DpeErrorCode> {
+    pub fn as_bytes_partial(&self) -> Result<&[u8], DpeStatus> {
         let len = size_of::<Self>() - MAX_CERT_SIZE + self.certificate_size as usize;
         self.as_bytes()
             .get(..len)
-            .ok_or(DpeErrorCode::from(InternalErrorCode::DeriveCtxRespSliceOob))
+            .ok_or(DpeStatus::from(InternalErrorCode::DeriveCtxRespSliceOob))
     }
 }
 
@@ -330,7 +330,7 @@ impl CertifyKeyResp {
         }
     }
 
-    pub fn as_bytes_partial(&self) -> Result<&[u8], DpeErrorCode> {
+    pub fn as_bytes_partial(&self) -> Result<&[u8], DpeStatus> {
         match self {
             #[cfg(feature = "p256")]
             CertifyKeyResp::P256(resp) => resp.as_bytes_partial(),
@@ -341,7 +341,7 @@ impl CertifyKeyResp {
         }
     }
 
-    pub fn cert(&self) -> Result<&[u8], DpeErrorCode> {
+    pub fn cert(&self) -> Result<&[u8], DpeStatus> {
         let (buf, size) = match self {
             #[cfg(feature = "p256")]
             CertifyKeyResp::P256(r) => (&r.cert, r.cert_size),
@@ -350,9 +350,8 @@ impl CertifyKeyResp {
             #[cfg(feature = "ml-dsa")]
             CertifyKeyResp::Mldsa87(r) => (&r.cert, r.cert_size),
         };
-        buf.get(..size as usize).ok_or(DpeErrorCode::from(
-            InternalErrorCode::CertifyKeyCertSliceOob,
-        ))
+        buf.get(..size as usize)
+            .ok_or(DpeStatus::from(InternalErrorCode::CertifyKeyCertSliceOob))
     }
 }
 
@@ -368,9 +367,9 @@ pub struct CertifyKeyP256Resp {
 }
 
 impl CertifyKeyP256Resp {
-    pub fn as_bytes_partial(&self) -> Result<&[u8], DpeErrorCode> {
+    pub fn as_bytes_partial(&self) -> Result<&[u8], DpeStatus> {
         let len = size_of::<Self>() - MAX_CERT_SIZE + self.cert_size as usize;
-        self.as_bytes().get(..len).ok_or(DpeErrorCode::from(
+        self.as_bytes().get(..len).ok_or(DpeStatus::from(
             InternalErrorCode::CertifyKeyP256RespSliceOob,
         ))
     }
@@ -388,9 +387,9 @@ pub struct CertifyKeyP384Resp {
 }
 
 impl CertifyKeyP384Resp {
-    pub fn as_bytes_partial(&self) -> Result<&[u8], DpeErrorCode> {
+    pub fn as_bytes_partial(&self) -> Result<&[u8], DpeStatus> {
         let len = size_of::<Self>() - MAX_CERT_SIZE + self.cert_size as usize;
-        self.as_bytes().get(..len).ok_or(DpeErrorCode::from(
+        self.as_bytes().get(..len).ok_or(DpeStatus::from(
             InternalErrorCode::CertifyKeyP384RespSliceOob,
         ))
     }
@@ -409,9 +408,9 @@ pub struct CertifyKeyMldsa87Resp {
 
 #[cfg(feature = "ml-dsa")]
 impl CertifyKeyMldsa87Resp {
-    pub fn as_bytes_partial(&self) -> Result<&[u8], DpeErrorCode> {
+    pub fn as_bytes_partial(&self) -> Result<&[u8], DpeStatus> {
         let len = size_of::<Self>() - MAX_CERT_SIZE + self.cert_size as usize;
-        self.as_bytes().get(..len).ok_or(DpeErrorCode::from(
+        self.as_bytes().get(..len).ok_or(DpeStatus::from(
             InternalErrorCode::CertifyKeyMldsa87RespSliceOob,
         ))
     }

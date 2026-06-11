@@ -90,7 +90,7 @@ impl State {
         &self,
         handle: &ContextHandle,
         locality: u32,
-    ) -> Result<usize, DpeErrorCode> {
+    ) -> Result<usize, DpeStatus> {
         let idx = self.get_active_context_pos_internal(handle, locality)?;
         if idx >= self.contexts.len() {
             return Err(InternalErrorCode::ContextIndexOob.into());
@@ -108,12 +108,12 @@ impl State {
         &self,
         handle: &ContextHandle,
         locality: u32,
-    ) -> Result<(&Context, usize), DpeErrorCode> {
+    ) -> Result<(&Context, usize), DpeStatus> {
         let idx = self.get_active_context_pos(handle, locality)?;
         Ok((
             self.contexts
                 .get(idx)
-                .ok_or(DpeErrorCode::from(InternalErrorCode::ContextIndexOob))?,
+                .ok_or(DpeStatus::from(InternalErrorCode::ContextIndexOob))?,
             idx,
         ))
     }
@@ -122,7 +122,7 @@ impl State {
         &self,
         handle: &ContextHandle,
         locality: u32,
-    ) -> Result<usize, DpeErrorCode> {
+    ) -> Result<usize, DpeStatus> {
         // find all active contexts whose localities match the locality parameter
         let mut valid_localities = self
             .contexts
@@ -133,7 +133,7 @@ impl State {
             })
             .peekable();
         if valid_localities.peek().is_none() {
-            return Err(DpeErrorCode::InvalidLocality);
+            return Err(DpeStatus::InvalidLocality);
         }
 
         // filter down the contexts with valid localities based on their context handle matching the input context handle
@@ -142,7 +142,7 @@ impl State {
             .filter(|(_, context)| context.handle.equals(handle))
             .peekable();
         if valid_handles_and_localities.peek().is_none() {
-            return Err(DpeErrorCode::InvalidHandle);
+            return Err(DpeStatus::InvalidHandle);
         }
         let (i, _) = valid_handles_and_localities
             .find(|(_, context)| {
@@ -150,7 +150,7 @@ impl State {
                     && context.handle.equals(handle)
                     && context.locality == locality
             })
-            .ok_or(DpeErrorCode::from(InternalErrorCode::ActiveContextNotFound))?;
+            .ok_or(DpeStatus::from(InternalErrorCode::ActiveContextNotFound))?;
         Ok(i)
     }
 
@@ -167,9 +167,9 @@ impl State {
     /// * `context` - context to get descendants for
     ///
     /// Returns a u32 representing a bitmap of the node indices.
-    pub(crate) fn get_descendants(&self, context: &Context) -> Result<Children, DpeErrorCode> {
+    pub(crate) fn get_descendants(&self, context: &Context) -> Result<Children, DpeStatus> {
         if context.state == ContextState::Inactive {
-            return Err(DpeErrorCode::InvalidHandle);
+            return Err(DpeStatus::InvalidHandle);
         }
 
         let mut descendants = context.children;
@@ -177,7 +177,7 @@ impl State {
             let ctx = self
                 .contexts
                 .get(idx)
-                .ok_or(DpeErrorCode::from(InternalErrorCode::DescendantIndexOob))?;
+                .ok_or(DpeStatus::from(InternalErrorCode::DescendantIndexOob))?;
             descendants.add_children(self.get_descendants(ctx)?);
         }
         Ok(descendants)
@@ -188,7 +188,7 @@ impl State {
     /// # Arguments
     ///
     /// * `context_pred` - A predicate on a context used to determine contexts to count
-    pub fn count_contexts(&self, f: impl Fn(&Context) -> bool) -> Result<usize, DpeErrorCode> {
+    pub fn count_contexts(&self, f: impl Fn(&Context) -> bool) -> Result<usize, DpeStatus> {
         Ok(self.contexts.iter().filter(|context| f(context)).count())
     }
 }
@@ -250,7 +250,7 @@ mod tests {
         // Root isn't active.
         assert_eq!(
             state.get_descendants(&state.contexts[root]),
-            Err(DpeErrorCode::InvalidHandle)
+            Err(DpeStatus::InvalidHandle)
         );
 
         // No children.
@@ -264,7 +264,7 @@ mod tests {
         state.contexts[root].children = Children::from(1 << child_1);
         assert_eq!(
             state.get_descendants(&state.contexts[root]),
-            Err(DpeErrorCode::InvalidHandle)
+            Err(DpeStatus::InvalidHandle)
         );
 
         // One child.

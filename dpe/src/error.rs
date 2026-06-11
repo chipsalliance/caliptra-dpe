@@ -149,56 +149,76 @@ impl Error for InternalErrorCode {}
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 #[repr(u32)]
-pub enum DpeErrorCode {
+#[allow(dead_code)]
+/// For the definition of required DPE Error Codes, consult the
+/// [TCG DPE Specification](https://trustedcomputinggroup.org/wp-content/uploads/DICE-Protection-Environment-Version-1.0_pub.pdf), Section 5.11.
+///
+/// This base definition is extended by a set of useful vendor errors.
+///
+/// # Custom Definitions
+/// The DICE spec (v.1.0) only covers errors 0-7 as well-defined.
+/// Further, there is no mentioning of vendor defined errors.
+/// The `OCP Security Project` proposes a [numerical range](https://github.com/opencomputeproject/Security/blob/main/specifications/dpe-irot-profile/spec.ocp#L1391) for these errors, to which we adhere.
+pub enum DpeStatus {
     NoError = 0,
     InternalError(InternalErrorCode) = 1,
     InvalidCommand = 2,
     InvalidArgument = 3,
-    ArgumentNotSupported = 4,
-    X509CsrUnset = 5,
-    X509InvalidState = 6,
-    X509SkipsExhausted = 7,
-    X509InvalidWidth = 8,
-    X509AlgorithmMismatch = 9,
-    InvalidHandle = 0x1000,
-    InvalidLocality = 0x1001,
-    MaxTcis = 0x1003,
-    InvalidMutRefBuf = 0x1004,
-    InvalidResponseBuf = 0x1005,
-    UninitializedResponseHeader = 0x1006,
-    /// Returned by UpdateContextMeasurement when PARENT_CONTEXT_HANDLE does not
-    /// exist in the caller's locality. Value matches the OCP iROT profile spec (0x85).
+    SessionExhausted = 4,
+    InitializationSeedLocked = 5,
+    OutOfMemory = 6,
+    CancelledCommand = 7,
+    // OCP Spec "Server iRoT Profile for DPE", v0.13.0
+    InvalidHandle = 0x80,
+    InvalidLocality = 0x81,
+    HandleDefined = 0x82,
+    ArgumentNotSupported = 0x83,
+    AlreadyInitialized = 0x84,
     InvalidParentLocality = 0x85,
+    // The following errors, aren't neither defined in the OCP Security spec,
+    // nor the TCG spec. It is unclear why the original values were chosen the
+    // way there were. For coherence, we continue enumeration on 0x80 + e.
+    X509CsrUnset = 0x86,
+    X509InvalidState = 0x87,
+    X509SkipsExhausted = 0x88,
+    X509InvalidWidth = 0x89,
+    X509AlgorithmMismatch = 0x90,
+    MaxTcis = 0x91,
+    InvalidMutRefBuf = 0x92,
+    InvalidResponseBuf = 0x93,
+    UninitializedResponseHeader = 0x94,
+    /// Returned by UpdateContextMeasurement when PARENT_CONTEXT_HANDLE doesn't
+    /// exist in the caller's locality. Value matches the OCP iROT profile spec (0x85).
     Platform(PlatformError) = 0x01000000,
     Crypto(CryptoError) = 0x02000000,
     Validation(ValidationError) = 0x03000000,
 }
 
-impl From<PlatformError> for DpeErrorCode {
+impl From<PlatformError> for DpeStatus {
     fn from(e: PlatformError) -> Self {
-        DpeErrorCode::Platform(e)
+        DpeStatus::Platform(e)
     }
 }
 
-impl From<CryptoError> for DpeErrorCode {
+impl From<CryptoError> for DpeStatus {
     fn from(e: CryptoError) -> Self {
-        DpeErrorCode::Crypto(e)
+        DpeStatus::Crypto(e)
     }
 }
 
-impl From<ValidationError> for DpeErrorCode {
+impl From<ValidationError> for DpeStatus {
     fn from(e: ValidationError) -> Self {
-        DpeErrorCode::Validation(e)
+        DpeStatus::Validation(e)
     }
 }
 
-impl From<InternalErrorCode> for DpeErrorCode {
+impl From<InternalErrorCode> for DpeStatus {
     fn from(e: InternalErrorCode) -> Self {
-        DpeErrorCode::InternalError(e)
+        DpeStatus::InternalError(e)
     }
 }
 
-impl DpeErrorCode {
+impl DpeStatus {
     /// Get the spec-defined numeric error code. This does not include the
     /// extended error information returned from the Platform and Crypto
     /// implementations.
@@ -211,21 +231,27 @@ impl DpeErrorCode {
 
     pub fn get_error_code(&self) -> u32 {
         match self {
-            DpeErrorCode::Platform(e) => self.discriminant() | e.discriminant() as u32,
-            DpeErrorCode::Crypto(e) => self.discriminant() | e.discriminant() as u32,
-            DpeErrorCode::Validation(e) => self.discriminant() | e.discriminant() as u32,
+            DpeStatus::Platform(e) => self.discriminant() | e.discriminant() as u32,
+            DpeStatus::Crypto(e) => self.discriminant() | e.discriminant() as u32,
+            DpeStatus::Validation(e) => self.discriminant() | e.discriminant() as u32,
             _ => self.discriminant(),
         }
     }
 }
 
-impl Display for DpeErrorCode {
+impl Display for DpeStatus {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::NoError => f.write_str("no error"),
             Self::InternalError(code) => write!(f, "{code}"),
             Self::InvalidCommand => f.write_str("invalid command"),
             Self::InvalidArgument => f.write_str("invalid argument"),
+            Self::SessionExhausted => f.write_str("session exhausted"),
+            Self::InitializationSeedLocked => f.write_str("initialization seed locked"),
+            Self::OutOfMemory => f.write_str("out of memory"),
+            Self::CancelledCommand => f.write_str("cancelled command"),
+            Self::HandleDefined => f.write_str("handle already defined"),
+            Self::AlreadyInitialized => f.write_str("already initialized"),
             Self::ArgumentNotSupported => f.write_str("argument not supported"),
             Self::X509CsrUnset => f.write_str("x509 CSR unset"),
             Self::X509InvalidState => f.write_str("x509 invalid state"),
@@ -246,7 +272,7 @@ impl Display for DpeErrorCode {
     }
 }
 
-impl Error for DpeErrorCode {
+impl Error for DpeStatus {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::InternalError(e) => Some(e),

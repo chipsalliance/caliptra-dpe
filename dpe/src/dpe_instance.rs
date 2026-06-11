@@ -9,7 +9,7 @@ use crate::INTERNAL_INPUT_INFO_SIZE;
 use crate::{
     commands::{Command, CommandExecution, CommandHdr, InitCtxCmd},
     context::{ChildToRootIter, Context, ContextHandle, ContextState},
-    error::{DpeErrorCode, InternalErrorCode},
+    error::{DpeStatus, InternalErrorCode},
     response::{GetProfileResp, NewHandleResp, Response, ResponseHdr},
     support::Support,
     tci::TciMeasurement,
@@ -75,7 +75,7 @@ impl DpeInstance {
     /// * `support` - optional functionality the instance supports
     /// * `flags` - configures `Self` behaviors.
     #[cfg_attr(feature = "cfi", cfi_impl_fn)]
-    pub fn new(env: &mut dyn DpeEnv, profile: DpeProfile) -> Result<Self, DpeErrorCode> {
+    pub fn new(env: &mut dyn DpeEnv, profile: DpeProfile) -> Result<Self, DpeStatus> {
         let mut dpe = Self::initialized(profile);
 
         if env.state().support.auto_init() {
@@ -110,10 +110,10 @@ impl DpeInstance {
         profile: DpeProfile,
         tci_type: u32,
         auto_init_measurement: &TciMeasurement,
-    ) -> Result<Self, DpeErrorCode> {
+    ) -> Result<Self, DpeStatus> {
         // auto-init must be supported to add an auto init measurement
         if !env.state().support.auto_init() {
-            return Err(DpeErrorCode::ArgumentNotSupported);
+            return Err(DpeStatus::ArgumentNotSupported);
         } else {
             #[cfg(feature = "cfi")]
             cfi_assert!(env.state().support.auto_init());
@@ -126,7 +126,7 @@ impl DpeInstance {
         let context = state
             .contexts
             .get_mut(idx)
-            .ok_or(DpeErrorCode::from(InternalErrorCode::InitContextIndexOob))?;
+            .ok_or(DpeStatus::from(InternalErrorCode::InitContextIndexOob))?;
         // add measurement to auto-initialized context
         dpe.add_tci_measurement(crypto, context, auto_init_measurement, locality)?;
         context.tci.tci_type = tci_type;
@@ -137,7 +137,7 @@ impl DpeInstance {
         &self,
         platform: &mut dyn Platform,
         support: Support,
-    ) -> Result<GetProfileResp, DpeErrorCode> {
+    ) -> Result<GetProfileResp, DpeStatus> {
         let vendor_id = platform.get_vendor_id()?;
         let vendor_sku = platform.get_vendor_sku()?;
         Ok(GetProfileResp::new(
@@ -161,7 +161,7 @@ impl DpeInstance {
         env: &mut dyn DpeEnv,
         locality: u32,
         cmd: &[u8],
-    ) -> Result<Response, DpeErrorCode> {
+    ) -> Result<Response, DpeStatus> {
         let command = self.deserialize_command(cmd)?;
         #[cfg(feature = "cfi")]
         let command = cfi_launder(command);
@@ -184,7 +184,7 @@ impl DpeInstance {
         }
     }
 
-    pub fn response_hdr(&self, err_code: DpeErrorCode) -> ResponseHdr {
+    pub fn response_hdr(&self, err_code: DpeStatus) -> ResponseHdr {
         ResponseHdr::new(self.profile, err_code)
     }
 
@@ -192,7 +192,7 @@ impl DpeInstance {
         CommandHdr::new(self.profile, cmd_id)
     }
 
-    pub fn deserialize_command<'a>(&self, cmd: &'a [u8]) -> Result<Command<'a>, DpeErrorCode> {
+    pub fn deserialize_command<'a>(&self, cmd: &'a [u8]) -> Result<Command<'a>, DpeStatus> {
         Command::deserialize(self.profile, cmd)
     }
 
@@ -204,7 +204,7 @@ impl DpeInstance {
     pub(crate) fn generate_new_handle(
         &self,
         env: &mut dyn DpeEnv,
-    ) -> Result<ContextHandle, DpeErrorCode> {
+    ) -> Result<ContextHandle, DpeStatus> {
         for _ in 0..Self::MAX_NEW_HANDLE_ATTEMPTS {
             let mut handle = ContextHandle::default();
             env.crypto().rand_bytes(&mut handle.0)?;
@@ -231,7 +231,7 @@ impl DpeInstance {
         &mut self,
         env: &mut dyn DpeEnv,
         context: &mut Context,
-    ) -> Result<(), DpeErrorCode> {
+    ) -> Result<(), DpeStatus> {
         if !context.handle.is_default() {
             context.handle = self.generate_new_handle(env)?;
         } else {
@@ -257,12 +257,12 @@ impl DpeInstance {
         context: &mut Context,
         measurement: &TciMeasurement,
         locality: u32,
-    ) -> Result<(), DpeErrorCode> {
+    ) -> Result<(), DpeStatus> {
         if context.state != ContextState::Active {
-            return Err(DpeErrorCode::InvalidHandle);
+            return Err(DpeStatus::InvalidHandle);
         }
         if context.locality != locality {
-            return Err(DpeErrorCode::InvalidLocality);
+            return Err(DpeStatus::InvalidLocality);
         }
         cfg_if! {
             if #[cfg(feature = "cfi")] {
@@ -297,20 +297,18 @@ impl DpeInstance {
         platform: &mut dyn Platform,
         support: Support,
         internal_input_info: &mut [u8; INTERNAL_INPUT_INFO_SIZE],
-    ) -> Result<(), DpeErrorCode> {
+    ) -> Result<(), DpeStatus> {
         // Internal DPE Info contains get profile response fields as well as the profile
         let profile = self.get_profile(platform, support)?;
         let profile_bytes = profile.as_bytes();
         internal_input_info
             .get_mut(..profile_bytes.len())
-            .ok_or(DpeErrorCode::from(
-                InternalErrorCode::InputInfoProfileSliceOob,
-            ))?
+            .ok_or(DpeStatus::from(InternalErrorCode::InputInfoProfileSliceOob))?
             .copy_from_slice(profile_bytes);
 
         internal_input_info
             .get_mut(profile_bytes.len()..)
-            .ok_or(DpeErrorCode::from(
+            .ok_or(DpeStatus::from(
                 InternalErrorCode::InputInfoRemainderSliceOob,
             ))?
             .copy_from_slice(&(u32::from(self.profile)).to_le_bytes());
@@ -331,7 +329,7 @@ impl DpeInstance {
         &mut self,
         env: &mut dyn DpeEnv,
         start_idx: usize,
-    ) -> Result<Digest, DpeErrorCode> {
+    ) -> Result<Digest, DpeStatus> {
         let (crypto, platform, state) = env.get();
         let hasher = crypto.hasher()?;
         hasher.initialize()?;
@@ -371,9 +369,11 @@ impl DpeInstance {
             while let Ok(len) =
                 platform.get_certificate_chain(offset, MAX_CHUNK_SIZE as u32, &mut cert_chunk)
             {
-                hasher.update(cert_chunk.get(..len as usize).ok_or(DpeErrorCode::from(
-                    InternalErrorCode::CertChainChunkSliceOob,
-                ))?)?;
+                hasher.update(
+                    cert_chunk
+                        .get(..len as usize)
+                        .ok_or(DpeStatus::from(InternalErrorCode::CertChainChunkSliceOob))?,
+                )?;
                 offset += len;
             }
         }
@@ -509,7 +509,7 @@ pub mod tests {
         assert_eq!(
             Response::InitCtx(NewHandleResp {
                 handle: RANDOM_HANDLE,
-                resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
+                resp_hdr: dpe.response_hdr(DpeStatus::NoError),
             }),
             dpe.execute_serialized_command(&mut env, TEST_LOCALITIES[0], command)
                 .unwrap()
@@ -799,7 +799,7 @@ pub mod tests {
         // check that initialize context fails if new_auto_init was used
         assert_eq!(
             InitCtxCmd::new_use_default().execute(&mut dpe, &mut env, auto_init_locality),
-            Err(DpeErrorCode::ArgumentNotSupported)
+            Err(DpeStatus::ArgumentNotSupported)
         );
     }
 }

@@ -3,7 +3,7 @@ use super::CommandExecution;
 use crate::{
     context::{Children, Context, ContextHandle, ContextState},
     dpe_instance::{DpeEnv, DpeInstance},
-    error::{DpeErrorCode, InternalErrorCode},
+    error::{DpeStatus, InternalErrorCode},
     mutresp,
     response::ResponseHdr,
     State,
@@ -32,11 +32,11 @@ pub(crate) fn destroy_context(
     context_handle: &ContextHandle,
     state: &mut State,
     locality: u32,
-) -> Result<(), DpeErrorCode> {
+) -> Result<(), DpeStatus> {
     let (context, idx) = state.get_active_context_and_idx(context_handle, locality)?;
     // Make sure the command is coming from the right locality.
     if context.locality != locality {
-        return Err(DpeErrorCode::InvalidLocality);
+        return Err(DpeStatus::InvalidLocality);
     } else {
         #[cfg(feature = "cfi")]
         cfi_assert_eq(context.locality, locality);
@@ -52,7 +52,7 @@ pub(crate) fn destroy_context(
         let parent_context = state
             .contexts
             .get(parent_idx)
-            .ok_or(DpeErrorCode::from(InternalErrorCode::DestroyParentIndexOob))?;
+            .ok_or(DpeStatus::from(InternalErrorCode::DestroyParentIndexOob))?;
         // make sure the retired context does not have other active child contexts
         let child_context_count = parent_context.children.iter().count();
         if parent_context.state == ContextState::Retired && cfi_launder(child_context_count) == 1 {
@@ -94,10 +94,10 @@ impl CommandExecution for DestroyCtxCmd {
         env: &mut dyn DpeEnv,
         locality: u32,
         out: &mut [u8],
-    ) -> Result<usize, DpeErrorCode> {
+    ) -> Result<usize, DpeStatus> {
         let response = mutresp::<ResponseHdr>(dpe.profile, out)?;
         destroy_context(&self.handle, env.state(), locality)?;
-        *response = dpe.response_hdr(DpeErrorCode::NoError);
+        *response = dpe.response_hdr(DpeStatus::NoError);
         Ok(size_of_val(response))
     }
 }
@@ -154,7 +154,7 @@ mod tests {
 
         // Wrong locality.
         assert_eq!(
-            Err(DpeErrorCode::InvalidLocality),
+            Err(DpeStatus::InvalidLocality),
             DestroyCtxCmd {
                 handle: ContextHandle::default(),
             }
@@ -166,9 +166,7 @@ mod tests {
         activate_dummy_context(&mut env.state, 1, 0, &ContextHandle::default(), &[]);
         // destroy context[1]
         assert_eq!(
-            Ok(Response::DestroyCtx(
-                dpe.response_hdr(DpeErrorCode::NoError)
-            )),
+            Ok(Response::DestroyCtx(dpe.response_hdr(DpeStatus::NoError))),
             DestroyCtxCmd {
                 handle: ContextHandle::default(),
             }
@@ -178,9 +176,7 @@ mod tests {
         assert!(env.state.contexts[0].children.is_empty());
         // destroy context[0]
         assert_eq!(
-            Ok(Response::DestroyCtx(
-                dpe.response_hdr(DpeErrorCode::NoError)
-            )),
+            Ok(Response::DestroyCtx(dpe.response_hdr(DpeStatus::NoError))),
             DestroyCtxCmd {
                 handle: TEST_HANDLE,
             }
@@ -240,9 +236,7 @@ mod tests {
 
         // destroy context[0] and all descendents
         assert_eq!(
-            Ok(Response::DestroyCtx(
-                dpe.response_hdr(DpeErrorCode::NoError)
-            )),
+            Ok(Response::DestroyCtx(dpe.response_hdr(DpeStatus::NoError))),
             DestroyCtxCmd {
                 handle: ContextHandle::default(),
             }
@@ -283,9 +277,7 @@ mod tests {
         );
         // destroy context[1]
         assert_eq!(
-            Ok(Response::DestroyCtx(
-                dpe.response_hdr(DpeErrorCode::NoError)
-            )),
+            Ok(Response::DestroyCtx(dpe.response_hdr(DpeStatus::NoError))),
             DestroyCtxCmd {
                 handle: ContextHandle([1; ContextHandle::SIZE]),
             }

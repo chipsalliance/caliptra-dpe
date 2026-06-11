@@ -1,7 +1,7 @@
 // Licensed under the Apache-2.0 license.
 use crate::{
     dpe_instance::{flags_iter, FlagsIter},
-    error::{DpeErrorCode, InternalErrorCode},
+    error::{DpeStatus, InternalErrorCode},
     tci::TciNodeData,
     U8Bool, MAX_HANDLES,
 };
@@ -153,7 +153,7 @@ impl Context {
 
     /// Return the list of children of the context with idx added.
     /// This function does not mutate DPE state.
-    pub fn add_child(&mut self, idx: usize) -> Result<Children, DpeErrorCode> {
+    pub fn add_child(&mut self, idx: usize) -> Result<Children, DpeStatus> {
         if idx >= MAX_HANDLES {
             return Err(InternalErrorCode::ChildIndexOob.into());
         }
@@ -230,7 +230,7 @@ impl Children {
     }
 
     /// Add a child to the bitmap.
-    pub fn add_child(&mut self, idx: usize) -> Result<(), DpeErrorCode> {
+    pub fn add_child(&mut self, idx: usize) -> Result<(), DpeStatus> {
         if idx >= MAX_HANDLES {
             return Err(InternalErrorCode::ChildrenBitmapIndexOob.into());
         }
@@ -431,9 +431,9 @@ impl<'a> ChildToRootIter<'a> {
 }
 
 impl<'a> Iterator for ChildToRootIter<'a> {
-    type Item = Result<&'a Context, DpeErrorCode>;
+    type Item = Result<&'a Context, DpeStatus>;
 
-    fn next(&mut self) -> Option<Result<&'a Context, DpeErrorCode>> {
+    fn next(&mut self) -> Option<Result<&'a Context, DpeStatus>> {
         if self.done {
             return None;
         }
@@ -443,7 +443,7 @@ impl<'a> Iterator for ChildToRootIter<'a> {
         }
         if self.count >= MAX_HANDLES {
             self.done = true;
-            return Some(Err(DpeErrorCode::MaxTcis));
+            return Some(Err(DpeStatus::MaxTcis));
         }
 
         let context = match self.get_context(self.front_idx) {

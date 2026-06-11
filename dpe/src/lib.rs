@@ -39,7 +39,7 @@ use response::GetProfileResp;
 pub mod tci;
 pub mod x509;
 
-use crate::error::DpeErrorCode;
+use crate::error::DpeStatus;
 use crate::response::ResponseHdr;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes};
 
@@ -184,8 +184,8 @@ pub(crate) fn _okmutref<T, E: Copy>(r: &mut Result<T, E>) -> Result<&mut T, E> {
 #[inline(always)]
 pub(crate) fn mutrefbytes<R: TryFromBytes + IntoBytes + KnownLayout>(
     resp: &mut [u8],
-) -> Result<&mut R, DpeErrorCode> {
-    let (resp, _) = R::try_mut_from_prefix(resp).map_err(|_| DpeErrorCode::InvalidMutRefBuf)?;
+) -> Result<&mut R, DpeStatus> {
+    let (resp, _) = R::try_mut_from_prefix(resp).map_err(|_| DpeStatus::InvalidMutRefBuf)?;
     Ok(resp)
 }
 
@@ -193,12 +193,12 @@ pub(crate) fn mutrefbytes<R: TryFromBytes + IntoBytes + KnownLayout>(
 pub(crate) fn mutresp<R: TryFromBytes + IntoBytes + KnownLayout>(
     p: DpeProfile,
     resp: &mut [u8],
-) -> Result<&mut R, DpeErrorCode> {
+) -> Result<&mut R, DpeStatus> {
     // Give a default in the response header so it can parse correctly. More than likely the
     // buffer will be zeroized, but `try_from_prefix` can't parse a DPE profile from zero.
     resp.get_mut(..size_of::<ResponseHdr>())
-        .ok_or(DpeErrorCode::InvalidResponseBuf)?
-        .copy_from_slice(ResponseHdr::new(p, DpeErrorCode::UninitializedResponseHeader).as_bytes());
+        .ok_or(DpeStatus::InvalidResponseBuf)?
+        .copy_from_slice(ResponseHdr::new(p, DpeStatus::UninitializedResponseHeader).as_bytes());
     mutrefbytes(resp)
 }
 

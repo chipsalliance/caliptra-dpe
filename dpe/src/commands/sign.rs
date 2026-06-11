@@ -3,7 +3,7 @@ use super::CommandExecution;
 use crate::{
     context::{ContextHandle, ContextType},
     dpe_instance::{DpeEnv, DpeInstance},
-    error::{DpeErrorCode, InternalErrorCode},
+    error::{DpeStatus, InternalErrorCode},
     mutresp, okref, DpeProfile,
 };
 use bitflags::bitflags;
@@ -67,7 +67,7 @@ pub enum SignCommand<'a> {
 }
 
 impl SignCommand<'_> {
-    pub fn deserialize(profile: DpeProfile, bytes: &[u8]) -> Result<SignCommand, DpeErrorCode> {
+    pub fn deserialize(profile: DpeProfile, bytes: &[u8]) -> Result<SignCommand, DpeStatus> {
         match profile {
             #[cfg(feature = "p256")]
             DpeProfile::P256Sha256 => SignCommand::parse_command(SignCommand::P256, bytes),
@@ -75,30 +75,30 @@ impl SignCommand<'_> {
             DpeProfile::P384Sha384 => SignCommand::parse_command(SignCommand::P384, bytes),
             #[cfg(feature = "ml-dsa")]
             DpeProfile::Mldsa87 => SignCommand::deserialize_mldsa87(bytes),
-            _ => Err(DpeErrorCode::InvalidArgument)?,
+            _ => Err(DpeStatus::InvalidArgument)?,
         }
     }
 
     #[cfg(feature = "ml-dsa")]
-    fn deserialize_mldsa87(bytes: &[u8]) -> Result<SignCommand, DpeErrorCode> {
+    fn deserialize_mldsa87(bytes: &[u8]) -> Result<SignCommand, DpeStatus> {
         // Only need the prefix to inspect the flags.
         let header = SignMldsa87Header::ref_from_prefix(bytes)
-            .map_err(|_| DpeErrorCode::InvalidArgument)?
+            .map_err(|_| DpeStatus::InvalidArgument)?
             .0;
 
         if header.flags.contains(SignFlags::IS_RAW) {
             // Raw mode uses a fixed-size command struct.
             if bytes.len() < size_of::<SignMldsa87RawCmd>() {
-                return Err(DpeErrorCode::InvalidArgument);
+                return Err(DpeStatus::InvalidArgument);
             }
 
             let cmd = SignMldsa87RawCmd::ref_from_prefix(bytes)
-                .map_err(|_| DpeErrorCode::InvalidArgument)?
+                .map_err(|_| DpeStatus::InvalidArgument)?
                 .0;
 
             let size = cmd.size as usize;
             if size > MLDSA87_RAW_MAX_SIZE {
-                return Err(DpeErrorCode::InvalidArgument);
+                return Err(DpeStatus::InvalidArgument);
             }
 
             Ok(SignCommand::Mldsa87Raw(cmd))
@@ -111,9 +111,9 @@ impl SignCommand<'_> {
     pub fn parse_command<'a, T: FromBytes + KnownLayout + Immutable + 'a>(
         build: impl FnOnce(&'a T) -> SignCommand<'a>,
         bytes: &'a [u8],
-    ) -> Result<SignCommand<'a>, DpeErrorCode> {
+    ) -> Result<SignCommand<'a>, DpeStatus> {
         let (prefix, _remaining_bytes) =
-            T::ref_from_prefix(bytes).map_err(|_| DpeErrorCode::InvalidArgument)?;
+            T::ref_from_prefix(bytes).map_err(|_| DpeStatus::InvalidArgument)?;
         Ok(build(prefix))
     }
 
@@ -140,7 +140,7 @@ impl CommandExecution for SignCommand<'_> {
         env: &mut dyn DpeEnv,
         locality: u32,
         out: &mut [u8],
-    ) -> Result<usize, DpeErrorCode> {
+    ) -> Result<usize, DpeStatus> {
         let (handle, label, data) = match *self {
             #[cfg(feature = "p256")]
             SignCommand::P256(cmd) => (
@@ -167,7 +167,7 @@ impl CommandExecution for SignCommand<'_> {
                 SignData::Raw(
                     cmd.raw_data
                         .get(..cmd.size as usize)
-                        .ok_or(DpeErrorCode::InvalidArgument)?,
+                        .ok_or(DpeStatus::InvalidArgument)?,
                 ),
             ),
         };
@@ -176,10 +176,10 @@ impl CommandExecution for SignCommand<'_> {
             .state()
             .contexts
             .get(idx)
-            .ok_or(DpeErrorCode::from(InternalErrorCode::ContextIndexOob))?;
+            .ok_or(DpeStatus::from(InternalErrorCode::ContextIndexOob))?;
 
         if context.context_type == ContextType::Simulation {
-            return Err(DpeErrorCode::InvalidArgument);
+            return Err(DpeStatus::InvalidArgument);
         }
 
         cfg_if! {
@@ -204,7 +204,7 @@ impl CommandExecution for SignCommand<'_> {
                     new_context_handle: ctx.handle,
                     sig_r,
                     sig_s,
-                    resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
+                    resp_hdr: dpe.response_hdr(DpeStatus::NoError),
                 };
                 Ok(size_of_val(response))
             }
@@ -222,7 +222,7 @@ impl CommandExecution for SignCommand<'_> {
                     new_context_handle: ctx.handle,
                     sig_r,
                     sig_s,
-                    resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
+                    resp_hdr: dpe.response_hdr(DpeStatus::NoError),
                 };
                 Ok(size_of_val(response))
             }
@@ -239,11 +239,11 @@ impl CommandExecution for SignCommand<'_> {
                     new_context_handle: ctx.handle,
                     sig: *sig,
                     _padding: [0; 1],
-                    resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
+                    resp_hdr: dpe.response_hdr(DpeStatus::NoError),
                 };
                 Ok(size_of_val(response))
             }
-            _ => Err(DpeErrorCode::InvalidArgument)?,
+            _ => Err(DpeStatus::InvalidArgument)?,
         }
     }
 }
@@ -262,7 +262,7 @@ fn sign(
     idx: usize,
     label: &[u8],
     data: &SignData,
-) -> Result<Signature, DpeErrorCode> {
+) -> Result<Signature, DpeStatus> {
     let cdi_digest = dpe.compute_measurement_hash(env, idx)?;
     let cdi = env.crypto().derive_cdi(&cdi_digest, b"DPE")?;
     let profile = dpe.profile;
@@ -297,7 +297,7 @@ impl CommandExecution for SignP256Cmd {
         env: &mut dyn DpeEnv,
         locality: u32,
         out: &mut [u8],
-    ) -> Result<usize, DpeErrorCode> {
+    ) -> Result<usize, DpeStatus> {
         SignCommand::P256(self).execute_serialized(dpe, env, locality, out)
     }
 }
@@ -320,7 +320,7 @@ impl CommandExecution for SignP384Cmd {
         env: &mut dyn DpeEnv,
         locality: u32,
         out: &mut [u8],
-    ) -> Result<usize, DpeErrorCode> {
+    ) -> Result<usize, DpeStatus> {
         SignCommand::P384(self).execute_serialized(dpe, env, locality, out)
     }
 }
@@ -343,7 +343,7 @@ impl CommandExecution for SignMldsa87Cmd {
         env: &mut dyn DpeEnv,
         locality: u32,
         out: &mut [u8],
-    ) -> Result<usize, DpeErrorCode> {
+    ) -> Result<usize, DpeStatus> {
         SignCommand::Mldsa87(self).execute_serialized(dpe, env, locality, out)
     }
 }
@@ -357,7 +357,7 @@ impl CommandExecution for SignMldsa87RawCmd {
         env: &mut dyn DpeEnv,
         locality: u32,
         out: &mut [u8],
-    ) -> Result<usize, DpeErrorCode> {
+    ) -> Result<usize, DpeStatus> {
         SignCommand::Mldsa87Raw(self).execute_serialized(dpe, env, locality, out)
     }
 }
@@ -439,7 +439,7 @@ mod tests {
 
         // Bad handle.
         assert_eq!(
-            Err(DpeErrorCode::InvalidHandle),
+            Err(DpeStatus::InvalidHandle),
             SignCmd {
                 handle: ContextHandle([0xff; ContextHandle::SIZE]),
                 label: TEST_LABEL,
@@ -455,7 +455,7 @@ mod tests {
             .get_active_context_pos(&ContextHandle::default(), TEST_LOCALITIES[0])
             .is_ok());
         assert_eq!(
-            Err(DpeErrorCode::InvalidLocality),
+            Err(DpeStatus::InvalidLocality),
             SignCmd {
                 handle: ContextHandle::default(),
                 label: TEST_LABEL,
@@ -474,7 +474,7 @@ mod tests {
             .get_active_context_pos(&RANDOM_HANDLE, TEST_LOCALITIES[0])
             .is_ok());
         assert_eq!(
-            Err(DpeErrorCode::InvalidArgument),
+            Err(DpeStatus::InvalidArgument),
             SignCmd {
                 handle: RANDOM_HANDLE,
                 label: TEST_LABEL,
@@ -634,7 +634,7 @@ mod tests {
         // Test deserialization should fail
         let cmd = SignCommand::deserialize(DPE_PROFILE, cmd.as_bytes());
         assert!(cmd.is_err());
-        assert_eq!(cmd.unwrap_err(), DpeErrorCode::InvalidArgument);
+        assert_eq!(cmd.unwrap_err(), DpeStatus::InvalidArgument);
     }
 
     #[cfg(feature = "ml-dsa")]
