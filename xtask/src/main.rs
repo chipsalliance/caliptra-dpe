@@ -382,27 +382,9 @@ fn run_verification_test(profile: &str, crypto: &str) -> Result<()> {
 
 fn run_fuzz_checks() -> Result<()> {
     let fuzz_dir = Path::new("dpe/fuzz");
-    let nightly = "nightly-2025-07-08";
-    cargo()
-        .args([
-            &format!("+{}", nightly),
-            "install",
-            "cargo-fuzz",
-            "--version",
-            "0.13.1",
-            "--locked",
-        ])
-        .run()?;
-    cargo()
-        .args([
-            &format!("+{}", nightly),
-            "install",
-            "cargo-afl",
-            "--version",
-            "0.17.0",
-            "--locked",
-        ])
-        .run()?;
+    let fuzzer_toolchain = std::env::var("DPE_FUZZ_TOOLCHAIN")
+        .map_err(|_| anyhow!("DPE_FUZZ_TOOLCHAIN environment variable is not set. Please run inside nix develop shell."))?;
+
     cargo().args(["fmt", "--check"]).dir(fuzz_dir).run()?;
     cargo()
         .args(["clippy", "--features", "libfuzzer-sys"])
@@ -413,8 +395,8 @@ fn run_fuzz_checks() -> Result<()> {
         .dir(fuzz_dir)
         .run()?;
     cargo()
+        .env("RUSTUP_TOOLCHAIN", &fuzzer_toolchain)
         .args([
-            &format!("+{}", nightly),
             "fuzz",
             "build",
             "--features",
@@ -423,8 +405,8 @@ fn run_fuzz_checks() -> Result<()> {
         .dir(fuzz_dir)
         .run()?;
     cargo()
+        .env("RUSTUP_TOOLCHAIN", &fuzzer_toolchain)
         .args([
-            &format!("+{}", nightly),
             "afl",
             "build",
             "--features",
