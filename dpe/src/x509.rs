@@ -5,60 +5,24 @@
 //! DPE requires encoding variable-length certificates. This module provides
 //! this functionality for a no_std environment.
 
-use crate::{
-    context::ContextHandle,
-    dpe_instance::DpeEnv,
-    okref,
-    response::DpeErrorCode,
-    tci::{TciMeasurement, TciNodeData},
-    DpeInstance, DpeProfile, State, MAX_HANDLES,
-};
+mod internal;
+
+use crate::{okref, response::DpeErrorCode, tci::TciNodeData, DpeProfile};
 use bitflags::bitflags;
-use caliptra_cfi_lib::cfi_launder;
-#[cfg(feature = "cfi")]
-use caliptra_cfi_lib::{cfi_assert, cfi_assert_bool};
-use caliptra_dpe_crypto::{
-    ecdsa::{EcdsaPubKey, EcdsaSignature},
-    CryptoError, CryptoSuite, Digest, PubKey, SignData, Signature, MAX_EXPORTED_CDI_SIZE,
-};
+use caliptra_dpe_crypto::{CryptoError, PubKey, Signature};
 #[cfg(not(feature = "disable_x509"))]
 use caliptra_dpe_platform::CertValidity;
 #[cfg(not(feature = "disable_csr"))]
 use caliptra_dpe_platform::SignerIdentifier;
-use caliptra_dpe_platform::{
-    ArrayVec, OtherName, PlatformError, SubjectAltName, MAX_ISSUER_NAME_SIZE,
-    MAX_KEY_IDENTIFIER_SIZE,
+use caliptra_dpe_platform::{ArrayVec, SubjectAltName, MAX_KEY_IDENTIFIER_SIZE};
+use internal::CertWriterInternal;
+use internal::SIZE_TAG_OFFSET;
+
+#[cfg(not(feature = "disable_csr"))]
+pub(crate) use internal::create_dpe_csr;
+pub(crate) use internal::{
+    create_dpe_cert, create_exported_dpe_cert, CreateDpeCertArgs, CreateDpeCertResult,
 };
-use zerocopy::IntoBytes;
-
-#[cfg(feature = "ml-dsa")]
-use caliptra_dpe_crypto::ml_dsa::{MldsaPublicKey, MldsaSignature};
-
-/// Max amount of backtracks during encoding.
-/// Currently the deepest backtrack path is 7.
-const MAX_BACKTRACKS: usize = 10;
-
-/// We save 3 bytes to record the size.
-/// Currently all size skips are always 255 < size < 65535 since we only skip signatures
-/// and large objects, e.g. CSR or TBS.
-const SIZE_TAG_OFFSET: usize = 3;
-
-/// This is the maximum size of a digest. The only profiles supported use SHA256 and SHA384.
-/// This is the size of a SHA384 digest.
-const MAX_HASH_SIZE: usize = 48;
-
-#[cfg(feature = "p256")]
-mod profile_oids {
-    pub const ECDSA_WITH_SHA256_OID: &[u8] = &[0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x04, 0x03, 0x02];
-    pub const CURVE_P256_OID: &[u8] = &[0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x03, 0x01, 0x07];
-    pub const HASH_SHA256_OID: &[u8] = &[0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01];
-}
-
-#[cfg(feature = "p384")]
-mod profile_oids {
-    pub const ECDSA_WITH_SHA384_OID: &[u8] = &[0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x04, 0x03, 0x03];
-    pub const CURVE_P384_OID: &[u8] = &[0x2B, 0x81, 0x04, 0x00, 0x22];
-}
 
 pub enum DirectoryString<'a> {
     PrintableString(&'a [u8]),
@@ -100,14 +64,10 @@ pub struct MeasurementData<'a> {
     pub subject_alt_name: Option<SubjectAltName>,
 }
 
+/// The public facing CertWriter.  It is responsible for ensuring all buffers returned to users
+/// are either well-formed or error via the `check_not_truncated`.
 pub struct CertWriter<'a> {
-    certificate: &'a mut [u8],
-    profile: DpeProfile,
-    offset: usize,
-    crit_dice: bool,
-    csr_range: Option<(usize, usize)>,
-    backtracks: ArrayVec<(usize, usize), MAX_BACKTRACKS>,
-    saved_offset: Option<usize>,
+    internal: CertWriterInternal<'a>,
 }
 
 pub struct KeyUsageFlags(u8);
@@ -120,1059 +80,22 @@ bitflags! {
 }
 
 impl CertWriter<'_> {
-    const BOOL_TAG: u8 = 0x1;
-    const INTEGER_TAG: u8 = 0x2;
-    const BIT_STRING_TAG: u8 = 0x3;
-    const OCTET_STRING_TAG: u8 = 0x4;
-    const OID_TAG: u8 = 0x6;
-    const UTF8_STRING_TAG: u8 = 0xC;
-    const PRINTABLE_STRING_TAG: u8 = 0x13;
-    #[cfg(not(feature = "disable_x509"))]
-    const GENERALIZE_TIME_TAG: u8 = 0x18;
-    const SEQUENCE_TAG: u8 = 0x30;
-    const SEQUENCE_OF_TAG: u8 = 0x30;
-    const SET_OF_TAG: u8 = 0x31;
-
-    const BOOL_SIZE: usize = 1;
-
-    // Constants for setting tag bits
-    const CONTEXT_SPECIFIC: u8 = 0x80; // Used for Implicit/Explicit tags
-    const CONSTRUCTED: u8 = 0x20; // SET{OF} and SEQUENCE{OF} have this bit set
-
-    const X509_V3: u64 = 2;
-    #[cfg(not(feature = "disable_csr"))]
-    const CMS_V1: u64 = 1;
-    #[cfg(not(feature = "disable_csr"))]
-    const CMS_V3: u64 = 3;
-    #[cfg(not(feature = "disable_csr"))]
-    const CSR_V0: u64 = 0;
-
-    /// registerNum and registerName are listed as optional fields, but the spec
-    /// says one of those values must be set. Because there is only ever one
-    /// integrity register per TCB info, the registerNum is hardcoded to 0.
-    const INTEGRITY_REGISTER_NUM: u64 = 0;
-
-    /// ASN.1 encoding with length stripped of the following OID.
-    /// id-ml-dnsa-87 OBJECT IDENTIFIER ::= { joint-iso-itu-t(2)
-    ///     country(16) us(840) organization(1) gov(101) csor(3)
-    ///     nistAlgorithm(4) sigAlgs(3) id-ml-dsa-87(19) }
-    /// Source: https://datatracker.ietf.org/doc/draft-ietf-lamps-dilithium-certificates/
-    #[cfg(feature = "ml-dsa")]
-    const MLDSA_OID: &'static [u8] = &[0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x03, 0x13];
-
-    const EC_PUB_OID: &'static [u8] = &[0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x02, 0x01];
-
-    // SHA384
-    #[cfg(any(feature = "p384", feature = "ml-dsa"))]
-    const HASH_SHA384_OID: &'static [u8] = &[0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x02];
-
-    const RDN_COMMON_NAME_OID: [u8; 3] = [0x55, 0x04, 0x03];
-    const RDN_SERIALNUMBER_OID: [u8; 3] = [0x55, 0x04, 0x05];
-
-    // tcg-dice-MultiTcbInfo 2.23.133.5.4.5
-    const MULTI_TCBINFO_OID: &'static [u8] = &[0x67, 0x81, 0x05, 0x05, 0x04, 0x05];
-
-    // tcg-dice-Ueid 2.23.133.5.4.4
-    const UEID_OID: &'static [u8] = &[0x67, 0x81, 0x05, 0x05, 0x04, 0x04];
-
-    // tcg-dice-kp-eca 2.23.133.5.4.100.12
-    const ECA_OID: &'static [u8] = &[0x67, 0x81, 0x05, 0x05, 0x04, 0x64, 0x0C];
-
-    // tcg-dice-kp-attestLoc 2.23.133.5.4.100.9
-    const ATTEST_LOC_OID: &'static [u8] = &[0x67, 0x81, 0x05, 0x05, 0x04, 0x64, 0x09];
-
-    // RFC 5280 2.5.29.19
-    const BASIC_CONSTRAINTS_OID: &'static [u8] = &[0x55, 0x1D, 0x13];
-
-    // RFC 5280 2.5.29.15
-    const KEY_USAGE_OID: &'static [u8] = &[0x55, 0x1D, 0x0F];
-
-    // RFC 5280 2.5.29.37
-    const EXTENDED_KEY_USAGE_OID: &'static [u8] = &[0x55, 0x1D, 0x25];
-
-    // RFC 5280 2.5.29.14
-    const SUBJECT_KEY_IDENTIFIER_OID: &'static [u8] = &[0x55, 0x1D, 0x0E];
-
-    // RFC 5280 2.5.29.35
-    const AUTHORITY_KEY_IDENTIFIER_OID: &'static [u8] = &[0x55, 0x1D, 0x23];
-
-    // RFC 5280 2.5.29.17
-    const SUBJECT_ALTERNATIVE_NAME_OID: &'static [u8] = &[0x55, 0x1D, 0x11];
-
-    // RFC 5652 1.2.840.113549.1.7.2
-    #[cfg(not(feature = "disable_csr"))]
-    const ID_SIGNED_DATA_OID: &'static [u8] =
-        &[0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x07, 0x02];
-
-    // RFC 5652 1.2.840.113549.1.7.1
-    #[cfg(not(feature = "disable_csr"))]
-    const ID_DATA_OID: &'static [u8] = &[0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x07, 0x01];
-
-    // RFC 2985 1.2.840.113549.1.9.14
-    #[cfg(not(feature = "disable_csr"))]
-    const EXTENSION_REQUEST_OID: &'static [u8] =
-        &[0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x09, 0x0E];
-
     /// Build new CertWriter that writes output to `cert`
     ///
     /// If `crit_dice`, all tcg-dice-* extensions will be marked as critical.
     /// Else they will be marked as non-critical.
     pub fn new(cert: &mut [u8], profile: DpeProfile, crit_dice: bool) -> CertWriter {
         CertWriter {
-            certificate: cert,
-            profile,
-            offset: 0,
-            crit_dice,
-            csr_range: None,
-            backtracks: ArrayVec::new(),
-            saved_offset: None,
+            internal: CertWriterInternal {
+                certificate: cert,
+                profile,
+                offset: 0,
+                crit_dice,
+                csr_range: None,
+                backtracks: ArrayVec::new(),
+                saved_offset: None,
+            },
         }
-    }
-
-    /// Moves certificate offset forward by `skip` bytes.
-    ///
-    /// Pushes current offset and the skipped offset to a stack. This is useful when a size
-    /// field needs to be written but the size is not yet known. The writer can skip ahead, write
-    /// the content, and then pop the offsets to go back and write the size.
-    ///
-    /// # Arguments
-    ///
-    /// * `skip` - The number of bytes to skip ahead.
-    ///
-    /// # Returns
-    ///
-    /// The new offset.
-    fn push_backtrack(&mut self, skip: usize) -> Result<usize, DpeErrorCode> {
-        self.backtracks
-            .try_push((self.offset, self.offset + skip))
-            .map_err(|_| DpeErrorCode::X509SkipsExhausted)?;
-        self.offset += skip;
-        Ok(self.offset)
-    }
-
-    /// Pops the last offset pushed by `push_backtrack`.
-    ///
-    /// NOTE: `start_backtrack` MUST be called before `pop_backtrack`.
-    ///
-    /// # Arguments
-    ///
-    /// * `expected_width` - The expected number of bytes reserved by the backtrack.
-    fn pop_backtrack(&mut self, expected_width: usize) -> Result<(), DpeErrorCode> {
-        if self.saved_offset.is_none() {
-            return Err(DpeErrorCode::X509InvalidState);
-        }
-        let Some(range) = self.backtracks.pop() else {
-            return Err(DpeErrorCode::X509InvalidState);
-        };
-        if (range.1 - range.0) != expected_width {
-            return Err(DpeErrorCode::X509InvalidWidth);
-        }
-        self.offset = range.0;
-        Ok(())
-    }
-
-    /// Saves the current offset to begin a backtrack sequence.
-    ///
-    /// NOTE: `start_backtrack` MUST be called before `pop_backtrack`.
-    fn start_backtrack(&mut self) -> Result<(), DpeErrorCode> {
-        if self.saved_offset.is_some() {
-            return Err(DpeErrorCode::X509InvalidState);
-        }
-        self.saved_offset = Some(self.offset);
-        Ok(())
-    }
-
-    /// Restores the offset to where it was before the pop sequence began.
-    fn end_backtrack(&mut self) -> Result<(), DpeErrorCode> {
-        let Some(offset) = self.saved_offset else {
-            Err(DpeErrorCode::X509InvalidState)?
-        };
-        self.offset = offset;
-        self.saved_offset = None;
-        Ok(())
-    }
-
-    /// Calculate the number of bytes the ASN.1 size field will be
-    fn get_size_width(size: usize) -> usize {
-        // The ASN.1 field is 1 byte if less than 128, and for every size larger is 1 byte
-        // for the sentinal value, and then the number of bytes required to represent the size.
-        //
-        // Since usize on target platforms is only 32 bits, the max representation is 5 bytes.
-        match size {
-            ..128 => 1,
-            128..256 => 2,
-            256..65536 => 3,
-            65536..16777216 => 4,
-            _ => 5,
-        }
-    }
-
-    /// Get the size of an ASN.1 structure
-    /// If tagged, includes the tag and size
-    fn get_structure_size(data_size: usize, tagged: bool) -> usize {
-        if tagged {
-            1 + Self::get_size_width(data_size) + data_size
-        } else {
-            data_size
-        }
-    }
-
-    /// Calculate the number of bytes the ASN.1 INTEGER will be
-    /// If `tagged`, include the tag and size fields
-    fn get_integer_bytes_size(integer: &[u8], tagged: bool) -> usize {
-        let mut len = integer.len();
-        for (i, &byte) in integer.iter().enumerate() {
-            if byte == 0 && i != integer.len() - 1 {
-                len -= 1;
-            } else if (byte & 0x80) != 0 {
-                len += 1;
-                break;
-            } else {
-                break;
-            }
-        }
-
-        Self::get_structure_size(len, tagged)
-    }
-
-    /// Calculate the number of bytes the ASN.1 INTEGER will be
-    /// If `tagged`, include the tag and size fields
-    fn get_integer_size(integer: u64, tagged: bool) -> usize {
-        let bytes = integer.to_be_bytes();
-        Self::get_integer_bytes_size(&bytes, tagged)
-    }
-
-    /// Calculate the number of bytes an ASN.1 raw bytes field will be.
-    /// Can be used for OCTET STRING, OID, UTF8 STRING, etc.
-    /// If `tagged`, include the tag and size fields
-    fn get_bytes_size(bytes: &[u8], tagged: bool) -> usize {
-        Self::get_structure_size(bytes.len(), tagged)
-    }
-
-    /// If `tagged`, include the tag and size fields
-    fn get_rdn_size(name: &Name, tagged: bool) -> usize {
-        let cn_seq_size = Self::get_structure_size(
-            Self::get_bytes_size(&Self::RDN_COMMON_NAME_OID, /*tagged=*/ true)
-                + Self::get_bytes_size(name.cn.bytes(), true),
-            /*tagged=*/ true,
-        );
-        let serialnumber_seq_size = Self::get_structure_size(
-            Self::get_bytes_size(&Self::RDN_COMMON_NAME_OID, /*tagged=*/ true)
-                + Self::get_bytes_size(name.serial.bytes(), /*tagged=*/ true),
-            /*tagged=*/ true,
-        );
-
-        let cn_set_size = Self::get_structure_size(cn_seq_size, /*tagged=*/ true);
-        let serialnumber_set_size =
-            Self::get_structure_size(serialnumber_seq_size, /*tagged=*/ true);
-
-        Self::get_structure_size(cn_set_size + serialnumber_set_size, tagged)
-    }
-
-    fn sig_oid(&self) -> Result<&'static [u8], DpeErrorCode> {
-        match self.profile {
-            #[cfg(feature = "p256")]
-            DpeProfile::P256Sha256 => Ok(profile_oids::ECDSA_WITH_SHA256_OID),
-            #[cfg(feature = "p384")]
-            DpeProfile::P384Sha384 => Ok(profile_oids::ECDSA_WITH_SHA384_OID),
-            #[cfg(feature = "ml-dsa")]
-            DpeProfile::Mldsa87 => Ok(Self::MLDSA_OID),
-            _ => Err(DpeErrorCode::X509AlgorithmMismatch),
-        }
-    }
-
-    fn hash_oid(&self) -> Result<&'static [u8], DpeErrorCode> {
-        match self.profile {
-            #[cfg(feature = "p256")]
-            DpeProfile::P256Sha256 => Ok(profile_oids::HASH_SHA256_OID),
-            #[cfg(feature = "p384")]
-            DpeProfile::P384Sha384 => Ok(Self::HASH_SHA384_OID),
-            #[cfg(feature = "ml-dsa")]
-            DpeProfile::Mldsa87 => Ok(Self::HASH_SHA384_OID),
-            _ => Err(DpeErrorCode::X509AlgorithmMismatch),
-        }
-    }
-
-    fn curve_oid(&self) -> Result<&'static [u8], DpeErrorCode> {
-        match self.profile {
-            #[cfg(feature = "p256")]
-            DpeProfile::P256Sha256 => Ok(profile_oids::CURVE_P256_OID),
-            #[cfg(feature = "p384")]
-            DpeProfile::P384Sha384 => Ok(profile_oids::CURVE_P384_OID),
-            _ => Err(DpeErrorCode::X509AlgorithmMismatch),
-        }
-    }
-
-    /// Calculate the number of bytes for an ECC Public Key AlgorithmIdentifier
-    /// If `tagged`, include the tag and size fields
-    fn get_ec_pub_alg_id_size(&self, tagged: bool) -> Result<usize, DpeErrorCode> {
-        let len = Self::get_bytes_size(Self::EC_PUB_OID, true)
-            + Self::get_bytes_size(self.curve_oid()?, true);
-        Ok(Self::get_structure_size(len, tagged))
-    }
-
-    /// Calculate the number of bytes for an ECDSA signature AlgorithmIdentifier
-    /// If `tagged`, include the tag and size fields
-    fn get_ecdsa_sig_alg_id_size(&self, tagged: bool) -> Result<usize, DpeErrorCode> {
-        let len = Self::get_bytes_size(self.sig_oid()?, true);
-        Ok(Self::get_structure_size(len, tagged))
-    }
-
-    /// Calculate the number of bytes for an MLDSA-87 signature AlgorithmIdentifier
-    /// If `tagged`, include the tag and size fields
-    #[cfg(feature = "ml-dsa")]
-    fn get_mldsa_sig_alg_id_size(&self, tagged: bool) -> Result<usize, DpeErrorCode> {
-        let len = Self::get_bytes_size(self.sig_oid()?, true);
-        Ok(Self::get_structure_size(len, tagged))
-    }
-
-    /// Calculate the number of bytes for a Hash AlgorithmIdentifier
-    /// If `tagged`, include the tag and size fields
-    #[cfg(not(feature = "disable_csr"))]
-    fn get_hash_alg_id_size(&self, tagged: bool) -> Result<usize, DpeErrorCode> {
-        let len = Self::get_bytes_size(self.hash_oid()?, true);
-        Ok(Self::get_structure_size(len, tagged))
-    }
-
-    /// If `tagged`, include the tag and size fields
-    #[cfg(not(feature = "disable_x509"))]
-    fn get_validity_size(validity: &CertValidity, tagged: bool) -> usize {
-        let len = Self::get_bytes_size(validity.not_before.as_slice(), true)
-            + Self::get_bytes_size(validity.not_after.as_slice(), true);
-        Self::get_structure_size(len, tagged)
-    }
-
-    /// Calculate the number of bytes an MLDSA-87 SubjectPublicKeyInfo will be
-    /// If `tagged`, include the tag and size fields
-    #[cfg(feature = "ml-dsa")]
-    fn get_mldsa_subject_pubkey_info_size(
-        &self,
-        pubkey: &MldsaPublicKey,
-        tagged: bool,
-    ) -> Result<usize, DpeErrorCode> {
-        let bitstring_size = Self::get_structure_size(1 + pubkey.0.len(), true);
-        let seq_size = bitstring_size + self.get_mldsa_sig_alg_id_size(true)?;
-
-        Ok(Self::get_structure_size(seq_size, tagged))
-    }
-
-    /// Calculate the number of bytes an ECC SubjectPublicKeyInfo will be
-    /// If `tagged`, include the tag and size fields
-    fn get_ecdsa_subject_pubkey_info_size(
-        &self,
-        pubkey: &EcdsaPubKey,
-        tagged: bool,
-    ) -> Result<usize, DpeErrorCode> {
-        let point_size = 1 + pubkey.curve_size() + pubkey.curve_size();
-        let bitstring_size = 1 + point_size;
-        let seq_size = Self::get_structure_size(bitstring_size, /*tagged=*/ true)
-            + self.get_ec_pub_alg_id_size(/*tagged=*/ true)?;
-
-        Ok(Self::get_structure_size(seq_size, tagged))
-    }
-
-    /// Calculate the number of bytes an SubjectPublicKeyInfo will be
-    /// If `tagged`, include the tag and size fields
-    fn get_subject_pubkey_info_size(
-        &self,
-        pubkey: &PubKey,
-        tagged: bool,
-    ) -> Result<usize, DpeErrorCode> {
-        let size = match pubkey {
-            PubKey::Ecdsa(pubkey) => {
-                self.get_ecdsa_sig_alg_id_size(tagged)?
-                    + self.get_ecdsa_subject_pubkey_info_size(pubkey, tagged)?
-            }
-            #[cfg(feature = "ml-dsa")]
-            PubKey::Mldsa(pubkey) => {
-                self.get_mldsa_sig_alg_id_size(tagged)?
-                    + self.get_mldsa_subject_pubkey_info_size(pubkey, tagged)?
-            }
-        };
-        Ok(size)
-    }
-
-    /// If `tagged`, include the tag and size fields
-    #[cfg(not(feature = "disable_csr"))]
-    fn get_signature_octet_string_size(
-        &self,
-        sig: &Signature,
-        tagged: bool,
-    ) -> Result<usize, DpeErrorCode> {
-        let signature_size = match sig {
-            Signature::Ecdsa(sig) => {
-                self.get_ecdsa_sig_alg_id_size(tagged)?
-                    + Self::get_ecdsa_signature_octet_string_size(sig, tagged)
-            }
-            #[cfg(feature = "ml-dsa")]
-            Signature::Mldsa(sig) => {
-                self.get_mldsa_sig_alg_id_size(tagged)?
-                    + Self::get_mldsa_signature_octet_string_size(sig, tagged)
-            }
-        };
-        Ok(signature_size)
-    }
-
-    /// If `tagged`, include the tag and size fields
-    #[cfg(all(not(feature = "disable_csr"), feature = "ml-dsa"))]
-    fn get_mldsa_signature_octet_string_size(sig: &MldsaSignature, tagged: bool) -> usize {
-        Self::get_structure_size(sig.as_slice().len(), tagged)
-    }
-
-    /// If `tagged`, include the tag and size fields
-    #[cfg(not(feature = "disable_csr"))]
-    fn get_ecdsa_signature_octet_string_size(sig: &EcdsaSignature, tagged: bool) -> usize {
-        let (r, s) = sig.as_slice();
-        let seq_size = Self::get_structure_size(
-            Self::get_integer_bytes_size(r, /*tagged=*/ true)
-                + Self::get_integer_bytes_size(s, /*tagged=*/ true),
-            /*tagged=*/ true,
-        );
-
-        // Wrapping structure size
-        Self::get_structure_size(seq_size, tagged)
-    }
-
-    /// version is marked as EXPLICIT [0]
-    /// If `tagged`, include the explicit tag and size fields
-    #[cfg(not(feature = "disable_x509"))]
-    fn get_version_size(tagged: bool) -> usize {
-        let integer_size = Self::get_integer_size(Self::X509_V3, /*tagged=*/ true);
-
-        // If tagged, also add explicit wrapping
-        Self::get_structure_size(integer_size, tagged)
-    }
-
-    /// Get the size of a DICE FWID structure
-    fn get_fwid_size(&self, digest: &[u8], tagged: bool) -> Result<usize, DpeErrorCode> {
-        let size = Self::get_structure_size(self.hash_oid()?.len(), /*tagged=*/ true)
-            + Self::get_structure_size(digest.len(), /*tagged=*/ true);
-
-        Ok(Self::get_structure_size(size, tagged))
-    }
-
-    /// Get the size of a tcg-dice-TcbInfo structure. For DPE, this is only used
-    /// as part of a MultiTcbInfo. For this reason, do not include the standard
-    /// extension fields. Only include the size of the structure itself.
-    fn get_tcb_info_size(
-        &self,
-        node: &TciNodeData,
-        supports_recursive: bool,
-        tagged: bool,
-    ) -> Result<usize, DpeErrorCode> {
-        let fwid_size = self.get_fwid_size(&node.tci_current.0, /*tagged=*/ true)?;
-        let svn_size = Self::get_integer_size(node.svn.into(), true);
-        let integrity_registers_size = if supports_recursive {
-            let fwid_size = self.get_fwid_size(&node.tci_cumulative.0, /*tagged=*/ true)?;
-            let fwid_list_size = Self::get_structure_size(fwid_size, /*tagged=*/ true);
-            let ir_num_size = Self::get_integer_size(Self::INTEGRITY_REGISTER_NUM, true);
-            let integrity_register_size =
-                Self::get_structure_size(ir_num_size + fwid_list_size, /*tagged=*/ true);
-            Self::get_structure_size(integrity_register_size, /*tagged=*/ true)
-        } else {
-            0
-        };
-        let fwids_size = Self::get_structure_size(fwid_size, /*tagged=*/ true);
-
-        let size = fwids_size
-            + (2 * Self::get_structure_size(core::mem::size_of::<u32>(), /*tagged=*/ true)) // vendorInfo and type
-            + integrity_registers_size
-            + svn_size;
-
-        Ok(Self::get_structure_size(size, tagged))
-    }
-
-    /// Get the size of an X.509 extension wrapper: SEQUENCE { OID, [BOOLEAN], OCTET STRING { content } }.
-    /// `critical`: if true, includes the critical BOOLEAN field in the size.
-    fn get_extension_size(oid: &[u8], critical: bool, content_size: usize, tagged: bool) -> usize {
-        let oid_size = Self::get_structure_size(oid.len(), /*tagged=*/ true);
-        let crit_size = if critical {
-            Self::get_structure_size(Self::BOOL_SIZE, /*tagged=*/ true)
-        } else {
-            0
-        };
-        let octet_size = Self::get_structure_size(content_size, /*tagged=*/ true);
-        let inner = oid_size + crit_size + octet_size;
-        Self::get_structure_size(inner, tagged)
-    }
-
-    /// Encode the header of an X.509 extension: SEQUENCE tag+len, OID, [BOOLEAN critical], OCTET STRING tag+len.
-    /// The caller encodes the extension-specific content bytes after this returns.
-    fn encode_extension_header(
-        &mut self,
-        oid: &[u8],
-        critical: Option<u8>,
-        content_size: usize,
-    ) -> usize {
-        let total_size = Self::get_extension_size(
-            oid,
-            critical.is_some(),
-            content_size,
-            /*tagged=*/ false,
-        );
-        let mut bytes_written = self.encode_byte(Self::SEQUENCE_TAG);
-        bytes_written += self.encode_size_field(total_size);
-        bytes_written += self.encode_oid(oid);
-        if let Some(crit_val) = critical {
-            bytes_written += self.encode_byte(Self::BOOL_TAG);
-            bytes_written += self.encode_size_field(Self::BOOL_SIZE);
-            bytes_written += self.encode_byte(crit_val);
-        }
-        bytes_written += self.encode_byte(Self::OCTET_STRING_TAG);
-        bytes_written += self.encode_size_field(content_size);
-        bytes_written
-    }
-
-    /// Get the size of a tcg-dice-MultiTcbInfo extension, including the extension
-    /// OID and critical bits.
-    fn get_multi_tcb_info_size(
-        &self,
-        measurements: &MeasurementData,
-        tagged: bool,
-    ) -> Result<usize, DpeErrorCode> {
-        if measurements.tci_nodes.is_empty() {
-            return Err(DpeErrorCode::InternalError);
-        }
-
-        // Size of concatenated tcb infos
-        let tcb_infos_size = measurements.tci_nodes.len()
-            * self.get_tcb_info_size(
-                measurements
-                    .tci_nodes
-                    .first()
-                    .ok_or(DpeErrorCode::InternalError)?,
-                measurements.supports_recursive,
-                /*tagged=*/ true,
-            )?;
-
-        // Size of tcb infos including SEQUENCE OF tag/size
-        let multi_tcb_info_size = Self::get_structure_size(tcb_infos_size, /*tagged=*/ true);
-
-        Ok(Self::get_extension_size(
-            Self::MULTI_TCBINFO_OID,
-            self.crit_dice,
-            multi_tcb_info_size,
-            tagged,
-        ))
-    }
-
-    /// Get the size of a tcg-dice-Ueid extension, including the extension
-    /// OID and critical bits.
-    fn get_ueid_size(&self, measurements: &MeasurementData, tagged: bool) -> usize {
-        // Extension data is sequence -> octet string. To compute size, wrap
-        // in tagging twice.
-        let ext_size = Self::get_structure_size(
-            Self::get_structure_size(measurements.label.len(), /*tagged=*/ true),
-            /*tagged=*/ true,
-        );
-
-        Self::get_extension_size(Self::UEID_OID, self.crit_dice, ext_size, tagged)
-    }
-
-    /// Get the size of a basicConstraints extension, including the extension
-    /// OID and critical bits.
-    fn get_basic_constraints_size(measurements: &MeasurementData, tagged: bool) -> usize {
-        // Extension data is sequence -> octet string. To compute size, wrap
-        // in tagging twice.
-        let ca_size = if measurements.is_ca {
-            Self::get_structure_size(Self::BOOL_SIZE, /*tagged=*/ true)
-        } else {
-            0
-        };
-        let ext_size = Self::get_structure_size(ca_size, /*tagged=*/ true);
-
-        Self::get_extension_size(Self::BASIC_CONSTRAINTS_OID, true, ext_size, tagged)
-    }
-
-    /// Get the size of a keyUsage extension, including the extension
-    /// OID and critical bits.
-    fn get_key_usage_size(tagged: bool) -> usize {
-        // Extension data is a 2-byte BIT STRING
-        let ext_size = Self::get_structure_size(2, /*tagged=*/ true);
-
-        Self::get_extension_size(Self::KEY_USAGE_OID, true, ext_size, tagged)
-    }
-
-    /// Get the size of an extendedKeyUsage extension, including the extension
-    /// OID and critical bits.
-    fn get_extended_key_usage_size(measurements: &MeasurementData, tagged: bool) -> usize {
-        let policy_oid_size = if measurements.is_ca {
-            Self::ECA_OID.len()
-        } else {
-            Self::ATTEST_LOC_OID.len()
-        };
-
-        // Extension data is sequence -> octet string. To compute size, wrap
-        // in tagging twice.
-        let ext_size = Self::get_structure_size(
-            Self::get_structure_size(policy_oid_size, /*tagged=*/ true),
-            /*tagged=*/ true,
-        );
-
-        Self::get_extension_size(Self::EXTENDED_KEY_USAGE_OID, true, ext_size, tagged)
-    }
-
-    /// Get the size of an subjectKeyIdentifier extension, including the extension
-    /// OID and critical bits.
-    fn get_subject_key_identifier_extension_size(
-        measurements: &MeasurementData,
-        tagged: bool,
-        is_x509: bool,
-    ) -> usize {
-        if !measurements.is_ca || !is_x509 {
-            return 0;
-        }
-        let ski_size = measurements.subject_key_identifier.len();
-
-        // Extension data is sequence -> octet string. To compute size, wrap
-        // in tagging twice.
-        let ext_size = Self::get_structure_size(ski_size, /*tagged=*/ true);
-
-        Self::get_extension_size(Self::SUBJECT_KEY_IDENTIFIER_OID, false, ext_size, tagged)
-    }
-
-    /// Get the size of an authorityKeyIdentifier extension, including the extension
-    /// OID and critical bits.
-    fn get_authority_key_identifier_extension_size(
-        measurements: &MeasurementData,
-        tagged: bool,
-        is_x509: bool,
-    ) -> usize {
-        if !is_x509 {
-            return 0;
-        }
-        let aki_size = Self::get_key_identifier_size(
-            &measurements.authority_key_identifier,
-            true,
-            /*explicit=*/ false,
-        );
-
-        // Extension data is sequence -> octet string. To compute size, wrap
-        // in tagging twice.
-        let ext_size = Self::get_structure_size(aki_size, /*tagged=*/ true);
-
-        Self::get_extension_size(Self::AUTHORITY_KEY_IDENTIFIER_OID, false, ext_size, tagged)
-    }
-
-    fn get_subject_alt_name_extension_size(measurements: &MeasurementData, tagged: bool) -> usize {
-        match &measurements.subject_alt_name {
-            None => 0,
-            Some(SubjectAltName::OtherName(other_name)) => {
-                let san_size = Self::get_other_name_size(other_name, /*tagged=*/ true);
-
-                // Extension data is sequence -> octet string. To compute size, wrap
-                // in tagging twice.
-                let ext_size = Self::get_structure_size(san_size, /*tagged=*/ true);
-
-                Self::get_extension_size(
-                    Self::SUBJECT_ALTERNATIVE_NAME_OID,
-                    false,
-                    ext_size,
-                    tagged,
-                )
-            }
-        }
-    }
-
-    fn get_other_name_size(other_name: &OtherName, tagged: bool) -> usize {
-        let size = Self::get_structure_size(other_name.oid.len(), /*tagged=*/ true)
-            + Self::get_other_name_value_size(
-                other_name.other_name.as_slice(),
-                /*tagged=*/ true,
-                /*explicit=*/ true,
-            );
-
-        Self::get_structure_size(size, tagged)
-    }
-
-    fn get_other_name_value_size(other_name_value: &[u8], tagged: bool, explicit: bool) -> usize {
-        // Determine whether to include the explicit tag wrapping in the size calculation
-        let size = Self::get_structure_size(other_name_value.len(), explicit);
-
-        Self::get_structure_size(size, tagged)
-    }
-
-    /// Get the size of the TBS Extensions field.
-    fn get_extensions_size(
-        &self,
-        measurements: &MeasurementData,
-        tagged: bool,
-        explicit: bool,
-        is_x509: bool,
-    ) -> Result<usize, DpeErrorCode> {
-        let mut size = self.get_multi_tcb_info_size(measurements, /*tagged=*/ true)?
-            + self.get_ueid_size(measurements, /*tagged=*/ true)
-            + Self::get_basic_constraints_size(measurements, /*tagged=*/ true)
-            + Self::get_key_usage_size(/*tagged=*/ true)
-            + Self::get_extended_key_usage_size(measurements, /*tagged=*/ true)
-            + Self::get_subject_key_identifier_extension_size(
-                measurements,
-                /*tagged=*/ true,
-                is_x509,
-            )
-            + Self::get_authority_key_identifier_extension_size(
-                measurements,
-                /*tagged=*/ true,
-                is_x509,
-            )
-            + Self::get_subject_alt_name_extension_size(measurements, /*tagged=*/ true);
-
-        // Determine whether to include the explicit tag wrapping in the size calculation
-        size = Self::get_structure_size(size, /*tagged=*/ explicit);
-
-        Ok(Self::get_structure_size(size, tagged))
-    }
-
-    /// Get the size of the ASN.1 TBSCertificate structure
-    /// If `tagged`, include the tag and size fields
-    #[allow(clippy::too_many_arguments)]
-    #[cfg(not(feature = "disable_x509"))]
-    fn get_tbs_size(
-        &self,
-        serial_number: &[u8],
-        issuer_der: &[u8],
-        subject_name: &Name,
-        pubkey: &PubKey,
-        measurements: &MeasurementData,
-        validity: &CertValidity,
-        tagged: bool,
-    ) -> Result<usize, DpeErrorCode> {
-        let tbs_size = Self::get_version_size(/*tagged=*/ true)
-            + Self::get_integer_bytes_size(serial_number, /*tagged=*/ true)
-            + self.get_subject_pubkey_info_size(pubkey, true)?
-            + issuer_der.len()
-            + Self::get_validity_size(validity, /*tagged=*/ true)
-            + Self::get_rdn_size(subject_name, /*tagged=*/ true)
-            + self.get_extensions_size(
-                measurements,
-                /*tagged=*/ true,
-                /*explicit=*/ true,
-                /*is_x509=*/ true,
-            )?;
-
-        Ok(Self::get_structure_size(tbs_size, tagged))
-    }
-
-    /// Get the size of the ASN.1 CertificationRequestInfo structure
-    /// If `tagged`, include the tag and size fields
-    #[cfg(not(feature = "disable_csr"))]
-    fn get_certification_request_info_size(
-        &self,
-        subject_name: &Name,
-        pubkey: &PubKey,
-        measurements: &MeasurementData,
-        tagged: bool,
-    ) -> Result<usize, DpeErrorCode> {
-        let pubkey_size = match pubkey {
-            PubKey::Ecdsa(pubkey) => self.get_ecdsa_subject_pubkey_info_size(pubkey, true)?,
-            #[cfg(feature = "ml-dsa")]
-            PubKey::Mldsa(pubkey) => self.get_mldsa_subject_pubkey_info_size(pubkey, true)?,
-        };
-        let cert_req_info_size = Self::get_integer_size(Self::CSR_V0, true)
-            + Self::get_rdn_size(subject_name, /*tagged=*/ true)
-            + self.get_attributes_size(measurements, /*tagged=*/ true)?
-            + pubkey_size;
-
-        Ok(Self::get_structure_size(cert_req_info_size, tagged))
-    }
-
-    /// Get the size of the CMS version which differs based on the SignerIdentifier
-    #[cfg(not(feature = "disable_csr"))]
-    fn get_cms_version_size(sid: &SignerIdentifier) -> usize {
-        match sid {
-            SignerIdentifier::IssuerAndSerialNumber {
-                issuer_name: _,
-                serial_number: _,
-            } => Self::get_integer_size(Self::CMS_V1, true),
-            SignerIdentifier::SubjectKeyIdentifier(_) => Self::get_integer_size(Self::CMS_V3, true),
-        }
-    }
-
-    /// Get the size of the ASN.1 SignerInfo structure
-    /// If `tagged`, include the tag and size fields
-    #[cfg(not(feature = "disable_csr"))]
-    fn get_signer_info_size(
-        &self,
-        sig: &Signature,
-        sid: &SignerIdentifier,
-        tagged: bool,
-    ) -> Result<usize, DpeErrorCode> {
-        let signer_info_size = Self::get_cms_version_size(sid)
-            + Self::get_signer_identifier_size(sid, /*tagged=*/ true)
-            + self.get_hash_alg_id_size(/*tagged=*/ true)?
-            + self.get_signature_octet_string_size(sig, true)?;
-
-        Ok(Self::get_structure_size(signer_info_size, tagged))
-    }
-
-    /// Get the size of the ASN.1 SignedData structure
-    /// If `tagged`, include the tag and size fields
-    #[cfg(not(feature = "disable_csr"))]
-    fn get_signed_data_size(
-        &self,
-        csr: &[u8],
-        sig: &Signature,
-        sid: &SignerIdentifier,
-        tagged: bool,
-        explicit: bool,
-    ) -> Result<usize, DpeErrorCode> {
-        let signed_data_size = Self::get_cms_version_size(sid)
-            + Self::get_structure_size(
-                self.get_hash_alg_id_size(/*tagged=*/ true)?,
-                /*tagged=*/ true,
-            )
-            + Self::get_encap_content_info_size(csr.len(), /*tagged=*/ true)
-            + Self::get_structure_size(
-                self.get_signer_info_size(sig, sid, /*tagged=*/ true)?,
-                /*tagged=*/ true,
-            );
-
-        // Determine whether to include the explicit tag wrapping in the size calculation
-        let explicit_signed_data_size = Self::get_structure_size(signed_data_size, explicit);
-
-        Ok(Self::get_structure_size(explicit_signed_data_size, tagged))
-    }
-
-    /// Get the size of the ASN.1 SignerIdentifier structure
-    /// If `tagged`, include the tag and size fields
-    #[cfg(not(feature = "disable_csr"))]
-    fn get_signer_identifier_size(sid: &SignerIdentifier, tagged: bool) -> usize {
-        match sid {
-            SignerIdentifier::IssuerAndSerialNumber {
-                issuer_name,
-                serial_number,
-            } => Self::get_issuer_and_serial_number_size(
-                serial_number,
-                issuer_name,
-                /*tagged=*/ tagged,
-            ),
-            SignerIdentifier::SubjectKeyIdentifier(subject_key_identifier) => {
-                Self::get_subject_key_identifier_size(
-                    subject_key_identifier,
-                    /*tagged=*/ tagged,
-                    /*explicit=*/ true,
-                )
-            }
-        }
-    }
-
-    /// Get the size of the ASN.1 IssuerAndSerialNumber structure
-    /// If `tagged`, include the tag and size fields
-    #[cfg(not(feature = "disable_csr"))]
-    fn get_issuer_and_serial_number_size(
-        serial_number: &[u8],
-        issuer_der: &[u8],
-        tagged: bool,
-    ) -> usize {
-        let issuer_and_serial_number_size =
-            Self::get_integer_bytes_size(serial_number, /*tagged=*/ true) + issuer_der.len();
-
-        Self::get_structure_size(issuer_and_serial_number_size, tagged)
-    }
-
-    /// Get the size of the ASN.1 SubjectKeyIdentifier structure
-    /// If `tagged`, include the tag and size fields
-    #[cfg(not(feature = "disable_csr"))]
-    fn get_subject_key_identifier_size(
-        subject_key_identifier: &[u8],
-        tagged: bool,
-        explicit: bool,
-    ) -> usize {
-        let subject_key_identifier_size = subject_key_identifier.len();
-
-        // Determine whether to include the explicit tag wrapping in the size calculation
-        let explicit_bytes_size = Self::get_structure_size(subject_key_identifier_size, explicit);
-
-        Self::get_structure_size(explicit_bytes_size, tagged)
-    }
-
-    /// Get the size of the ASN.1 KeyIdentifier structure
-    /// If `tagged`, include the tag and size fields
-    fn get_key_identifier_size(key_identifier: &[u8], tagged: bool, explicit: bool) -> usize {
-        let key_identifier_size = key_identifier.len();
-
-        // Determine whether to include the explicit tag wrapping in the size calculation
-        let explicit_bytes_size = Self::get_structure_size(key_identifier_size, explicit);
-
-        Self::get_structure_size(explicit_bytes_size, tagged)
-    }
-
-    #[cfg(not(feature = "disable_csr"))]
-    fn get_econtent_size(bytes_size: usize, tagged: bool, explicit: bool) -> usize {
-        // Determine whether to include the explicit tag wrapping in the size calculation
-        let explicit_bytes_size = Self::get_structure_size(bytes_size, explicit);
-
-        Self::get_structure_size(explicit_bytes_size, tagged)
-    }
-
-    /// Get the size of the ASN.1 EncapsulatedContentInfo structure
-    /// If `tagged`, include the tag and size fields
-    #[cfg(not(feature = "disable_csr"))]
-    fn get_encap_content_info_size(csr_bytes_written: usize, tagged: bool) -> usize {
-        let encap_content_info_size =
-            Self::get_structure_size(Self::ID_DATA_OID.len(), /*tagged=*/ true)
-                + Self::get_econtent_size(
-                    csr_bytes_written,
-                    /*tagged=*/ true,
-                    /*explicit=*/ true,
-                );
-
-        Self::get_structure_size(encap_content_info_size, tagged)
-    }
-
-    /// Get the size of the ASN.1 Attribute structure
-    /// If `tagged`, include the tag and size fields
-    #[cfg(not(feature = "disable_csr"))]
-    fn get_attribute_size(
-        &self,
-        measurements: &MeasurementData,
-        tagged: bool,
-    ) -> Result<usize, DpeErrorCode> {
-        let attribute_size =
-            Self::get_structure_size(Self::ID_DATA_OID.len(), /*tagged=*/ true)
-                + Self::get_structure_size(
-                    self.get_extensions_size(
-                        measurements,
-                        /*tagged=*/ true,
-                        /*explicit=*/ false,
-                        /*is_x509=*/ false,
-                    )?,
-                    /*tagged=*/ true,
-                );
-
-        Ok(Self::get_structure_size(attribute_size, tagged))
-    }
-
-    /// Get the size of the ASN.1 Attributes structure
-    /// If `tagged`, include the tag and size fields
-    #[cfg(not(feature = "disable_csr"))]
-    fn get_attributes_size(
-        &self,
-        measurements: &MeasurementData,
-        tagged: bool,
-    ) -> Result<usize, DpeErrorCode> {
-        let attribute_size = self.get_attribute_size(measurements, /*tagged=*/ true)?;
-
-        Ok(Self::get_structure_size(attribute_size, tagged))
-    }
-
-    /// Write all of `bytes` to the certificate buffer.
-    fn encode_bytes(&mut self, bytes: &[u8]) -> usize {
-        let size = bytes.len();
-        match self.certificate.get_mut(self.offset..self.offset + size) {
-            Some(s) => s.copy_from_slice(bytes),
-            // Buffer full: skip the write. The overflow is reported by the
-            // post-serialization `check_not_truncated()` in the public encoders.
-            None => {}
-        }
-
-        // Note: Increment the offset regardless of whether the write occurred to allow detection
-        // of encoding overflows.
-        self.offset += size;
-        size
-    }
-
-    /// Write a single `byte` to the certificate buffer.
-    fn encode_byte(&mut self, byte: u8) -> usize {
-        match self.certificate.get_mut(self.offset) {
-            Some(b) => *b = byte,
-            // Buffer full: skip the write. The overflow is reported by the
-            // post-serialization `check_not_truncated()` in the public encoders.
-            None => {}
-        }
-
-        // Note: Increment the offset regardless of whether the write occurred to allow detection
-        // of encoding overflows.
-        self.offset += 1;
-        1
-    }
-
-    /// DER-encodes the tag field of an ASN.1 type
-    fn encode_tag_field(&mut self, tag: u8) -> usize {
-        self.encode_byte(tag)
-    }
-
-    /// DER-encodes the size field of an ASN.1 type
-    fn encode_size_field(&mut self, size: usize) -> usize {
-        let size_width = Self::get_size_width(size);
-        if size_width == 1 {
-            self.encode_byte(size as u8);
-        } else {
-            let rem = size_width - 1;
-            self.encode_byte(0x80 | rem as u8);
-            for i in (0..rem).rev() {
-                self.encode_byte((size >> (i * 8)) as u8);
-            }
-        }
-        size_width
-    }
-
-    /// The unchecked write primitives advance `offset` even when a write is
-    /// skipped (buffer full), so once a structure is fully encoded an `offset`
-    /// past the buffer end means the output was silently truncated. Public
-    /// encoders call this before returning so a too-small buffer fails loudly.
-    fn check_not_truncated(&self) -> Result<(), DpeErrorCode> {
-        if self.offset > self.certificate.len() {
-            return Err(DpeErrorCode::InternalError);
-        }
-        Ok(())
-    }
-
-    /// DER-encodes a big-endian integer buffer as an ASN.1 INTEGER
-    fn encode_integer_bytes(&mut self, integer: &[u8], tagged: bool) -> usize {
-        let mut bytes_written = if tagged {
-            self.encode_tag_field(Self::INTEGER_TAG)
-        } else {
-            0
-        };
-
-        let size = Self::get_integer_bytes_size(integer, false);
-        bytes_written += self.encode_size_field(size);
-
-        // Compute where to start reading from integer (strips leading zeros)
-        let integer_offset = integer.len().saturating_sub(size);
-
-        // If size got larger it is because a null byte needs to be prepended
-        if size > integer.len() {
-            bytes_written += self.encode_byte(0);
-        }
-
-        // integer_offset <= integer.len() by construction, so this never panics.
-        bytes_written += self.encode_bytes(&integer[integer_offset..]);
-
-        bytes_written
-    }
-
-    /// DER-encodes `integer` as an ASN.1 INTEGER
-    fn encode_integer(&mut self, integer: u64, tagged: bool) -> usize {
-        self.encode_integer_bytes(&integer.to_be_bytes(), tagged)
-    }
-
-    /// DER-encode a primitive TLV: a tag byte, a definite-length size field for
-    /// `val.len()`, then `val` itself. This is the common shape of OID, OCTET
-    /// STRING, UTF8String and IMPLICIT primitive fields.
-    fn encode_tlv(&mut self, tag: u8, val: &[u8]) -> usize {
-        let mut bytes_written = self.encode_tag_field(tag);
-        bytes_written += self.encode_size_field(val.len());
-        bytes_written += self.encode_bytes(val);
-
-        bytes_written
-    }
-
-    /// DER-encodes `oid` as an ASN.1 ObjectIdentifier
-    fn encode_oid(&mut self, oid: &[u8]) -> usize {
-        self.encode_tlv(Self::OID_TAG, oid)
-    }
-
-    /// Encode a DirectoryString for an RDN. Multiple string types are allowed, so
-    /// this function accepts a `tag`. This is important because some verifiers
-    /// will do an exact DER comparison when building cert chains.
-    fn encode_rdn_string(&mut self, s: &DirectoryString) -> usize {
-        let (val, tag) = match s {
-            DirectoryString::PrintableString(val) => (val, Self::PRINTABLE_STRING_TAG),
-            DirectoryString::Utf8String(val) => (val, Self::UTF8_STRING_TAG),
-        };
-        self.encode_tlv(tag, val)
     }
 
     /// DER-encodes a RelativeDistinguishedName with CommonName and SerialNumber
@@ -1195,784 +118,61 @@ impl CertWriter<'_> {
     ///     }
     pub fn encode_rdn(&mut self, name: &Name) -> Result<usize, DpeErrorCode> {
         let cn_size =
-            Self::get_structure_size(Self::RDN_COMMON_NAME_OID.len(), /*tagged=*/ true)
-                + Self::get_structure_size(name.cn.len(), /*tagged=*/ true);
-        let serialnumber_size =
-            Self::get_structure_size(Self::RDN_SERIALNUMBER_OID.len(), /*tagged=*/ true)
-                + Self::get_structure_size(name.serial.len(), /*tagged=*/ true);
-
-        let rdn_name_set_size = Self::get_structure_size(cn_size, /*tagged=*/ true);
-        let rnd_serial_set_size =
-            Self::get_structure_size(serialnumber_size, /*tagged=*/ true);
-        let rdn_seq_size = Self::get_structure_size(rdn_name_set_size, /*tagged=*/ true)
-            + Self::get_structure_size(rnd_serial_set_size, /*tagged=*/ true);
-
-        // Encode RDN SEQUENCE OF
-        let mut bytes_written = self.encode_tag_field(Self::SEQUENCE_OF_TAG);
-        bytes_written += self.encode_size_field(rdn_seq_size);
-
-        // Encode RDN SET
-        bytes_written += self.encode_tag_field(Self::SET_OF_TAG);
-        bytes_written += self.encode_size_field(rdn_name_set_size);
-
-        // Encode CN SEQUENCE
-        bytes_written += self.encode_tag_field(Self::SEQUENCE_TAG);
-        bytes_written += self.encode_size_field(cn_size);
-        bytes_written += self.encode_oid(&Self::RDN_COMMON_NAME_OID);
-        bytes_written += self.encode_rdn_string(&name.cn);
-
-        // Encode RDN SET
-        bytes_written += self.encode_tag_field(Self::SET_OF_TAG);
-        bytes_written += self.encode_size_field(rnd_serial_set_size);
-
-        // Encode SERIALNUMBER SEQUENCE
-        bytes_written += self.encode_tag_field(Self::SEQUENCE_TAG);
-        bytes_written += self.encode_size_field(serialnumber_size);
-        bytes_written += self.encode_oid(&Self::RDN_SERIALNUMBER_OID);
-        bytes_written += self.encode_rdn_string(&name.serial);
-
-        self.check_not_truncated()?;
-        Ok(bytes_written)
-    }
-
-    /// DER-encodes the AlgorithmIdentifier for the EC public key algorithm
-    /// used by the active DPE profile.
-    ///
-    /// AlgorithmIdentifier  ::=  SEQUENCE  {
-    ///     algorithm   OBJECT IDENTIFIER,
-    ///     parameters  ECParameters
-    ///     }
-    ///
-    /// ECParameters ::= CHOICE {
-    ///       namedCurve         OBJECT IDENTIFIER
-    ///       -- implicitCurve   NULL
-    ///       -- specifiedCurve  SpecifiedECDomain
-    ///     }
-    fn encode_ec_pub_alg_id(&mut self) -> Result<usize, DpeErrorCode> {
-        let seq_size = self.get_ec_pub_alg_id_size(/*tagged=*/ false)?;
-
-        let mut bytes_written = self.encode_tag_field(Self::SEQUENCE_TAG);
-        bytes_written += self.encode_size_field(seq_size);
-        bytes_written += self.encode_oid(Self::EC_PUB_OID);
-        bytes_written += self.encode_oid(self.curve_oid()?);
-
-        Ok(bytes_written)
-    }
-
-    /// DER-encodes the AlgorithmIdentifier for the ECDSA signature algorithm
-    /// used by the active DPE profile.
-    ///
-    /// AlgorithmIdentifier  ::=  SEQUENCE  {
-    ///     algorithm   OBJECT IDENTIFIER,
-    ///     parameters  ECParameters
-    ///     }
-    fn encode_ecdsa_sig_alg_id(&mut self) -> Result<usize, DpeErrorCode> {
-        let seq_size = self.get_ecdsa_sig_alg_id_size(/*tagged=*/ false)?;
-
-        let mut bytes_written = self.encode_tag_field(Self::SEQUENCE_TAG);
-        bytes_written += self.encode_size_field(seq_size);
-        bytes_written += self.encode_oid(self.sig_oid()?);
-
-        Ok(bytes_written)
-    }
-
-    /// DER-encodes the AlgorithmIdentifier for the hash algorithm
-    /// used by the active DPE profile.
-    ///
-    /// AlgorithmIdentifier  ::=  SEQUENCE  {
-    ///     algorithm   OBJECT IDENTIFIER,
-    ///     parameters  ECParameters
-    ///     }
-    #[cfg(not(feature = "disable_csr"))]
-    fn encode_hash_alg_id(&mut self) -> Result<usize, DpeErrorCode> {
-        let seq_size = self.get_hash_alg_id_size(/*tagged=*/ false)?;
-
-        let mut bytes_written = self.encode_tag_field(Self::SEQUENCE_TAG);
-        bytes_written += self.encode_size_field(seq_size);
-        bytes_written += self.encode_oid(self.hash_oid()?);
-
-        Ok(bytes_written)
-    }
-
-    // Encode ASN.1 Validity according to Platform
-    #[cfg(not(feature = "disable_x509"))]
-    fn encode_validity(&mut self, validity: &CertValidity) -> usize {
-        let seq_size = Self::get_validity_size(validity, /*tagged=*/ false);
-
-        let mut bytes_written = self.encode_tag_field(Self::SEQUENCE_TAG);
-        bytes_written += self.encode_size_field(seq_size);
-
-        bytes_written += self.encode_tlv(Self::GENERALIZE_TIME_TAG, validity.not_before.as_slice());
-        bytes_written += self.encode_tlv(Self::GENERALIZE_TIME_TAG, validity.not_after.as_slice());
-
-        bytes_written
-    }
-
-    /// Encode SubjectPublicKeyInfo for an ECDSA public key
-    ///
-    /// SubjectPublicKeyInfo  ::=  SEQUENCE  {
-    ///        algorithm            AlgorithmIdentifier,
-    ///        subjectPublicKey     BIT STRING  }
-    ///
-    /// subjectPublicKey is a BIT STRING containing an ECPoint
-    /// in uncompressed format.
-    ///
-    /// ECPoint ::= OCTET STRING
-    ///
-    /// The ECPoint OCTET STRING is mapped to the subjectPublicKey BIT STRING
-    /// directly, which means the OCTET STRING tag and size fields are omitted.
-    ///
-    /// Returns number of bytes written to `certificate`
-    fn encode_ecdsa_subject_pubkey_info(
-        &mut self,
-        pub_key: &EcdsaPubKey,
-    ) -> Result<usize, DpeErrorCode> {
-        let point_size = 1 + pub_key.curve_size() + pub_key.curve_size();
-        let bitstring_size = 1 + point_size;
-        let seq_size = Self::get_structure_size(bitstring_size, /*tagged=*/ true)
-            + self.get_ec_pub_alg_id_size(/*tagged=*/ true)?;
-
-        let mut bytes_written = self.encode_tag_field(Self::SEQUENCE_TAG);
-        bytes_written += self.encode_size_field(seq_size);
-        bytes_written += self.encode_ec_pub_alg_id()?;
-
-        bytes_written += self.encode_tag_field(Self::BIT_STRING_TAG);
-        bytes_written += self.encode_size_field(bitstring_size);
-        // First byte of BIT STRING is the number of unused bits. But all bits
-        // are used.
-        bytes_written += self.encode_byte(0);
-
-        bytes_written += self.encode_byte(0x4);
-        let (x, y) = pub_key.as_slice();
-        bytes_written += self.encode_bytes(x);
-        bytes_written += self.encode_bytes(y);
-
-        Ok(bytes_written)
-    }
-
-    /// BIT STRING containing
-    ///
-    /// ECDSA-Sig-Value ::= SEQUENCE {
-    ///     r  INTEGER,
-    ///     s  INTEGER
-    ///   }
-    fn encode_ecdsa_signature_bit_string(
-        &mut self,
-        sig: &EcdsaSignature,
-    ) -> Result<usize, DpeErrorCode> {
-        let (r, s) = sig.as_slice();
-        let seq_size = Self::get_integer_bytes_size(r, /*tagged=*/ true)
-            + Self::get_integer_bytes_size(s, /*tagged=*/ true);
-
-        // Encode BIT STRING
-        let mut bytes_written = self.encode_tag_field(Self::BIT_STRING_TAG);
-        bytes_written += self.encode_size_field(Self::get_structure_size(
-            1 + seq_size,
-            /*tagged=*/ true,
-        ));
-        // Unused bits
-        bytes_written += self.encode_byte(0);
-
-        // Encode SEQUENCE
-        bytes_written += self.encode_tag_field(Self::SEQUENCE_TAG);
-        bytes_written += self.encode_size_field(seq_size);
-        bytes_written += self.encode_integer_bytes(r, true);
-        bytes_written += self.encode_integer_bytes(s, true);
-
-        Ok(bytes_written)
-    }
-
-    /// Encode Signature into BIT STRING
-    #[cfg(not(feature = "disable_csr"))]
-    fn encode_signature_bit_string(&mut self, sig: &Signature) -> Result<usize, DpeErrorCode> {
-        let bytes_written = match sig {
-            Signature::Ecdsa(sig) => {
-                // Alg ID
-                self.encode_ecdsa_sig_alg_id()? +
-                // Signature
-                self.encode_ecdsa_signature_bit_string(sig)?
-            }
-            #[cfg(feature = "ml-dsa")]
-            Signature::Mldsa(sig) => {
-                // Alg ID
-                self.encode_mldsa_sig_alg_id()? +
-                // Signature
-                self.encode_mldsa_signature_bit_string(sig)
-            }
-        };
-        Ok(bytes_written)
-    }
-
-    /// Encode Signature into OCTET STRING
-    #[cfg(not(feature = "disable_csr"))]
-    fn encode_signature_octet_string(&mut self, sig: &Signature) -> Result<usize, DpeErrorCode> {
-        let bytes_written = match sig {
-            Signature::Ecdsa(sig) => {
-                // Alg ID
-                self.encode_ecdsa_sig_alg_id()? +
-                // Signature
-                self.encode_ecdsa_signature_octet_string(sig)
-            }
-            #[cfg(feature = "ml-dsa")]
-            Signature::Mldsa(sig) => {
-                // Alg ID
-                self.encode_mldsa_sig_alg_id()? +
-                // Signature
-                self.encode_mldsa_signature_octet_string(sig)
-            }
-        };
-        Ok(bytes_written)
-    }
-
-    /// OCTET STRING containing
-    ///
-    /// ECDSA-Sig-Value ::= SEQUENCE {
-    ///     r  INTEGER,
-    ///     s  INTEGER
-    ///   }
-    #[cfg(not(feature = "disable_csr"))]
-    fn encode_ecdsa_signature_octet_string(&mut self, sig: &EcdsaSignature) -> usize {
-        let (r, s) = sig.as_slice();
-        let seq_size = Self::get_integer_bytes_size(r, /*tagged=*/ true)
-            + Self::get_integer_bytes_size(s, /*tagged=*/ true);
-
-        // Encode OCTET STRING
-        let mut bytes_written = self.encode_tag_field(Self::OCTET_STRING_TAG);
-        bytes_written +=
-            self.encode_size_field(Self::get_structure_size(seq_size, /*tagged=*/ true));
-
-        // Encode SEQUENCE
-        bytes_written += self.encode_tag_field(Self::SEQUENCE_TAG);
-        bytes_written += self.encode_size_field(seq_size);
-        bytes_written += self.encode_integer_bytes(r, true);
-        bytes_written += self.encode_integer_bytes(s, true);
-
-        bytes_written
-    }
-
-    /// OCTET STRING containing
-    ///
-    /// MLDSA-87 Signature
-    #[cfg(all(not(feature = "disable_csr"), feature = "ml-dsa"))]
-    fn encode_mldsa_signature_octet_string(&mut self, sig: &MldsaSignature) -> usize {
-        let sig = sig.as_bytes();
-
-        // Encode OCTET STRING
-        self.encode_tlv(Self::OCTET_STRING_TAG, sig)
-    }
-
-    /// DER-encodes the AlgorithmIdentifier for the MLDSA-87 signature algorithm
-    #[cfg(feature = "ml-dsa")]
-    fn encode_mldsa_sig_alg_id(&mut self) -> Result<usize, DpeErrorCode> {
-        let seq_size = self.get_mldsa_sig_alg_id_size(false)?;
-
-        let mut bytes_written = self.encode_tag_field(Self::SEQUENCE_TAG);
-        bytes_written += self.encode_size_field(seq_size);
-        bytes_written += self.encode_oid(self.sig_oid()?);
-
-        Ok(bytes_written)
-    }
-
-    /// Encode SubjectPublicKeyInfo for an MLDSA-87 public key
-    #[cfg(feature = "ml-dsa")]
-    fn encode_mldsa_subject_pubkey_info(
-        &mut self,
-        pub_key: &MldsaPublicKey,
-    ) -> Result<usize, DpeErrorCode> {
-        let seq_size = self.get_mldsa_subject_pubkey_info_size(pub_key, false)?;
-
-        let mut bytes_written = self.encode_tag_field(Self::SEQUENCE_TAG);
-        bytes_written += self.encode_size_field(seq_size);
-        bytes_written += self.encode_mldsa_sig_alg_id()?;
-
-        bytes_written += self.encode_tag_field(Self::BIT_STRING_TAG);
-        bytes_written += self.encode_size_field(1 + pub_key.0.len());
-        // First byte of BIT STRING is the number of unused bits.
-        bytes_written += self.encode_byte(0);
-        bytes_written += self.encode_bytes(&pub_key.0);
-
-        Ok(bytes_written)
-    }
-
-    /// BIT STRING containing signature
-    #[cfg(feature = "ml-dsa")]
-    fn encode_mldsa_signature_bit_string(&mut self, sig: &MldsaSignature) -> usize {
-        // Encode BIT STRING
-        let mut bytes_written = self.encode_tag_field(Self::BIT_STRING_TAG);
-        bytes_written += self.encode_size_field(1 + sig.0.len());
-        // Unused bits
-        bytes_written += self.encode_byte(0);
-        bytes_written += self.encode_bytes(&sig.0);
-
-        bytes_written
-    }
-
-    fn encode_version(&mut self) -> usize {
-        // Version is EXPLICIT field number 0
-        let mut bytes_written = self.encode_byte(Self::CONTEXT_SPECIFIC | Self::CONSTRUCTED);
-        bytes_written +=
-            self.encode_size_field(Self::get_integer_size(Self::X509_V3, /*tagged=*/ true));
-        bytes_written += self.encode_integer(Self::X509_V3, true);
-
-        bytes_written
-    }
-
-    fn encode_fwid(&mut self, tci: &TciMeasurement) -> Result<usize, DpeErrorCode> {
-        let mut bytes_written = self.encode_byte(Self::SEQUENCE_TAG);
-        bytes_written += self.encode_size_field(self.get_fwid_size(&tci.0, /*tagged=*/ false)?);
-
-        // hashAlg OID
-        let oid = self.hash_oid()?;
-        bytes_written += self.encode_oid(oid);
-
-        // digest OCTET STRING
-        bytes_written += self.encode_tlv(Self::OCTET_STRING_TAG, &tci.0);
-
-        Ok(bytes_written)
-    }
-
-    /// Encode a tcg-dice-TcbInfo structure
-    ///
-    /// https://trustedcomputinggroup.org/wp-content/uploads/TCG_DICE_Attestation_Architecture_r22_02dec2020.pdf
-    ///
-    /// TcbInfo makes use of implicitly encoded types. This means the tag
-    /// denotes that the type is implicit (8th bit set) and number of the
-    /// field. For example, "Implicit tag number 2" would be encoded with
-    /// the tag 0x82 for primitive types.
-    ///
-    /// For constructed types (SEQUENCE, SEQUENCE OF, SET, SET OF) the 6th
-    /// bit is also set. For example, "Implicit tag number 2" would be encoded
-    /// with tag 0xA2 for constructed types.
-    fn encode_tcb_info(
-        &mut self,
-        node: &TciNodeData,
-        supports_recursive: bool,
-    ) -> Result<usize, DpeErrorCode> {
-        let tcb_info_size =
-            self.get_tcb_info_size(node, supports_recursive, /*tagged=*/ false)?;
-        // TcbInfo sequence
-        let mut bytes_written = self.encode_byte(Self::SEQUENCE_TAG);
-        bytes_written += self.encode_size_field(tcb_info_size);
-
-        // svn INTEGER
-        // IMPLICIT [3] Primitive
-        bytes_written += self.encode_byte(Self::CONTEXT_SPECIFIC | 0x03);
-        bytes_written += self.encode_integer(node.svn.into(), false);
-
-        // fwids SEQUENCE OF
-        // IMPLICIT [6] Constructed
-        let fwid_size = self.get_fwid_size(&node.tci_current.0, /*tagged=*/ true)?;
-        bytes_written += self.encode_byte(Self::CONTEXT_SPECIFIC | Self::CONSTRUCTED | 0x06);
-        bytes_written += self.encode_size_field(fwid_size);
-
-        // fwid[0] current measurement
-        bytes_written += self.encode_fwid(&node.tci_current)?;
-
-        // vendorInfo OCTET STRING
-        // IMPLICIT[8] Primitive
-        let vinfo = &node.locality.to_be_bytes();
-        bytes_written += self.encode_tlv(Self::CONTEXT_SPECIFIC | 0x08, vinfo);
-
-        // type OCTET STRING
-        // IMPLICIT[9] Primitive
-        bytes_written += self.encode_tlv(Self::CONTEXT_SPECIFIC | 0x09, node.tci_type.as_bytes());
-
-        // Omit integrityRegisters from tcb_info if the profile does not support recursive
-        if supports_recursive {
-            // integrityRegisters SEQUENCE OF
-            // IMPLICIT [11] Constructed
-            let fwid_size = self.get_fwid_size(&node.tci_cumulative.0, /*tagged=*/ true)?;
-            let fwid_list_size = Self::get_structure_size(fwid_size, /*tagged=*/ true);
-            let ir_num_size = Self::get_integer_size(Self::INTEGRITY_REGISTER_NUM, true);
-            let integrity_register_size =
-                Self::get_structure_size(ir_num_size + fwid_list_size, /*tagged=*/ true);
-
-            bytes_written += self.encode_byte(Self::CONTEXT_SPECIFIC | Self::CONSTRUCTED | 11);
-            bytes_written += self.encode_size_field(integrity_register_size);
-
-            // integrityRegisters[0] SEQUENCE
-            bytes_written += self.encode_byte(Self::SEQUENCE_TAG);
-            bytes_written += self.encode_size_field(ir_num_size + fwid_list_size);
-
-            // IMPLICIT [1] Primitive
-            // registerNum INTEGER
-            bytes_written += self.encode_byte(Self::CONTEXT_SPECIFIC | 0x01);
-            bytes_written += self.encode_integer(Self::INTEGRITY_REGISTER_NUM, false);
-
-            // IMPLICIT [2] Constructed
-            // registerDigests SEQUENCE OF FWID
-            // cumulative measurement
-            bytes_written += self.encode_byte(Self::CONTEXT_SPECIFIC | Self::CONSTRUCTED | 0x02);
-            bytes_written += self.encode_size_field(fwid_size);
-            bytes_written += self.encode_fwid(&node.tci_cumulative)?;
-        }
-
-        Ok(bytes_written)
-    }
-
-    /// Encode a tcg-dice-MultiTcbInfo extension
-    ///
-    /// https://trustedcomputinggroup.org/wp-content/uploads/TCG_DICE_Attestation_Architecture_r22_02dec2020.pdf
-    fn encode_multi_tcb_info(
-        &mut self,
-        measurements: &MeasurementData,
-    ) -> Result<usize, DpeErrorCode> {
-        let tcb_infos_size = if !measurements.tci_nodes.is_empty() {
-            self.get_tcb_info_size(
-                &measurements.tci_nodes[0],
-                measurements.supports_recursive,
+            CertWriterInternal::get_structure_size(
+                CertWriterInternal::RDN_COMMON_NAME_OID.len(),
                 /*tagged=*/ true,
-            )? * measurements.tci_nodes.len()
-        } else {
-            0
-        };
-        let multi_tcb_info_size = Self::get_structure_size(tcb_infos_size, /*tagged=*/ true);
-        let critical = if self.crit_dice { Some(0xFF) } else { None };
-        let mut bytes_written =
-            self.encode_extension_header(Self::MULTI_TCBINFO_OID, critical, multi_tcb_info_size);
+            ) + CertWriterInternal::get_structure_size(name.cn.len(), /*tagged=*/ true);
+        let serialnumber_size =
+            CertWriterInternal::get_structure_size(
+                CertWriterInternal::RDN_SERIALNUMBER_OID.len(),
+                /*tagged=*/ true,
+            ) + CertWriterInternal::get_structure_size(name.serial.len(), /*tagged=*/ true);
 
-        // Encode MultiTcbInfo
-        bytes_written += self.encode_byte(Self::SEQUENCE_OF_TAG);
-        bytes_written += self.encode_size_field(tcb_infos_size);
-
-        // Encode multiple tcg-dice-TcbInfos
-        for node in measurements.tci_nodes {
-            bytes_written += self.encode_tcb_info(node, measurements.supports_recursive)?;
-        }
-
-        Ok(bytes_written)
-    }
-
-    /// Encode a tcg-dice-Ueid extension
-    ///
-    /// https://trustedcomputinggroup.org/wp-content/uploads/TCG_DICE_Attestation_Architecture_r22_02dec2020.pdf
-    fn encode_ueid(&mut self, measurements: &MeasurementData) -> usize {
-        let ext_size = Self::get_structure_size(
-            Self::get_structure_size(measurements.label.len(), /*tagged=*/ true),
-            /*tagged=*/ true,
-        );
-        let critical = if self.crit_dice { Some(0xFF) } else { None };
-        let mut bytes_written = self.encode_extension_header(Self::UEID_OID, critical, ext_size);
-
-        // Sequence size to just a tagged OCTET_STRING
-        bytes_written += self.encode_byte(Self::SEQUENCE_TAG);
-        bytes_written += self.encode_size_field(Self::get_structure_size(
-            measurements.label.len(),
-            /*tagged=*/ true,
-        ));
-
-        bytes_written += self.encode_tlv(Self::OCTET_STRING_TAG, measurements.label);
-
-        bytes_written
-    }
-
-    /// Encode a BasicConstraints extension
-    ///
-    /// https://datatracker.ietf.org/doc/html/rfc5280
-    fn encode_basic_constraints(&mut self, measurements: &MeasurementData) -> usize {
-        // Extension data is sequence -> octet string. To compute size, wrap
-        // in tagging twice.
-        let ca_size = if measurements.is_ca {
-            Self::get_structure_size(Self::BOOL_SIZE, /*tagged=*/ true)
-        } else {
-            0
-        };
-        let ext_size = Self::get_structure_size(ca_size, /*tagged=*/ true);
-        let mut bytes_written =
-            self.encode_extension_header(Self::BASIC_CONSTRAINTS_OID, Some(0xFF), ext_size);
-
-        bytes_written += self.encode_byte(Self::SEQUENCE_TAG);
-        bytes_written += self.encode_size_field(ca_size);
-
-        if measurements.is_ca {
-            bytes_written += self.encode_byte(Self::BOOL_TAG);
-            bytes_written += self.encode_size_field(Self::BOOL_SIZE);
-            bytes_written += self.encode_byte(0xFF);
-        }
-
-        bytes_written
-    }
-
-    /// Encode a KeyUsage extension
-    ///
-    /// https://datatracker.ietf.org/doc/html/rfc5280
-    fn encode_key_usage(&mut self, is_ca: bool) -> usize {
-        let ext_size = Self::get_structure_size(2, /*tagged=*/ true);
-        let mut bytes_written =
-            self.encode_extension_header(Self::KEY_USAGE_OID, Some(0xFF), ext_size);
-
-        bytes_written += self.encode_byte(Self::BIT_STRING_TAG);
-
-        // Bit string is 2 bytes:
-        // * Unused bits
-        // * KeyUsage bits
-        bytes_written += self.encode_size_field(2);
-
-        // Count trailing bits in KeyUsage byte as unused
-        let (key_usage, unused_bits) = if is_ca {
-            (
-                KeyUsageFlags::DIGITAL_SIGNATURE | KeyUsageFlags::KEY_CERT_SIGN,
-                2,
-            )
-        } else {
-            (KeyUsageFlags::DIGITAL_SIGNATURE, 7)
-        };
-
-        // Unused bits
-        bytes_written += self.encode_byte(unused_bits);
-
-        bytes_written += self.encode_byte(key_usage.0);
-
-        bytes_written
-    }
-
-    /// Encode ExtendedKeyUsage extension
-    ///
-    /// The included EKU OIDs is as follows based on whether or not this certificate is for a CA:
-    ///
-    /// is_ca = true: id-tcg-kp-identityLoc (2.23.133.8.7)
-    /// is_ca = false: id-tcg-kp-attestLoc (2.23.133.8.9)
-    ///
-    /// https://datatracker.ietf.org/doc/html/rfc5280
-    fn encode_extended_key_usage(&mut self, measurements: &MeasurementData) -> usize {
-        let policy_oid = if measurements.is_ca {
-            Self::ECA_OID
-        } else {
-            Self::ATTEST_LOC_OID
-        };
-
-        let ext_size = Self::get_structure_size(
-            Self::get_structure_size(policy_oid.len(), /*tagged=*/ true),
-            /*tagged=*/ true,
-        );
-        let mut bytes_written =
-            self.encode_extension_header(Self::EXTENDED_KEY_USAGE_OID, Some(0xFF), ext_size);
-
-        // Sequence size is the size of all the EKU OIDs.
-        bytes_written += self.encode_byte(Self::SEQUENCE_TAG);
-        bytes_written += self.encode_size_field(Self::get_structure_size(
-            policy_oid.len(),
-            /*tagged=*/ true,
-        ));
-
-        bytes_written += self.encode_oid(policy_oid);
-
-        bytes_written
-    }
-
-    #[allow(clippy::identity_op)]
-    fn encode_other_name_value(&mut self, other_name_value: &[u8]) -> usize {
-        // value is EXPLICIT field number 0
-        let mut bytes_written = self.encode_byte(Self::CONTEXT_SPECIFIC | Self::CONSTRUCTED | 0x0);
-        bytes_written += self.encode_size_field(Self::get_other_name_value_size(
-            other_name_value,
-            /*tagged=*/ true,
-            /*explicit=*/ false,
-        ));
-
-        // value := UTF8STRING
-        bytes_written += self.encode_tlv(Self::UTF8_STRING_TAG, other_name_value);
-
-        bytes_written
-    }
-
-    /// OtherName ::= SEQUENCE {
-    ///    type-id    OBJECT IDENTIFIER,
-    ///    value      [0] EXPLICIT ANY DEFINED BY type-id
-    /// }
-    #[allow(clippy::identity_op)]
-    fn encode_other_name(&mut self, other_name: &OtherName) -> usize {
-        // otherName is EXPLICIT field number 0
-        let mut bytes_written = self.encode_byte(Self::CONTEXT_SPECIFIC | Self::CONSTRUCTED | 0x0);
-
-        bytes_written += self.encode_size_field(Self::get_other_name_size(
-            other_name, /*tagged=*/ false,
-        ));
-        bytes_written += self.encode_oid(other_name.oid);
-        bytes_written += self.encode_other_name_value(other_name.other_name.as_slice());
-
-        bytes_written
-    }
-
-    /// SubjectAltName ::= GeneralNames
-    ///
-    /// GeneralNames ::= SEQUENCE SIZE (1..MAX) OF GeneralName
-    ///
-    /// GeneralName ::= CHOICE {
-    ///    otherName                       [0]     OtherName,
-    ///    rfc822Name                      [1]     IA5String,
-    ///    dNSName                         [2]     IA5String,
-    ///    x400Address                     [3]     ORAddress,
-    ///    directoryName                   [4]     Name,
-    ///    ediPartyName                    [5]     EDIPartyName,
-    ///    uniformResourceIdentifier       [6]     IA5String,
-    ///    iPAddress                       [7]     OCTET STRING,
-    ///    registeredID                    [8]     OBJECT IDENTIFIER
-    /// }
-    ///
-    /// Currently, only otherName is supported.
-    fn encode_subject_alt_name_extension(&mut self, measurements: &MeasurementData) -> usize {
-        match &measurements.subject_alt_name {
-            None => 0,
-            Some(SubjectAltName::OtherName(other_name)) => {
-                let other_name_size = Self::get_other_name_size(other_name, /*tagged=*/ true);
-                let ext_size = Self::get_structure_size(other_name_size, /*tagged=*/ true);
-                let mut bytes_written = self.encode_extension_header(
-                    Self::SUBJECT_ALTERNATIVE_NAME_OID,
-                    None,
-                    ext_size,
+        let rdn_name_set_size =
+            CertWriterInternal::get_structure_size(cn_size, /*tagged=*/ true);
+        let rnd_serial_set_size =
+            CertWriterInternal::get_structure_size(serialnumber_size, /*tagged=*/ true);
+        let rdn_seq_size =
+            CertWriterInternal::get_structure_size(rdn_name_set_size, /*tagged=*/ true)
+                + CertWriterInternal::get_structure_size(
+                    rnd_serial_set_size,
+                    /*tagged=*/ true,
                 );
 
-                bytes_written += self.encode_byte(Self::SEQUENCE_TAG);
-                bytes_written += self.encode_size_field(other_name_size);
-                bytes_written += self.encode_other_name(other_name);
+        let mut bytes_written = self
+            .internal
+            .encode_tag_field(CertWriterInternal::SEQUENCE_OF_TAG);
+        bytes_written += self.internal.encode_size_field(rdn_seq_size);
 
-                bytes_written
-            }
-        }
-    }
+        bytes_written += self
+            .internal
+            .encode_tag_field(CertWriterInternal::SET_OF_TAG);
+        bytes_written += self.internal.encode_size_field(rdn_name_set_size);
 
-    /// AuthorityKeyIdentifier ::= SEQUENCE {
-    ///     keyIdentifier             [0] KeyIdentifier           OPTIONAL,
-    ///     authorityCertIssuer       [1] GeneralNames            OPTIONAL,
-    ///     authorityCertSerialNumber [2] CertificateSerialNumber OPTIONAL
-    /// }
-    fn encode_authority_key_identifier_extension(
-        &mut self,
-        measurements: &MeasurementData,
-        is_x509: bool,
-    ) -> usize {
-        if !is_x509 {
-            return 0;
-        }
+        bytes_written += self
+            .internal
+            .encode_tag_field(CertWriterInternal::SEQUENCE_TAG);
+        bytes_written += self.internal.encode_size_field(cn_size);
+        bytes_written += self
+            .internal
+            .encode_oid(&CertWriterInternal::RDN_COMMON_NAME_OID);
+        bytes_written += self.internal.encode_rdn_string(&name.cn);
 
-        let key_identifier_size = Self::get_key_identifier_size(
-            &measurements.authority_key_identifier,
-            /*tagged=*/ true,
-            /*explicit=*/ false,
-        );
-        let ext_size = Self::get_structure_size(key_identifier_size, /*tagged=*/ true);
-        let mut bytes_written =
-            self.encode_extension_header(Self::AUTHORITY_KEY_IDENTIFIER_OID, None, ext_size);
+        bytes_written += self
+            .internal
+            .encode_tag_field(CertWriterInternal::SET_OF_TAG);
+        bytes_written += self.internal.encode_size_field(rnd_serial_set_size);
 
-        // Encode extension data sequence
-        bytes_written += self.encode_byte(Self::SEQUENCE_TAG);
-        bytes_written += self.encode_size_field(key_identifier_size);
-        bytes_written += self.encode_key_identifier(&measurements.authority_key_identifier);
+        bytes_written += self
+            .internal
+            .encode_tag_field(CertWriterInternal::SEQUENCE_TAG);
+        bytes_written += self.internal.encode_size_field(serialnumber_size);
+        bytes_written += self
+            .internal
+            .encode_oid(&CertWriterInternal::RDN_SERIALNUMBER_OID);
+        bytes_written += self.internal.encode_rdn_string(&name.serial);
 
-        bytes_written
-    }
-
-    fn encode_subject_key_identifier_extension(
-        &mut self,
-        measurements: &MeasurementData,
-        is_x509: bool,
-    ) -> usize {
-        if !measurements.is_ca || !is_x509 {
-            return 0;
-        }
-        let ext_size = Self::get_structure_size(
-            measurements.subject_key_identifier.len(),
-            /*tagged=*/ true,
-        );
-        let mut bytes_written =
-            self.encode_extension_header(Self::SUBJECT_KEY_IDENTIFIER_OID, None, ext_size);
-
-        // SubjectKeyIdentifier := OCTET STRING
-        bytes_written +=
-            self.encode_tlv(Self::OCTET_STRING_TAG, &measurements.subject_key_identifier);
-
-        bytes_written
-    }
-
-    fn encode_extensions(
-        &mut self,
-        measurements: &MeasurementData,
-        is_x509: bool,
-    ) -> Result<usize, DpeErrorCode> {
-        let mut bytes_written = 0;
-        if is_x509 {
-            // Extensions is EXPLICIT field number 3
-            bytes_written += self.encode_byte(Self::CONTEXT_SPECIFIC | Self::CONSTRUCTED | 0x03);
-            bytes_written += self.encode_size_field(self.get_extensions_size(
-                measurements,
-                /*tagged=*/ true,
-                /*explicit=*/ false,
-                is_x509,
-            )?);
-        }
-
-        // SEQUENCE OF Extension
-        bytes_written += self.encode_byte(Self::SEQUENCE_OF_TAG);
-        bytes_written += self.encode_size_field(self.get_extensions_size(
-            measurements,
-            /*tagged=*/ false,
-            /*explicit=*/ false,
-            is_x509,
-        )?);
-
-        bytes_written += self.encode_multi_tcb_info(measurements)?;
-        bytes_written += self.encode_ueid(measurements);
-        bytes_written += self.encode_basic_constraints(measurements);
-        bytes_written += self.encode_key_usage(measurements.is_ca);
-        bytes_written += self.encode_extended_key_usage(measurements);
-        bytes_written += self.encode_subject_key_identifier_extension(measurements, is_x509);
-        bytes_written += self.encode_authority_key_identifier_extension(measurements, is_x509);
-        bytes_written += self.encode_subject_alt_name_extension(measurements);
-
-        Ok(bytes_written)
-    }
-
-    /// Encodes an integer representing the CMS version which is dependent on the SignerIdentifier
-    ///
-    /// If the SignerIdentifier is IssuerAndSerialNumber the version is 1, otherwise it is 3.
-    #[cfg(not(feature = "disable_csr"))]
-    fn encode_cms_version(&mut self, sid: &SignerIdentifier) -> usize {
-        match sid {
-            SignerIdentifier::IssuerAndSerialNumber {
-                issuer_name: _,
-                serial_number: _,
-            } => self.encode_integer(Self::CMS_V1, true),
-            SignerIdentifier::SubjectKeyIdentifier(_) => self.encode_integer(Self::CMS_V3, true),
-        }
-    }
-
-    /// Encode an attributes structure
-    ///
-    /// Attributes ::= SET OF Attribute
-    ///
-    /// Attribute ::= SEQUENCE {
-    ///    attrType OBJECT IDENTIFIER,
-    ///    attrValues SET OF AttributeValue
-    /// }
-    ///
-    /// AttributeValue ::= ANY -- Defined by attribute type
-    #[allow(clippy::identity_op)]
-    #[cfg(not(feature = "disable_csr"))]
-    fn encode_attributes(&mut self, measurements: &MeasurementData) -> Result<usize, DpeErrorCode> {
-        // Attributes is EXPLICIT field number 0
-        let mut bytes_written = self.encode_byte(Self::CONTEXT_SPECIFIC | Self::CONSTRUCTED | 0x0);
-        bytes_written +=
-            self.encode_size_field(self.get_attributes_size(measurements, /*tagged=*/ false)?);
-
-        // Attribute Sequence
-        bytes_written += self.encode_tag_field(Self::SEQUENCE_TAG);
-        bytes_written +=
-            self.encode_size_field(self.get_attribute_size(measurements, /*tagged=*/ false)?);
-        bytes_written += self.encode_oid(Self::EXTENSION_REQUEST_OID);
-
-        // attrValues SET OF
-        bytes_written += self.encode_tag_field(Self::SET_OF_TAG);
-        bytes_written += self.encode_size_field(self.get_extensions_size(
-            measurements,
-            /*tagged=*/ true,
-            /*explicit=*/ false,
-            /*is_x509=*/ false,
-        )?);
-
-        // extensions
-        bytes_written += self.encode_extensions(measurements, /*is_x509=*/ false)?;
-
+        self.internal.check_not_truncated()?;
         Ok(bytes_written)
     }
 
@@ -1993,165 +193,21 @@ impl CertWriter<'_> {
         sig: &Signature,
         sid: &SignerIdentifier,
     ) -> Result<usize, DpeErrorCode> {
-        let signer_info_size = self.get_signer_info_size(sig, sid, /*tagged=*/ false)?;
+        let signer_info_size = self
+            .internal
+            .get_signer_info_size(sig, sid, /*tagged=*/ false)?;
 
-        // SignerInfo Sequence
-        let mut bytes_written = self.encode_tag_field(Self::SEQUENCE_TAG);
-        bytes_written += self.encode_size_field(signer_info_size);
+        let mut bytes_written = self
+            .internal
+            .encode_tag_field(CertWriterInternal::SEQUENCE_TAG);
+        bytes_written += self.internal.encode_size_field(signer_info_size);
+        bytes_written += self.internal.encode_cms_version(sid);
+        bytes_written += self.internal.encode_signer_identifier(sid);
+        bytes_written += self.internal.encode_hash_alg_id()?;
+        bytes_written += self.internal.encode_signature_octet_string(sig)?;
 
-        // CMS version
-        bytes_written += self.encode_cms_version(sid);
-
-        // SignerIdentifier
-        bytes_written += self.encode_signer_identifier(sid);
-
-        // digestAlgorithm
-        bytes_written += self.encode_hash_alg_id()?;
-
-        bytes_written += self.encode_signature_octet_string(sig)?;
-
-        self.check_not_truncated()?;
+        self.internal.check_not_truncated()?;
         Ok(bytes_written)
-    }
-
-    /// Encode a SignerIdentifier
-    ///
-    /// SignerIdentifier ::= CHOICE {
-    ///     issuerAndSerialNumber IssuerAndSerialNumber,
-    ///     subjectKeyIdentifier [0] SubjectKeyIdentifier
-    /// }
-    #[cfg(not(feature = "disable_csr"))]
-    fn encode_signer_identifier(&mut self, sid: &SignerIdentifier) -> usize {
-        match sid {
-            SignerIdentifier::IssuerAndSerialNumber {
-                issuer_name,
-                serial_number,
-            } => self.encode_issuer_and_serial_number(serial_number, issuer_name),
-            SignerIdentifier::SubjectKeyIdentifier(subject_key_identifier) => {
-                self.encode_subject_key_identifier(subject_key_identifier)
-            }
-        }
-    }
-
-    /// Encode an IssuerAndSerialNumber
-    ///
-    /// IssuerAndSerialNumber  ::=  SEQUENCE  {
-    ///    issuer Name,
-    ///    serialNumber CertificateSerialNumber
-    /// }
-    #[cfg(not(feature = "disable_csr"))]
-    fn encode_issuer_and_serial_number(
-        &mut self,
-        serial_number: &[u8],
-        issuer_name: &[u8],
-    ) -> usize {
-        let issuer_and_serial_number_size = Self::get_issuer_and_serial_number_size(
-            serial_number,
-            issuer_name,
-            /*tagged=*/ false,
-        );
-
-        // IssuerAndSerialNumber sequence
-        let mut bytes_written = self.encode_tag_field(Self::SEQUENCE_TAG);
-        bytes_written += self.encode_size_field(issuer_and_serial_number_size);
-
-        // issuer
-        bytes_written += self.encode_bytes(issuer_name);
-
-        // serialNumber
-        bytes_written += self.encode_integer_bytes(serial_number, true);
-
-        bytes_written
-    }
-
-    /// Encode a SubjectKeyIdentifier
-    ///
-    /// SubjectKeyIdentifier ::= OCTET STRING
-    #[allow(clippy::identity_op)]
-    #[cfg(not(feature = "disable_csr"))]
-    fn encode_subject_key_identifier(&mut self, subject_key_identifier: &[u8]) -> usize {
-        // SubjectKeyIdentifier is IMPLICIT field number 0
-        let mut bytes_written = self.encode_byte(Self::CONTEXT_SPECIFIC | 0x0);
-        bytes_written += self.encode_size_field(Self::get_subject_key_identifier_size(
-            subject_key_identifier,
-            /*tagged=*/ true,
-            /*explicit=*/ false,
-        ));
-
-        // SubjectKeyIdentifier OCTET STRING
-        bytes_written += self.encode_tlv(Self::OCTET_STRING_TAG, subject_key_identifier);
-
-        bytes_written
-    }
-
-    /// Encode a KeyIdentifier
-    ///
-    /// KeyIdentifier ::= OCTET STRING
-    #[allow(clippy::identity_op)]
-    fn encode_key_identifier(&mut self, key_identifier: &[u8]) -> usize {
-        // KeyIdentifier is IMPLICIT field number 0
-        self.encode_tlv(Self::CONTEXT_SPECIFIC | 0x0, key_identifier)
-    }
-
-    /// Encode an EncapsulatedContentInfo
-    ///
-    /// EncapsulatedContentInfo  ::=  SEQUENCE  {
-    ///    eContentType ContentType,
-    ///    eContent [0] EXPLICIT OCTET STRING OPTIONAL
-    /// }
-    #[cfg(not(feature = "disable_csr"))]
-    #[allow(clippy::identity_op)]
-    fn encode_encapsulated_content_info(
-        &mut self,
-        sign_cb: &mut (impl FnMut(&[u8], bool) -> Result<Signature, CryptoError> + ?Sized),
-        pub_key: &PubKey,
-        subject_name: &Name,
-        measurements: &MeasurementData,
-    ) -> Result<usize, DpeErrorCode> {
-        let mut size_bytes_written = self.encode_byte(Self::SEQUENCE_TAG);
-        self.push_backtrack(SIZE_TAG_OFFSET)?;
-
-        // EncapsulatedContentInfo Sequence
-        let mut bytes_written = self.encode_oid(Self::ID_DATA_OID);
-
-        // eContent is EXPLICIT field number 0
-        bytes_written += self.encode_byte(Self::CONTEXT_SPECIFIC | Self::CONSTRUCTED | 0x0);
-        self.push_backtrack(SIZE_TAG_OFFSET)?;
-
-        // eContent OCTET STRING
-        bytes_written += self.encode_byte(Self::OCTET_STRING_TAG);
-        let offset = self.push_backtrack(SIZE_TAG_OFFSET)?;
-
-        let csr_bytes_written = self.encode_csr(sign_cb, pub_key, subject_name, measurements)?;
-        self.csr_range = Some((offset, offset + csr_bytes_written));
-
-        let econtent_1_size = Self::get_econtent_size(
-            csr_bytes_written,
-            /*tagged=*/ false,
-            /*explicit=*/ false,
-        );
-
-        let econtent_0_size = Self::get_econtent_size(
-            csr_bytes_written,
-            /*tagged=*/ true,
-            /*explicit=*/ false,
-        );
-
-        {
-            self.start_backtrack()?;
-            self.pop_backtrack(Self::get_size_width(econtent_1_size))?;
-            bytes_written += self.encode_size_field(econtent_1_size);
-
-            self.pop_backtrack(Self::get_size_width(econtent_0_size))?;
-            bytes_written += self.encode_size_field(econtent_0_size);
-
-            self.pop_backtrack(Self::get_size_width(bytes_written + csr_bytes_written))?;
-
-            size_bytes_written += self.encode_size_field(bytes_written + csr_bytes_written);
-            self.end_backtrack()?;
-        }
-
-        Ok(bytes_written + csr_bytes_written + size_bytes_written)
     }
 
     /// Encodes a TBS Certificate with the following ASN.1 encoding:
@@ -2190,7 +246,7 @@ impl CertWriter<'_> {
         measurements: &MeasurementData,
         validity: &CertValidity,
     ) -> Result<usize, DpeErrorCode> {
-        let tbs_size = self.get_tbs_size(
+        let tbs_size = self.internal.get_tbs_size(
             serial_number,
             issuer_name,
             subject_name,
@@ -2200,43 +256,30 @@ impl CertWriter<'_> {
             /*tagged=*/ false,
         )?;
 
-        // TBS sequence
-        let mut bytes_written = self.encode_tag_field(Self::SEQUENCE_TAG);
-        bytes_written += self.encode_size_field(tbs_size);
-
-        // version
-        bytes_written += self.encode_version();
-
-        // serialNumber
-        bytes_written += self.encode_integer_bytes(serial_number, true);
-
-        // signature
+        let mut bytes_written = self
+            .internal
+            .encode_tag_field(CertWriterInternal::SEQUENCE_TAG);
+        bytes_written += self.internal.encode_size_field(tbs_size);
+        bytes_written += self.internal.encode_version();
+        bytes_written += self.internal.encode_integer_bytes(serial_number, true);
         bytes_written += match pubkey {
-            PubKey::Ecdsa(_) => self.encode_ecdsa_sig_alg_id()?,
+            PubKey::Ecdsa(_) => self.internal.encode_ecdsa_sig_alg_id()?,
             #[cfg(feature = "ml-dsa")]
-            PubKey::Mldsa(_) => self.encode_mldsa_sig_alg_id()?,
+            PubKey::Mldsa(_) => self.internal.encode_mldsa_sig_alg_id()?,
         };
-
-        // issuer
-        bytes_written += self.encode_bytes(issuer_name);
-
-        // validity
-        bytes_written += self.encode_validity(validity);
-
-        // subject
+        bytes_written += self.internal.encode_bytes(issuer_name);
+        bytes_written += self.internal.encode_validity(validity);
         bytes_written += self.encode_rdn(subject_name)?;
-
-        // subjectPublicKeyInfo
         bytes_written += match pubkey {
-            PubKey::Ecdsa(pub_key) => self.encode_ecdsa_subject_pubkey_info(pub_key)?,
+            PubKey::Ecdsa(pub_key) => self.internal.encode_ecdsa_subject_pubkey_info(pub_key)?,
             #[cfg(feature = "ml-dsa")]
-            PubKey::Mldsa(pub_key) => self.encode_mldsa_subject_pubkey_info(pub_key)?,
+            PubKey::Mldsa(pub_key) => self.internal.encode_mldsa_subject_pubkey_info(pub_key)?,
         };
+        bytes_written += self
+            .internal
+            .encode_extensions(measurements, /*is_x509=*/ true)?;
 
-        // extensions
-        bytes_written += self.encode_extensions(measurements, /*is_x509=*/ true)?;
-
-        self.check_not_truncated()?;
+        self.internal.check_not_truncated()?;
         Ok(bytes_written)
     }
 
@@ -2271,32 +314,271 @@ impl CertWriter<'_> {
                 validity,
             },
         )?;
-
-        self.check_not_truncated()?;
+        self.internal.check_not_truncated()?;
         Ok(bytes_written)
     }
 
-    /// Encode a signed ASN.1 structure: an outer SEQUENCE wrapping a payload
-    /// followed by its signature BIT STRING. This is the common envelope for
-    /// both an X.509 `Certificate` (TBSCertificate + signature) and a PKCS #10
-    /// `CertificateRequest` (CertificationRequestInfo + signature).
+    /// Encode a certification request info
     ///
-    /// The payload is encoded first, signed via `sign_cb`, and the signature
-    /// appended; the outer SEQUENCE length is backfilled once both sizes are
-    /// known.
+    /// CertificationRequestInfo  ::=  SEQUENCE  {
+    ///    version       INTEGER { v1(0) } (v1,...),
+    ///    subject       Name,
+    ///    subjectPKInfo SubjectPublicKeyInfo{{ PKInfoAlgorithms }},
+    ///    attributes    [0] Attributes{{ CRIAttributes }}}
+    /// }
     ///
-    /// Returns number of bytes written.
+    /// # Arguments
+    ///
+    /// * `pubkey` - ECDSA Public key.
+    /// * `subject_name` - The subject name RDN struct to encode.
+    /// * `measurements` - DPE measurement data.
+    ///
+    /// Returns number of bytes written to `certificate`
+    #[cfg(not(feature = "disable_csr"))]
+    pub fn encode_certification_request_info(
+        &mut self,
+        pub_key: &PubKey,
+        subject_name: &Name,
+        measurements: &MeasurementData,
+    ) -> Result<usize, DpeErrorCode> {
+        let cert_req_info_size = self.internal.get_certification_request_info_size(
+            subject_name,
+            pub_key,
+            measurements,
+            /*tagged=*/ false,
+        )?;
+
+        let mut bytes_written = self
+            .internal
+            .encode_tag_field(CertWriterInternal::SEQUENCE_TAG);
+        bytes_written += self.internal.encode_size_field(cert_req_info_size);
+        bytes_written += self
+            .internal
+            .encode_integer(CertWriterInternal::CSR_V0, true);
+        bytes_written += self.encode_rdn(subject_name)?;
+        match pub_key {
+            PubKey::Ecdsa(pub_key) => {
+                bytes_written += self.internal.encode_ecdsa_subject_pubkey_info(pub_key)?;
+            }
+            #[cfg(feature = "ml-dsa")]
+            PubKey::Mldsa(pub_key) => {
+                bytes_written += self.internal.encode_mldsa_subject_pubkey_info(pub_key)?;
+            }
+        }
+        bytes_written += self.internal.encode_attributes(measurements)?;
+
+        self.internal.check_not_truncated()?;
+        Ok(bytes_written)
+    }
+
+    /// Encode an PKCS #10 CSR
+    ///
+    /// CertificateRequest  ::=  SEQUENCE  {
+    ///    certificationRequestInfo       CertificationRequestInfo,
+    ///    signatureAlgorithm             AlgorithmIdentifier,
+    ///    signatureValue                 BIT STRING
+    /// }
+    ///
+    /// Returns number of bytes written to `certificate`
+    #[cfg(not(feature = "disable_csr"))]
+    pub fn encode_csr(
+        &mut self,
+        sign_cb: &mut (impl FnMut(&[u8], bool) -> Result<Signature, CryptoError> + ?Sized),
+        pub_key: &PubKey,
+        subject_name: &Name,
+        measurements: &MeasurementData,
+    ) -> Result<usize, DpeErrorCode> {
+        let bytes_written = self.encode_signed_payload(
+            sign_cb,
+            SignedPayload::CertReqInfo {
+                pub_key,
+                subject_name,
+                measurements,
+            },
+        )?;
+        self.internal.check_not_truncated()?;
+        Ok(bytes_written)
+    }
+
+    /// Encode a CMS ContentInfo message
+    ///
+    /// ContentInfo  ::=  SEQUENCE  {
+    ///    contentType ContentType,
+    ///    content [0] EXPLICIT ANY DEFINED BY contentType
+    /// }
+    #[cfg(not(feature = "disable_csr"))]
+    #[allow(clippy::identity_op)]
+    pub fn encode_cms(
+        &mut self,
+        sign_cb: &mut (impl FnMut(&[u8], bool) -> Result<Signature, CryptoError> + ?Sized),
+        pub_key: &PubKey,
+        subject_name: &Name,
+        measurements: &MeasurementData,
+        sid: &SignerIdentifier,
+    ) -> Result<usize, DpeErrorCode> {
+        let mut size_bytes_written = self.internal.encode_byte(CertWriterInternal::SEQUENCE_TAG);
+        let _ = self.internal.push_backtrack(SIZE_TAG_OFFSET)?;
+
+        let mut bytes_written = self
+            .internal
+            .encode_oid(CertWriterInternal::ID_SIGNED_DATA_OID);
+
+        bytes_written += self.internal.encode_byte(
+            CertWriterInternal::CONTEXT_SPECIFIC | CertWriterInternal::CONSTRUCTED | 0x0,
+        );
+        let _ = self.internal.push_backtrack(SIZE_TAG_OFFSET)?;
+
+        bytes_written += self
+            .internal
+            .encode_tag_field(CertWriterInternal::SEQUENCE_TAG);
+        let _ = self.internal.push_backtrack(SIZE_TAG_OFFSET)?;
+
+        bytes_written += self.internal.encode_cms_version(sid);
+
+        bytes_written += self
+            .internal
+            .encode_tag_field(CertWriterInternal::SET_OF_TAG);
+        let hash_alg_id_size = self.internal.get_hash_alg_id_size(/*tagged=*/ true)?;
+        bytes_written += self.internal.encode_size_field(hash_alg_id_size);
+        bytes_written += self.internal.encode_hash_alg_id()?;
+
+        bytes_written +=
+            self.encode_encapsulated_content_info(sign_cb, pub_key, subject_name, measurements)?;
+
+        let csr = {
+            let Some(csr_range) = self.internal.csr_range else {
+                Err(DpeErrorCode::X509CsrUnset)?
+            };
+            self.internal
+                .certificate
+                .get(csr_range.0..csr_range.1)
+                .ok_or(DpeErrorCode::InternalError)?
+        };
+
+        let sig = sign_cb(csr, false)?;
+
+        let signed_data_field_0 = self.internal.get_signed_data_size(
+            csr, &sig, sid, /*tagged=*/ true, /*explicit=*/ false,
+        )?;
+
+        let signed_data_field_1 = self.internal.get_signed_data_size(
+            csr, &sig, sid, /*tagged=*/ false, /*explicit=*/ false,
+        )?;
+
+        bytes_written += self
+            .internal
+            .encode_tag_field(CertWriterInternal::SET_OF_TAG);
+        let signer_info_size = self
+            .internal
+            .get_signer_info_size(&sig, sid, /*tagged=*/ true)?;
+        bytes_written += self.internal.encode_size_field(signer_info_size);
+        bytes_written += self.encode_signer_info(&sig, sid)?;
+
+        {
+            self.internal.start_backtrack()?;
+            self.internal
+                .pop_backtrack(CertWriterInternal::get_size_width(signed_data_field_1))?;
+            bytes_written += self.internal.encode_size_field(signed_data_field_1);
+
+            self.internal
+                .pop_backtrack(CertWriterInternal::get_size_width(signed_data_field_0))?;
+            bytes_written += self.internal.encode_size_field(signed_data_field_0);
+
+            self.internal
+                .pop_backtrack(CertWriterInternal::get_size_width(bytes_written))?;
+            size_bytes_written += self.internal.encode_size_field(bytes_written);
+
+            self.internal.end_backtrack()?;
+        }
+
+        if !self.internal.backtracks.is_empty() {
+            return Err(DpeErrorCode::X509InvalidState);
+        }
+
+        self.internal.check_not_truncated()?;
+        Ok(bytes_written + size_bytes_written)
+    }
+
+    #[cfg(not(feature = "disable_csr"))]
+    #[allow(clippy::identity_op)]
+    fn encode_encapsulated_content_info(
+        &mut self,
+        sign_cb: &mut (impl FnMut(&[u8], bool) -> Result<Signature, CryptoError> + ?Sized),
+        pub_key: &PubKey,
+        subject_name: &Name,
+        measurements: &MeasurementData,
+    ) -> Result<usize, DpeErrorCode> {
+        let mut size_bytes_written = self.internal.encode_byte(CertWriterInternal::SEQUENCE_TAG);
+        self.internal.push_backtrack(SIZE_TAG_OFFSET)?;
+
+        let mut bytes_written = self.internal.encode_oid(CertWriterInternal::ID_DATA_OID);
+
+        bytes_written += self.internal.encode_byte(
+            CertWriterInternal::CONTEXT_SPECIFIC | CertWriterInternal::CONSTRUCTED | 0x0,
+        );
+        self.internal.push_backtrack(SIZE_TAG_OFFSET)?;
+
+        bytes_written += self
+            .internal
+            .encode_byte(CertWriterInternal::OCTET_STRING_TAG);
+        let offset = self.internal.push_backtrack(SIZE_TAG_OFFSET)?;
+
+        let csr_bytes_written = self.encode_signed_payload(
+            sign_cb,
+            SignedPayload::CertReqInfo {
+                pub_key,
+                subject_name,
+                measurements,
+            },
+        )?;
+        self.internal.csr_range = Some((offset, offset + csr_bytes_written));
+
+        let econtent_1_size = CertWriterInternal::get_econtent_size(
+            csr_bytes_written,
+            /*tagged=*/ false,
+            /*explicit=*/ false,
+        );
+
+        let econtent_0_size = CertWriterInternal::get_econtent_size(
+            csr_bytes_written,
+            /*tagged=*/ true,
+            /*explicit=*/ false,
+        );
+
+        {
+            self.internal.start_backtrack()?;
+            self.internal
+                .pop_backtrack(CertWriterInternal::get_size_width(econtent_1_size))?;
+            bytes_written += self.internal.encode_size_field(econtent_1_size);
+
+            self.internal
+                .pop_backtrack(CertWriterInternal::get_size_width(econtent_0_size))?;
+            bytes_written += self.internal.encode_size_field(econtent_0_size);
+
+            self.internal
+                .pop_backtrack(CertWriterInternal::get_size_width(
+                    bytes_written + csr_bytes_written,
+                ))?;
+            size_bytes_written += self
+                .internal
+                .encode_size_field(bytes_written + csr_bytes_written);
+            self.internal.end_backtrack()?;
+        }
+
+        Ok(bytes_written + csr_bytes_written + size_bytes_written)
+    }
+
     #[cfg(any(not(feature = "disable_x509"), not(feature = "disable_csr")))]
     fn encode_signed_payload(
         &mut self,
         sign_cb: &mut (impl FnMut(&[u8], bool) -> Result<Signature, CryptoError> + ?Sized),
         payload: SignedPayload,
     ) -> Result<usize, DpeErrorCode> {
-        let mut prefix_bytes_written = self.encode_tag_field(Self::SEQUENCE_TAG);
-        let offset = self.push_backtrack(SIZE_TAG_OFFSET)?;
+        let mut prefix_bytes_written = self
+            .internal
+            .encode_tag_field(CertWriterInternal::SEQUENCE_TAG);
+        let offset = self.internal.push_backtrack(SIZE_TAG_OFFSET)?;
 
-        // Encode the payload. `is_csr` selects the domain separation passed to
-        // the signing callback (PKCS #10 requests are signed differently).
         let (payload_bytes_written, is_csr) = match payload {
             #[cfg(not(feature = "disable_x509"))]
             SignedPayload::Tbs {
@@ -2330,6 +612,7 @@ impl CertWriter<'_> {
 
         let sig = {
             let signed = self
+                .internal
                 .certificate
                 .get(offset..payload_bytes_written + offset)
                 .ok_or(DpeErrorCode::InternalError)?;
@@ -2337,369 +620,22 @@ impl CertWriter<'_> {
         };
         let sig = okref(&sig)?;
 
-        let sig_bytes_written = self.encode_signature_bit_string(sig)?;
+        let sig_bytes_written = self.internal.encode_signature_bit_string(sig)?;
 
         let body_size = payload_bytes_written + sig_bytes_written;
 
         {
-            self.start_backtrack()?;
-            self.pop_backtrack(Self::get_size_width(body_size))?;
+            self.internal.start_backtrack()?;
+            self.internal
+                .pop_backtrack(CertWriterInternal::get_size_width(body_size))?;
 
-            prefix_bytes_written += self.encode_size_field(body_size);
+            prefix_bytes_written += self.internal.encode_size_field(body_size);
 
-            self.end_backtrack()?;
+            self.internal.end_backtrack()?;
         }
 
-        let total_size = body_size + prefix_bytes_written;
-
-        Ok(total_size)
+        Ok(body_size + prefix_bytes_written)
     }
-
-    /// Encode a certification request info
-    ///
-    /// CertificationRequestInfo  ::=  SEQUENCE  {
-    ///    version       INTEGER { v1(0) } (v1,...),
-    ///    subject       Name,
-    ///    subjectPKInfo SubjectPublicKeyInfo{{ PKInfoAlgorithms }},
-    ///    attributes    [0] Attributes{{ CRIAttributes }}}
-    /// }
-    ///
-    /// # Arguments
-    ///
-    /// * `pubkey` - ECDSA Public key.
-    /// * `subject_name` - The subject name RDN struct to encode.
-    /// * `measurements` - DPE measurement data.
-    ///
-    /// Returns number of bytes written to `certificate`
-    #[cfg(not(feature = "disable_csr"))]
-    pub fn encode_certification_request_info(
-        &mut self,
-        pub_key: &PubKey,
-        subject_name: &Name,
-        measurements: &MeasurementData,
-    ) -> Result<usize, DpeErrorCode> {
-        let cert_req_info_size = self.get_certification_request_info_size(
-            subject_name,
-            pub_key,
-            measurements,
-            /*tagged=*/ false,
-        )?;
-
-        // CertificationRequestInfo Sequence
-        let mut bytes_written = self.encode_tag_field(Self::SEQUENCE_TAG);
-        bytes_written += self.encode_size_field(cert_req_info_size);
-
-        // version
-        bytes_written += self.encode_integer(Self::CSR_V0, true);
-
-        // subject
-        bytes_written += self.encode_rdn(subject_name)?;
-
-        // subjectPublicKeyInfo
-        match pub_key {
-            PubKey::Ecdsa(pub_key) => {
-                bytes_written += self.encode_ecdsa_subject_pubkey_info(pub_key)?;
-            }
-            #[cfg(feature = "ml-dsa")]
-            PubKey::Mldsa(pub_key) => {
-                bytes_written += self.encode_mldsa_subject_pubkey_info(pub_key)?;
-            }
-        }
-
-        // attributes
-        bytes_written += self.encode_attributes(measurements)?;
-
-        self.check_not_truncated()?;
-        Ok(bytes_written)
-    }
-
-    /// Encode an PKCS #10 CSR
-    ///
-    /// CertificateRequest  ::=  SEQUENCE  {
-    ///    certificationRequestInfo       CertificationRequestInfo,
-    ///    signatureAlgorithm             AlgorithmIdentifier,
-    ///    signatureValue                 BIT STRING
-    /// }
-    ///
-    /// Returns number of bytes written to `certificate`
-    #[cfg(not(feature = "disable_csr"))]
-    pub fn encode_csr(
-        &mut self,
-        sign_cb: &mut (impl FnMut(&[u8], bool) -> Result<Signature, CryptoError> + ?Sized),
-        pub_key: &PubKey,
-        subject_name: &Name,
-        measurements: &MeasurementData,
-    ) -> Result<usize, DpeErrorCode> {
-        let bytes_written = self.encode_signed_payload(
-            sign_cb,
-            SignedPayload::CertReqInfo {
-                pub_key,
-                subject_name,
-                measurements,
-            },
-        )?;
-
-        self.check_not_truncated()?;
-        Ok(bytes_written)
-    }
-
-    /// Encode a CMS ContentInfo message
-    ///
-    /// ContentInfo  ::=  SEQUENCE  {
-    ///    contentType ContentType,
-    ///    content [0] EXPLICIT ANY DEFINED BY contentType
-    /// }
-    #[cfg(not(feature = "disable_csr"))]
-    #[allow(clippy::identity_op)]
-    pub fn encode_cms(
-        &mut self,
-        sign_cb: &mut (impl FnMut(&[u8], bool) -> Result<Signature, CryptoError> + ?Sized),
-        pub_key: &PubKey,
-        subject_name: &Name,
-        measurements: &MeasurementData,
-        sid: &SignerIdentifier,
-    ) -> Result<usize, DpeErrorCode> {
-        let mut size_bytes_written = self.encode_byte(Self::SEQUENCE_TAG);
-        let _ = self.push_backtrack(SIZE_TAG_OFFSET)?;
-
-        let mut bytes_written = self.encode_oid(Self::ID_SIGNED_DATA_OID);
-
-        // Encode a SignedData
-        //
-        // SignedData  ::=  SEQUENCE  {
-        //    version CMSVersion,
-        //    digestAlgorithms DigestAlgorithmIdentifiers,
-        //    encapContentInfo EncapsulatedContentInfo,
-        //    certificates [0] IMPLICIT CertificateSet OPTIONAL,
-        //    crls [1] IMPLICIT RevocationInfoChoices OPTIONAL,
-        //    signerInfos SignerInfos
-        // }
-
-        // SignedData is EXPLICIT field number 0
-        bytes_written += self.encode_byte(Self::CONTEXT_SPECIFIC | Self::CONSTRUCTED | 0x0);
-        let _ = self.push_backtrack(SIZE_TAG_OFFSET)?;
-
-        // SignedData sequence
-        bytes_written += self.encode_tag_field(Self::SEQUENCE_TAG);
-        let _ = self.push_backtrack(SIZE_TAG_OFFSET)?;
-
-        // CMS version
-        bytes_written += self.encode_cms_version(sid);
-
-        // digestAlgorithms
-        bytes_written += self.encode_tag_field(Self::SET_OF_TAG);
-        bytes_written += self.encode_size_field(self.get_hash_alg_id_size(/*tagged=*/ true)?);
-        bytes_written += self.encode_hash_alg_id()?;
-
-        // encapContentInfo
-        bytes_written +=
-            self.encode_encapsulated_content_info(sign_cb, pub_key, subject_name, measurements)?;
-
-        let csr = {
-            let Some(csr_range) = self.csr_range else {
-                Err(DpeErrorCode::X509CsrUnset)?
-            };
-            self.certificate
-                .get(csr_range.0..csr_range.1)
-                .ok_or(DpeErrorCode::InternalError)?
-        };
-
-        let sig = sign_cb(csr, false)?;
-
-        let signed_data_field_0 = self.get_signed_data_size(
-            csr, &sig, sid, /*tagged=*/ true, /*explicit=*/ false,
-        )?;
-
-        let signed_data_field_1 = self.get_signed_data_size(
-            csr, &sig, sid, /*tagged=*/ false, /*explicit=*/ false,
-        )?;
-
-        // signerInfos
-        bytes_written += self.encode_tag_field(Self::SET_OF_TAG);
-        bytes_written +=
-            self.encode_size_field(self.get_signer_info_size(&sig, sid, /*tagged=*/ true)?);
-        bytes_written += self.encode_signer_info(&sig, sid)?;
-
-        {
-            self.start_backtrack()?;
-            self.pop_backtrack(Self::get_size_width(signed_data_field_1))?;
-            bytes_written += self.encode_size_field(signed_data_field_1);
-
-            self.pop_backtrack(Self::get_size_width(signed_data_field_0))?;
-            bytes_written += self.encode_size_field(signed_data_field_0);
-
-            self.pop_backtrack(Self::get_size_width(bytes_written))?;
-            size_bytes_written += self.encode_size_field(bytes_written);
-
-            self.end_backtrack()?;
-        }
-
-        if !self.backtracks.is_empty() {
-            return Err(DpeErrorCode::X509InvalidState);
-        }
-
-        self.check_not_truncated()?;
-        Ok(bytes_written + size_bytes_written)
-    }
-}
-
-enum CertificateFormat {
-    X509,
-    #[cfg(not(feature = "disable_csr"))]
-    Csr,
-}
-
-enum CertificateType {
-    Leaf,
-    Exported,
-}
-
-/// Arguments for DPE cert or CSR creation.
-pub(crate) struct CreateDpeCertArgs<'a> {
-    /// Used by DPE to compute measurement digest
-    pub handle: &'a ContextHandle,
-    /// The locality of the caller
-    pub locality: u32,
-    /// Info string used in the CDI derivation
-    pub cdi_label: &'a [u8],
-    /// Label string used in the key derivation
-    pub key_label: &'a [u8],
-    /// Additional info string used in the key derivation
-    pub context: &'a [u8],
-    /// Ueid extension value
-    pub ueid: &'a [u8],
-    /// DICE extensions are marked as critical
-    pub dice_extensions_are_critical: bool,
-}
-
-/// Results for DPE cert or CSR creation.
-pub(crate) struct CreateDpeCertResult {
-    /// Size of certificate or CSR in bytes.
-    pub cert_size: u32,
-    /// Public key embedded in Cert or CSR.
-    pub pub_key: PubKey,
-    /// If the cert_type is `CertificateType::Exported` the CDI is exchanged for a handle, and
-    /// returned via `exported_cdi_handle`.
-    pub exported_cdi_handle: [u8; MAX_EXPORTED_CDI_SIZE],
-}
-
-fn get_dpe_measurement_digest(
-    dpe: &mut DpeInstance,
-    env: &mut dyn DpeEnv,
-    handle: &ContextHandle,
-    locality: u32,
-) -> Result<Digest, DpeErrorCode> {
-    let parent_idx = env.state().get_active_context_pos(handle, locality)?;
-    let digest = dpe.compute_measurement_hash(env, parent_idx)?;
-    Ok(digest)
-}
-
-fn get_subject_name<'a>(
-    crypto: &mut dyn CryptoSuite,
-    cert_type: &CertificateType,
-    pub_key: &'a PubKey,
-    subj_serial: &'a mut [u8],
-) -> Result<Name<'a>, DpeErrorCode> {
-    crypto.get_pubkey_serial(pub_key, subj_serial)?;
-
-    // The serial number of the subject can be at most 64 bytes
-    let truncated_subj_serial = &subj_serial[..64];
-
-    let cn: &[u8] = match cert_type {
-        CertificateType::Leaf => b"DPE Leaf",
-        CertificateType::Exported => b"DPE Exported CDI",
-    };
-
-    let subject_name = Name {
-        cn: DirectoryString::PrintableString(cn),
-        serial: DirectoryString::PrintableString(truncated_subj_serial),
-    };
-    Ok(subject_name)
-}
-
-fn get_tci_nodes<'a>(
-    state: &State,
-    handle: &ContextHandle,
-    locality: u32,
-    nodes: &'a mut [TciNodeData],
-) -> Result<&'a mut [TciNodeData], DpeErrorCode> {
-    let parent_idx = state.get_active_context_pos(handle, locality)?;
-    let tcb_count = state.get_tcb_nodes(parent_idx, nodes)?;
-    if tcb_count > MAX_HANDLES {
-        return Err(DpeErrorCode::InternalError);
-    }
-    Ok(&mut nodes[..tcb_count])
-}
-
-fn get_subject_key_identifier(
-    crypto: &mut dyn CryptoSuite,
-    pub_key: &PubKey,
-    subject_key_identifier: &mut [u8],
-) -> Result<(), DpeErrorCode> {
-    // compute key identifier as SHA hash of the DER encoded subject public key
-    let hashed_pub_key = match pub_key {
-        PubKey::Ecdsa(pub_key) => {
-            let (x, y) = pub_key.as_slice();
-            crypto.hash_all(&[&[0x04], &x, &y])?
-        }
-        #[cfg(feature = "ml-dsa")]
-        PubKey::Mldsa(pub_key) => crypto.hash(pub_key.as_slice())?,
-    };
-    if hashed_pub_key.size() < MAX_KEY_IDENTIFIER_SIZE {
-        return Err(DpeErrorCode::InternalError);
-    }
-    // truncate key identifier to 20 bytes
-    subject_key_identifier.copy_from_slice(&hashed_pub_key.as_slice()[..MAX_KEY_IDENTIFIER_SIZE]);
-    Ok(())
-}
-
-pub(crate) fn create_exported_dpe_cert(
-    args: &CreateDpeCertArgs,
-    dpe: &mut DpeInstance,
-    env: &mut dyn DpeEnv,
-    cert: &mut [u8],
-) -> Result<CreateDpeCertResult, DpeErrorCode> {
-    create_dpe_cert_or_csr(
-        args,
-        dpe,
-        env,
-        CertificateFormat::X509,
-        CertificateType::Exported,
-        cert,
-    )
-}
-
-pub(crate) fn create_dpe_cert(
-    args: &CreateDpeCertArgs,
-    dpe: &mut DpeInstance,
-    env: &mut dyn DpeEnv,
-    cert: &mut [u8],
-) -> Result<CreateDpeCertResult, DpeErrorCode> {
-    create_dpe_cert_or_csr(
-        args,
-        dpe,
-        env,
-        CertificateFormat::X509,
-        CertificateType::Leaf,
-        cert,
-    )
-}
-
-#[cfg(not(feature = "disable_csr"))]
-pub(crate) fn create_dpe_csr(
-    args: &CreateDpeCertArgs,
-    dpe: &mut DpeInstance,
-    env: &mut dyn DpeEnv,
-    csr: &mut [u8],
-) -> Result<CreateDpeCertResult, DpeErrorCode> {
-    create_dpe_cert_or_csr(
-        args,
-        dpe,
-        env,
-        CertificateFormat::Csr,
-        CertificateType::Leaf,
-        csr,
-    )
 }
 
 /// The signed payload variants handled by [`CertWriter::encode_signed_payload`]:
@@ -2722,226 +658,15 @@ enum SignedPayload<'a> {
     },
 }
 
-enum CertOrCsrArgs<'a> {
-    Cert {
-        issuer_name: &'a [u8],
-        cert_validity: &'a CertValidity,
-    },
-    Csr {
-        signer_identifier: &'a SignerIdentifier,
-    },
-}
-
-/// DO NOT REFACTOR WITH `impl` PARAMTER
-///
-/// This function wraps the core x509 logic to prevent monomorphizing the x509 code for each
-/// `DpeEnv` used by Caliptra.
-#[allow(clippy::too_many_arguments, clippy::type_complexity)]
-fn generate_cert_or_csr(
-    format_specific_args: CertOrCsrArgs,
-    dpe_profile: DpeProfile,
-    dice_extensions_are_critical: bool,
-    subject_name: &Name,
-    pub_key: &PubKey,
-    measurements: &MeasurementData,
-    sign_cb: &mut dyn FnMut(&[u8], bool) -> Result<Signature, CryptoError>,
-    output_cert_or_csr: &mut [u8],
-) -> Result<u32, DpeErrorCode> {
-    match format_specific_args {
-        CertOrCsrArgs::Cert {
-            issuer_name,
-            cert_validity,
-        } => {
-            #[cfg(not(feature = "disable_x509"))]
-            {
-                let mut cert_writer = CertWriter::new(
-                    output_cert_or_csr,
-                    dpe_profile,
-                    dice_extensions_are_critical,
-                );
-                // Serial number must be truncated to 20 bytes
-                let serial_number = subject_name
-                    .serial
-                    .bytes()
-                    .get(..20)
-                    .ok_or(DpeErrorCode::InternalError)?;
-                let bytes_written = cert_writer.encode_certificate(
-                    sign_cb,
-                    serial_number,
-                    issuer_name,
-                    subject_name,
-                    pub_key,
-                    measurements,
-                    cert_validity,
-                )?;
-                u32::try_from(bytes_written).map_err(|_| DpeErrorCode::InternalError)
-            }
-        }
-        #[cfg(not(feature = "disable_csr"))]
-        CertOrCsrArgs::Csr { signer_identifier } => {
-            let mut cms_writer = CertWriter::new(
-                output_cert_or_csr,
-                dpe_profile,
-                dice_extensions_are_critical,
-            );
-            let bytes_written = cms_writer.encode_cms(
-                sign_cb,
-                pub_key,
-                subject_name,
-                measurements,
-                signer_identifier,
-            )?;
-            u32::try_from(bytes_written).map_err(|_| DpeErrorCode::InternalError)
-        }
-    }
-}
-
-fn create_dpe_cert_or_csr(
-    args: &CreateDpeCertArgs,
-    dpe: &mut DpeInstance,
-    env: &mut dyn DpeEnv,
-    cert_format: CertificateFormat,
-    cert_type: CertificateType,
-    output_cert_or_csr: &mut [u8],
-) -> Result<CreateDpeCertResult, DpeErrorCode> {
-    let digest = get_dpe_measurement_digest(dpe, env, args.handle, args.locality)?;
-    let (crypto, platform, state) = env.get();
-
-    let mut exported_cdi_handle = None;
-
-    let pub_key = match cert_type {
-        CertificateType::Exported => {
-            let exported_handle = crypto.derive_exported_cdi(&digest, args.cdi_label)?;
-            exported_cdi_handle = Some(exported_handle);
-            crypto
-                .derive_key_pair_exported(&exported_handle, args.key_label, args.context)?
-                .public_key()
-        }
-        CertificateType::Leaf => {
-            crypto.derive_pub_key(&digest, args.cdi_label, args.key_label, args.context)
-        }
-    };
-    if cfi_launder(pub_key.is_ok()) {
-        #[cfg(feature = "cfi")]
-        cfi_assert!(pub_key.is_ok());
-    } else {
-        #[cfg(feature = "cfi")]
-        cfi_assert!(pub_key.is_err());
-    }
-    let pub_key = okref(&pub_key)?;
-    let mut subj_serial = [0u8; MAX_HASH_SIZE * 2];
-    let subject_name = get_subject_name(crypto, &cert_type, pub_key, &mut subj_serial)?;
-
-    const INITIALIZER: TciNodeData = TciNodeData::new();
-    let mut nodes = [INITIALIZER; MAX_HANDLES];
-    let tci_nodes = get_tci_nodes(state, args.handle, args.locality, &mut nodes)?;
-
-    let mut subject_key_identifier = [0u8; MAX_KEY_IDENTIFIER_SIZE];
-    get_subject_key_identifier(crypto, pub_key, &mut subject_key_identifier)?;
-
-    let mut authority_key_identifier = [0u8; MAX_KEY_IDENTIFIER_SIZE];
-    platform.get_issuer_key_identifier(&mut authority_key_identifier)?;
-
-    let subject_alt_name = match platform.get_subject_alternative_name() {
-        Ok(subject_alt_name) => Some(subject_alt_name),
-        Err(PlatformError::NotImplemented) => None,
-        Err(e) => Err(DpeErrorCode::Platform(e))?,
-    };
-
-    let is_ca = match cert_type {
-        CertificateType::Leaf => false,
-        CertificateType::Exported => true,
-    };
-
-    let supports_recursive = match cert_type {
-        CertificateType::Leaf => state.support.recursive(),
-        CertificateType::Exported => false,
-    };
-
-    let measurements = MeasurementData {
-        label: args.ueid,
-        tci_nodes,
-        is_ca,
-        supports_recursive,
-        subject_key_identifier,
-        authority_key_identifier,
-        subject_alt_name,
-    };
-
-    let mut sign_cb = |data: &[u8], use_derived: bool| {
-        if use_derived {
-            match cert_type {
-                CertificateType::Exported => {
-                    let exported_handle =
-                        exported_cdi_handle.ok_or(CryptoError::CryptoLibError(0))?;
-                    crypto
-                        .derive_key_pair_exported(&exported_handle, args.key_label, args.context)?
-                        .sign(&SignData::Raw(data))
-                }
-                CertificateType::Leaf => crypto.sign_with_derived(
-                    &digest,
-                    args.cdi_label,
-                    args.key_label,
-                    args.context,
-                    &SignData::Raw(data),
-                ),
-            }
-        } else {
-            crypto.sign_with_alias(&SignData::Raw(data))
-        }
-    };
-
-    let mut issuer_name = [0u8; MAX_ISSUER_NAME_SIZE];
-    let cert_validity = platform.get_cert_validity()?;
-    let signer_identifier = platform.get_signer_identifier()?;
-    let format_specific_args = match cert_format {
-        CertificateFormat::X509 => {
-            let issuer_name = {
-                let issuer_len = platform.get_issuer_name(&mut issuer_name)?;
-                if issuer_len > MAX_ISSUER_NAME_SIZE {
-                    return Err(DpeErrorCode::InternalError);
-                }
-                &issuer_name[..issuer_len]
-            };
-            CertOrCsrArgs::Cert {
-                issuer_name,
-                cert_validity: &cert_validity,
-            }
-        }
-        CertificateFormat::Csr => CertOrCsrArgs::Csr {
-            signer_identifier: &signer_identifier,
-        },
-    };
-
-    let cert_size = generate_cert_or_csr(
-        format_specific_args,
-        dpe.profile,
-        args.dice_extensions_are_critical,
-        &subject_name,
-        pub_key,
-        &measurements,
-        &mut sign_cb,
-        output_cert_or_csr,
-    )?;
-
-    let exported_cdi_handle = match cert_type {
-        // If the `CertificateType::Exported` is set then we should have a valid exported_cdi_handle at this point.
-        CertificateType::Exported => exported_cdi_handle.ok_or(DpeErrorCode::InternalError)?,
-        _ => [0; MAX_EXPORTED_CDI_SIZE],
-    };
-
-    Ok(CreateDpeCertResult {
-        cert_size,
-        pub_key: pub_key.clone(),
-        exported_cdi_handle,
-    })
-}
-
 #[cfg(test)]
 pub(crate) mod tests {
     use crate::dpe_instance::tests::DPE_PROFILE;
-    use crate::response::DpeErrorCode;
     use crate::tci::{TciMeasurement, TciNodeData};
+    use crate::x509::internal::tests::{
+        DEFAULT_OTHER_NAME_OID, DEFAULT_OTHER_NAME_VALUE, ECC_INT_SIZE, TEST_ISSUER_NAME,
+        TEST_SERIAL, TEST_SUBJECT_NAME,
+    };
+    use crate::x509::internal::CertWriterInternal;
     use crate::x509::{CertWriter, DirectoryString, MeasurementData, Name};
     use crate::DpeErrorCode;
     use crate::DpeProfile;
@@ -3014,37 +739,6 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn test_integers() {
-        let buffer_cases = [
-            [0; 8],
-            [0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00],
-            [0x01, 0x02, 0x03, 0x04, 0x00, 0x00, 0x00, 0x00],
-            [0x00, 0x00, 0xFF, 0x04, 0x00, 0x00, 0x00, 0x00],
-            [0x01, 0x02, 0x03, 0x04, 0x00, 0x00, 0x00, 0x00],
-        ];
-
-        for c in buffer_cases {
-            let mut cert = [0u8; 128];
-            let mut w = CertWriter::new(&mut cert, DPE_PROFILE, true);
-            let byte_count = w.encode_integer_bytes(&c, true);
-            let n = asn1::parse_single::<u64>(&cert[..byte_count]).unwrap();
-            assert_eq!(n, u64::from_be_bytes(c));
-            assert_eq!(CertWriter::get_integer_bytes_size(&c, true), byte_count);
-        }
-
-        let integer_cases = [0xFFFFFFFF00000000, 0x0102030405060708, 0x2];
-
-        for c in integer_cases {
-            let mut cert = [0; 128];
-            let mut w = CertWriter::new(&mut cert, DPE_PROFILE, true);
-            let byte_count = w.encode_integer(c, true);
-            let n = asn1::parse_single::<u64>(&cert[..byte_count]).unwrap();
-            assert_eq!(n, c);
-            assert_eq!(CertWriter::get_integer_size(c, true), byte_count);
-        }
-    }
-
-    #[test]
     fn test_rdn() {
         let mut cert = [0u8; 256];
         let test_name = Name {
@@ -3068,7 +762,10 @@ pub(crate) mod tests {
         let actual = name.to_string_with_registry(oid_registry()).unwrap();
         assert_eq!(expected, actual);
 
-        assert_eq!(CertWriter::get_rdn_size(&test_name, true), bytes_written);
+        assert_eq!(
+            CertWriterInternal::get_rdn_size(&test_name, true),
+            bytes_written
+        );
     }
 
     /// Run `encode` over three buffers: exactly the required size (must succeed
@@ -3236,858 +933,5 @@ pub(crate) mod tests {
                 &sid,
             )
         });
-    }
-
-    #[cfg(not(feature = "ml-dsa"))]
-    #[test]
-    fn test_subject_pubkey() {
-        let mut cert = [0u8; 384];
-        let test_key = EcdsaPubKey::Ecdsa384(EcdsaPub::default());
-
-        let mut w = CertWriter::new(&mut cert, DPE_PROFILE, true);
-        let bytes_written = w.encode_ecdsa_subject_pubkey_info(&test_key).unwrap();
-
-        SubjectPublicKeyInfo::from_der(&cert[..bytes_written]).unwrap();
-
-        assert_eq!(
-            CertWriter::new(&mut [], DPE_PROFILE, true)
-                .get_ecdsa_subject_pubkey_info_size(&test_key, true)
-                .unwrap(),
-            bytes_written
-        );
-    }
-
-    #[cfg(feature = "ml-dsa")]
-    #[test]
-    fn test_subject_pubkey() {
-        let mut cert = [0u8; 4096];
-        let test_key = MldsaPublicKey([0; MldsaAlgorithm::Mldsa87.public_key_size()]);
-
-        let mut w = CertWriter::new(&mut cert, DPE_PROFILE, true);
-        let bytes_written = w.encode_mldsa_subject_pubkey_info(&test_key).unwrap();
-
-        SubjectPublicKeyInfo::from_der(&cert[..bytes_written]).unwrap();
-
-        assert_eq!(
-            CertWriter::new(&mut [], DPE_PROFILE, true)
-                .get_mldsa_subject_pubkey_info_size(&test_key, true)
-                .unwrap(),
-            bytes_written
-        );
-    }
-
-    #[test]
-    fn test_tcb_info() {
-        let mut node = TciNodeData::new();
-
-        node.tci_type = 0x11223344;
-        node.tci_cumulative = TciMeasurement([0xaau8; DPE_PROFILE.hash_size()]);
-        node.tci_current = TciMeasurement([0xbbu8; DPE_PROFILE.hash_size()]);
-        node.locality = 0xFFFFFFFF;
-        node.svn = 0xFFFFFFFF;
-
-        let mut cert = [0u8; 256];
-        let mut w = CertWriter::new(&mut cert, DPE_PROFILE, true);
-        let mut supports_recursive = true;
-        let mut bytes_written = w.encode_tcb_info(&node, supports_recursive).unwrap();
-
-        let checker = CertWriter::new(&mut [], DPE_PROFILE, true);
-        let mut parsed_tcb_info = asn1::parse_single::<TcbInfo>(&cert[..bytes_written]).unwrap();
-
-        assert_eq!(
-            bytes_written,
-            checker
-                .get_tcb_info_size(&node, supports_recursive, true)
-                .unwrap()
-        );
-
-        // FWIDs
-        let mut fwid_itr = parsed_tcb_info.fwids.unwrap();
-        let expected_current = fwid_itr.next().unwrap().digest;
-        assert_eq!(expected_current, node.tci_current.0);
-
-        assert_eq!(parsed_tcb_info.tci_type.unwrap(), node.tci_type.as_bytes());
-        assert_eq!(
-            parsed_tcb_info.vendor_info.unwrap(),
-            node.locality.to_be_bytes()
-        );
-        assert_eq!(parsed_tcb_info.svn.unwrap(), node.svn.into());
-
-        // Integrity registers
-        let mut ir_itr = parsed_tcb_info.integrity_registers.unwrap();
-        let ir = ir_itr.next().unwrap();
-        assert_eq!(ir.register_num.unwrap(), CertWriter::INTEGRITY_REGISTER_NUM);
-        let mut fwid_itr = ir.register_digests.unwrap();
-        let expected_cumulative = fwid_itr.next().unwrap().digest;
-        assert_eq!(expected_cumulative, node.tci_cumulative.0);
-
-        // test tbs_info with supports_recursive = false
-        supports_recursive = false;
-        w = CertWriter::new(&mut cert, DPE_PROFILE, true);
-        bytes_written = w.encode_tcb_info(&node, supports_recursive).unwrap();
-
-        parsed_tcb_info = asn1::parse_single::<TcbInfo>(&cert[..bytes_written]).unwrap();
-
-        assert_eq!(
-            bytes_written,
-            checker
-                .get_tcb_info_size(&node, supports_recursive, true)
-                .unwrap()
-        );
-
-        // Check that only FWID[0] is present
-        let mut fwid_itr = parsed_tcb_info.fwids.unwrap();
-        let expected_current = fwid_itr.next().unwrap().digest;
-        assert!(fwid_itr.next().is_none());
-        assert_eq!(expected_current, node.tci_current.0);
-    }
-
-    fn get_key_usage(is_ca: bool) -> KeyUsage {
-        let mut cert = [0u8; 32];
-        let mut w = CertWriter::new(&mut cert, DPE_PROFILE, true);
-        let bytes_written = w.encode_key_usage(is_ca);
-        assert_eq!(
-            bytes_written,
-            CertWriter::get_key_usage_size(/*tagged=*/ true)
-        );
-
-        let mut parser = X509ExtensionParser::new().with_deep_parse_extensions(false);
-        let ext = parser.parse(&cert[..bytes_written]).unwrap().1;
-        KeyUsage::from_der(ext.value).unwrap().1
-    }
-
-    #[test]
-    fn test_key_usage() {
-        // Make sure leaf keyUsage is only digitalSignature
-        let leaf_key_usage = get_key_usage(/*is_ca=*/ false);
-        let expected = 1u16;
-        assert!(leaf_key_usage.flags | expected == expected);
-
-        // Make sure leaf keyUsage is digitalSignature | keyCertSign
-        let ca_key_usage = get_key_usage(/*is_ca=*/ true);
-        let expected = (1u16 << 5) | 1u16;
-        assert!(ca_key_usage.flags | expected == expected);
-    }
-
-    const TEST_SERIAL: &[u8] = &[0x1F; 20];
-    const TEST_ISSUER_NAME: Name = Name {
-        cn: DirectoryString::PrintableString(b"Caliptra Alias"),
-        serial: DirectoryString::PrintableString(&[0x00; DPE_PROFILE.hash_size() * 2]),
-    };
-    const TEST_SUBJECT_NAME: Name = Name {
-        cn: DirectoryString::PrintableString(b"DPE Leaf"),
-        serial: DirectoryString::PrintableString(&[0x00; DPE_PROFILE.hash_size() * 2]),
-    };
-
-    const ECC_INT_SIZE: usize = DPE_PROFILE.ecc_int_size();
-
-    const DEFAULT_OTHER_NAME_OID: &[u8] = &[0, 0, 0];
-    const DEFAULT_OTHER_NAME_VALUE: &str = "default-other-name";
-
-    fn build_test_cert_ecdsa(is_ca: bool, cert_buf: &mut [u8]) -> (usize, X509Certificate<'_>) {
-        let mut issuer_der = [0u8; 1024];
-        let mut issuer_writer = CertWriter::new(&mut issuer_der, DPE_PROFILE, true);
-        let issuer_len = issuer_writer.encode_rdn(&TEST_ISSUER_NAME).unwrap();
-
-        let test_pub = EcdsaPub::from_slice(&[0xAA; ECC_INT_SIZE], &[0xBB; ECC_INT_SIZE]);
-
-        let node = TciNodeData::new();
-
-        let mut hasher = match DPE_PROFILE {
-            DpeProfile::P256Sha256 => Hasher::new(MessageDigest::sha256()).unwrap(),
-            DpeProfile::P384Sha384 => Hasher::new(MessageDigest::sha384()).unwrap(),
-            #[cfg(feature = "ml-dsa")]
-            DpeProfile::Mldsa87 => {
-                unreachable!("tried to build ecdsa test cert for ml-dsa profile!")
-            }
-        };
-        let (x, y) = test_pub.as_slice();
-        hasher.update(&[0x04]).unwrap();
-        hasher.update(x).unwrap();
-        hasher.update(y).unwrap();
-        let mut subject_key_identifier = [0u8; MAX_KEY_IDENTIFIER_SIZE];
-        let digest = &hasher.finish().unwrap();
-        subject_key_identifier.copy_from_slice(&digest[..MAX_KEY_IDENTIFIER_SIZE]);
-        let mut other_name = ArrayVec::new();
-        other_name
-            .try_extend_from_slice(DEFAULT_OTHER_NAME_VALUE.as_bytes())
-            .unwrap();
-        let subject_alt_name = SubjectAltName::OtherName(OtherName {
-            oid: DEFAULT_OTHER_NAME_OID,
-            other_name,
-        });
-        let measurements = MeasurementData {
-            label: &[0; DPE_PROFILE.hash_size()],
-            tci_nodes: &[node],
-            is_ca,
-            supports_recursive: true,
-            subject_key_identifier,
-            authority_key_identifier: subject_key_identifier,
-            subject_alt_name: Some(subject_alt_name),
-        };
-
-        let mut not_before = ArrayVec::new();
-        not_before
-            .try_extend_from_slice("20230227000000Z".as_bytes())
-            .unwrap();
-        let mut not_after = ArrayVec::new();
-        not_after
-            .try_extend_from_slice("99991231235959Z".as_bytes())
-            .unwrap();
-        let validity = CertValidity {
-            not_before,
-            not_after,
-        };
-
-        let pub_key = match DPE_PROFILE.alg() {
-            #[cfg(feature = "p256")]
-            SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit256) => {
-                PubKey::Ecdsa(EcdsaPubKey::Ecdsa256(test_pub))
-            }
-            #[cfg(feature = "p384")]
-            SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384) => {
-                PubKey::Ecdsa(EcdsaPubKey::Ecdsa384(test_pub))
-            }
-            _ => panic!("Missing signature"),
-        };
-
-        let test_sig: Signature = match DPE_PROFILE.alg() {
-            #[cfg(feature = "p256")]
-            SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit256) => Signature::Ecdsa(
-                EcdsaSig::from_slice(&[0xCC; ECC_INT_SIZE], &[0xDD; ECC_INT_SIZE]).into(),
-            ),
-            #[cfg(feature = "p384")]
-            SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384) => Signature::Ecdsa(
-                EcdsaSig::from_slice(&[0xCC; ECC_INT_SIZE], &[0xDD; ECC_INT_SIZE]).into(),
-            ),
-            _ => panic!("Missing signature"),
-        };
-
-        let mut sign_cb = |_data: &[u8], _use_derived: bool| Ok(test_sig.clone());
-
-        let mut w = CertWriter::new(cert_buf, DPE_PROFILE, true);
-        let bytes_written = w
-            .encode_certificate(
-                &mut sign_cb,
-                TEST_SERIAL,
-                &issuer_der[..issuer_len],
-                &TEST_SUBJECT_NAME,
-                &pub_key,
-                &measurements,
-                &validity,
-            )
-            .unwrap();
-
-        let mut parser = X509CertificateParser::new().with_deep_parse_extensions(true);
-        let cert = match parser.parse(&cert_buf[..bytes_written]) {
-            Ok((_, parsed_cert)) => {
-                assert_eq!(parsed_cert.version(), X509Version::V3);
-                parsed_cert
-            }
-            Err(e) => panic!("x509 parsing failed: {:?}", e),
-        };
-
-        let ueid = cert
-            .get_extension_unique(&oid!(2.23.133 .5 .4 .4))
-            .unwrap()
-            .unwrap();
-        assert!(ueid.critical);
-        let parsed_ueid = asn1::parse_single::<Ueid>(ueid.value).unwrap();
-        assert_eq!(parsed_ueid.ueid, measurements.label);
-
-        (bytes_written, cert)
-    }
-
-    #[cfg(feature = "ml-dsa")]
-    fn build_test_cert_mldsa(is_ca: bool, cert_buf: &mut [u8]) -> (usize, X509Certificate<'_>) {
-        let mut issuer_der = [0u8; 1024];
-        let mut issuer_writer = CertWriter::new(&mut issuer_der, DPE_PROFILE, true);
-        let issuer_len = issuer_writer.encode_rdn(&TEST_ISSUER_NAME).unwrap();
-
-        const ALGORITHM: MldsaAlgorithm = match DPE_PROFILE.alg() {
-            SignatureAlgorithm::Mldsa(mldsa_algorithm) => mldsa_algorithm,
-            _ => panic!("tried to build ml-dsa test cert for non ml-dsa profile!"),
-        };
-
-        let test_pub = MldsaPublicKey::from_slice(&[0xAA; ALGORITHM.public_key_size()]);
-
-        let node = TciNodeData::new();
-
-        let mut hasher = match DPE_PROFILE {
-            DpeProfile::Mldsa87 => Hasher::new(MessageDigest::sha384()).unwrap(),
-            _ => unreachable!("tried to build ml-dsa test cert for non ml-dsa profile!"),
-        };
-        hasher.update(test_pub.as_slice()).unwrap();
-        let mut subject_key_identifier = [0u8; MAX_KEY_IDENTIFIER_SIZE];
-        let digest = &hasher.finish().unwrap();
-        subject_key_identifier.copy_from_slice(&digest[..MAX_KEY_IDENTIFIER_SIZE]);
-        let mut other_name = ArrayVec::new();
-        other_name
-            .try_extend_from_slice(DEFAULT_OTHER_NAME_VALUE.as_bytes())
-            .unwrap();
-        let subject_alt_name = SubjectAltName::OtherName(OtherName {
-            oid: DEFAULT_OTHER_NAME_OID,
-            other_name,
-        });
-        let measurements = MeasurementData {
-            label: &[0; DPE_PROFILE.hash_size()],
-            tci_nodes: &[node],
-            is_ca,
-            supports_recursive: true,
-            subject_key_identifier,
-            authority_key_identifier: subject_key_identifier,
-            subject_alt_name: Some(subject_alt_name),
-        };
-
-        let mut not_before = ArrayVec::new();
-        not_before
-            .try_extend_from_slice("20230227000000Z".as_bytes())
-            .unwrap();
-        let mut not_after = ArrayVec::new();
-        not_after
-            .try_extend_from_slice("99991231235959Z".as_bytes())
-            .unwrap();
-        let validity = CertValidity {
-            not_before,
-            not_after,
-        };
-
-        let pub_key = match DPE_PROFILE.alg() {
-            #[cfg(feature = "ml-dsa")]
-            SignatureAlgorithm::Mldsa(MldsaAlgorithm::Mldsa87) => PubKey::Mldsa(test_pub),
-            _ => panic!("Missing signature"),
-        };
-
-        let test_sig: Signature = match DPE_PROFILE.alg() {
-            #[cfg(feature = "ml-dsa")]
-            SignatureAlgorithm::Mldsa(MldsaAlgorithm::Mldsa87) => {
-                Signature::Mldsa(MldsaSignature([0xBB; ALGORITHM.signature_size()]))
-            }
-            _ => panic!("Missing signature"),
-        };
-
-        let mut sign_cb = |_data: &[u8], _use_derived: bool| Ok(test_sig.clone());
-
-        let mut w = CertWriter::new(cert_buf, DPE_PROFILE, true);
-        let bytes_written = w
-            .encode_certificate(
-                &mut sign_cb,
-                TEST_SERIAL,
-                &issuer_der[..issuer_len],
-                &TEST_SUBJECT_NAME,
-                &pub_key,
-                &measurements,
-                &validity,
-            )
-            .unwrap();
-
-        let mut parser = X509CertificateParser::new().with_deep_parse_extensions(true);
-        let cert = match parser.parse(&cert_buf[..bytes_written]) {
-            Ok((_, parsed_cert)) => {
-                assert_eq!(parsed_cert.version(), X509Version::V3);
-                assert_eq!(
-                    parsed_cert.tbs_certificate.signature.algorithm.as_bytes(),
-                    const_oid::db::fips204::ID_ML_DSA_87.as_bytes()
-                );
-                parsed_cert
-            }
-            Err(e) => panic!("x509 parsing failed: {:?}", e),
-        };
-
-        let ueid = cert
-            .get_extension_unique(&oid!(2.23.133 .5 .4 .4))
-            .unwrap()
-            .unwrap();
-        assert!(ueid.critical);
-        let parsed_ueid = asn1::parse_single::<Ueid>(ueid.value).unwrap();
-        assert_eq!(parsed_ueid.ueid, measurements.label);
-
-        (bytes_written, cert)
-    }
-
-    #[test]
-    fn test_full_leaf() {
-        #[cfg(not(feature = "ml-dsa"))]
-        let mut cert_buf = [0u8; 1024];
-        #[cfg(not(feature = "ml-dsa"))]
-        let (_, cert) = build_test_cert_ecdsa(false, &mut cert_buf);
-        #[cfg(feature = "ml-dsa")]
-        let mut cert_buf = [0u8; 8192];
-        #[cfg(feature = "ml-dsa")]
-        let (_, cert) = build_test_cert_mldsa(false, &mut cert_buf);
-
-        match cert.basic_constraints() {
-            Ok(Some(basic_constraints)) => {
-                assert!(basic_constraints.critical);
-                assert!(!basic_constraints.value.ca);
-            }
-            Ok(None) => panic!("basic constraints extension not found"),
-            Err(_) => panic!("multiple basic constraints extensions found"),
-        }
-
-        match cert.key_usage() {
-            Ok(Some(key_usage)) => {
-                assert!(key_usage.critical);
-                assert!(key_usage.value.digital_signature());
-                assert!(!key_usage.value.key_cert_sign());
-            }
-            Ok(None) => panic!("key usage extension not found"),
-            Err(_) => panic!("multiple key usage extensions found"),
-        }
-
-        match cert.extended_key_usage() {
-            Ok(Some(ext_key_usage)) => {
-                assert!(ext_key_usage.critical);
-                // Expect tcg-dice-kp-eca OID (2.23.133.5.4.100.9)
-                assert_eq!(ext_key_usage.value.other, [oid!(2.23.133 .5 .4 .100 .9)]);
-            }
-            Ok(None) => panic!("extended key usage extension not found"),
-            Err(_) => panic!("multiple extended key usage extensions found"),
-        };
-
-        match cert.get_extension_unique(&oid!(2.5.29 .14)) {
-            Ok(Some(_)) => panic!("subject key identifier extensions found for non CA certificate"),
-            Err(_) => panic!("multiple subject key identifier extensions found"),
-            _ => (),
-        }
-
-        if let Err(_) = cert.get_extension_unique(&oid!(2.5.29 .35)) {
-            panic!("multiple authority key identifier extensions found")
-        }
-
-        match cert.subject_alternative_name() {
-            Ok(Some(ext)) => {
-                assert!(!ext.critical);
-                let san = ext.value;
-                assert_eq!(san.general_names.len(), 1);
-                let general_name = san.general_names.first().unwrap();
-                match general_name {
-                    GeneralName::OtherName(oid, other_name_value) => {
-                        assert_eq!(oid.as_bytes(), DEFAULT_OTHER_NAME_OID);
-                        // skip first 4 der encoding bytes
-                        assert_eq!(&other_name_value[4..], DEFAULT_OTHER_NAME_VALUE.as_bytes());
-                    }
-                    _ => panic!("Wrong SubjectAlternativeName"),
-                };
-            }
-            Ok(None) => panic!("No SubjectAltName extension found!"),
-            Err(e) => panic!("Error {} parsing SubjectAltName extension", e),
-        }
-    }
-
-    #[test]
-    fn test_full_ca() {
-        #[cfg(not(feature = "ml-dsa"))]
-        let mut cert_buf = [0u8; 1024];
-        #[cfg(not(feature = "ml-dsa"))]
-        let (_, cert) = build_test_cert_ecdsa(true, &mut cert_buf);
-        #[cfg(feature = "ml-dsa")]
-        let mut cert_buf = [0u8; 8192];
-        #[cfg(feature = "ml-dsa")]
-        let (_, cert) = build_test_cert_mldsa(true, &mut cert_buf);
-
-        match cert.basic_constraints() {
-            Ok(Some(basic_constraints)) => {
-                assert!(basic_constraints.critical);
-                assert!(basic_constraints.value.ca);
-                assert!(basic_constraints.value.path_len_constraint.is_none());
-            }
-            Ok(None) => panic!("basic constraints extension not found"),
-            Err(_) => panic!("multiple basic constraints extensions found"),
-        }
-
-        match cert.key_usage() {
-            Ok(Some(key_usage)) => {
-                assert!(key_usage.critical);
-                assert!(key_usage.value.digital_signature());
-                assert!(key_usage.value.key_cert_sign());
-            }
-            Ok(None) => panic!("key usage extension not found"),
-            Err(_) => panic!("multiple key usage extensions found"),
-        }
-
-        match cert.extended_key_usage() {
-            Ok(Some(ext_key_usage)) => {
-                assert!(ext_key_usage.critical);
-                // Expect tcg-dice-kp-eca OID (2.23.133.5.4.100.12)
-                assert_eq!(ext_key_usage.value.other, [oid!(2.23.133 .5 .4 .100 .12)]);
-            }
-            Ok(None) => panic!("extended key usage extension not found"),
-            Err(_) => panic!("multiple extended key usage extensions found"),
-        };
-
-        let pub_key = &cert.tbs_certificate.subject_pki.subject_public_key.data;
-        let mut hasher = match DPE_PROFILE {
-            DpeProfile::P256Sha256 => Hasher::new(MessageDigest::sha256()).unwrap(),
-            DpeProfile::P384Sha384 => Hasher::new(MessageDigest::sha384()).unwrap(),
-            #[cfg(feature = "ml-dsa")]
-            DpeProfile::Mldsa87 => Hasher::new(MessageDigest::sha384()).unwrap(),
-        };
-        hasher.update(pub_key).unwrap();
-        let expected_key_identifier: &[u8] = &hasher.finish().unwrap();
-
-        match cert.get_extension_unique(&oid!(2.5.29 .14)) {
-            Ok(Some(subject_key_identifier_ext)) => {
-                assert!(!subject_key_identifier_ext.critical);
-                if let ParsedExtension::SubjectKeyIdentifier(key_identifier) =
-                    subject_key_identifier_ext.parsed_extension()
-                {
-                    assert_eq!(
-                        key_identifier.0,
-                        &expected_key_identifier[..MAX_KEY_IDENTIFIER_SIZE]
-                    );
-                } else {
-                    panic!("Extension has wrong type");
-                }
-            }
-            Ok(None) => panic!("subject key identifier extension not found"),
-            Err(_) => panic!("multiple subject key identifier extensions found"),
-        }
-
-        match cert.get_extension_unique(&oid!(2.5.29 .35)) {
-            Ok(Some(extension)) => {
-                assert!(!extension.critical);
-                if let ParsedExtension::AuthorityKeyIdentifier(aki) = extension.parsed_extension() {
-                    let key_identifier = aki.key_identifier.clone().unwrap();
-                    // cert is self signed so authority_key_id == subject_key_id
-                    assert_eq!(
-                        key_identifier.0,
-                        &expected_key_identifier[..MAX_KEY_IDENTIFIER_SIZE]
-                    );
-                    assert!(aki.authority_cert_issuer.is_none());
-                    assert!(aki.authority_cert_serial.is_none());
-                } else {
-                    panic!("Extension has wrong type");
-                }
-            }
-            Ok(None) => panic!("authority key identifier extension not found"),
-            Err(_) => panic!("multiple authority key identifier extensions found"),
-        }
-    }
-
-    fn build_test_node() -> TciNodeData {
-        use crate::tci::TciMeasurement;
-
-        let mut node = TciNodeData::new();
-        node.tci_type = 0x01020304;
-        node.tci_current = TciMeasurement([0xAA; DPE_PROFILE.tci_size()]);
-        node.tci_cumulative = TciMeasurement([0xBB; DPE_PROFILE.tci_size()]);
-        node.locality = 0x05060708;
-        node
-    }
-
-    fn build_test_measurements<'a>(nodes: &'a [TciNodeData], is_ca: bool) -> MeasurementData<'a> {
-        MeasurementData {
-            label: &[0xAA; 4],
-            tci_nodes: nodes,
-            is_ca,
-            supports_recursive: true,
-            subject_key_identifier: [0xBB; MAX_KEY_IDENTIFIER_SIZE],
-            authority_key_identifier: [0xCC; MAX_KEY_IDENTIFIER_SIZE],
-            subject_alt_name: None,
-        }
-    }
-
-    #[test]
-    fn test_encode_multi_tcb_info_bytes() {
-        let node = build_test_node();
-        let nodes = [node];
-        let measurements = build_test_measurements(&nodes, true);
-
-        let mut buf = [0u8; 1024];
-        let mut w = CertWriter::new(&mut buf, DPE_PROFILE, true);
-        let n = w.encode_multi_tcb_info(&measurements).unwrap();
-
-        let expected: &[u8] = match DPE_PROFILE {
-            DpeProfile::P256Sha256 => &[
-                0x30, 0x81, 0x89, // SEQUENCE
-                0x06, 0x06, 0x67, 0x81, 0x05, 0x05, 0x04, 0x05, // OID 2.23.133.5.4.5
-                0x01, 0x01, 0xff, // BOOLEAN critical
-                0x04, 0x7c, // OCTET STRING
-                0x30, 0x7a, // SEQUENCE OF
-                0x30, 0x78, // TcbInfo SEQUENCE
-                0x83, 0x01, 0x00, // [3] svn
-                0xa6, 0x2f, // [6] fwids
-                0x30, 0x2d, // FWID SEQUENCE
-                0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, // hashAlg
-                0x04, 0x02, 0x01, // SHA-256
-                0x04, 0x20, // digest OCTET STRING (32 bytes)
-                0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, //
-                0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, //
-                0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, //
-                0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, //
-                0x88, 0x04, 0x05, 0x06, 0x07, 0x08, // [8] vendorInfo (locality)
-                0x89, 0x04, 0x04, 0x03, 0x02, 0x01, // [9] tci_type
-                0xab, 0x36, // [11] integrityRegisters
-                0x30, 0x34, // IntegrityRegister SEQUENCE
-                0x81, 0x01, 0x00, // [1] registerNum
-                0xa2, 0x2f, // [2] registerDigests
-                0x30, 0x2d, // FWID SEQUENCE
-                0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, // hashAlg
-                0x04, 0x02, 0x01, // SHA-256
-                0x04, 0x20, // digest OCTET STRING (32 bytes)
-                0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, //
-                0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, //
-                0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, //
-                0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, //
-            ],
-            _ => &[
-                0x30, 0x81, 0xac, // SEQUENCE
-                0x06, 0x06, 0x67, 0x81, 0x05, 0x05, 0x04, 0x05, // OID 2.23.133.5.4.5
-                0x01, 0x01, 0xff, // BOOLEAN critical
-                0x04, 0x81, 0x9e, // OCTET STRING
-                0x30, 0x81, 0x9b, // SEQUENCE OF
-                0x30, 0x81, 0x98, // TcbInfo SEQUENCE
-                0x83, 0x01, 0x00, // [3] svn
-                0xa6, 0x3f, // [6] fwids
-                0x30, 0x3d, // FWID SEQUENCE
-                0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, // hashAlg
-                0x04, 0x02, 0x02, // SHA-384
-                0x04, 0x30, // digest OCTET STRING (48 bytes)
-                0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, //
-                0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, //
-                0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, //
-                0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, //
-                0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, //
-                0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, //
-                0x88, 0x04, 0x05, 0x06, 0x07, 0x08, // [8] vendorInfo (locality)
-                0x89, 0x04, 0x04, 0x03, 0x02, 0x01, // [9] tci_type
-                0xab, 0x46, // [11] integrityRegisters
-                0x30, 0x44, // IntegrityRegister SEQUENCE
-                0x81, 0x01, 0x00, // [1] registerNum
-                0xa2, 0x3f, // [2] registerDigests
-                0x30, 0x3d, // FWID SEQUENCE
-                0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, // hashAlg
-                0x04, 0x02, 0x02, // SHA-384
-                0x04, 0x30, // digest OCTET STRING (48 bytes)
-                0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, //
-                0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, //
-                0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, //
-                0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, //
-                0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, //
-                0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, //
-            ],
-        };
-        assert_eq!(&buf[..n], expected);
-    }
-
-    #[test]
-    fn test_encode_ueid_bytes() {
-        let node = build_test_node();
-        let nodes = [node];
-        let measurements = build_test_measurements(&nodes, true);
-
-        let mut buf = [0u8; 1024];
-        let mut w = CertWriter::new(&mut buf, DPE_PROFILE, true);
-        let n = w.encode_ueid(&measurements);
-
-        let expected: &[u8] = &[
-            0x30, 0x15, // SEQUENCE
-            0x06, 0x06, 0x67, 0x81, 0x05, 0x05, 0x04, 0x04, // OID 2.23.133.5.4.4
-            0x01, 0x01, 0xff, // BOOLEAN critical
-            0x04, 0x08, // OCTET STRING
-            0x30, 0x06, // SEQUENCE
-            0x04, 0x04, 0xaa, 0xaa, 0xaa, 0xaa, // OCTET STRING (ueid)
-        ];
-        assert_eq!(&buf[..n], expected);
-    }
-
-    #[test]
-    fn test_encode_basic_constraints_bytes() {
-        let node = build_test_node();
-        let nodes = [node];
-        let measurements = build_test_measurements(&nodes, true);
-
-        let mut buf = [0u8; 1024];
-        let mut w = CertWriter::new(&mut buf, DPE_PROFILE, true);
-        let n = w.encode_basic_constraints(&measurements);
-
-        let expected: &[u8] = &[
-            0x30, 0x0f, // SEQUENCE
-            0x06, 0x03, 0x55, 0x1d, 0x13, // OID 2.5.29.19
-            0x01, 0x01, 0xff, // BOOLEAN critical
-            0x04, 0x05, // OCTET STRING
-            0x30, 0x03, // SEQUENCE
-            0x01, 0x01, 0xff, // BOOLEAN cA=TRUE
-        ];
-        assert_eq!(&buf[..n], expected);
-    }
-
-    #[test]
-    fn test_encode_key_usage_bytes() {
-        let mut buf = [0u8; 1024];
-        let mut w = CertWriter::new(&mut buf, DPE_PROFILE, true);
-        let n = w.encode_key_usage(true);
-
-        let expected: &[u8] = &[
-            0x30, 0x0e, // SEQUENCE
-            0x06, 0x03, 0x55, 0x1d, 0x0f, // OID 2.5.29.15
-            0x01, 0x01, 0xff, // BOOLEAN critical
-            0x04, 0x04, // OCTET STRING
-            0x03, 0x02, 0x02, 0x84, // BIT STRING (digitalSignature | keyCertSign)
-        ];
-        assert_eq!(&buf[..n], expected);
-    }
-
-    #[test]
-    fn test_encode_extended_key_usage_bytes() {
-        let node = build_test_node();
-        let nodes = [node];
-        let measurements = build_test_measurements(&nodes, true);
-
-        let mut buf = [0u8; 1024];
-        let mut w = CertWriter::new(&mut buf, DPE_PROFILE, true);
-        let n = w.encode_extended_key_usage(&measurements);
-
-        let expected: &[u8] = &[
-            0x30, 0x15, // SEQUENCE
-            0x06, 0x03, 0x55, 0x1d, 0x25, // OID 2.5.29.37
-            0x01, 0x01, 0xff, // BOOLEAN critical
-            0x04, 0x0b, // OCTET STRING
-            0x30, 0x09, // SEQUENCE
-            0x06, 0x07, 0x67, 0x81, 0x05, 0x05, 0x04, 0x64, 0x0c, // OID tcg-dice-kp-eca
-        ];
-        assert_eq!(&buf[..n], expected);
-    }
-
-    #[test]
-    fn test_encode_subject_alt_name_extension_bytes() {
-        let node = build_test_node();
-        let nodes = [node];
-        let mut measurements = build_test_measurements(&nodes, true);
-
-        let mut other_name_val = ArrayVec::new();
-        other_name_val.try_extend_from_slice(b"test").unwrap();
-        let san = SubjectAltName::OtherName(OtherName {
-            oid: &[0x01, 0x02, 0x03],
-            other_name: other_name_val,
-        });
-        measurements.subject_alt_name = Some(san);
-
-        let mut buf = [0u8; 1024];
-        let mut w = CertWriter::new(&mut buf, DPE_PROFILE, true);
-        let n = w.encode_subject_alt_name_extension(&measurements);
-
-        let expected: &[u8] = &[
-            0x30, 0x18, // SEQUENCE
-            0x06, 0x03, 0x55, 0x1d, 0x11, // OID 2.5.29.17
-            0x04, 0x11, // OCTET STRING
-            0x30, 0x0f, // SEQUENCE (GeneralNames)
-            0xa0, 0x0d, // [0] otherName
-            0x06, 0x03, 0x01, 0x02, 0x03, // type-id OID
-            0xa0, 0x06, 0x0c, 0x04, 0x74, 0x65, 0x73, 0x74, // [0] EXPLICIT UTF8 "test"
-        ];
-        assert_eq!(&buf[..n], expected);
-    }
-
-    #[test]
-    fn test_encode_authority_key_identifier_extension_bytes() {
-        let node = build_test_node();
-        let nodes = [node];
-        let measurements = build_test_measurements(&nodes, true);
-
-        let mut buf = [0u8; 1024];
-        let mut w = CertWriter::new(&mut buf, DPE_PROFILE, true);
-        let n = w.encode_authority_key_identifier_extension(&measurements, true);
-
-        let expected: &[u8] = &[
-            0x30, 0x1f, // SEQUENCE
-            0x06, 0x03, 0x55, 0x1d, 0x23, // OID 2.5.29.35
-            0x04, 0x18, // OCTET STRING
-            0x30, 0x16, // SEQUENCE
-            0x80, 0x14, // [0] keyIdentifier
-            0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, //
-            0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, //
-            0xcc, 0xcc, 0xcc, 0xcc, //
-        ];
-        assert_eq!(&buf[..n], expected);
-    }
-
-    #[test]
-    fn test_encode_subject_key_identifier_extension_bytes() {
-        let node = build_test_node();
-        let nodes = [node];
-        let measurements = build_test_measurements(&nodes, true);
-
-        let mut buf = [0u8; 1024];
-        let mut w = CertWriter::new(&mut buf, DPE_PROFILE, true);
-        let n = w.encode_subject_key_identifier_extension(&measurements, true);
-
-        let expected: &[u8] = &[
-            0x30, 0x1d, // SEQUENCE
-            0x06, 0x03, 0x55, 0x1d, 0x0e, // OID 2.5.29.14
-            0x04, 0x16, // OCTET STRING
-            0x04, 0x14, // OCTET STRING (subjectKeyIdentifier)
-            0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, //
-            0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, //
-            0xbb, 0xbb, 0xbb, 0xbb, //
-        ];
-        assert_eq!(&buf[..n], expected);
-    }
-
-    #[test]
-    #[cfg(not(feature = "ml-dsa"))]
-    fn test_encode_cms_rejects_unresolved_backtrack() {
-        let mut buf = [0u8; 4096];
-        let mut w = CertWriter::new(&mut buf, DPE_PROFILE, true);
-
-        // Pre-push one extra backtrack to simulate a push/pop imbalance.
-        // encode_cms pushes 3 and pops 3; this extra entry survives those
-        // pops and triggers the X509InvalidState guard at the end of encode_cms.
-        w.push_backtrack(super::SIZE_TAG_OFFSET).unwrap();
-
-        const ECC_INT_SIZE: usize = DPE_PROFILE.ecc_int_size();
-        let test_pub = EcdsaPub::from_slice(&[0xAA; ECC_INT_SIZE], &[0xBB; ECC_INT_SIZE]);
-        let pub_key = match DPE_PROFILE.alg() {
-            #[cfg(feature = "p256")]
-            SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit256) => {
-                PubKey::Ecdsa(EcdsaPubKey::Ecdsa256(test_pub))
-            }
-            #[cfg(feature = "p384")]
-            SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384) => {
-                PubKey::Ecdsa(EcdsaPubKey::Ecdsa384(test_pub))
-            }
-            _ => panic!("unsupported algorithm"),
-        };
-        let test_sig: Signature = match DPE_PROFILE.alg() {
-            #[cfg(feature = "p256")]
-            SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit256) => Signature::Ecdsa(
-                EcdsaSig::from_slice(&[0xCC; ECC_INT_SIZE], &[0xDD; ECC_INT_SIZE]).into(),
-            ),
-            #[cfg(feature = "p384")]
-            SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384) => Signature::Ecdsa(
-                EcdsaSig::from_slice(&[0xCC; ECC_INT_SIZE], &[0xDD; ECC_INT_SIZE]).into(),
-            ),
-            _ => panic!("unsupported algorithm"),
-        };
-        let mut sign_cb = |_data: &[u8], _use_derived: bool| Ok(test_sig.clone());
-
-        let node = TciNodeData::new();
-        let subject_key_identifier = [0xBB; MAX_KEY_IDENTIFIER_SIZE];
-        let measurements = MeasurementData {
-            label: &[0; DPE_PROFILE.hash_size()],
-            tci_nodes: &[node],
-            is_ca: false,
-            supports_recursive: false,
-            subject_key_identifier,
-            authority_key_identifier: subject_key_identifier,
-            subject_alt_name: None,
-        };
-
-        let mut ski = ArrayVec::new();
-        ski.try_extend_from_slice(&[0xBB; MAX_KEY_IDENTIFIER_SIZE])
-            .unwrap();
-        let sid = SignerIdentifier::SubjectKeyIdentifier(ski);
-
-        assert_eq!(
-            w.encode_cms(
-                &mut sign_cb,
-                &pub_key,
-                &TEST_SUBJECT_NAME,
-                &measurements,
-                &sid
-            ),
-            Err(DpeErrorCode::X509InvalidState),
-        );
     }
 }
