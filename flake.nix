@@ -29,12 +29,17 @@
             pkg-config
             taplo
           ];
-
           shellHook = ''
             # Ensure the toolchains are installed
             rustup toolchain install $(grep channel rust-toolchain.toml | cut -d'"' -f2)
-            rustup toolchain install nightly-2025-07-08
+            
+            export DPE_FUZZ_TOOLCHAIN="nightly-2025-07-08"
+            rustup toolchain install $DPE_FUZZ_TOOLCHAIN
             rustup target add riscv32imc-unknown-none-elf
+
+            # Install fuzzer tools
+            cargo +$DPE_FUZZ_TOOLCHAIN install cargo-fuzz --version 0.13.1 --locked
+            cargo +$DPE_FUZZ_TOOLCHAIN install cargo-afl --version 0.17.0 --locked
           '';
         };
       }

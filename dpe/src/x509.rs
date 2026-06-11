@@ -2943,7 +2943,6 @@ pub(crate) mod tests {
     use crate::response::DpeErrorCode;
     use crate::tci::{TciMeasurement, TciNodeData};
     use crate::x509::{CertWriter, DirectoryString, MeasurementData, Name};
-    use crate::DpeErrorCode;
     use crate::DpeProfile;
     use caliptra_dpe_crypto::ecdsa::{EcdsaAlgorithm, EcdsaSig};
     use caliptra_dpe_crypto::ecdsa::{EcdsaPub, EcdsaPubKey};
