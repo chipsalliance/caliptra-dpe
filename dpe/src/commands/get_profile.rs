@@ -9,7 +9,7 @@ use crate::{
 #[cfg(feature = "cfi")]
 use caliptra_cfi_derive::cfi_impl_fn;
 
-#[repr(C)]
+#[repr(C, align(4))]
 #[derive(
     Debug,
     PartialEq,

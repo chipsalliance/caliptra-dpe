@@ -1,0 +1,36 @@
+name: Nightly Continuous Integration
+
+on:
+  workflow_dispatch:
+  schedule:
+  # 2:11 AM PST tuesday-saturday
+  - cron: '11 10 * * 2-6'
+
+jobs:
+  ubuntu:
+    runs-on: ubuntu-latest
+
+    env:
+      CARGO_INCREMENTAL: 0
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@4
+
+      - name: Test commit name
+        run: |
+          echo "Build-Test: release_ref=$(git rev-parse HEAD)"
+
+      - name: Install Nix
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nix-bin
+          sudo mkdir -p /nix
+          sudo chown -R $(whoami) /nix
+          mkdir -p ~/.config/nix
+          echo "experimental-features = nix-command flakes" > ~/.config/nix/nix.conf
+
+      - name: Run CI tests
+        run: |
+          export NIX_REMOTE=local
+          nix develop --command cargo xtask test miri

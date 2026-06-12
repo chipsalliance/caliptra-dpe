@@ -9,7 +9,10 @@ use crate::{
 use caliptra_cfi_derive::Launder;
 #[cfg(feature = "cfi")]
 use caliptra_cfi_lib::cfi_launder;
+
+#[cfg(not(miri))]
 use constant_time_eq::constant_time_eq_16;
+
 use zerocopy::{little_endian::U64, FromBytes, FromZeros, Immutable, IntoBytes, KnownLayout};
 use zeroize::Zeroize;
 
@@ -203,7 +206,14 @@ impl ContextHandle {
 
     #[inline(never)]
     pub fn equals(&self, other: &ContextHandle) -> bool {
-        constant_time_eq_16(&self.0, &other.0)
+        #[cfg(not(miri))]
+        {
+            constant_time_eq_16(&self.0, &other.0)
+        }
+        #[cfg(miri)]
+        {
+            self.0 == other.0
+        }
     }
 }
 

@@ -13,7 +13,7 @@ use caliptra_cfi_derive::cfi_impl_fn;
 use caliptra_cfi_lib::{cfi_assert, cfi_assert_bool};
 use cfg_if::cfg_if;
 
-#[repr(C)]
+#[repr(C, align(4))]
 #[derive(
     Debug,
     PartialEq,
@@ -136,7 +136,7 @@ mod tests {
         dpe_instance::tests::{DPE_PROFILE, TEST_LOCALITIES},
         response::Response,
         support::Support,
-        test_env, DpeFlags, State,
+        test_env, AlignedBuf, DpeFlags, State,
     };
     use caliptra_cfi_lib::CfiCounter;
     use zerocopy::IntoBytes;
@@ -147,13 +147,15 @@ mod tests {
     fn test_deserialize_init_ctx() {
         CfiCounter::reset_for_test();
         for p in PROFILES {
-            let mut command = CommandHdr::new(p, Command::INITIALIZE_CONTEXT)
-                .as_bytes()
-                .to_vec();
-            command.extend(TEST_INIT_CTX_CMD.as_bytes());
+            let hdr = CommandHdr::new(p, Command::INITIALIZE_CONTEXT);
+            let mut buf =
+                AlignedBuf::<{ size_of::<CommandHdr>() + size_of::<InitCtxCmd>() }>::new();
+            let command = buf.as_mut_bytes();
+            command[..size_of::<CommandHdr>()].copy_from_slice(hdr.as_bytes());
+            command[size_of::<CommandHdr>()..].copy_from_slice(TEST_INIT_CTX_CMD.as_bytes());
             assert_eq!(
                 Ok(Command::InitCtx(&TEST_INIT_CTX_CMD)),
-                Command::deserialize(p, &command)
+                Command::deserialize(p, command)
             );
         }
     }

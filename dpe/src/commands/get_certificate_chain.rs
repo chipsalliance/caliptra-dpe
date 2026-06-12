@@ -9,7 +9,7 @@ use crate::{
 use caliptra_cfi_derive::cfi_impl_fn;
 use caliptra_dpe_platform::MAX_CHUNK_SIZE;
 
-#[repr(C)]
+#[repr(C, align(4))]
 #[derive(
     Debug,
     PartialEq,
@@ -59,9 +59,10 @@ mod tests {
     use crate::{
         commands::{tests::PROFILES, Command, CommandHdr},
         dpe_instance::tests::{test_state, DPE_PROFILE, TEST_LOCALITIES},
-        test_env,
+        test_env, AlignedBuf,
     };
     use caliptra_cfi_lib::CfiCounter;
+    use core::mem::size_of;
     use zerocopy::IntoBytes;
 
     const TEST_GET_CERTIFICATE_CHAIN_CMD: GetCertificateChainCmd = GetCertificateChainCmd {
@@ -73,15 +74,19 @@ mod tests {
     fn test_deserialize_get_certificate_chain() {
         CfiCounter::reset_for_test();
         for p in PROFILES {
-            let mut command = CommandHdr::new(p, Command::GET_CERTIFICATE_CHAIN)
-                .as_bytes()
-                .to_vec();
-            command.extend(TEST_GET_CERTIFICATE_CHAIN_CMD.as_bytes());
+            let hdr = CommandHdr::new(p, Command::GET_CERTIFICATE_CHAIN);
+            let mut buf = AlignedBuf::<
+                { size_of::<CommandHdr>() + size_of::<GetCertificateChainCmd>() },
+            >::new();
+            let command = buf.as_mut_bytes();
+            command[..size_of::<CommandHdr>()].copy_from_slice(hdr.as_bytes());
+            command[size_of::<CommandHdr>()..]
+                .copy_from_slice(TEST_GET_CERTIFICATE_CHAIN_CMD.as_bytes());
             assert_eq!(
                 Ok(Command::GetCertificateChain(
                     &TEST_GET_CERTIFICATE_CHAIN_CMD
                 )),
-                Command::deserialize(p, &command)
+                Command::deserialize(p, command)
             );
         }
     }

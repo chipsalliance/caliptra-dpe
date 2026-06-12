@@ -8,8 +8,8 @@ use crate::{
     commands::{CertifyKeyCommand, Command, DeriveContextCmd, SignCommand},
     context::ContextHandle,
     validation::ValidationError,
-    DpeProfile, CURRENT_PROFILE_MAJOR_VERSION, CURRENT_PROFILE_MINOR_VERSION, MAX_CERT_SIZE,
-    MAX_EXPORTED_CDI_SIZE, MAX_HANDLES,
+    AlignedBuf, DpeProfile, CURRENT_PROFILE_MAJOR_VERSION, CURRENT_PROFILE_MINOR_VERSION,
+    MAX_CERT_SIZE, MAX_EXPORTED_CDI_SIZE, MAX_HANDLES,
 };
 use caliptra_dpe_crypto::{ecdsa::EcdsaAlgorithm, CryptoError};
 use caliptra_dpe_platform::{PlatformError, MAX_CHUNK_SIZE};
@@ -79,6 +79,12 @@ impl Response {
     /// This is useful for parsing the data as it was received "over the wire". This also works with
     /// the output of `as_bytes_partial`.
     pub fn try_read_from_bytes(cmd: &Command, bytes: &[u8]) -> Result<Response, DpeErrorCode> {
+        // miri alignment: copy into an aligned buffer so zerocopy reads from 4-byte aligned memory
+        let mut buf = AlignedBuf::<{ size_of::<Self>() }>::new();
+        let copy_len = bytes.len().min(buf.as_bytes().len());
+        buf.as_mut_bytes()[..copy_len].copy_from_slice(&bytes[..copy_len]);
+        let bytes = buf.as_bytes();
+
         let r = match cmd {
             #[cfg(feature = "p256")]
             Command::CertifyKey(CertifyKeyCommand::P256(_)) => {
@@ -178,7 +184,7 @@ impl Response {
 
 // ABI Response structures
 
-#[repr(C)]
+#[repr(C, align(4))]
 #[derive(Debug, PartialEq, Eq, IntoBytes, TryFromBytes, Immutable, KnownLayout)]
 pub struct ResponseHdr {
     pub magic: u32,
@@ -198,7 +204,7 @@ impl ResponseHdr {
     }
 }
 
-#[repr(C)]
+#[repr(C, align(4))]
 #[derive(Debug, PartialEq, Eq, IntoBytes, TryFromBytes, Immutable, KnownLayout)]
 pub struct GetProfileResp {
     pub resp_hdr: ResponseHdr,
@@ -233,14 +239,14 @@ impl GetProfileResp {
     }
 }
 
-#[repr(C)]
+#[repr(C, align(4))]
 #[derive(Debug, PartialEq, Eq, IntoBytes, TryFromBytes, KnownLayout, Immutable)]
 pub struct NewHandleResp {
     pub resp_hdr: ResponseHdr,
     pub handle: ContextHandle,
 }
 
-#[repr(C)]
+#[repr(C, align(4))]
 #[derive(Debug, PartialEq, Eq, IntoBytes, TryFromBytes, Immutable, KnownLayout)]
 pub struct DeriveContextResp {
     pub resp_hdr: ResponseHdr,
@@ -249,7 +255,7 @@ pub struct DeriveContextResp {
 }
 
 /// Response for the UpdateContextMeasurement vendor command.
-#[repr(C)]
+#[repr(C, align(4))]
 #[derive(Debug, PartialEq, Eq, IntoBytes, TryFromBytes, Immutable, KnownLayout)]
 pub struct UpdateContextMeasurementResp {
     pub resp_hdr: ResponseHdr,
@@ -259,7 +265,7 @@ pub struct UpdateContextMeasurementResp {
     pub new_parent_context_handle: ContextHandle,
 }
 
-#[repr(C)]
+#[repr(C, align(4))]
 #[derive(Debug, PartialEq, Eq, IntoBytes, TryFromBytes, Immutable, KnownLayout)]
 pub struct DeriveContextExportedCdiResp {
     pub resp_hdr: ResponseHdr,
@@ -348,7 +354,7 @@ impl CertifyKeyResp {
     }
 }
 
-#[repr(C)]
+#[repr(C, align(4))]
 #[derive(Debug, PartialEq, Eq, IntoBytes, TryFromBytes, Immutable, KnownLayout)]
 pub struct CertifyKeyP256Resp {
     pub resp_hdr: ResponseHdr,
@@ -368,7 +374,7 @@ impl CertifyKeyP256Resp {
     }
 }
 
-#[repr(C)]
+#[repr(C, align(4))]
 #[derive(Debug, PartialEq, Eq, IntoBytes, TryFromBytes, Immutable, KnownLayout)]
 pub struct CertifyKeyP384Resp {
     pub resp_hdr: ResponseHdr,
@@ -388,7 +394,7 @@ impl CertifyKeyP384Resp {
     }
 }
 
-#[repr(C)]
+#[repr(C, align(4))]
 #[derive(Debug, PartialEq, Eq, IntoBytes, TryFromBytes, Immutable, KnownLayout)]
 #[cfg(feature = "ml-dsa")]
 pub struct CertifyKeyMldsa87Resp {
@@ -455,7 +461,7 @@ impl SignResp {
     }
 }
 
-#[repr(C)]
+#[repr(C, align(4))]
 #[derive(Debug, PartialEq, Eq, IntoBytes, TryFromBytes, Immutable, KnownLayout)]
 pub struct SignP256Resp {
     pub resp_hdr: ResponseHdr,
@@ -464,7 +470,7 @@ pub struct SignP256Resp {
     pub sig_s: [u8; 32],
 }
 
-#[repr(C)]
+#[repr(C, align(4))]
 #[derive(Debug, PartialEq, Eq, IntoBytes, TryFromBytes, Immutable, KnownLayout)]
 pub struct SignP384Resp {
     pub resp_hdr: ResponseHdr,
@@ -473,7 +479,7 @@ pub struct SignP384Resp {
     pub sig_s: [u8; 48],
 }
 
-#[repr(C)]
+#[repr(C, align(4))]
 #[derive(Debug, PartialEq, Eq, IntoBytes, TryFromBytes, Immutable, KnownLayout)]
 #[cfg(feature = "ml-dsa")]
 pub struct SignMlDsaResp {
@@ -483,7 +489,7 @@ pub struct SignMlDsaResp {
     pub _padding: [u8; 1],
 }
 
-#[repr(C)]
+#[repr(C, align(4))]
 #[derive(Debug, PartialEq, Eq, IntoBytes, TryFromBytes, Immutable, KnownLayout)]
 pub struct GetCertificateChainResp {
     pub resp_hdr: ResponseHdr,

@@ -87,7 +87,7 @@ impl DeriveContextFlags {
     }
 }
 
-#[repr(C)]
+#[repr(C, align(4))]
 #[derive(Debug, PartialEq, Eq, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct DeriveContextCmd {
     pub handle: ContextHandle,
@@ -516,10 +516,11 @@ mod tests {
         support::Support,
         test_env,
         validation::DpeValidator,
-        DpeProfile, MAX_CERT_SIZE, MAX_EXPORTED_CDI_SIZE, MAX_HANDLES, TCI_SIZE,
+        AlignedBuf, DpeProfile, MAX_CERT_SIZE, MAX_EXPORTED_CDI_SIZE, MAX_HANDLES, TCI_SIZE,
     };
     use caliptra_cfi_lib::CfiCounter;
     use caliptra_dpe_platform::MAX_KEY_IDENTIFIER_SIZE;
+    use core::mem::size_of;
     use openssl::{
         bn::BigNum,
         ecdsa::EcdsaSig,
@@ -542,13 +543,15 @@ mod tests {
     fn test_deserialize_derive_context() {
         CfiCounter::reset_for_test();
         for p in PROFILES {
-            let mut command = CommandHdr::new(p, Command::DERIVE_CONTEXT)
-                .as_bytes()
-                .to_vec();
-            command.extend(TEST_DERIVE_CONTEXT_CMD.as_bytes());
+            let hdr = CommandHdr::new(p, Command::DERIVE_CONTEXT);
+            let mut buf =
+                AlignedBuf::<{ size_of::<CommandHdr>() + size_of::<DeriveContextCmd>() }>::new();
+            let command = buf.as_mut_bytes();
+            command[..size_of::<CommandHdr>()].copy_from_slice(hdr.as_bytes());
+            command[size_of::<CommandHdr>()..].copy_from_slice(TEST_DERIVE_CONTEXT_CMD.as_bytes());
             assert_eq!(
                 Ok(Command::DeriveContext(&TEST_DERIVE_CONTEXT_CMD)),
-                Command::deserialize(p, &command)
+                Command::deserialize(p, command)
             );
         }
     }
@@ -741,6 +744,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     #[cfg(not(feature = "ml-dsa"))] // TODO https://github.com/chipsalliance/caliptra-dpe/issues/450
     fn test_full_attestation_flow() {
         CfiCounter::reset_for_test();
@@ -1739,6 +1743,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_create_ca() {
         for mark_dice_extensions_critical in [true, false] {
             CfiCounter::reset_for_test();
@@ -1878,7 +1883,11 @@ mod tests {
     }
 
     #[test]
+    // Skip under Miri: ML-DSA signature generation is too slow under Miri's interpreter.
+    // This is acceptable since Miri checks memory safety, not crypto correctness.
+    #[cfg_attr(miri, ignore)]
     fn test_correct_subject_name_for_exported_cdi() {
+        CfiCounter::reset_for_test();
         let mut state = State::new(Support::X509 | Support::CDI_EXPORT, DpeFlags::empty());
         test_env!(env, &mut state);
         let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();

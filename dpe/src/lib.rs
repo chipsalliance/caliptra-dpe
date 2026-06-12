@@ -200,6 +200,32 @@ pub(crate) fn mutresp<R: TryFromBytes + IntoBytes + KnownLayout>(
     mutrefbytes(resp)
 }
 
+/// A byte buffer with guaranteed 4-byte alignment.
+///
+/// Miri's allocator only guarantees alignment matching the allocated type,
+/// so a `Vec<u8>` may be 1-byte aligned. When zerocopy's `ref_from_prefix`
+/// or `try_mut_from_prefix` creates a reference to a `#[repr(C, align(4))]`
+/// struct from a `&[u8]`, the slice must be 4-byte aligned. This wrapper
+/// provides that guarantee for stack-allocated byte buffers.
+#[repr(C, align(4))]
+pub(crate) struct AlignedBuf<const N: usize> {
+    buf: [u8; N],
+}
+
+impl<const N: usize> AlignedBuf<N> {
+    pub fn new() -> Self {
+        Self { buf: [0u8; N] }
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.buf
+    }
+
+    pub fn as_mut_bytes(&mut self) -> &mut [u8] {
+        &mut self.buf
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     /// Convenience function to initialize logging for unit tests

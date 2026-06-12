@@ -7,6 +7,8 @@ use std::process::Command;
 
 // TODO(clundin): Support "hybrid"
 const PROFILES: &[&str] = &["ml-dsa", "p256", "p384"];
+/// Pinned nightly toolchain version. Must match the version in flake.nix shellHook.
+const NIGHTLY: &str = "nightly-2025-07-08";
 const MANIFESTS: &[&str] = &[
     "crypto/Cargo.toml",
     "platform/Cargo.toml",
@@ -50,6 +52,8 @@ pub enum TestSubcommands {
     Certs,
     /// Run panic check (verify firmware has no panic symbols)
     PanicCheck,
+    /// Run Miri tests
+    Miri(MiriArgs),
 }
 
 #[derive(Parser)]
@@ -92,6 +96,15 @@ pub enum ToolSubcommands {
     },
 }
 
+#[derive(Parser)]
+pub struct MiriArgs {
+    #[arg(long, default_value_t = false)]
+    nextest: bool,
+
+    #[arg(long, default_value_t = 1)]
+    nthreads: usize,
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
@@ -120,12 +133,10 @@ fn run_ci() -> Result<()> {
         "cert-size",
     ))?;
 
-    // Build fuzz target
     run_fuzz_checks()?;
 
     // Run panic checks for all profiles
     run_panic_checks()?;
-
     Ok(())
 }
 
@@ -166,6 +177,7 @@ fn run_test_command(args: &TestArgs) -> Result<()> {
         Some(TestSubcommands::Verification) => run_verification_tests()?,
         Some(TestSubcommands::Certs) => run_cert_parser_tests()?,
         Some(TestSubcommands::PanicCheck) => run_panic_checks()?,
+        Some(TestSubcommands::Miri(args)) => run_miri_tests(args)?,
         None => run_tests()?,
     }
     Ok(())
@@ -218,6 +230,13 @@ fn run_verification_tests() -> Result<()> {
 fn run_cert_parser_tests() -> Result<()> {
     for profile in PROFILES {
         run_cert_parser_test(profile)?;
+    }
+    Ok(())
+}
+
+fn run_miri_tests(args: &MiriArgs) -> Result<()> {
+    for profile in PROFILES {
+        run_miri_test(profile, args)?
     }
     Ok(())
 }
@@ -363,6 +382,42 @@ fn test_rust_targets(profile: &str) -> Result<()> {
     Ok(())
 }
 
+fn run_miri_target(profile: &str, args: &MiriArgs) -> Result<()> {
+    let opts = CargoOptions::with_features("dpe/Cargo.toml", &format!("{},cfi", profile));
+    cargo_miri(&opts, None, args)?;
+    Ok(())
+}
+
+fn cargo_miri(
+    opts: &CargoOptions,
+    extra_args: Option<&[&str]>,
+    miri_args: &MiriArgs,
+) -> Result<()> {
+    let mut cmd = match miri_args.nextest {
+        true => cargo().nightly().args(["miri", "nextest", "run"]),
+        false => cargo().nightly().args(["miri", "test"]),
+    };
+
+    if miri_args.nextest {
+        cmd = cmd.arg(format!("-j{}", miri_args.nthreads).as_str());
+    }
+
+    cmd = cmd.args(["--manifest-path", opts.manifest_path]);
+    if !opts.features.is_empty() {
+        cmd = cmd.arg(format!("--features={}", opts.features));
+    }
+
+    cmd = cmd.arg("--no-default-features");
+    if let Some(extra_args) = extra_args {
+        cmd = cmd.arg("--").args(extra_args);
+        if !miri_args.nextest {
+            cmd = cmd.arg(format!("--test-threads={}", miri_args.nthreads).as_str())
+        }
+    }
+
+    cmd.run()
+}
+
 fn run_verification_test(profile: &str, crypto: &str) -> Result<()> {
     let features = if profile == "hybrid" {
         format!("p384,ml-dsa,{}", crypto)
@@ -377,6 +432,13 @@ fn run_verification_test(profile: &str, crypto: &str) -> Result<()> {
         .args(["test", "-v"])
         .dir("verification/testing")
         .run()?;
+    Ok(())
+}
+
+/// Requires the same setup as the regular unit tests for profiles and feature flags.
+/// Since miri tests are computaional expenseive, use nextest to speed things up.
+fn run_miri_test(profile: &str, args: &MiriArgs) -> Result<()> {
+    run_miri_target(profile, args)?;
     Ok(())
 }
 
@@ -396,22 +458,12 @@ fn run_fuzz_checks() -> Result<()> {
         .run()?;
     cargo()
         .env("RUSTUP_TOOLCHAIN", &fuzzer_toolchain)
-        .args([
-            "fuzz",
-            "build",
-            "--features",
-            "libfuzzer-sys",
-        ])
+        .args(["fuzz", "build", "--features", "libfuzzer-sys"])
         .dir(fuzz_dir)
         .run()?;
     cargo()
         .env("RUSTUP_TOOLCHAIN", &fuzzer_toolchain)
-        .args([
-            "afl",
-            "build",
-            "--features",
-            "afl",
-        ])
+        .args(["afl", "build", "--features", "afl"])
         .dir(fuzz_dir)
         .run()?;
     Ok(())
@@ -461,6 +513,10 @@ impl Cmd {
         self.0
             .output()
             .map_err(|e| anyhow!("Failed to execute {:?}: {}", self.0, e))
+    }
+    fn nightly(mut self) -> Self {
+        self.0.arg(format!("+{}", NIGHTLY));
+        self
     }
 }
 

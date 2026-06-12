@@ -32,6 +32,7 @@ Available commands:
     * `cargo xtask test certs`: Run cert parser tests.
     * `cargo xtask test generate-test-data`: Generate test certificates and keys.
     * `cargo xtask test panic-check`: Run panic check (verify firmware has no panic symbols).
+    * `cargo xtask test miri --nthreads <n> (--nextest)`: Run miri tests with `n` threads (`--nextest` via nextest).
 * `cargo xtask precheckin`: Run formatting, linters, and license header checks.
     * `cargo xtask precheckin headers`: Check license headers.
     * `cargo xtask precheckin format`: Check code formatting.

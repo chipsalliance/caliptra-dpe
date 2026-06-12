@@ -20,7 +20,7 @@ use cfg_if::cfg_if;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 #[cfg(not(feature = "disable_x509"))]
-#[repr(C)]
+#[repr(C, align(4))]
 #[derive(Debug, Default, PartialEq, Eq, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct CertifyKeyFlags(pub u32);
 
@@ -44,8 +44,8 @@ impl CertifyKeyCommand<'_> {
 
     pub fn deserialize(
         profile: DpeProfile,
-        bytes: &[u8],
-    ) -> Result<CertifyKeyCommand, DpeErrorCode> {
+        bytes: &'_ [u8],
+    ) -> Result<CertifyKeyCommand<'_>, DpeErrorCode> {
         match profile {
             #[cfg(feature = "p256")]
             DpeProfile::P256Sha256 => {
@@ -282,7 +282,7 @@ impl CommandExecution for CertifyKeyCommand<'_> {
     }
 }
 
-#[repr(C)]
+#[repr(C, align(4))]
 #[derive(Debug, Default, PartialEq, Eq, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct CertifyKeyP256Cmd {
     pub handle: ContextHandle,
@@ -305,7 +305,7 @@ impl CommandExecution for CertifyKeyP256Cmd {
     }
 }
 
-#[repr(C)]
+#[repr(C, align(4))]
 #[derive(Debug, PartialEq, Eq, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct CertifyKeyP384Cmd {
     pub handle: ContextHandle,
@@ -339,7 +339,8 @@ impl CommandExecution for CertifyKeyP384Cmd {
     }
 }
 
-#[repr(C)]
+#[repr(C, align(4))]
+#[allow(dead_code)]
 #[derive(Debug, PartialEq, Eq, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct CertifyKeyMldsa87Cmd {
     pub handle: ContextHandle,
@@ -434,7 +435,7 @@ mod tests {
         tci::TciMeasurement,
         test_env,
         x509::{tests::TcbInfo, DirectoryString, Name},
-        State, MAX_HANDLES, TCI_SIZE,
+        AlignedBuf, State, MAX_HANDLES, TCI_SIZE,
     };
     use caliptra_cfi_lib::CfiCounter;
     use caliptra_dpe_crypto::artifacts;
@@ -476,16 +477,19 @@ mod tests {
 
     #[test]
     fn test_deserialize_certify_key() {
+        use core::mem::size_of;
         CfiCounter::reset_for_test();
-        let mut command = CommandHdr::new(DPE_PROFILE, Command::CERTIFY_KEY)
-            .as_bytes()
-            .to_vec();
-        command.extend(TEST_CERTIFY_KEY_CMD.as_bytes());
+        let header = CommandHdr::new(DPE_PROFILE, Command::CERTIFY_KEY);
+        let mut buf = AlignedBuf::<{ size_of::<CommandHdr>() + size_of::<CertifyKeyCmd>() }>::new();
+        let command = buf.as_mut_bytes();
+        command[..size_of::<CommandHdr>()].copy_from_slice(header.as_bytes());
+        command[size_of::<CommandHdr>()..][..size_of::<CertifyKeyCmd>()]
+            .copy_from_slice(TEST_CERTIFY_KEY_CMD.as_bytes());
         assert_eq!(
             Ok(Command::CertifyKey(CertifyKeyCommand::from(
                 &TEST_CERTIFY_KEY_CMD
             ))),
-            Command::deserialize(DPE_PROFILE, &command)
+            Command::deserialize(DPE_PROFILE, command)
         );
     }
 
@@ -545,6 +549,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     // TODO https://github.com/chipsalliance/caliptra-dpe/issues/450
     fn test_certify_key_csr() {
         // Verify that certify_key csr DICE extensions criticality matches the dpe_instance.

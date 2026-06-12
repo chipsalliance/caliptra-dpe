@@ -54,6 +54,7 @@ mod update_context_measurement;
 
 #[derive(Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "cfi", derive(Launder))]
+#[repr(C)]
 pub enum Command<'a> {
     GetProfile(&'a GetProfileCmd),
     InitCtx(&'a InitCtxCmd),
@@ -86,7 +87,7 @@ impl Command<'_> {
     /// # Arguments
     ///
     /// * `bytes` - serialized command
-    pub fn deserialize(profile: DpeProfile, bytes: &[u8]) -> Result<Command, DpeErrorCode> {
+    pub fn deserialize(profile: DpeProfile, bytes: &'_ [u8]) -> Result<Command, DpeErrorCode> {
         let header = CommandHdr::try_from_with_profile(profile, bytes)?;
         let bytes = bytes
             .get(size_of::<CommandHdr>()..)
@@ -340,11 +341,12 @@ pub trait CommandExecution {
         // This macro creates an on-stack buffer whose size is determined by the specific response
         // type rather than the generic `Response`, in order to reduce stack usage caused by
         // calling `try_read_from_bytes` on a generic `Response`.
+        // miri alignment: use u32 buffer to ensure 4-byte alignment for zerocopy
         macro_rules! exec {
             ($resp_type:ty, $f:expr) => {{
-                let mut buf = [0u8; size_of::<$resp_type>()];
-                self.execute_serialized(dpe, env, locality, &mut buf)?;
-                <$resp_type>::try_read_from_bytes(&buf)
+                let mut buf = [0u32; (size_of::<$resp_type>() + 3) / 4];
+                self.execute_serialized(dpe, env, locality, buf.as_mut_bytes())?;
+                <$resp_type>::try_read_from_bytes(buf.as_bytes())
                     .map($f)
                     .map_err(|_| DpeErrorCode::InternalError)
             }};
@@ -451,6 +453,8 @@ pub trait CommandExecution {
     zerocopy::Immutable,
     zerocopy::KnownLayout,
 )]
+// miri: enforce zerocopy 4-byte alignment
+#[repr(align(4))]
 pub struct CommandHdr {
     pub magic: u32,
     pub cmd_id: u32,

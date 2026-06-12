@@ -14,7 +14,7 @@ use caliptra_cfi_lib::cfi_launder;
 #[cfg(feature = "cfi")]
 use caliptra_cfi_lib::{cfi_assert, cfi_assert_bool};
 
-#[repr(C)]
+#[repr(C, align(4))]
 #[derive(
     Debug,
     PartialEq,
@@ -32,7 +32,7 @@ bitflags! {
     }
 }
 
-#[repr(C)]
+#[repr(C, align(4))]
 #[derive(
     Debug,
     PartialEq,
@@ -144,7 +144,7 @@ mod tests {
         },
         response::Response,
         support::Support,
-        test_env, DpeFlags,
+        test_env, AlignedBuf, DpeFlags,
     };
     use caliptra_cfi_lib::CfiCounter;
     use zerocopy::IntoBytes;
@@ -158,13 +158,16 @@ mod tests {
     fn test_deserialize_rotate_context() {
         CfiCounter::reset_for_test();
         for p in PROFILES {
-            let mut command = CommandHdr::new(p, Command::ROTATE_CONTEXT_HANDLE)
-                .as_bytes()
-                .to_vec();
-            command.extend(TEST_ROTATE_CTX_CMD.as_bytes());
+            let hdr = CommandHdr::new(p, Command::ROTATE_CONTEXT_HANDLE);
+            let mut buf =
+                AlignedBuf::<{ size_of::<CommandHdr>() + size_of::<RotateCtxCmd>() }>::new();
+            let command = buf.as_mut_bytes();
+            command[..size_of::<CommandHdr>()].copy_from_slice(hdr.as_bytes());
+            command[size_of::<CommandHdr>()..].copy_from_slice(TEST_ROTATE_CTX_CMD.as_bytes());
+
             assert_eq!(
                 Ok(Command::RotateCtx(&TEST_ROTATE_CTX_CMD)),
-                Command::deserialize(p, &command)
+                Command::deserialize(p, command)
             );
         }
     }

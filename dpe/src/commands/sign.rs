@@ -22,7 +22,7 @@ use core::mem::size_of;
 use core::mem::size_of_val;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
-#[repr(C)]
+#[repr(C, align(4))]
 #[derive(Debug, PartialEq, Eq, IntoBytes, FromBytes, Immutable, KnownLayout)]
 pub struct SignFlags(pub u32);
 
@@ -36,7 +36,7 @@ bitflags! {
 const MLDSA87_RAW_MAX_SIZE: usize = 1024;
 
 #[cfg(feature = "ml-dsa")]
-#[repr(C)]
+#[repr(C, align(4))]
 #[derive(Debug, PartialEq, Eq, IntoBytes, FromBytes, Immutable, KnownLayout)]
 struct SignMldsa87Header {
     pub handle: ContextHandle,
@@ -45,7 +45,7 @@ struct SignMldsa87Header {
 }
 
 #[cfg(feature = "ml-dsa")]
-#[repr(C)]
+#[repr(C, align(4))]
 #[derive(Debug, PartialEq, Eq, IntoBytes, FromBytes, Immutable, KnownLayout)]
 pub struct SignMldsa87RawCmd {
     pub handle: ContextHandle,
@@ -280,7 +280,7 @@ fn sign(
     Ok(signer.sign(data)?)
 }
 
-#[repr(C)]
+#[repr(C, align(4))]
 #[derive(Debug, PartialEq, Eq, IntoBytes, FromBytes, Immutable, KnownLayout)]
 pub struct SignP256Cmd {
     pub handle: ContextHandle,
@@ -303,7 +303,7 @@ impl CommandExecution for SignP256Cmd {
     }
 }
 
-#[repr(C)]
+#[repr(C, align(4))]
 #[derive(Debug, PartialEq, Eq, IntoBytes, FromBytes, Immutable, KnownLayout)]
 pub struct SignP384Cmd {
     pub handle: ContextHandle,
@@ -326,7 +326,7 @@ impl CommandExecution for SignP384Cmd {
     }
 }
 
-#[repr(C)]
+#[repr(C, align(4))]
 #[derive(Debug, PartialEq, Eq, IntoBytes, FromBytes, Immutable, KnownLayout)]
 pub struct SignMldsa87Cmd {
     pub handle: ContextHandle,
@@ -384,9 +384,10 @@ mod tests {
         },
         response::{Response, SignResp},
         tci::TciMeasurement,
-        test_env,
+        test_env, AlignedBuf,
     };
     use caliptra_cfi_lib::CfiCounter;
+    use core::mem::size_of;
     use openssl::x509::X509;
     use openssl::{bn::BigNum, ecdsa::EcdsaSig};
     use zerocopy::IntoBytes;
@@ -410,10 +411,11 @@ mod tests {
     #[test]
     fn test_deserialize_sign() {
         CfiCounter::reset_for_test();
-        let mut command = CommandHdr::new(DPE_PROFILE, Command::SIGN)
-            .as_bytes()
-            .to_vec();
-        command.extend(TEST_SIGN_CMD.as_bytes());
+        let hdr = CommandHdr::new(DPE_PROFILE, Command::SIGN);
+        let mut buf = AlignedBuf::<{ size_of::<CommandHdr>() + size_of::<SignCmd>() }>::new();
+        let command = buf.as_mut_bytes();
+        command[..size_of::<CommandHdr>()].copy_from_slice(hdr.as_bytes());
+        command[size_of::<CommandHdr>()..].copy_from_slice(TEST_SIGN_CMD.as_bytes());
 
         #[cfg(feature = "p256")]
         let expected = Command::Sign(SignCommand::P256(&TEST_SIGN_CMD));
@@ -421,7 +423,7 @@ mod tests {
         let expected = Command::Sign(SignCommand::P384(&TEST_SIGN_CMD));
         #[cfg(feature = "ml-dsa")]
         let expected = Command::Sign(SignCommand::Mldsa87(&TEST_SIGN_CMD));
-        assert_eq!(Ok(expected), Command::deserialize(DPE_PROFILE, &command));
+        assert_eq!(Ok(expected), Command::deserialize(DPE_PROFILE, command));
     }
 
     #[test]
@@ -480,6 +482,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_asymmetric() {
         CfiCounter::reset_for_test();
         let mut state = test_state();
@@ -635,12 +638,13 @@ mod tests {
     fn test_deserialize_sign_non_raw_mode() {
         CfiCounter::reset_for_test();
         // Test that non-raw mode still works (backward compatibility)
-        let mut command = CommandHdr::new(DPE_PROFILE, Command::SIGN)
-            .as_bytes()
-            .to_vec();
-        command.extend(TEST_SIGN_CMD.as_bytes());
+        let hdr = CommandHdr::new(DPE_PROFILE, Command::SIGN);
+        let mut buf = AlignedBuf::<{ size_of::<CommandHdr>() + size_of::<SignCmd>() }>::new();
+        let command = buf.as_mut_bytes();
+        command[..size_of::<CommandHdr>()].copy_from_slice(hdr.as_bytes());
+        command[size_of::<CommandHdr>()..].copy_from_slice(TEST_SIGN_CMD.as_bytes());
 
-        let cmd = Command::deserialize(DPE_PROFILE, &command);
+        let cmd = Command::deserialize(DPE_PROFILE, command);
         assert!(cmd.is_ok());
 
         match cmd.unwrap() {
