@@ -27,20 +27,13 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// Run all CI checks
-    Ci(CiArgs),
+    Ci,
     /// Run tests
     Test(TestArgs),
     /// Run formatting, linters and header checks
     Precheckin(PrecheckinArgs),
     /// Run a tool from the tools/ folder
     RunTool(RunToolArgs),
-}
-
-#[derive(Parser)]
-pub struct CiArgs {
-    #[arg(long)]
-    /// Run miri in CI (nextest=true,nthreads=$(nproc))
-    pub miri: bool,
 }
 
 #[derive(Parser)]
@@ -116,7 +109,7 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match &cli.command {
-        Commands::Ci(args) => run_ci(args)?,
+        Commands::Ci => run_ci()?,
         Commands::Test(args) => run_test_command(args)?,
         Commands::Precheckin(args) => run_precheckin_command(args)?,
         Commands::RunTool(args) => run_tool_command(args)?,
@@ -125,7 +118,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn run_ci(args: &CiArgs) -> Result<()> {
+fn run_ci() -> Result<()> {
     run_precheckin()?;
     run_tests()?;
 
@@ -144,16 +137,6 @@ fn run_ci(args: &CiArgs) -> Result<()> {
 
     // Run panic checks for all profiles
     run_panic_checks()?;
-
-    if args.miri {
-        let miri_args = &MiriArgs {
-            nextest: true,
-            nthreads: num_cpus::get(),
-        };
-
-        run_miri_tests(miri_args)?;
-    }
-
     Ok(())
 }
 

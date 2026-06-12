@@ -1,12 +1,10 @@
-name: Continuous Integration
+name: Nightly Continuous Integration
 
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
+  workflow_dispatch:
+  schedule:
+  # 2:11 AM PST tuesday-saturday
+  - cron: '11 10 * * 2-6'
 
 jobs:
   ubuntu:
@@ -17,7 +15,7 @@ jobs:
 
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v3
+        uses: actions/checkout@4
 
       - name: Test commit name
         run: |
@@ -27,15 +25,12 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y nix-bin
-          # For a manual install in CI, we take ownership of /nix and use local mode
-          # to avoid daemon socket permission issues.
           sudo mkdir -p /nix
           sudo chown -R $(whoami) /nix
-          # Enable flakes and nix-command
           mkdir -p ~/.config/nix
           echo "experimental-features = nix-command flakes" > ~/.config/nix/nix.conf
 
       - name: Run CI tests
         run: |
           export NIX_REMOTE=local
-          nix develop --command cargo xtask ci
+          nix develop --command cargo xtask test miri
