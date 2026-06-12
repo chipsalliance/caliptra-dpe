@@ -101,6 +101,23 @@ impl PlatformError {
         // field, so we can read the discriminant without offsetting the pointer.
         unsafe { *<*const _>::from(self).cast::<u16>() }
     }
+
+    /// caliptra-sw uses this function to populate extra error reporting registers.
+    pub fn get_error_detail(&self) -> Option<u32> {
+        match self {
+            PlatformError::CertificateChainError
+            | PlatformError::NotImplemented
+            | PlatformError::MissingUeidError
+            | PlatformError::InvalidUeidError => None,
+            PlatformError::IssuerNameError(code)
+            | PlatformError::PrintError(code)
+            | PlatformError::SerialNumberError(code)
+            | PlatformError::SubjectKeyIdentifierError(code)
+            | PlatformError::CertValidityError(code)
+            | PlatformError::IssuerKeyIdentifierError(code)
+            | PlatformError::SubjectAlternativeNameError(code) => Some(*code),
+        }
+    }
 }
 
 impl Display for PlatformError {

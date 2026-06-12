@@ -112,6 +112,21 @@ impl CryptoError {
             Self::MismatchedAlgorithm => 0x9,
         }
     }
+
+    /// caliptra-sw uses this function to populate extra error reporting registers.
+    pub fn get_error_detail(&self) -> Option<u32> {
+        match self {
+            CryptoError::AbstractionLayer(code)
+            | CryptoError::CryptoLibError(code)
+            | CryptoError::HashError(code) => Some(*code),
+            CryptoError::Size
+            | CryptoError::InvalidExportedCdiHandle
+            | CryptoError::ExportedCdiHandleLimitExceeded
+            | CryptoError::ExportedCdiHandleDuplicateCdi
+            | CryptoError::MismatchedAlgorithm
+            | CryptoError::NotImplemented => None,
+        }
+    }
 }
 
 impl core::fmt::Display for CryptoError {
