@@ -1,18 +1,14 @@
 // Licensed under the Apache-2.0 license.
 use crate::{
-    context::{ChildToRootIter, Children, Context, ContextHandle, ContextState},
+    context::{Children, Context, ContextHandle, ContextState},
     response::DpeErrorCode,
     support::Support,
-    tci::TciNodeData,
     U8Bool, MAX_HANDLES,
 };
 use bitflags::bitflags;
 use core::mem::align_of;
 use zerocopy::{FromBytes, FromZeros, Immutable, IntoBytes, KnownLayout};
 use zeroize::Zeroize;
-
-#[cfg(feature = "cfi")]
-use caliptra_cfi_derive::cfi_impl_fn;
 
 #[repr(C)]
 #[derive(Debug, PartialEq, Eq, FromBytes, IntoBytes, Immutable, KnownLayout, Zeroize)]
@@ -180,39 +176,6 @@ impl State {
             descendants.add_children(self.get_descendants(ctx)?);
         }
         Ok(descendants)
-    }
-
-    /// Get the TCI nodes from the context at `start_idx` to the root node following parent
-    /// links. These are the nodes that should contribute to CDI and key
-    /// derivation for the context at `start_idx`.
-    ///
-    /// # Arguments
-    ///
-    /// * `start_idx` - Index into context array
-    /// * `nodes` - Array to write TCI nodes to
-    ///
-    /// Returns the number of TCIs written to `nodes`
-    #[cfg_attr(feature = "cfi", cfi_impl_fn)]
-    pub(crate) fn get_tcb_nodes(
-        &self,
-        start_idx: usize,
-        nodes: &mut [TciNodeData],
-    ) -> Result<usize, DpeErrorCode> {
-        let mut out_idx = 0;
-
-        for status in ChildToRootIter::new(start_idx, &self.contexts) {
-            let curr = status?;
-
-            *nodes.get_mut(out_idx).ok_or(DpeErrorCode::InternalError)? = curr.tci;
-            out_idx += 1;
-        }
-
-        nodes
-            .get_mut(..out_idx)
-            .ok_or(DpeErrorCode::InternalError)?
-            .reverse();
-
-        Ok(out_idx)
     }
 
     /// Count number of contexts satisfying some predicate

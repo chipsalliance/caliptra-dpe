@@ -6,12 +6,12 @@
 //! this functionality for a no_std environment.
 
 use crate::{
-    context::ContextHandle,
+    context::{ChildToRootIter, Context, ContextHandle},
     dpe_instance::DpeEnv,
     okref,
     response::DpeErrorCode,
     tci::{TciMeasurement, TciNodeData},
-    DpeInstance, DpeProfile, State, MAX_HANDLES,
+    DpeInstance, DpeProfile, MAX_HANDLES,
 };
 use bitflags::bitflags;
 use caliptra_cfi_lib::cfi_launder;
@@ -90,9 +90,47 @@ pub struct Name<'a> {
     pub serial: DirectoryString<'a>,
 }
 
+struct TciNodes<'a> {
+    start_idx: usize,
+    contexts: &'a [Context],
+}
+
+impl<'a> TciNodes<'a> {
+    pub fn new(start_idx: usize, contexts: &'a [Context]) -> Result<Self, DpeErrorCode> {
+        let tci_nodes = Self {
+            start_idx,
+            contexts,
+        };
+        if tci_nodes.iter()?.count() > MAX_HANDLES {
+            Err(DpeErrorCode::InternalError)
+        } else {
+            Ok(tci_nodes)
+        }
+    }
+
+    fn iter(&self) -> Result<ChildToRootIter, DpeErrorCode> {
+        ChildToRootIter::new(self.start_idx, self.contexts)
+    }
+
+    pub fn is_empty(&self) -> Result<bool, DpeErrorCode> {
+        Ok(self.iter()?.is_empty())
+    }
+
+    pub fn num_nodes(&self) -> Result<usize, DpeErrorCode> {
+        Ok(self.iter()?.num_nodes())
+    }
+
+    pub fn first_node(&self) -> Result<Option<&TciNodeData>, DpeErrorCode> {
+        self.iter()?
+            .next_back()
+            .transpose()
+            .map(|opt| opt.map(|context| &context.tci))
+    }
+}
+
 pub struct MeasurementData<'a> {
+    tci_nodes: TciNodes<'a>,
     pub label: &'a [u8],
-    pub tci_nodes: &'a [TciNodeData],
     pub is_ca: bool,
     pub supports_recursive: bool,
     pub subject_key_identifier: [u8; MAX_KEY_IDENTIFIER_SIZE],
@@ -630,16 +668,16 @@ impl CertWriter<'_> {
         measurements: &MeasurementData,
         tagged: bool,
     ) -> Result<usize, DpeErrorCode> {
-        if measurements.tci_nodes.is_empty() {
+        if measurements.tci_nodes.is_empty()? {
             return Err(DpeErrorCode::InternalError);
         }
 
         // Size of concatenated tcb infos
-        let tcb_infos_size = measurements.tci_nodes.len()
+        let tcb_infos_size = measurements.tci_nodes.num_nodes()?
             * self.get_tcb_info_size(
                 measurements
                     .tci_nodes
-                    .first()
+                    .first_node()?
                     .ok_or(DpeErrorCode::InternalError)?,
                 measurements.supports_recursive,
                 /*tagged=*/ true,
@@ -1617,12 +1655,15 @@ impl CertWriter<'_> {
         &mut self,
         measurements: &MeasurementData,
     ) -> Result<usize, DpeErrorCode> {
-        let tcb_infos_size = if !measurements.tci_nodes.is_empty() {
+        let tcb_infos_size = if !measurements.tci_nodes.is_empty()? {
             self.get_tcb_info_size(
-                &measurements.tci_nodes[0],
+                measurements
+                    .tci_nodes
+                    .first_node()?
+                    .ok_or(DpeErrorCode::InternalError)?,
                 measurements.supports_recursive,
                 /*tagged=*/ true,
-            )? * measurements.tci_nodes.len()
+            )? * measurements.tci_nodes.num_nodes()?
         } else {
             0
         };
@@ -1636,8 +1677,11 @@ impl CertWriter<'_> {
         bytes_written += self.encode_size_field(tcb_infos_size);
 
         // Encode multiple tcg-dice-TcbInfos
-        for node in measurements.tci_nodes {
-            bytes_written += self.encode_tcb_info(node, measurements.supports_recursive)?;
+        for node in measurements.tci_nodes.iter()?.rev() {
+            bytes_written += self.encode_tcb_info(
+                node.map(|context| &context.tci)?,
+                measurements.supports_recursive,
+            )?;
         }
 
         Ok(bytes_written)
@@ -2617,20 +2661,6 @@ fn get_subject_name<'a>(
     Ok(subject_name)
 }
 
-fn get_tci_nodes<'a>(
-    state: &State,
-    handle: &ContextHandle,
-    locality: u32,
-    nodes: &'a mut [TciNodeData],
-) -> Result<&'a mut [TciNodeData], DpeErrorCode> {
-    let parent_idx = state.get_active_context_pos(handle, locality)?;
-    let tcb_count = state.get_tcb_nodes(parent_idx, nodes)?;
-    if tcb_count > MAX_HANDLES {
-        return Err(DpeErrorCode::InternalError);
-    }
-    Ok(&mut nodes[..tcb_count])
-}
-
 fn get_subject_key_identifier(
     crypto: &mut dyn CryptoSuite,
     pub_key: &PubKey,
@@ -2832,10 +2862,6 @@ fn create_dpe_cert_or_csr(
     let mut subj_serial = [0u8; MAX_HASH_SIZE * 2];
     let subject_name = get_subject_name(crypto, &cert_type, pub_key, &mut subj_serial)?;
 
-    const INITIALIZER: TciNodeData = TciNodeData::new();
-    let mut nodes = [INITIALIZER; MAX_HANDLES];
-    let tci_nodes = get_tci_nodes(state, args.handle, args.locality, &mut nodes)?;
-
     let mut subject_key_identifier = [0u8; MAX_KEY_IDENTIFIER_SIZE];
     get_subject_key_identifier(crypto, pub_key, &mut subject_key_identifier)?;
 
@@ -2859,8 +2885,11 @@ fn create_dpe_cert_or_csr(
     };
 
     let measurements = MeasurementData {
+        tci_nodes: TciNodes::new(
+            state.get_active_context_pos(args.handle, args.locality)?,
+            &state.contexts,
+        )?,
         label: args.ueid,
-        tci_nodes,
         is_ca,
         supports_recursive,
         subject_key_identifier,
@@ -2939,10 +2968,11 @@ fn create_dpe_cert_or_csr(
 
 #[cfg(test)]
 pub(crate) mod tests {
+    use crate::context::{Context, ContextState};
     use crate::dpe_instance::tests::DPE_PROFILE;
     use crate::response::DpeErrorCode;
     use crate::tci::{TciMeasurement, TciNodeData};
-    use crate::x509::{CertWriter, DirectoryString, MeasurementData, Name};
+    use crate::x509::{CertWriter, DirectoryString, MeasurementData, Name, TciNodes};
     use crate::DpeProfile;
     use caliptra_dpe_crypto::ecdsa::{EcdsaAlgorithm, EcdsaSig};
     use caliptra_dpe_crypto::ecdsa::{EcdsaPub, EcdsaPubKey};
@@ -3123,7 +3153,11 @@ pub(crate) mod tests {
             .unwrap();
         let issuer = &issuer_der[..issuer_len];
 
-        let node = TciNodeData::new();
+        let context = Context {
+            state: ContextState::Active,
+            ..Context::default()
+        };
+        let contexts = [context];
         let subject_key_identifier = [0u8; MAX_KEY_IDENTIFIER_SIZE];
         let mut other_name = ArrayVec::new();
         other_name
@@ -3131,7 +3165,7 @@ pub(crate) mod tests {
             .unwrap();
         let measurements = MeasurementData {
             label: &[0; DPE_PROFILE.hash_size()],
-            tci_nodes: &[node],
+            tci_nodes: TciNodes::new(0, &contexts).unwrap(),
             is_ca: false,
             supports_recursive: true,
             subject_key_identifier,
@@ -3390,7 +3424,11 @@ pub(crate) mod tests {
 
         let test_pub = EcdsaPub::from_slice(&[0xAA; ECC_INT_SIZE], &[0xBB; ECC_INT_SIZE]);
 
-        let node = TciNodeData::new();
+        let context = Context {
+            state: ContextState::Active,
+            ..Context::default()
+        };
+        let contexts = [context];
 
         let mut hasher = match DPE_PROFILE {
             DpeProfile::P256Sha256 => Hasher::new(MessageDigest::sha256()).unwrap(),
@@ -3417,7 +3455,7 @@ pub(crate) mod tests {
         });
         let measurements = MeasurementData {
             label: &[0; DPE_PROFILE.hash_size()],
-            tci_nodes: &[node],
+            tci_nodes: TciNodes::new(0, &contexts).unwrap(),
             is_ca,
             supports_recursive: true,
             subject_key_identifier,
@@ -3510,7 +3548,11 @@ pub(crate) mod tests {
 
         let test_pub = MldsaPublicKey::from_slice(&[0xAA; ALGORITHM.public_key_size()]);
 
-        let node = TciNodeData::new();
+        let context = Context {
+            state: ContextState::Active,
+            ..Context::default()
+        };
+        let contexts = [context];
 
         let mut hasher = match DPE_PROFILE {
             DpeProfile::Mldsa87 => Hasher::new(MessageDigest::sha384()).unwrap(),
@@ -3530,7 +3572,7 @@ pub(crate) mod tests {
         });
         let measurements = MeasurementData {
             label: &[0; DPE_PROFILE.hash_size()],
-            tci_nodes: &[node],
+            tci_nodes: TciNodes::new(0, &contexts).unwrap(),
             is_ca,
             supports_recursive: true,
             subject_key_identifier,
@@ -3766,21 +3808,25 @@ pub(crate) mod tests {
         }
     }
 
-    fn build_test_node() -> TciNodeData {
+    fn build_test_context() -> Context {
         use crate::tci::TciMeasurement;
 
+        let mut context = Context::new();
         let mut node = TciNodeData::new();
         node.tci_type = 0x01020304;
         node.tci_current = TciMeasurement([0xAA; DPE_PROFILE.tci_size()]);
         node.tci_cumulative = TciMeasurement([0xBB; DPE_PROFILE.tci_size()]);
         node.locality = 0x05060708;
-        node
+
+        context.tci = node;
+        context.state = ContextState::Active;
+        context
     }
 
-    fn build_test_measurements<'a>(nodes: &'a [TciNodeData], is_ca: bool) -> MeasurementData<'a> {
+    fn build_test_measurements<'a>(contexts: &'a [Context], is_ca: bool) -> MeasurementData<'a> {
         MeasurementData {
             label: &[0xAA; 4],
-            tci_nodes: nodes,
+            tci_nodes: TciNodes::new(0, contexts).unwrap(),
             is_ca,
             supports_recursive: true,
             subject_key_identifier: [0xBB; MAX_KEY_IDENTIFIER_SIZE],
@@ -3791,9 +3837,9 @@ pub(crate) mod tests {
 
     #[test]
     fn test_encode_multi_tcb_info_bytes() {
-        let node = build_test_node();
-        let nodes = [node];
-        let measurements = build_test_measurements(&nodes, true);
+        let context = build_test_context();
+        let contexts = [context];
+        let measurements = build_test_measurements(&contexts, true);
 
         let mut buf = [0u8; 1024];
         let mut w = CertWriter::new(&mut buf, DPE_PROFILE, true);
@@ -3874,9 +3920,9 @@ pub(crate) mod tests {
 
     #[test]
     fn test_encode_ueid_bytes() {
-        let node = build_test_node();
-        let nodes = [node];
-        let measurements = build_test_measurements(&nodes, true);
+        let context = build_test_context();
+        let contexts = [context];
+        let measurements = build_test_measurements(&contexts, true);
 
         let mut buf = [0u8; 1024];
         let mut w = CertWriter::new(&mut buf, DPE_PROFILE, true);
@@ -3895,9 +3941,9 @@ pub(crate) mod tests {
 
     #[test]
     fn test_encode_basic_constraints_bytes() {
-        let node = build_test_node();
-        let nodes = [node];
-        let measurements = build_test_measurements(&nodes, true);
+        let context = build_test_context();
+        let contexts = [context];
+        let measurements = build_test_measurements(&contexts, true);
 
         let mut buf = [0u8; 1024];
         let mut w = CertWriter::new(&mut buf, DPE_PROFILE, true);
@@ -3932,9 +3978,9 @@ pub(crate) mod tests {
 
     #[test]
     fn test_encode_extended_key_usage_bytes() {
-        let node = build_test_node();
-        let nodes = [node];
-        let measurements = build_test_measurements(&nodes, true);
+        let context = build_test_context();
+        let contexts = [context];
+        let measurements = build_test_measurements(&contexts, true);
 
         let mut buf = [0u8; 1024];
         let mut w = CertWriter::new(&mut buf, DPE_PROFILE, true);
@@ -3953,9 +3999,9 @@ pub(crate) mod tests {
 
     #[test]
     fn test_encode_subject_alt_name_extension_bytes() {
-        let node = build_test_node();
-        let nodes = [node];
-        let mut measurements = build_test_measurements(&nodes, true);
+        let context = build_test_context();
+        let contexts = [context];
+        let mut measurements = build_test_measurements(&contexts, true);
 
         let mut other_name_val = ArrayVec::new();
         other_name_val.try_extend_from_slice(b"test").unwrap();
@@ -3983,9 +4029,9 @@ pub(crate) mod tests {
 
     #[test]
     fn test_encode_authority_key_identifier_extension_bytes() {
-        let node = build_test_node();
-        let nodes = [node];
-        let measurements = build_test_measurements(&nodes, true);
+        let context = build_test_context();
+        let contexts = [context];
+        let measurements = build_test_measurements(&contexts, true);
 
         let mut buf = [0u8; 1024];
         let mut w = CertWriter::new(&mut buf, DPE_PROFILE, true);
@@ -4006,9 +4052,9 @@ pub(crate) mod tests {
 
     #[test]
     fn test_encode_subject_key_identifier_extension_bytes() {
-        let node = build_test_node();
-        let nodes = [node];
-        let measurements = build_test_measurements(&nodes, true);
+        let context = build_test_context();
+        let contexts = [context];
+        let measurements = build_test_measurements(&contexts, true);
 
         let mut buf = [0u8; 1024];
         let mut w = CertWriter::new(&mut buf, DPE_PROFILE, true);
@@ -4063,11 +4109,15 @@ pub(crate) mod tests {
         };
         let mut sign_cb = |_data: &[u8], _use_derived: bool| Ok(test_sig.clone());
 
-        let node = TciNodeData::new();
+        let context = Context {
+            state: ContextState::Active,
+            ..Context::default()
+        };
+        let contexts = [context];
         let subject_key_identifier = [0xBB; MAX_KEY_IDENTIFIER_SIZE];
         let measurements = MeasurementData {
             label: &[0; DPE_PROFILE.hash_size()],
-            tci_nodes: &[node],
+            tci_nodes: TciNodes::new(0, &contexts).unwrap(),
             is_ca: false,
             supports_recursive: false,
             subject_key_identifier,
