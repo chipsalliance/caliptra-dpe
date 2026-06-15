@@ -498,8 +498,6 @@ impl Default for DeriveContextCmd {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[cfg(feature = "ml-dsa")]
-    use crate::commands::{sign::SignMldsa87Cmd as SignCmd, CertifyKeyMldsa87Cmd as CertifyKeyCmd};
     #[cfg(feature = "p256")]
     use crate::commands::{sign::SignP256Cmd as SignCmd, CertifyKeyP256Cmd as CertifyKeyCmd};
     #[cfg(feature = "p384")]
@@ -507,26 +505,28 @@ mod tests {
     use crate::{
         commands::{
             rotate_context::{RotateCtxCmd, RotateCtxFlags},
-            tests::{PROFILES, TEST_DIGEST, TEST_LABEL},
-            CertifyKeyCommand, CertifyKeyFlags, Command, CommandHdr, InitCtxCmd, SignFlags,
+            tests::{PROFILES, TEST_DIGEST},
+            Command, CommandHdr, InitCtxCmd,
         },
         context::ContextType,
         dpe_instance::tests::{DPE_PROFILE, RANDOM_HANDLE, SIMULATION_HANDLE, TEST_LOCALITIES},
-        response::{NewHandleResp, Response, SignResp},
+        response::{NewHandleResp, Response},
         support::Support,
         test_env,
         validation::DpeValidator,
         AlignedBuf, DpeProfile, MAX_CERT_SIZE, MAX_EXPORTED_CDI_SIZE, MAX_HANDLES, TCI_SIZE,
     };
+    #[cfg(not(feature = "ml-dsa"))]
+    use crate::{
+        commands::{tests::TEST_LABEL, CertifyKeyCommand, CertifyKeyFlags, SignFlags},
+        response::SignResp,
+    };
     use caliptra_cfi_lib::CfiCounter;
     use caliptra_dpe_platform::MAX_KEY_IDENTIFIER_SIZE;
     use core::mem::size_of;
-    use openssl::{
-        bn::BigNum,
-        ecdsa::EcdsaSig,
-        hash::{Hasher as OpenSSLHasher, MessageDigest},
-        x509::X509,
-    };
+    use openssl::hash::{Hasher as OpenSSLHasher, MessageDigest};
+    #[cfg(not(feature = "ml-dsa"))]
+    use openssl::{bn::BigNum, ecdsa::EcdsaSig, x509::X509};
     use x509_parser::{nom::Parser, oid_registry::asn1_rs::oid, prelude::*};
     use zerocopy::IntoBytes;
 

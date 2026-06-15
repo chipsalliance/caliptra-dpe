@@ -2975,8 +2975,8 @@ pub(crate) mod tests {
     use crate::x509::{CertWriter, DirectoryString, MeasurementData, Name, TciNodes};
     use crate::DpeProfile;
     use crate::MAX_HANDLES;
-    use caliptra_dpe_crypto::ecdsa::{EcdsaAlgorithm, EcdsaSig};
-    use caliptra_dpe_crypto::ecdsa::{EcdsaPub, EcdsaPubKey};
+    #[cfg(not(feature = "ml-dsa"))]
+    use caliptra_dpe_crypto::ecdsa::{EcdsaAlgorithm, EcdsaPub, EcdsaPubKey, EcdsaSig};
     #[cfg(feature = "ml-dsa")]
     use caliptra_dpe_crypto::ml_dsa::MldsaPublicKey;
     #[cfg(feature = "ml-dsa")]
@@ -2991,7 +2991,9 @@ pub(crate) mod tests {
     #[cfg(not(feature = "disable_csr"))]
     use cms::signed_data::{SignerIdentifier as CmsSignerIdentifier, SignerInfo as CmsSignerInfo};
     #[cfg(not(feature = "disable_csr"))]
-    use der::{Decode, Encode};
+    use der::Decode;
+    #[cfg(not(feature = "ml-dsa"))]
+    use der::Encode;
     use openssl::hash::{Hasher, MessageDigest};
     #[cfg(not(feature = "disable_csr"))]
     use spki::ObjectIdentifier;
@@ -3421,11 +3423,13 @@ pub(crate) mod tests {
         serial: DirectoryString::PrintableString(&[0x00; DPE_PROFILE.hash_size() * 2]),
     };
 
+    #[cfg(not(feature = "ml-dsa"))]
     const ECC_INT_SIZE: usize = DPE_PROFILE.ecc_int_size();
 
     const DEFAULT_OTHER_NAME_OID: &[u8] = &[0, 0, 0];
     const DEFAULT_OTHER_NAME_VALUE: &str = "default-other-name";
 
+    #[cfg(not(feature = "ml-dsa"))]
     fn build_test_cert_ecdsa(is_ca: bool, cert_buf: &mut [u8]) -> (usize, X509Certificate<'_>) {
         let mut issuer_der = [0u8; 1024];
         let mut issuer_writer = CertWriter::new(&mut issuer_der, DPE_PROFILE, true);
@@ -4189,8 +4193,13 @@ pub(crate) mod tests {
         buf
     }
 
-    fn make_tci_nodes(n: usize) -> Vec<TciNodeData> {
-        (0..n).map(|_| TciNodeData::new()).collect()
+    fn make_test_contexts(n: usize) -> Vec<Context> {
+        (0..n)
+            .map(|_| Context {
+                state: ContextState::Active,
+                ..Context::default()
+            })
+            .collect()
     }
 
     // Expected DER bytes of SEQUENCE { INTEGER(r), INTEGER(s) } for our ECDSA test sig.
@@ -4251,7 +4260,7 @@ pub(crate) mod tests {
             (issuer, label, other_name)
         };
 
-        let tci_nodes = make_tci_nodes(n_nodes);
+        let contexts = make_test_contexts(n_nodes);
         let ski = [0xBBu8; MAX_KEY_IDENTIFIER_SIZE];
         let mut other_name_av = ArrayVec::new();
         other_name_av
@@ -4259,7 +4268,7 @@ pub(crate) mod tests {
             .unwrap();
         let measurements = MeasurementData {
             label: &label_bytes,
-            tci_nodes: &tci_nodes,
+            tci_nodes: TciNodes::new(0, contexts.as_slice()).unwrap(),
             is_ca: false,
             supports_recursive: true,
             subject_key_identifier: ski,
@@ -4362,7 +4371,7 @@ pub(crate) mod tests {
             (issuer, label, other_name)
         };
 
-        let tci_nodes = make_tci_nodes(n_nodes);
+        let contexts = make_test_contexts(n_nodes);
         let ski = [0xBBu8; MAX_KEY_IDENTIFIER_SIZE];
         let mut other_name_av = ArrayVec::new();
         other_name_av
@@ -4370,7 +4379,7 @@ pub(crate) mod tests {
             .unwrap();
         let measurements = MeasurementData {
             label: &label_bytes,
-            tci_nodes: &tci_nodes,
+            tci_nodes: TciNodes::new(0, contexts.as_slice()).unwrap(),
             is_ca: false,
             supports_recursive: true,
             subject_key_identifier: ski,
@@ -4474,7 +4483,7 @@ pub(crate) mod tests {
             DEFAULT_OTHER_NAME_VALUE.as_bytes().to_vec()
         };
 
-        let tci_nodes = make_tci_nodes(n_nodes);
+        let contexts = make_test_contexts(n_nodes);
         let ski = [0xBBu8; MAX_KEY_IDENTIFIER_SIZE];
         let mut other_name_av = ArrayVec::new();
         other_name_av
@@ -4482,7 +4491,7 @@ pub(crate) mod tests {
             .unwrap();
         let measurements = MeasurementData {
             label: &label_bytes,
-            tci_nodes: &tci_nodes,
+            tci_nodes: TciNodes::new(0, contexts.as_slice()).unwrap(),
             is_ca: false,
             supports_recursive: true,
             subject_key_identifier: ski,
@@ -4568,7 +4577,7 @@ pub(crate) mod tests {
             DEFAULT_OTHER_NAME_VALUE.as_bytes().to_vec()
         };
 
-        let tci_nodes = make_tci_nodes(n_nodes);
+        let contexts = make_test_contexts(n_nodes);
         let ski = [0xBBu8; MAX_KEY_IDENTIFIER_SIZE];
         let mut other_name_av = ArrayVec::new();
         other_name_av
@@ -4576,7 +4585,7 @@ pub(crate) mod tests {
             .unwrap();
         let measurements = MeasurementData {
             label: &label_bytes,
-            tci_nodes: &tci_nodes,
+            tci_nodes: TciNodes::new(0, contexts.as_slice()).unwrap(),
             is_ca: false,
             supports_recursive: true,
             subject_key_identifier: ski,
@@ -4659,7 +4668,7 @@ pub(crate) mod tests {
             DEFAULT_OTHER_NAME_VALUE.as_bytes().to_vec()
         };
 
-        let tci_nodes = make_tci_nodes(n_nodes);
+        let contexts = make_test_contexts(n_nodes);
         let ski = [0xBBu8; MAX_KEY_IDENTIFIER_SIZE];
         let mut other_name_av = ArrayVec::new();
         other_name_av
@@ -4667,7 +4676,7 @@ pub(crate) mod tests {
             .unwrap();
         let measurements = MeasurementData {
             label: &label_bytes,
-            tci_nodes: &tci_nodes,
+            tci_nodes: TciNodes::new(0, contexts.as_slice()).unwrap(),
             is_ca: false,
             supports_recursive: true,
             subject_key_identifier: ski,
@@ -4758,7 +4767,7 @@ pub(crate) mod tests {
             DEFAULT_OTHER_NAME_VALUE.as_bytes().to_vec()
         };
 
-        let tci_nodes = make_tci_nodes(n_nodes);
+        let contexts = make_test_contexts(n_nodes);
         let ski = [0xBBu8; MAX_KEY_IDENTIFIER_SIZE];
         let mut other_name_av = ArrayVec::new();
         other_name_av
@@ -4766,7 +4775,7 @@ pub(crate) mod tests {
             .unwrap();
         let measurements = MeasurementData {
             label: &label_bytes,
-            tci_nodes: &tci_nodes,
+            tci_nodes: TciNodes::new(0, contexts.as_slice()).unwrap(),
             is_ca: false,
             supports_recursive: true,
             subject_key_identifier: ski,

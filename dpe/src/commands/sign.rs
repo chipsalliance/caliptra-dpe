@@ -366,6 +366,8 @@ impl CommandExecution for SignMldsa87RawCmd {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(any(feature = "p256", feature = "p384"))]
+    use crate::commands::tests::TEST_DIGEST;
     #[cfg(feature = "ml-dsa")]
     use crate::commands::{sign::SignMldsa87Cmd as SignCmd, CertifyKeyMldsa87Cmd as CertifyKeyCmd};
     #[cfg(feature = "p256")]
@@ -376,7 +378,7 @@ mod tests {
         commands::{
             certify_key::{CertifyKeyCommand, CertifyKeyFlags},
             derive_context::DeriveContextFlags,
-            tests::{TEST_DIGEST, TEST_LABEL},
+            tests::TEST_LABEL,
             Command, CommandHdr, DeriveContextCmd, InitCtxCmd,
         },
         dpe_instance::tests::{
@@ -388,8 +390,11 @@ mod tests {
     };
     use caliptra_cfi_lib::CfiCounter;
     use core::mem::size_of;
-    use openssl::x509::X509;
-    use openssl::{bn::BigNum, ecdsa::EcdsaSig};
+    #[cfg(any(feature = "p256", feature = "p384"))]
+    use openssl::{
+        x509::X509,
+        {bn::BigNum, ecdsa::EcdsaSig},
+    };
     use zerocopy::IntoBytes;
 
     #[cfg(feature = "ml-dsa")]
@@ -483,6 +488,7 @@ mod tests {
 
     #[test]
     #[cfg_attr(miri, ignore)]
+    #[allow(unreachable_patterns)]
     fn test_asymmetric() {
         CfiCounter::reset_for_test();
         let mut state = test_state();
@@ -555,7 +561,6 @@ mod tests {
             #[cfg(feature = "ml-dsa")]
             DpeProfile::Mldsa87 => {
                 use crate::response::CertifyKeyResp;
-                use ml_dsa::signature::Verifier;
                 use ml_dsa::{EncodedSignature, EncodedVerifyingKey, VerifyingKey};
 
                 let sig_bytes = match sign_resp {
@@ -657,6 +662,7 @@ mod tests {
 
     #[cfg(feature = "ml-dsa")]
     #[test]
+    #[allow(unreachable_patterns)]
     fn test_sign_raw_mode_signature_is_valid() {
         CfiCounter::reset_for_test();
         let mut state = test_state();
