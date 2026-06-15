@@ -629,6 +629,11 @@ mod tests {
 
     #[test]
     fn test_child_to_root_iter_backwards() {
+        // This creates a chain of nodes:
+        //
+        //     ROOT <- 0 <- 1 <- 2 <- 3 <- 4
+        //
+        // where <- points to the parent.
         let mut contexts = [CONTEXT_INITIALIZER; MAX_HANDLES];
         let mut parent_idx = Context::ROOT_INDEX;
         let leaf_idx = 4;
@@ -637,7 +642,7 @@ mod tests {
             contexts[i].parent_idx = parent_idx;
             parent_idx = i as u8;
             if i < leaf_idx {
-                contexts[i].children.add_child(i + 1);
+                contexts[i].children.add_child(i + 1).unwrap();
             }
         }
 
@@ -654,6 +659,55 @@ mod tests {
         assert_eq!(context.parent_idx, 1);
         let context = iter.next();
         assert!(context.is_none());
+    }
+
+    #[test]
+    fn test_child_to_root_iter_multiple_children() {
+        // This creats the following hierarchy of nodes:
+        //
+        //     ROOT
+        //      +-- 0
+        //      +-- 1
+        //          +-- 2
+        //              +-- 3
+        //                  +-- 6
+        //          +-- 4
+        //          +-- 5
+        let mut contexts = [CONTEXT_INITIALIZER; MAX_HANDLES];
+        let parent_map: &[(usize, usize)] = &[
+            (0, Context::ROOT_INDEX.into()),
+            (1, Context::ROOT_INDEX.into()),
+            (2, 1),
+            (3, 2),
+            (4, 1),
+            (5, 1),
+            (6, 3),
+        ];
+        for i in 0..=6 {
+            contexts[i].state = ContextState::Active;
+        }
+        for (node_idx, parent_idx) in parent_map.iter() {
+            contexts[*node_idx].parent_idx = *parent_idx as u8;
+            if *parent_idx != Context::ROOT_INDEX.into() {
+                contexts[*parent_idx].children.add_child(*node_idx).unwrap();
+            }
+        }
+
+        let ptr = contexts.as_mut_ptr();
+        let mut iter = ChildToRootIter::new(3, &contexts).unwrap();
+        assert_eq!(iter.num_nodes(), 3);
+
+        // Modify the tree such that no child of node 1 is on the path any more.
+        unsafe {
+            (*ptr.add(2)).parent_idx = Context::ROOT_INDEX;
+            let mut children = Children::empty();
+            children.add_child(2).unwrap();
+            (*ptr.add(1)).children.remove_children(children);
+        }
+        // Consume the iterator once. This should fail because now we can't find any child of node
+        // 1 on the path from node 6 to the root.
+        let context = iter.next_back();
+        assert!(matches!(context, Some(Err(DpeErrorCode::InternalError))));
     }
 
     /// This is intended for testing a list of parent to children relationships. These are indices of contexts within a DPE instance.
