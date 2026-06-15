@@ -2944,6 +2944,7 @@ pub(crate) mod tests {
     use crate::tci::{TciMeasurement, TciNodeData};
     use crate::x509::{CertWriter, DirectoryString, MeasurementData, Name};
     use crate::DpeProfile;
+    use crate::MAX_HANDLES;
     use caliptra_dpe_crypto::ecdsa::{EcdsaAlgorithm, EcdsaSig};
     use caliptra_dpe_crypto::ecdsa::{EcdsaPub, EcdsaPubKey};
     #[cfg(feature = "ml-dsa")]
@@ -2953,9 +2954,17 @@ pub(crate) mod tests {
     use caliptra_dpe_crypto::{PubKey, Signature, SignatureAlgorithm};
     use caliptra_dpe_platform::{
         ArrayVec, CertValidity, OtherName, SignerIdentifier, SubjectAltName,
-        MAX_KEY_IDENTIFIER_SIZE,
+        MAX_KEY_IDENTIFIER_SIZE, MAX_OTHER_NAME_SIZE, MAX_SN_SIZE, MAX_UEID_SIZE,
     };
+    #[cfg(not(feature = "disable_csr"))]
+    use cms::content_info::CmsVersion;
+    #[cfg(not(feature = "disable_csr"))]
+    use cms::signed_data::{SignerIdentifier as CmsSignerIdentifier, SignerInfo as CmsSignerInfo};
+    #[cfg(not(feature = "disable_csr"))]
+    use der::{Decode, Encode};
     use openssl::hash::{Hasher, MessageDigest};
+    #[cfg(not(feature = "disable_csr"))]
+    use spki::ObjectIdentifier;
     use std::str;
     use x509_parser::certificate::X509CertificateParser;
     use x509_parser::nom::Parser;
@@ -4090,5 +4099,894 @@ pub(crate) mod tests {
             ),
             Err(DpeErrorCode::X509InvalidState),
         );
+    }
+
+    // ===== Correctness tests for encode_tbs / encode_certification_request_info /
+    //       encode_csr / encode_signer_info =====
+
+    fn strip_der_int_leading_zero(b: &[u8]) -> &[u8] {
+        b.strip_prefix(&[0u8]).unwrap_or(b)
+    }
+
+    fn make_validity(_max_size: bool) -> CertValidity {
+        // GeneralizedTime must be "YYYYMMDDHHmmssZ" (15 bytes); use the same
+        // strings for both typical and max cases since validity length is not
+        // what exercises the multi-byte length paths.
+        let mut not_before = ArrayVec::new();
+        not_before
+            .try_extend_from_slice(b"20230227000000Z")
+            .unwrap();
+        let mut not_after = ArrayVec::new();
+        not_after.try_extend_from_slice(b"99991231235959Z").unwrap();
+        CertValidity {
+            not_before,
+            not_after,
+        }
+    }
+
+    fn encode_issuer_der(cn_len: usize, serial_len: usize) -> Vec<u8> {
+        let cn: Vec<u8> = std::iter::repeat(b'A').take(cn_len).collect();
+        let sn: Vec<u8> = std::iter::repeat(b'0').take(serial_len).collect();
+        let name = Name {
+            cn: DirectoryString::PrintableString(&cn),
+            serial: DirectoryString::PrintableString(&sn),
+        };
+        let mut buf = vec![0u8; 1024];
+        let n = CertWriter::new(&mut buf, DPE_PROFILE, true)
+            .encode_rdn(&name)
+            .unwrap();
+        buf.truncate(n);
+        buf
+    }
+
+    fn make_tci_nodes(n: usize) -> Vec<TciNodeData> {
+        (0..n).map(|_| TciNodeData::new()).collect()
+    }
+
+    // Expected DER bytes of SEQUENCE { INTEGER(r), INTEGER(s) } for our ECDSA test sig.
+    // Both r=[0xCC; ECC_INT_SIZE] and s=[0xDD; ECC_INT_SIZE] have the high bit set,
+    // so DER INTEGER encoding prepends 0x00.
+    #[cfg(not(feature = "ml-dsa"))]
+    fn expected_ecdsa_sig_der() -> Vec<u8> {
+        let int_len = ECC_INT_SIZE + 1; // value bytes including 0x00 sign extension
+        let seq_content = 4 + 2 * int_len; // two integers: (tag + len + value) * 2
+        let mut v = Vec::with_capacity(2 + seq_content);
+        v.push(0x30);
+        v.push(seq_content as u8);
+        // r
+        v.push(0x02);
+        v.push(int_len as u8);
+        v.push(0x00);
+        v.extend(std::iter::repeat(0xCC).take(ECC_INT_SIZE));
+        // s
+        v.push(0x02);
+        v.push(int_len as u8);
+        v.push(0x00);
+        v.extend(std::iter::repeat(0xDD).take(ECC_INT_SIZE));
+        v
+    }
+
+    // ---- encode_tbs correctness tests ----
+
+    #[cfg(not(feature = "ml-dsa"))]
+    fn run_encode_tbs_ecdsa(n_nodes: usize, max_size: bool) {
+        let test_pub = EcdsaPub::from_slice(&[0xAA; ECC_INT_SIZE], &[0xBB; ECC_INT_SIZE]);
+        let pub_key = match DPE_PROFILE.alg() {
+            #[cfg(feature = "p256")]
+            SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit256) => {
+                PubKey::Ecdsa(EcdsaPubKey::Ecdsa256(test_pub))
+            }
+            #[cfg(feature = "p384")]
+            SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384) => {
+                PubKey::Ecdsa(EcdsaPubKey::Ecdsa384(test_pub))
+            }
+            _ => panic!("not an ECDSA profile"),
+        };
+
+        let serial: Vec<u8> = if max_size {
+            vec![0xFF; MAX_SN_SIZE]
+        } else {
+            TEST_SERIAL.to_vec()
+        };
+
+        let (issuer_der, label_bytes, other_name_value) = if max_size {
+            let issuer = encode_issuer_der(40, 60);
+            let label = vec![0xAB; MAX_UEID_SIZE];
+            let other_name: Vec<u8> = std::iter::repeat(b'X').take(MAX_OTHER_NAME_SIZE).collect();
+            (issuer, label, other_name)
+        } else {
+            let issuer = encode_issuer_der(14, DPE_PROFILE.hash_size() * 2);
+            let label = vec![0u8; DPE_PROFILE.hash_size()];
+            let other_name = DEFAULT_OTHER_NAME_VALUE.as_bytes().to_vec();
+            (issuer, label, other_name)
+        };
+
+        let tci_nodes = make_tci_nodes(n_nodes);
+        let ski = [0xBBu8; MAX_KEY_IDENTIFIER_SIZE];
+        let mut other_name_av = ArrayVec::new();
+        other_name_av
+            .try_extend_from_slice(&other_name_value)
+            .unwrap();
+        let measurements = MeasurementData {
+            label: &label_bytes,
+            tci_nodes: &tci_nodes,
+            is_ca: false,
+            supports_recursive: true,
+            subject_key_identifier: ski,
+            authority_key_identifier: ski,
+            subject_alt_name: Some(SubjectAltName::OtherName(OtherName {
+                oid: DEFAULT_OTHER_NAME_OID,
+                other_name: other_name_av,
+            })),
+        };
+        let validity = make_validity(max_size);
+
+        let mut buf = vec![0u8; 65536];
+        let mut w = CertWriter::new(&mut buf, DPE_PROFILE, true);
+        let n = w
+            .encode_tbs(
+                &serial,
+                &issuer_der,
+                &TEST_SUBJECT_NAME,
+                &pub_key,
+                &measurements,
+                &validity,
+            )
+            .unwrap();
+
+        let (_, tbs) = TbsCertificate::from_der(&buf[..n])
+            .unwrap_or_else(|e| panic!("TbsCertificate::from_der failed: {:?}", e));
+
+        assert_eq!(tbs.version(), X509Version::V3, "version must be V3");
+
+        // Serial: raw_serial() returns the DER INTEGER content, which may include a
+        // leading 0x00 sign-extension byte for values with the high bit set.
+        assert_eq!(
+            strip_der_int_leading_zero(tbs.raw_serial()),
+            serial.as_slice(),
+        );
+
+        // Subject name round-trips as expected
+        let expected_subject = format!(
+            "CN={}, serialNumber={}",
+            str::from_utf8(TEST_SUBJECT_NAME.cn.bytes()).unwrap(),
+            str::from_utf8(TEST_SUBJECT_NAME.serial.bytes()).unwrap(),
+        );
+        assert_eq!(
+            tbs.subject.to_string_with_registry(oid_registry()).unwrap(),
+            expected_subject,
+        );
+
+        // SPKI round-trips
+        SubjectPublicKeyInfo::from_der(tbs.subject_pki.raw)
+            .expect("subject_pki must round-trip via SubjectPublicKeyInfo::from_der");
+
+        // DICE UEID extension is present and carries the right label
+        let ueid_ext = tbs
+            .get_extension_unique(&oid!(2.23.133 .5 .4 .4))
+            .unwrap()
+            .unwrap_or_else(|| panic!("UEID extension missing"));
+        let parsed_ueid = asn1::parse_single::<Ueid>(ueid_ext.value).unwrap();
+        assert_eq!(parsed_ueid.ueid, label_bytes.as_slice());
+
+        // At least one tcbInfo extension is present
+        assert!(
+            tbs.extensions()
+                .iter()
+                .any(|e| e.oid.to_id_string() == "2.23.133.5.4.5"),
+            "tcbInfo extension missing"
+        );
+    }
+
+    #[cfg(not(feature = "ml-dsa"))]
+    #[test]
+    fn test_encode_tbs_ecdsa() {
+        run_encode_tbs_ecdsa(1, false);
+        run_encode_tbs_ecdsa(MAX_HANDLES, true);
+    }
+
+    #[cfg(feature = "ml-dsa")]
+    fn run_encode_tbs_mldsa(n_nodes: usize, max_size: bool) {
+        const ALGORITHM: MldsaAlgorithm = match DPE_PROFILE.alg() {
+            SignatureAlgorithm::Mldsa(a) => a,
+            _ => panic!("non ml-dsa profile"),
+        };
+        let test_pub = MldsaPublicKey::from_slice(&[0xAAu8; ALGORITHM.public_key_size()]);
+        let pub_key = PubKey::Mldsa(test_pub);
+
+        let serial: Vec<u8> = if max_size {
+            vec![0xFF; MAX_SN_SIZE]
+        } else {
+            TEST_SERIAL.to_vec()
+        };
+
+        let (issuer_der, label_bytes, other_name_value) = if max_size {
+            let issuer = encode_issuer_der(40, 60);
+            let label = vec![0xAB; MAX_UEID_SIZE];
+            let other_name: Vec<u8> = std::iter::repeat(b'X').take(MAX_OTHER_NAME_SIZE).collect();
+            (issuer, label, other_name)
+        } else {
+            let issuer = encode_issuer_der(14, DPE_PROFILE.hash_size() * 2);
+            let label = vec![0u8; DPE_PROFILE.hash_size()];
+            let other_name = DEFAULT_OTHER_NAME_VALUE.as_bytes().to_vec();
+            (issuer, label, other_name)
+        };
+
+        let tci_nodes = make_tci_nodes(n_nodes);
+        let ski = [0xBBu8; MAX_KEY_IDENTIFIER_SIZE];
+        let mut other_name_av = ArrayVec::new();
+        other_name_av
+            .try_extend_from_slice(&other_name_value)
+            .unwrap();
+        let measurements = MeasurementData {
+            label: &label_bytes,
+            tci_nodes: &tci_nodes,
+            is_ca: false,
+            supports_recursive: true,
+            subject_key_identifier: ski,
+            authority_key_identifier: ski,
+            subject_alt_name: Some(SubjectAltName::OtherName(OtherName {
+                oid: DEFAULT_OTHER_NAME_OID,
+                other_name: other_name_av,
+            })),
+        };
+        let validity = make_validity(max_size);
+
+        let mut buf = vec![0u8; 65536];
+        let mut w = CertWriter::new(&mut buf, DPE_PROFILE, true);
+        let n = w
+            .encode_tbs(
+                &serial,
+                &issuer_der,
+                &TEST_SUBJECT_NAME,
+                &pub_key,
+                &measurements,
+                &validity,
+            )
+            .unwrap();
+
+        let (_, tbs) = TbsCertificate::from_der(&buf[..n])
+            .unwrap_or_else(|e| panic!("TbsCertificate::from_der failed (mldsa): {:?}", e));
+
+        assert_eq!(tbs.version(), X509Version::V3);
+        assert_eq!(
+            strip_der_int_leading_zero(tbs.raw_serial()),
+            serial.as_slice(),
+        );
+
+        // Verify ML-DSA signature algorithm OID in TBS
+        assert_eq!(
+            tbs.signature.algorithm.as_bytes(),
+            const_oid::db::fips204::ID_ML_DSA_87.as_bytes()
+        );
+
+        SubjectPublicKeyInfo::from_der(tbs.subject_pki.raw).expect("mldsa spki must parse");
+
+        let ueid_ext = tbs
+            .get_extension_unique(&oid!(2.23.133 .5 .4 .4))
+            .unwrap()
+            .unwrap_or_else(|| panic!("UEID extension missing (mldsa)"));
+        let parsed_ueid = asn1::parse_single::<Ueid>(ueid_ext.value).unwrap();
+        assert_eq!(parsed_ueid.ueid, label_bytes.as_slice());
+
+        assert!(
+            tbs.extensions()
+                .iter()
+                .any(|e| e.oid.to_id_string() == "2.23.133.5.4.5"),
+            "tcbInfo extension missing (mldsa)"
+        );
+    }
+
+    #[cfg(feature = "ml-dsa")]
+    #[test]
+    fn test_encode_tbs_mldsa() {
+        run_encode_tbs_mldsa(1, false);
+        run_encode_tbs_mldsa(MAX_HANDLES, true);
+    }
+
+    // ---- encode_certification_request_info correctness tests ----
+
+    // A minimal ASN.1 struct to parse the first three fields of a
+    // CertificationRequestInfo SEQUENCE (version, subject, subjectPKInfo).
+    // The attributes field at position 4 is captured by a raw Tlv so that
+    // parse_single doesn't fail on trailing bytes.
+    #[derive(asn1::Asn1Read)]
+    struct CertReqInfoParsed<'a> {
+        version: u64,
+        subject: asn1::Tlv<'a>,
+        subject_pki: asn1::Tlv<'a>,
+        attributes: asn1::Tlv<'a>,
+    }
+
+    #[cfg(not(feature = "ml-dsa"))]
+    fn run_encode_cri_ecdsa(n_nodes: usize, max_size: bool) {
+        let test_pub = EcdsaPub::from_slice(&[0xAA; ECC_INT_SIZE], &[0xBB; ECC_INT_SIZE]);
+        let pub_key = match DPE_PROFILE.alg() {
+            #[cfg(feature = "p256")]
+            SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit256) => {
+                PubKey::Ecdsa(EcdsaPubKey::Ecdsa256(test_pub))
+            }
+            #[cfg(feature = "p384")]
+            SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384) => {
+                PubKey::Ecdsa(EcdsaPubKey::Ecdsa384(test_pub))
+            }
+            _ => panic!("not an ECDSA profile"),
+        };
+
+        let label_bytes: Vec<u8> = if max_size {
+            vec![0xAB; MAX_UEID_SIZE]
+        } else {
+            vec![0u8; DPE_PROFILE.hash_size()]
+        };
+        let other_name_value: Vec<u8> = if max_size {
+            std::iter::repeat(b'X').take(MAX_OTHER_NAME_SIZE).collect()
+        } else {
+            DEFAULT_OTHER_NAME_VALUE.as_bytes().to_vec()
+        };
+
+        let tci_nodes = make_tci_nodes(n_nodes);
+        let ski = [0xBBu8; MAX_KEY_IDENTIFIER_SIZE];
+        let mut other_name_av = ArrayVec::new();
+        other_name_av
+            .try_extend_from_slice(&other_name_value)
+            .unwrap();
+        let measurements = MeasurementData {
+            label: &label_bytes,
+            tci_nodes: &tci_nodes,
+            is_ca: false,
+            supports_recursive: true,
+            subject_key_identifier: ski,
+            authority_key_identifier: ski,
+            subject_alt_name: Some(SubjectAltName::OtherName(OtherName {
+                oid: DEFAULT_OTHER_NAME_OID,
+                other_name: other_name_av,
+            })),
+        };
+
+        let mut buf = vec![0u8; 65536];
+        let mut w = CertWriter::new(&mut buf, DPE_PROFILE, true);
+        let n = w
+            .encode_certification_request_info(&pub_key, &TEST_SUBJECT_NAME, &measurements)
+            .unwrap();
+
+        let cri = asn1::parse_single::<CertReqInfoParsed>(&buf[..n])
+            .unwrap_or_else(|e| panic!("CertReqInfo parse failed (ecdsa): {:?}", e));
+
+        assert_eq!(cri.version, 0, "CRI version must be 0");
+
+        // Subject must be parseable as an X509Name
+        let (_, subject_name) = X509Name::from_der(cri.subject.full_data())
+            .expect("CRI subject must parse as X509Name");
+        let expected_subject = format!(
+            "CN={}, serialNumber={}",
+            str::from_utf8(TEST_SUBJECT_NAME.cn.bytes()).unwrap(),
+            str::from_utf8(TEST_SUBJECT_NAME.serial.bytes()).unwrap(),
+        );
+        assert_eq!(
+            subject_name
+                .to_string_with_registry(oid_registry())
+                .unwrap(),
+            expected_subject,
+        );
+
+        // subjectPKInfo must be parseable
+        SubjectPublicKeyInfo::from_der(cri.subject_pki.full_data())
+            .expect("CRI subjectPKInfo must parse");
+
+        // attributes field must start with [0] IMPLICIT context tag (0xA0)
+        assert_eq!(
+            cri.attributes.full_data()[0],
+            0xA0,
+            "attributes must start with [0] context tag"
+        );
+
+        // UEID OID bytes must appear within the attributes
+        let ueid_oid_bytes: &[u8] = &[0x67, 0x81, 0x05, 0x05, 0x04, 0x04];
+        assert!(
+            cri.attributes
+                .full_data()
+                .windows(ueid_oid_bytes.len())
+                .any(|w| w == ueid_oid_bytes),
+            "UEID OID not found in CRI attributes"
+        );
+    }
+
+    #[cfg(not(feature = "ml-dsa"))]
+    #[test]
+    fn test_encode_cri_ecdsa() {
+        run_encode_cri_ecdsa(1, false);
+        run_encode_cri_ecdsa(MAX_HANDLES, true);
+    }
+
+    #[cfg(feature = "ml-dsa")]
+    fn run_encode_cri_mldsa(n_nodes: usize, max_size: bool) {
+        const ALGORITHM: MldsaAlgorithm = match DPE_PROFILE.alg() {
+            SignatureAlgorithm::Mldsa(a) => a,
+            _ => panic!("non ml-dsa profile"),
+        };
+        let test_pub = MldsaPublicKey::from_slice(&[0xAAu8; ALGORITHM.public_key_size()]);
+        let pub_key = PubKey::Mldsa(test_pub);
+
+        let label_bytes: Vec<u8> = if max_size {
+            vec![0xAB; MAX_UEID_SIZE]
+        } else {
+            vec![0u8; DPE_PROFILE.hash_size()]
+        };
+        let other_name_value: Vec<u8> = if max_size {
+            std::iter::repeat(b'X').take(MAX_OTHER_NAME_SIZE).collect()
+        } else {
+            DEFAULT_OTHER_NAME_VALUE.as_bytes().to_vec()
+        };
+
+        let tci_nodes = make_tci_nodes(n_nodes);
+        let ski = [0xBBu8; MAX_KEY_IDENTIFIER_SIZE];
+        let mut other_name_av = ArrayVec::new();
+        other_name_av
+            .try_extend_from_slice(&other_name_value)
+            .unwrap();
+        let measurements = MeasurementData {
+            label: &label_bytes,
+            tci_nodes: &tci_nodes,
+            is_ca: false,
+            supports_recursive: true,
+            subject_key_identifier: ski,
+            authority_key_identifier: ski,
+            subject_alt_name: Some(SubjectAltName::OtherName(OtherName {
+                oid: DEFAULT_OTHER_NAME_OID,
+                other_name: other_name_av,
+            })),
+        };
+
+        let mut buf = vec![0u8; 65536];
+        let mut w = CertWriter::new(&mut buf, DPE_PROFILE, true);
+        let n = w
+            .encode_certification_request_info(&pub_key, &TEST_SUBJECT_NAME, &measurements)
+            .unwrap();
+
+        let cri = asn1::parse_single::<CertReqInfoParsed>(&buf[..n])
+            .unwrap_or_else(|e| panic!("CertReqInfo parse failed (mldsa): {:?}", e));
+
+        assert_eq!(cri.version, 0);
+        X509Name::from_der(cri.subject.full_data()).expect("mldsa CRI subject must parse");
+        SubjectPublicKeyInfo::from_der(cri.subject_pki.full_data())
+            .expect("mldsa CRI subjectPKInfo must parse");
+        assert_eq!(cri.attributes.full_data()[0], 0xA0);
+
+        let ueid_oid_bytes: &[u8] = &[0x67, 0x81, 0x05, 0x05, 0x04, 0x04];
+        assert!(
+            cri.attributes
+                .full_data()
+                .windows(ueid_oid_bytes.len())
+                .any(|w| w == ueid_oid_bytes),
+            "UEID OID not found in mldsa CRI attributes"
+        );
+    }
+
+    #[cfg(feature = "ml-dsa")]
+    #[test]
+    fn test_encode_cri_mldsa() {
+        run_encode_cri_mldsa(1, false);
+        run_encode_cri_mldsa(MAX_HANDLES, true);
+    }
+
+    // ---- encode_csr correctness tests ----
+
+    #[cfg(not(feature = "ml-dsa"))]
+    fn run_encode_csr_ecdsa(n_nodes: usize, max_size: bool) {
+        let test_pub = EcdsaPub::from_slice(&[0xAA; ECC_INT_SIZE], &[0xBB; ECC_INT_SIZE]);
+        let pub_key = match DPE_PROFILE.alg() {
+            #[cfg(feature = "p256")]
+            SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit256) => {
+                PubKey::Ecdsa(EcdsaPubKey::Ecdsa256(test_pub))
+            }
+            #[cfg(feature = "p384")]
+            SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384) => {
+                PubKey::Ecdsa(EcdsaPubKey::Ecdsa384(test_pub))
+            }
+            _ => panic!("not an ECDSA profile"),
+        };
+        let test_sig = match DPE_PROFILE.alg() {
+            #[cfg(feature = "p256")]
+            SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit256) => Signature::Ecdsa(
+                EcdsaSig::from_slice(&[0xCC; ECC_INT_SIZE], &[0xDD; ECC_INT_SIZE]).into(),
+            ),
+            #[cfg(feature = "p384")]
+            SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384) => Signature::Ecdsa(
+                EcdsaSig::from_slice(&[0xCC; ECC_INT_SIZE], &[0xDD; ECC_INT_SIZE]).into(),
+            ),
+            _ => panic!("not an ECDSA profile"),
+        };
+        let mut sign_cb = |_data: &[u8], _use_derived: bool| Ok(test_sig.clone());
+
+        let label_bytes: Vec<u8> = if max_size {
+            vec![0xAB; MAX_UEID_SIZE]
+        } else {
+            vec![0u8; DPE_PROFILE.hash_size()]
+        };
+        let other_name_value: Vec<u8> = if max_size {
+            std::iter::repeat(b'X').take(MAX_OTHER_NAME_SIZE).collect()
+        } else {
+            DEFAULT_OTHER_NAME_VALUE.as_bytes().to_vec()
+        };
+
+        let tci_nodes = make_tci_nodes(n_nodes);
+        let ski = [0xBBu8; MAX_KEY_IDENTIFIER_SIZE];
+        let mut other_name_av = ArrayVec::new();
+        other_name_av
+            .try_extend_from_slice(&other_name_value)
+            .unwrap();
+        let measurements = MeasurementData {
+            label: &label_bytes,
+            tci_nodes: &tci_nodes,
+            is_ca: false,
+            supports_recursive: true,
+            subject_key_identifier: ski,
+            authority_key_identifier: ski,
+            subject_alt_name: Some(SubjectAltName::OtherName(OtherName {
+                oid: DEFAULT_OTHER_NAME_OID,
+                other_name: other_name_av,
+            })),
+        };
+
+        let mut buf = vec![0u8; 65536];
+        let mut w = CertWriter::new(&mut buf, DPE_PROFILE, true);
+        let n = w
+            .encode_csr(&mut sign_cb, &pub_key, &TEST_SUBJECT_NAME, &measurements)
+            .unwrap();
+
+        let (_, csr) = X509CertificationRequest::from_der(&buf[..n])
+            .unwrap_or_else(|e| panic!("CSR parse failed (ecdsa): {:?}", e));
+        let cri = &csr.certification_request_info;
+
+        assert_eq!(cri.version.0, 0, "CRI version must be 0");
+
+        // Signature algorithm OID
+        let expected_sig_alg = match DPE_PROFILE.alg() {
+            #[cfg(feature = "p256")]
+            SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit256) => "1.2.840.10045.4.3.2",
+            #[cfg(feature = "p384")]
+            SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384) => "1.2.840.10045.4.3.3",
+            _ => panic!("not an ECDSA profile"),
+        };
+        assert_eq!(
+            csr.signature_algorithm.algorithm.to_id_string(),
+            expected_sig_alg,
+        );
+
+        // Signature value: BIT STRING content must be DER SEQUENCE { INTEGER(r), INTEGER(s) }
+        assert_eq!(
+            csr.signature_value.data.as_ref(),
+            expected_ecdsa_sig_der().as_slice(),
+        );
+
+        // Subject round-trips
+        let expected_subject = format!(
+            "CN={}, serialNumber={}",
+            str::from_utf8(TEST_SUBJECT_NAME.cn.bytes()).unwrap(),
+            str::from_utf8(TEST_SUBJECT_NAME.serial.bytes()).unwrap(),
+        );
+        assert_eq!(
+            cri.subject.to_string_with_registry(oid_registry()).unwrap(),
+            expected_subject,
+        );
+
+        // DICE UEID extension in requested extensions
+        assert!(
+            csr.requested_extensions()
+                .map(|mut it| it.any(|_| true))
+                .unwrap_or(false),
+            "CSR must have requested extensions"
+        );
+    }
+
+    #[cfg(not(feature = "ml-dsa"))]
+    #[test]
+    fn test_encode_csr_ecdsa() {
+        run_encode_csr_ecdsa(1, false);
+        run_encode_csr_ecdsa(MAX_HANDLES, true);
+    }
+
+    #[cfg(feature = "ml-dsa")]
+    fn run_encode_csr_mldsa(n_nodes: usize, max_size: bool) {
+        const ALGORITHM: MldsaAlgorithm = match DPE_PROFILE.alg() {
+            SignatureAlgorithm::Mldsa(a) => a,
+            _ => panic!("non ml-dsa profile"),
+        };
+        let test_pub = MldsaPublicKey::from_slice(&[0xAAu8; ALGORITHM.public_key_size()]);
+        let pub_key = PubKey::Mldsa(test_pub);
+        let test_sig = Signature::Mldsa(MldsaSignature([0xBBu8; ALGORITHM.signature_size()]));
+        let mut sign_cb = |_data: &[u8], _use_derived: bool| Ok(test_sig.clone());
+
+        let label_bytes: Vec<u8> = if max_size {
+            vec![0xAB; MAX_UEID_SIZE]
+        } else {
+            vec![0u8; DPE_PROFILE.hash_size()]
+        };
+        let other_name_value: Vec<u8> = if max_size {
+            std::iter::repeat(b'X').take(MAX_OTHER_NAME_SIZE).collect()
+        } else {
+            DEFAULT_OTHER_NAME_VALUE.as_bytes().to_vec()
+        };
+
+        let tci_nodes = make_tci_nodes(n_nodes);
+        let ski = [0xBBu8; MAX_KEY_IDENTIFIER_SIZE];
+        let mut other_name_av = ArrayVec::new();
+        other_name_av
+            .try_extend_from_slice(&other_name_value)
+            .unwrap();
+        let measurements = MeasurementData {
+            label: &label_bytes,
+            tci_nodes: &tci_nodes,
+            is_ca: false,
+            supports_recursive: true,
+            subject_key_identifier: ski,
+            authority_key_identifier: ski,
+            subject_alt_name: Some(SubjectAltName::OtherName(OtherName {
+                oid: DEFAULT_OTHER_NAME_OID,
+                other_name: other_name_av,
+            })),
+        };
+
+        let mut buf = vec![0u8; 65536];
+        let mut w = CertWriter::new(&mut buf, DPE_PROFILE, true);
+        let n = w
+            .encode_csr(&mut sign_cb, &pub_key, &TEST_SUBJECT_NAME, &measurements)
+            .unwrap();
+
+        let (_, csr) = X509CertificationRequest::from_der(&buf[..n])
+            .unwrap_or_else(|e| panic!("CSR parse failed (mldsa): {:?}", e));
+        let cri = &csr.certification_request_info;
+
+        assert_eq!(cri.version.0, 0);
+        assert_eq!(
+            csr.signature_algorithm.algorithm.as_bytes(),
+            const_oid::db::fips204::ID_ML_DSA_87.as_bytes()
+        );
+
+        // Signature value: BIT STRING content is raw ML-DSA bytes
+        assert_eq!(
+            csr.signature_value.data.as_ref(),
+            &[0xBBu8; ALGORITHM.signature_size()][..],
+        );
+
+        assert!(
+            csr.requested_extensions()
+                .map(|mut it| it.any(|_| true))
+                .unwrap_or(false),
+            "mldsa CSR must have requested extensions"
+        );
+    }
+
+    #[cfg(feature = "ml-dsa")]
+    #[test]
+    fn test_encode_csr_mldsa() {
+        run_encode_csr_mldsa(1, false);
+        run_encode_csr_mldsa(MAX_HANDLES, true);
+    }
+
+    // ---- encode_signer_info correctness tests ----
+
+    #[cfg(not(feature = "ml-dsa"))]
+    fn run_encode_signer_info_ecdsa(
+        issuer_der: &[u8],
+        serial: &[u8],
+        ski_bytes: &[u8; MAX_KEY_IDENTIFIER_SIZE],
+    ) {
+        let test_sig = match DPE_PROFILE.alg() {
+            #[cfg(feature = "p256")]
+            SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit256) => Signature::Ecdsa(
+                EcdsaSig::from_slice(&[0xCC; ECC_INT_SIZE], &[0xDD; ECC_INT_SIZE]).into(),
+            ),
+            #[cfg(feature = "p384")]
+            SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384) => Signature::Ecdsa(
+                EcdsaSig::from_slice(&[0xCC; ECC_INT_SIZE], &[0xDD; ECC_INT_SIZE]).into(),
+            ),
+            _ => panic!("not an ECDSA profile"),
+        };
+
+        let expected_sig_alg = match DPE_PROFILE.alg() {
+            #[cfg(feature = "p256")]
+            SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit256) => "1.2.840.10045.4.3.2",
+            #[cfg(feature = "p384")]
+            SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384) => "1.2.840.10045.4.3.3",
+            _ => panic!("not an ECDSA profile"),
+        };
+        let expected_hash_alg = match DPE_PROFILE.alg() {
+            #[cfg(feature = "p256")]
+            SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit256) => "2.16.840.1.101.3.4.2.1",
+            #[cfg(feature = "p384")]
+            SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384) => "2.16.840.1.101.3.4.2.2",
+            _ => panic!("not an ECDSA profile"),
+        };
+
+        // -- IssuerAndSerialNumber variant --
+        let mut isn_name = ArrayVec::new();
+        isn_name.try_extend_from_slice(issuer_der).unwrap();
+        let mut isn_serial = ArrayVec::new();
+        isn_serial.try_extend_from_slice(serial).unwrap();
+        let sid_isn = SignerIdentifier::IssuerAndSerialNumber {
+            issuer_name: isn_name,
+            serial_number: isn_serial,
+        };
+
+        let mut buf = vec![0u8; 65536];
+        let mut w = CertWriter::new(&mut buf, DPE_PROFILE, true);
+        let n = w.encode_signer_info(&test_sig, &sid_isn).unwrap();
+
+        let si = CmsSignerInfo::from_der(&buf[..n])
+            .unwrap_or_else(|e| panic!("SignerInfo (ISN) parse failed (ecdsa): {:?}", e));
+
+        assert_eq!(
+            si.version,
+            CmsVersion::V1,
+            "IssuerAndSerialNumber → version 1"
+        );
+        assert_eq!(
+            si.signature_algorithm.oid,
+            ObjectIdentifier::new_unwrap(expected_sig_alg)
+        );
+        assert!(si
+            .digest_alg
+            .assert_algorithm_oid(ObjectIdentifier::new_unwrap(expected_hash_alg))
+            .is_ok());
+        assert_eq!(si.signature.as_bytes(), expected_ecdsa_sig_der().as_slice());
+
+        // Verify the ISN fields
+        match &si.sid {
+            CmsSignerIdentifier::IssuerAndSerialNumber(isn) => {
+                // serial_number.as_bytes() includes a leading 0x00 for DER INTEGER
+                // sign-extension when the high bit is set; strip it before comparing.
+                assert_eq!(
+                    strip_der_int_leading_zero(isn.serial_number.as_bytes()),
+                    serial,
+                );
+                let issuer_der_roundtrip = isn.issuer.to_der().unwrap();
+                assert_eq!(issuer_der_roundtrip.as_slice(), issuer_der);
+            }
+            _ => panic!("expected IssuerAndSerialNumber SignerIdentifier"),
+        }
+
+        // -- SubjectKeyIdentifier variant --
+        let mut ski_av = ArrayVec::new();
+        ski_av.try_extend_from_slice(ski_bytes).unwrap();
+        let sid_ski = SignerIdentifier::SubjectKeyIdentifier(ski_av);
+
+        let mut buf2 = vec![0u8; 65536];
+        let mut w2 = CertWriter::new(&mut buf2, DPE_PROFILE, true);
+        let n2 = w2.encode_signer_info(&test_sig, &sid_ski).unwrap();
+
+        let si2 = CmsSignerInfo::from_der(&buf2[..n2])
+            .unwrap_or_else(|e| panic!("SignerInfo (SKI) parse failed (ecdsa): {:?}", e));
+
+        assert_eq!(
+            si2.version,
+            CmsVersion::V3,
+            "SubjectKeyIdentifier → version 3"
+        );
+        assert_eq!(
+            si2.signature_algorithm.oid,
+            ObjectIdentifier::new_unwrap(expected_sig_alg)
+        );
+        assert_eq!(
+            si2.signature.as_bytes(),
+            expected_ecdsa_sig_der().as_slice()
+        );
+
+        match &si2.sid {
+            CmsSignerIdentifier::SubjectKeyIdentifier(ski) => {
+                // Our encoder places the OCTET STRING TLV inside the [0] context tag
+                // (tag 0x04 + 1-byte length + value bytes). Skip those 2 prefix bytes.
+                let raw = ski.0.as_bytes();
+                assert_eq!(&raw[2..], ski_bytes);
+            }
+            _ => panic!("expected SubjectKeyIdentifier SignerIdentifier"),
+        }
+    }
+
+    #[cfg(not(feature = "ml-dsa"))]
+    #[test]
+    fn test_encode_signer_info_ecdsa() {
+        // Typical case: small issuer name that fits within MAX_ISSUER_NAME_SIZE=128
+        let issuer_der_typical = encode_issuer_der(14, 20);
+        let serial_typical = TEST_SERIAL.to_vec();
+        let ski_typical = [0x11u8; MAX_KEY_IDENTIFIER_SIZE];
+        run_encode_signer_info_ecdsa(&issuer_der_typical, &serial_typical, &ski_typical);
+
+        // Max case: larger issuer name (still fits in 128), max-sized serial, max key-id
+        // encode_issuer_der(40, 50) produces ~114 bytes DER < MAX_ISSUER_NAME_SIZE=128
+        let issuer_der_max = encode_issuer_der(40, 50);
+        let serial_max = vec![0xFF; MAX_SN_SIZE];
+        let ski_max = [0xFFu8; MAX_KEY_IDENTIFIER_SIZE];
+        run_encode_signer_info_ecdsa(&issuer_der_max, &serial_max, &ski_max);
+    }
+
+    #[cfg(feature = "ml-dsa")]
+    fn run_encode_signer_info_mldsa(
+        issuer_der: &[u8],
+        serial: &[u8],
+        ski_bytes: &[u8; MAX_KEY_IDENTIFIER_SIZE],
+    ) {
+        const ALGORITHM: MldsaAlgorithm = match DPE_PROFILE.alg() {
+            SignatureAlgorithm::Mldsa(a) => a,
+            _ => panic!("non ml-dsa profile"),
+        };
+        let test_sig = Signature::Mldsa(MldsaSignature([0xBBu8; ALGORITHM.signature_size()]));
+
+        // -- IssuerAndSerialNumber variant --
+        let mut isn_name = ArrayVec::new();
+        isn_name.try_extend_from_slice(issuer_der).unwrap();
+        let mut isn_serial = ArrayVec::new();
+        isn_serial.try_extend_from_slice(serial).unwrap();
+        let sid_isn = SignerIdentifier::IssuerAndSerialNumber {
+            issuer_name: isn_name,
+            serial_number: isn_serial,
+        };
+
+        let mut buf = vec![0u8; 1_048_576]; // MLDSA sig is large
+        let mut w = CertWriter::new(&mut buf, DPE_PROFILE, true);
+        let n = w.encode_signer_info(&test_sig, &sid_isn).unwrap();
+
+        let si = CmsSignerInfo::from_der(&buf[..n])
+            .unwrap_or_else(|e| panic!("SignerInfo (ISN/mldsa) parse failed: {:?}", e));
+
+        assert_eq!(si.version, CmsVersion::V1);
+        assert_eq!(
+            si.signature_algorithm.oid,
+            ObjectIdentifier::new_unwrap("2.16.840.1.101.3.4.3.19")
+        );
+        assert_eq!(
+            si.signature.as_bytes(),
+            &[0xBBu8; ALGORITHM.signature_size()][..]
+        );
+
+        match &si.sid {
+            CmsSignerIdentifier::IssuerAndSerialNumber(isn) => {
+                assert_eq!(
+                    strip_der_int_leading_zero(isn.serial_number.as_bytes()),
+                    serial,
+                );
+            }
+            _ => panic!("expected IssuerAndSerialNumber for mldsa"),
+        }
+
+        // -- SubjectKeyIdentifier variant --
+        let mut ski_av = ArrayVec::new();
+        ski_av.try_extend_from_slice(ski_bytes).unwrap();
+        let sid_ski = SignerIdentifier::SubjectKeyIdentifier(ski_av);
+
+        let mut buf2 = vec![0u8; 1_048_576];
+        let mut w2 = CertWriter::new(&mut buf2, DPE_PROFILE, true);
+        let n2 = w2.encode_signer_info(&test_sig, &sid_ski).unwrap();
+
+        let si2 = CmsSignerInfo::from_der(&buf2[..n2])
+            .unwrap_or_else(|e| panic!("SignerInfo (SKI/mldsa) parse failed: {:?}", e));
+
+        assert_eq!(si2.version, CmsVersion::V3);
+        assert_eq!(
+            si2.signature.as_bytes(),
+            &[0xBBu8; ALGORITHM.signature_size()][..]
+        );
+
+        match &si2.sid {
+            CmsSignerIdentifier::SubjectKeyIdentifier(ski) => {
+                let raw = ski.0.as_bytes();
+                assert_eq!(&raw[2..], ski_bytes);
+            }
+            _ => panic!("expected SubjectKeyIdentifier for mldsa"),
+        }
+    }
+
+    #[cfg(feature = "ml-dsa")]
+    #[test]
+    fn test_encode_signer_info_mldsa() {
+        let issuer_der_typical = encode_issuer_der(14, 20);
+        let serial_typical = TEST_SERIAL.to_vec();
+        let ski_typical = [0x11u8; MAX_KEY_IDENTIFIER_SIZE];
+        run_encode_signer_info_mldsa(&issuer_der_typical, &serial_typical, &ski_typical);
+
+        let issuer_der_max = encode_issuer_der(40, 60);
+        let serial_max = vec![0xFF; MAX_SN_SIZE];
+        let ski_max = [0xFFu8; MAX_KEY_IDENTIFIER_SIZE];
+        run_encode_signer_info_mldsa(&issuer_der_max, &serial_max, &ski_max);
     }
 }
