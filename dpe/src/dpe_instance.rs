@@ -335,7 +335,7 @@ impl DpeInstance {
         let mut uses_internal_input_dice = false;
 
         // Hash each node.
-        for status in ChildToRootIter::new(start_idx, &state.contexts) {
+        for status in ChildToRootIter::new(start_idx, &state.contexts)? {
             let context = status?;
 
             hasher.update(context.tci.as_bytes())?;
@@ -622,7 +622,7 @@ pub mod tests {
         let (crypto, _platform, state) = env.get();
         let digest = crypto
             .with_hasher(&|hasher| {
-                for result in ChildToRootIter::new(leaf_idx, &state.contexts) {
+                for result in ChildToRootIter::new(leaf_idx, &state.contexts).unwrap() {
                     let context = result.unwrap();
                     hasher.update(context.tci.as_bytes()).unwrap();
                     hasher
