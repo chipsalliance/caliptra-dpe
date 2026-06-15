@@ -439,12 +439,11 @@ mod tests {
     };
     use caliptra_cfi_lib::CfiCounter;
     use caliptra_dpe_crypto::artifacts;
+    #[cfg(not(feature = "ml-dsa"))]
+    use caliptra_dpe_crypto::ecdsa::EcdsaPub;
     #[cfg(feature = "ml-dsa")]
     use caliptra_dpe_crypto::ml_dsa::{MldsaAlgorithm, MldsaPublicKey};
-    use caliptra_dpe_crypto::{
-        ecdsa::{EcdsaAlgorithm, EcdsaPub},
-        PubKey, SignatureAlgorithm,
-    };
+    use caliptra_dpe_crypto::{ecdsa::EcdsaAlgorithm, PubKey, SignatureAlgorithm};
     use cms::{
         content_info::{CmsVersion, ContentInfo},
         signed_data::{SignedData, SignerIdentifier},
