@@ -3,7 +3,7 @@
 use crate::{
     context::{Context, ContextState, ContextType},
     dpe_instance::flags_iter,
-    error::DpeStatus,
+    error::DpeErrorCode,
     tci::TciNodeData,
     State, MAX_HANDLES,
 };
@@ -97,11 +97,12 @@ pub struct DpeValidator<'a> {
 impl DpeValidator<'_> {
     /// Validates that the shape of the DPE instance is well-formed and that
     /// there is no illegal state present within the DPE.
-    pub fn validate_dpe(&self) -> Result<(), DpeStatus> {
-        self.validate_dpe_state().map_err(DpeStatus::Validation)?;
+    pub fn validate_dpe(&self) -> Result<(), DpeErrorCode> {
+        self.validate_dpe_state()
+            .map_err(DpeErrorCode::Validation)?;
 
         self.validate_context_forest()
-            .map_err(DpeStatus::Validation)
+            .map_err(DpeErrorCode::Validation)
     }
 
     /// Returns an error if there is any illegal state or inconsistencies

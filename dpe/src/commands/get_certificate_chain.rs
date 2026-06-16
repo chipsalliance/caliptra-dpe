@@ -2,7 +2,7 @@
 use super::CommandExecution;
 use crate::{
     dpe_instance::{DpeEnv, DpeInstance},
-    error::DpeStatus,
+    error::DpeErrorCode,
     mutresp,
     response::GetCertificateChainResp,
 };
@@ -34,10 +34,10 @@ impl CommandExecution for GetCertificateChainCmd {
         env: &mut dyn DpeEnv,
         _locality: u32,
         out: &mut [u8],
-    ) -> Result<usize, DpeStatus> {
+    ) -> Result<usize, DpeErrorCode> {
         // Make sure the operation is supported.
         if self.size > MAX_CHUNK_SIZE as u32 {
-            return Err(DpeStatus::InvalidArgument);
+            return Err(DpeErrorCode::InvalidArgument);
         }
         let response = mutresp::<GetCertificateChainResp>(dpe.profile, out)?;
 
@@ -48,7 +48,7 @@ impl CommandExecution for GetCertificateChainCmd {
         *response = GetCertificateChainResp {
             certificate_chain: cert_chunk,
             certificate_size: len,
-            resp_hdr: dpe.response_hdr(DpeStatus::NoError),
+            resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
         };
         Ok(size_of_val(response))
     }
@@ -100,7 +100,7 @@ mod tests {
         let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
         assert_eq!(
-            Err(DpeStatus::InvalidArgument),
+            Err(DpeErrorCode::InvalidArgument),
             GetCertificateChainCmd {
                 size: MAX_CHUNK_SIZE as u32 + 1,
                 ..TEST_GET_CERTIFICATE_CHAIN_CMD

@@ -12,7 +12,7 @@ use super::CommandExecution;
 use crate::{
     context::ContextState,
     dpe_instance::{DpeEnv, DpeInstance},
-    error::{DpeStatus, InternalErrorCode},
+    error::{DpeErrorCode, InternalErrorCode},
     mutresp,
     response::UpdateContextMeasurementResp,
     tci::TciMeasurement,
@@ -57,10 +57,10 @@ impl CommandExecution for UpdateContextMeasurementCmd {
         env: &mut dyn DpeEnv,
         locality: u32,
         out: &mut [u8],
-    ) -> Result<usize, DpeStatus> {
+    ) -> Result<usize, DpeErrorCode> {
         // PARENT_CONTEXT_HANDLE must not be the default (null) handle.
         if self.parent_handle.is_default() {
-            return Err(DpeStatus::InvalidArgument);
+            return Err(DpeErrorCode::InvalidArgument);
         }
 
         // PARENT_CONTEXT_HANDLE must exist in the caller's locality.
@@ -68,7 +68,7 @@ impl CommandExecution for UpdateContextMeasurementCmd {
         let parent_idx = env
             .state()
             .get_active_context_pos(&self.parent_handle, locality)
-            .map_err(|_| DpeStatus::InvalidParentLocality)?;
+            .map_err(|_| DpeErrorCode::InvalidParentLocality)?;
 
         // Identify the direct child of parent_handle by INPUT_TYPE (tci_type).
         // Children is a Copy type so this does not hold a borrow on env.state().
@@ -76,7 +76,7 @@ impl CommandExecution for UpdateContextMeasurementCmd {
             .state()
             .contexts
             .get(parent_idx)
-            .ok_or(DpeStatus::from(InternalErrorCode::ContextIndexOob))?
+            .ok_or(DpeErrorCode::from(InternalErrorCode::ContextIndexOob))?
             .children;
         let child_idx = parent_children
             .iter()
@@ -89,7 +89,7 @@ impl CommandExecution for UpdateContextMeasurementCmd {
                     })
                     .unwrap_or(false)
             })
-            .ok_or(DpeStatus::InvalidArgument)?;
+            .ok_or(DpeErrorCode::InvalidArgument)?;
 
         let response = mutresp::<UpdateContextMeasurementResp>(dpe.profile, out)?;
 
@@ -98,7 +98,7 @@ impl CommandExecution for UpdateContextMeasurementCmd {
             .state()
             .contexts
             .get(child_idx)
-            .ok_or(DpeStatus::from(InternalErrorCode::ChildIndexOob))?;
+            .ok_or(DpeErrorCode::from(InternalErrorCode::ChildIndexOob))?;
         // The child's locality authorizes the TCI update (parent provides the authorization).
         let child_locality = tmp_child.locality;
 
@@ -110,12 +110,12 @@ impl CommandExecution for UpdateContextMeasurementCmd {
             .state()
             .contexts
             .get(parent_idx)
-            .ok_or(DpeStatus::from(InternalErrorCode::ContextIndexOob))?;
+            .ok_or(DpeErrorCode::from(InternalErrorCode::ContextIndexOob))?;
         dpe.roll_onetime_use_handle(env, &mut tmp_parent)?;
         *env.state()
             .contexts
             .get_mut(parent_idx)
-            .ok_or(DpeStatus::from(InternalErrorCode::ContextIndexOob))? = tmp_parent;
+            .ok_or(DpeErrorCode::from(InternalErrorCode::ContextIndexOob))? = tmp_parent;
 
         // Rotate the child handle.
         dpe.roll_onetime_use_handle(env, &mut tmp_child)?;
@@ -124,10 +124,10 @@ impl CommandExecution for UpdateContextMeasurementCmd {
         *env.state()
             .contexts
             .get_mut(child_idx)
-            .ok_or(DpeStatus::from(InternalErrorCode::ChildIndexOob))? = tmp_child;
+            .ok_or(DpeErrorCode::from(InternalErrorCode::ChildIndexOob))? = tmp_child;
 
         *response = UpdateContextMeasurementResp {
-            resp_hdr: dpe.response_hdr(DpeStatus::NoError),
+            resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
             new_context_handle: tmp_child.handle,
             new_parent_context_handle: tmp_parent.handle,
         };
@@ -146,7 +146,7 @@ mod tests {
         },
         context::ContextHandle,
         dpe_instance::{tests::TEST_LOCALITIES, DpeInstance},
-        error::DpeStatus,
+        error::DpeErrorCode,
         response::Response,
         support::Support,
         test_env, DpeFlags, State, TCI_SIZE,
@@ -247,7 +247,7 @@ mod tests {
         let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
         assert_eq!(
-            Err(DpeStatus::InvalidArgument),
+            Err(DpeErrorCode::InvalidArgument),
             UpdateContextMeasurementCmd {
                 parent_handle: ContextHandle::default(),
                 data: TciMeasurement([0; TCI_SIZE]),
@@ -267,7 +267,7 @@ mod tests {
         let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
 
         assert_eq!(
-            Err(DpeStatus::InvalidParentLocality),
+            Err(DpeErrorCode::InvalidParentLocality),
             UpdateContextMeasurementCmd {
                 parent_handle: ContextHandle([0xde; ContextHandle::SIZE]),
                 data: TciMeasurement([0; TCI_SIZE]),
@@ -296,7 +296,7 @@ mod tests {
 
         // tci_type=99 does not match any child.
         assert_eq!(
-            Err(DpeStatus::InvalidArgument),
+            Err(DpeErrorCode::InvalidArgument),
             UpdateContextMeasurementCmd {
                 parent_handle,
                 data: TciMeasurement([0; TCI_SIZE]),

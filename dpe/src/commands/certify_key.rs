@@ -3,7 +3,7 @@ use super::CommandExecution;
 use crate::{
     context::ContextHandle,
     dpe_instance::{DpeEnv, DpeInstance},
-    error::{DpeStatus, InternalErrorCode},
+    error::{DpeErrorCode, InternalErrorCode},
     mutresp, okref,
     x509::{create_dpe_cert, CreateDpeCertArgs, CreateDpeCertResult},
     DpeFlags, DpeProfile,
@@ -59,16 +59,16 @@ impl CertifyKeyCommand<'_> {
             DpeProfile::Mldsa87 => {
                 CertifyKeyCommand::parse_command(CertifyKeyCommand::Mldsa87, bytes)
             }
-            _ => Err(DpeStatus::InvalidArgument)?,
+            _ => Err(DpeErrorCode::InvalidArgument)?,
         }
     }
 
     pub fn parse_command<'a, T: FromBytes + KnownLayout + Immutable + 'a>(
         build: impl FnOnce(&'a T) -> CertifyKeyCommand<'a>,
         bytes: &'a [u8],
-    ) -> Result<CertifyKeyCommand<'a>, DpeStatus> {
+    ) -> Result<CertifyKeyCommand<'a>, DpeErrorCode> {
         let (prefix, _remaining_bytes) =
-            T::ref_from_prefix(bytes).map_err(|_| DpeStatus::InvalidArgument)?;
+            T::ref_from_prefix(bytes).map_err(|_| DpeErrorCode::InvalidArgument)?;
         Ok(build(prefix))
     }
 
@@ -98,7 +98,7 @@ impl CertifyKeyCommand<'_> {
         &self,
         p: DpeProfile,
         out: &'a mut [u8],
-    ) -> Result<CertifyKeyResponseBytes<'a>, DpeStatus> {
+    ) -> Result<CertifyKeyResponseBytes<'a>, DpeErrorCode> {
         let r = match self {
             #[cfg(feature = "p256")]
             CertifyKeyCommand::P256(_) => CertifyKeyResponseBytes::P256(mutresp(p, out)?),
@@ -141,7 +141,7 @@ impl CommandExecution for CertifyKeyCommand<'_> {
         env: &mut dyn DpeEnv,
         locality: u32,
         out: &mut [u8],
-    ) -> Result<usize, DpeStatus> {
+    ) -> Result<usize, DpeErrorCode> {
         let (handle, format, label) = match *self {
             #[cfg(feature = "p256")]
             CertifyKeyCommand::P256(cmd) => (&cmd.handle, cmd.format, cmd.label.as_slice()),
@@ -155,22 +155,22 @@ impl CommandExecution for CertifyKeyCommand<'_> {
             .state()
             .contexts
             .get(idx)
-            .ok_or(DpeStatus::from(InternalErrorCode::ContextIndexOob))?;
+            .ok_or(DpeErrorCode::from(InternalErrorCode::ContextIndexOob))?;
 
         if format == Self::FORMAT_X509 {
             if !env.state().support.x509() {
-                return Err(DpeStatus::ArgumentNotSupported);
+                return Err(DpeErrorCode::ArgumentNotSupported);
             }
             if !context.allow_x509() {
-                return Err(DpeStatus::InvalidArgument);
+                return Err(DpeErrorCode::InvalidArgument);
             }
         } else if format == Self::FORMAT_CSR && !env.state().support.csr() {
-            return Err(DpeStatus::ArgumentNotSupported);
+            return Err(DpeErrorCode::ArgumentNotSupported);
         }
 
         // Make sure the command is coming from the right locality.
         if context.locality != locality {
-            return Err(DpeStatus::InvalidLocality);
+            return Err(DpeErrorCode::InvalidLocality);
         }
 
         cfg_if! {
@@ -207,7 +207,7 @@ impl CommandExecution for CertifyKeyCommand<'_> {
                         cfi_assert_eq(format, Self::FORMAT_X509);
                         create_dpe_cert(&args, dpe, env, cert)
                     } else {
-                        Err(DpeStatus::ArgumentNotSupported)
+                        Err(DpeErrorCode::ArgumentNotSupported)
                     }
                 }
             }
@@ -218,11 +218,11 @@ impl CommandExecution for CertifyKeyCommand<'_> {
                         cfi_assert_eq(format, Self::FORMAT_CSR);
                         crate::x509::create_dpe_csr(&args, dpe, env, cert)
                     } else {
-                        Err(DpeStatus::ArgumentNotSupported)
+                        Err(DpeErrorCode::ArgumentNotSupported)
                     }
                 }
             }
-            _ => return Err(DpeStatus::InvalidArgument),
+            _ => return Err(DpeErrorCode::InvalidArgument),
         };
 
         let CreateDpeCertResult {
@@ -242,7 +242,7 @@ impl CommandExecution for CertifyKeyCommand<'_> {
                 resp.derived_pubkey_x = *x;
                 resp.derived_pubkey_y = *y;
                 resp.cert_size = cert_size;
-                resp.resp_hdr = dpe.response_hdr(DpeStatus::NoError);
+                resp.resp_hdr = dpe.response_hdr(DpeErrorCode::NoError);
             }
             #[cfg(feature = "p384")]
             (
@@ -254,7 +254,7 @@ impl CommandExecution for CertifyKeyCommand<'_> {
                 resp.derived_pubkey_x = *x;
                 resp.derived_pubkey_y = *y;
                 resp.cert_size = cert_size;
-                resp.resp_hdr = dpe.response_hdr(DpeStatus::NoError);
+                resp.resp_hdr = dpe.response_hdr(DpeErrorCode::NoError);
             }
             #[cfg(feature = "ml-dsa")]
             (
@@ -264,9 +264,9 @@ impl CommandExecution for CertifyKeyCommand<'_> {
                 resp.new_context_handle = ContextHandle::new_invalid();
                 resp.pubkey = *pubkey;
                 resp.cert_size = cert_size;
-                resp.resp_hdr = dpe.response_hdr(DpeStatus::NoError);
+                resp.resp_hdr = dpe.response_hdr(DpeErrorCode::NoError);
             }
-            _ => Err(DpeStatus::InvalidArgument)?,
+            _ => Err(DpeErrorCode::InvalidArgument)?,
         };
 
         let len = response.size()?;
@@ -300,7 +300,7 @@ impl CommandExecution for CertifyKeyP256Cmd {
         env: &mut dyn DpeEnv,
         locality: u32,
         out: &mut [u8],
-    ) -> Result<usize, DpeStatus> {
+    ) -> Result<usize, DpeErrorCode> {
         CertifyKeyCommand::from(self).execute_serialized(dpe, env, locality, out)
     }
 }
@@ -334,7 +334,7 @@ impl CommandExecution for CertifyKeyP384Cmd {
         env: &mut dyn DpeEnv,
         locality: u32,
         out: &mut [u8],
-    ) -> Result<usize, DpeStatus> {
+    ) -> Result<usize, DpeErrorCode> {
         CertifyKeyCommand::from(self).execute_serialized(dpe, env, locality, out)
     }
 }
@@ -369,7 +369,7 @@ impl CommandExecution for CertifyKeyMldsa87Cmd {
         env: &mut dyn DpeEnv,
         locality: u32,
         out: &mut [u8],
-    ) -> Result<usize, DpeStatus> {
+    ) -> Result<usize, DpeErrorCode> {
         CertifyKeyCommand::from(self).execute_serialized(dpe, env, locality, out)
     }
 }
@@ -406,7 +406,7 @@ impl CertifyKeyResponseBytes<'_> {
         }
     }
 
-    fn size(&self) -> Result<usize, DpeStatus> {
+    fn size(&self) -> Result<usize, DpeErrorCode> {
         match self {
             #[cfg(feature = "p256")]
             CertifyKeyResponseBytes::P256(resp) => Ok(resp.as_bytes_partial()?.len()),

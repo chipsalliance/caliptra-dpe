@@ -3,7 +3,7 @@ use super::CommandExecution;
 use crate::{
     context::{ActiveContextArgs, Context, ContextHandle, ContextType},
     dpe_instance::{DpeEnv, DpeInstance},
-    error::{DpeStatus, InternalErrorCode},
+    error::{DpeErrorCode, InternalErrorCode},
     mutresp,
     response::NewHandleResp,
 };
@@ -60,21 +60,21 @@ impl CommandExecution for InitCtxCmd {
         env: &mut dyn DpeEnv,
         locality: u32,
         out: &mut [u8],
-    ) -> Result<usize, DpeStatus> {
+    ) -> Result<usize, DpeErrorCode> {
         let response = mutresp::<NewHandleResp>(dpe.profile, out)?;
 
         // This function can only be called once for non-simulation contexts.
         if (self.flag_is_default() && env.state().has_initialized())
             || (self.flag_is_simulation() && !env.state().support.simulation())
         {
-            return Err(DpeStatus::ArgumentNotSupported);
+            return Err(DpeErrorCode::ArgumentNotSupported);
         }
 
         // A flag must be set, but it can't be both flags. The base DPE CDI is locked for
         // non-simulation contexts once it is used once to prevent later software from accessing the
         // CDI.
         if !(self.flag_is_default() ^ self.flag_is_simulation()) {
-            return Err(DpeStatus::InvalidArgument);
+            return Err(DpeErrorCode::InvalidArgument);
         }
 
         cfg_if! {
@@ -88,7 +88,7 @@ impl CommandExecution for InitCtxCmd {
         let idx = env
             .state()
             .get_next_inactive_context_pos()
-            .ok_or(DpeStatus::MaxTcis)?;
+            .ok_or(DpeErrorCode::MaxTcis)?;
         let (context_type, handle) = if self.flag_is_default() {
             env.state().has_initialized = true.into();
             (ContextType::Normal, ContextHandle::default())
@@ -100,7 +100,7 @@ impl CommandExecution for InitCtxCmd {
         env.state()
             .contexts
             .get_mut(idx)
-            .ok_or(DpeStatus::from(InternalErrorCode::InitContextIndexOob))?
+            .ok_or(DpeErrorCode::from(InternalErrorCode::InitContextIndexOob))?
             .activate(&ActiveContextArgs {
                 context_type,
                 locality,
@@ -122,7 +122,7 @@ impl CommandExecution for InitCtxCmd {
             });
         *response = NewHandleResp {
             handle,
-            resp_hdr: dpe.response_hdr(DpeStatus::NoError),
+            resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
         };
         Ok(size_of_val(response))
     }
@@ -180,19 +180,19 @@ mod tests {
 
         // Try to double initialize the default context.
         assert_eq!(
-            Err(DpeStatus::ArgumentNotSupported),
+            Err(DpeErrorCode::ArgumentNotSupported),
             InitCtxCmd::new_use_default().execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         );
 
         // Try not setting any flags.
         assert_eq!(
-            Err(DpeStatus::InvalidArgument),
+            Err(DpeErrorCode::InvalidArgument),
             InitCtxCmd::empty().execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         );
 
         // Try simulation when not supported.
         assert_eq!(
-            Err(DpeStatus::ArgumentNotSupported),
+            Err(DpeErrorCode::ArgumentNotSupported),
             InitCtxCmd::new_simulation().execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         );
 
@@ -202,7 +202,7 @@ mod tests {
 
         // Try setting both flags.
         assert_eq!(
-            Err(DpeStatus::InvalidArgument),
+            Err(DpeErrorCode::InvalidArgument),
             (InitCtxCmd::DEFAULT_FLAG_MASK | InitCtxCmd::SIMULATION_FLAG_MASK).execute(
                 &mut dpe,
                 &mut env,
@@ -217,7 +217,7 @@ mod tests {
 
         // Try to initialize a context when it is full.
         assert_eq!(
-            Err(DpeStatus::MaxTcis),
+            Err(DpeErrorCode::MaxTcis),
             InitCtxCmd::new_simulation().execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
         );
     }

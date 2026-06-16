@@ -31,7 +31,7 @@ use crate::response::{CertifyKeyP256Resp, SignP256Resp};
 use crate::response::{CertifyKeyP384Resp, SignP384Resp};
 use crate::{
     dpe_instance::{DpeEnv, DpeInstance},
-    error::{DpeStatus, InternalErrorCode},
+    error::{DpeErrorCode, InternalErrorCode},
     response::{
         CertifyKeyResp, DeriveContextExportedCdiResp, DeriveContextResp, GetCertificateChainResp,
         GetProfileResp, NewHandleResp, Response, ResponseHdr, SignResp,
@@ -92,7 +92,7 @@ impl Command<'_> {
         let header = CommandHdr::try_from_with_profile(profile, bytes)?;
         let bytes = bytes
             .get(size_of::<CommandHdr>()..)
-            .ok_or(DpeStatus::InvalidCommand)?;
+            .ok_or(DpeErrorCode::InvalidCommand)?;
 
         match header.cmd_id {
             Command::GET_PROFILE => Self::parse_command(Command::GetProfile, bytes),
@@ -109,16 +109,16 @@ impl Command<'_> {
             Command::UPDATE_CONTEXT_MEASUREMENT => {
                 Self::parse_command(Command::UpdateContextMeasurement, bytes)
             }
-            _ => Err(DpeStatus::InvalidCommand),
+            _ => Err(DpeErrorCode::InvalidCommand),
         }
     }
 
     fn parse_command<'a, T: FromBytes + KnownLayout + Immutable + 'a>(
         build: impl FnOnce(&'a T) -> Command<'a>,
         bytes: &'a [u8],
-    ) -> Result<Command<'a>, DpeStatus> {
+    ) -> Result<Command<'a>, DpeErrorCode> {
         let (prefix, _remaining_bytes) =
-            T::ref_from_prefix(bytes).map_err(|_| DpeStatus::InvalidArgument)?;
+            T::ref_from_prefix(bytes).map_err(|_| DpeErrorCode::InvalidArgument)?;
         Ok(build(prefix))
     }
 
@@ -311,7 +311,7 @@ impl CommandExecution for Command<'_> {
         env: &mut dyn DpeEnv,
         locality: u32,
         out: &mut [u8],
-    ) -> Result<usize, DpeStatus> {
+    ) -> Result<usize, DpeErrorCode> {
         match self {
             Command::CertifyKey(cmd) => cmd.execute_serialized(dpe, env, locality, out),
             Command::DeriveContext(cmd) => cmd.execute_serialized(dpe, env, locality, out),
@@ -335,7 +335,7 @@ pub trait CommandExecution {
         dpe: &mut DpeInstance,
         env: &mut dyn DpeEnv,
         locality: u32,
-    ) -> Result<Response, DpeStatus>
+    ) -> Result<Response, DpeErrorCode>
     where
         Command<'a>: From<&'a Self>,
     {
@@ -349,7 +349,9 @@ pub trait CommandExecution {
                 self.execute_serialized(dpe, env, locality, buf.as_mut_bytes())?;
                 <$resp_type>::try_read_from_bytes(buf.as_bytes())
                     .map($f)
-                    .map_err(|_| DpeStatus::from(InternalErrorCode::ResponseDeserializationFailed))
+                    .map_err(|_| {
+                        DpeErrorCode::from(InternalErrorCode::ResponseDeserializationFailed)
+                    })
             }};
         }
 
@@ -413,7 +415,7 @@ pub trait CommandExecution {
         dpe: &mut DpeInstance,
         env: &mut dyn DpeEnv,
         locality: u32,
-    ) -> Result<Response, DpeStatus>
+    ) -> Result<Response, DpeErrorCode>
     where
         Command<'a>: From<&'a Self>,
     {
@@ -426,7 +428,7 @@ pub trait CommandExecution {
         env: &mut dyn DpeEnv,
         locality: u32,
         out: &mut [u8],
-    ) -> Result<usize, DpeStatus>;
+    ) -> Result<usize, DpeErrorCode>;
 
     /// CFI wrapper around execute
     ///
@@ -439,7 +441,7 @@ pub trait CommandExecution {
         env: &mut dyn DpeEnv,
         locality: u32,
         out: &mut [u8],
-    ) -> Result<usize, DpeStatus>;
+    ) -> Result<usize, DpeErrorCode>;
 }
 
 // ABI Command structures
@@ -473,25 +475,25 @@ impl CommandHdr {
         }
     }
 
-    fn try_from_with_profile(profile: DpeProfile, raw: &[u8]) -> Result<Self, DpeStatus> {
+    fn try_from_with_profile(profile: DpeProfile, raw: &[u8]) -> Result<Self, DpeErrorCode> {
         let header = CommandHdr::try_from(raw)?;
         // The client doesn't know what profile is implemented when calling the `GetProfile`
         // command. But, all other commands should be directed towards the correct profile.
         if header.cmd_id != Command::GET_PROFILE && header.profile != profile as u32 {
-            return Err(DpeStatus::InvalidCommand);
+            return Err(DpeErrorCode::InvalidCommand);
         }
         Ok(header)
     }
 }
 
 impl TryFrom<&[u8]> for CommandHdr {
-    type Error = DpeStatus;
+    type Error = DpeErrorCode;
 
     fn try_from(raw: &[u8]) -> Result<Self, Self::Error> {
         let (header, _remaining_bytes) =
-            CommandHdr::read_from_prefix(raw).map_err(|_| DpeStatus::InvalidCommand)?;
+            CommandHdr::read_from_prefix(raw).map_err(|_| DpeErrorCode::InvalidCommand)?;
         if header.magic != Self::DPE_COMMAND_MAGIC {
-            return Err(DpeStatus::InvalidCommand);
+            return Err(DpeErrorCode::InvalidCommand);
         }
         Ok(header)
     }
@@ -560,7 +562,7 @@ pub mod tests {
     #[test]
     fn test_slice_to_command_hdr() {
         CfiCounter::reset_for_test();
-        let invalid_command: Result<CommandHdr, DpeStatus> = Err(DpeStatus::InvalidCommand);
+        let invalid_command: Result<CommandHdr, DpeErrorCode> = Err(DpeErrorCode::InvalidCommand);
 
         // Test if too small.
         assert_eq!(
@@ -591,7 +593,7 @@ pub mod tests {
 
         // All commands should check the profile except GetProfile.
         assert_eq!(
-            Err(DpeStatus::InvalidCommand),
+            Err(DpeErrorCode::InvalidCommand),
             Command::deserialize(
                 profile,
                 CommandHdr {
