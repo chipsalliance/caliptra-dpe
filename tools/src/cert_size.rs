@@ -1,5 +1,7 @@
 // Licensed under the Apache-2.0 license
 
+use std::fmt::Display;
+
 use anyhow::{anyhow, Result};
 use caliptra_dpe::dpe_instance::DpeEnvImpl;
 use caliptra_dpe::{
@@ -117,7 +119,26 @@ fn send_certify_key(dpe: &mut DpeInstance, env: &mut dyn DpeEnv, args: &Args) ->
     }
 }
 
-fn run(env: &mut dyn DpeEnv, args: &Args) -> Result<()> {
+#[derive(Debug)]
+pub(crate) enum CertOrCsrSize {
+    Cert(usize),
+    Csr(usize),
+}
+
+impl Display for CertOrCsrSize {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CertOrCsrSize::Cert(size) => {
+                write!(f, "certificate size = {}", size)
+            }
+            CertOrCsrSize::Csr(size) => {
+                write!(f, "csr size = {}", size)
+            }
+        }
+    }
+}
+
+pub(crate) fn calculate_cert_csr_size(env: &mut dyn DpeEnv, args: &Args) -> Result<CertOrCsrSize> {
     let mut dpe = DpeInstance::new(env, args.algorithm.into())
         .map_err(|e| anyhow!("DPE error creating instance: {e:?}"))?;
 
@@ -148,13 +169,14 @@ fn run(env: &mut dyn DpeEnv, args: &Args) -> Result<()> {
     };
     let len = certify_resp
         .cert()
-        .expect("Failed to parse cert from response")
+        .map_err(|_| anyhow!("Error retrieving certificate"))?
         .len();
-    println!(
-        "Total {} size: {len}",
-        if args.cert { "certificate" } else { "CSR" }
-    );
-    Ok(())
+
+    if args.cert {
+        Ok(CertOrCsrSize::Cert(len))
+    } else {
+        Ok(CertOrCsrSize::Csr(len))
+    }
 }
 
 fn main() -> Result<()> {
@@ -175,9 +197,9 @@ fn main() -> Result<()> {
     let flags = DpeFlags::empty();
     let mut state = caliptra_dpe::State::new(support, flags);
 
-    match args.algorithm {
+    let size: Result<CertOrCsrSize> = match args.algorithm {
         #[cfg(any(feature = "p256", feature = "p384"))]
-        Algorithm::Ec => run(
+        Algorithm::Ec => calculate_cert_csr_size(
             &mut DpeEnvImpl {
                 crypto: &mut ec::new_crypto(),
                 platform: &mut DefaultPlatform(args.algorithm.into()),
@@ -186,7 +208,7 @@ fn main() -> Result<()> {
             &args,
         ),
         #[cfg(feature = "ml-dsa")]
-        Algorithm::Mldsa => run(
+        Algorithm::Mldsa => calculate_cert_csr_size(
             &mut DpeEnvImpl {
                 crypto: &mut caliptra_dpe_crypto::RustCryptoImpl::new_mldsa87(),
                 platform: &mut DefaultPlatform(DefaultPlatformProfile::Mldsa87),
@@ -196,5 +218,16 @@ fn main() -> Result<()> {
         ),
         #[allow(unreachable_patterns)]
         _ => Err(anyhow!("Unsupported algorithm")),
+    };
+
+    match size {
+        Ok(ccs) => {
+            println!("{}", ccs);
+        }
+        Err(e) => {
+            eprintln!("{:?}", e);
+        }
     }
+
+    Ok(())
 }
