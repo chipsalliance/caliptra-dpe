@@ -8,8 +8,8 @@
 use crate::{
     context::{ChildToRootIter, Context, ContextHandle},
     dpe_instance::DpeEnv,
+    error::{DpeErrorCode, InternalErrorCode},
     okref,
-    response::DpeErrorCode,
     tci::{TciMeasurement, TciNodeData},
     DpeInstance, DpeProfile, MAX_HANDLES,
 };
@@ -102,7 +102,7 @@ impl<'a> TciNodes<'a> {
             contexts,
         };
         if tci_nodes.iter()?.count() > MAX_HANDLES {
-            Err(DpeErrorCode::InternalError)
+            Err(InternalErrorCode::TciNodeCountExceeded.into())
         } else {
             Ok(tci_nodes)
         }
@@ -669,7 +669,7 @@ impl CertWriter<'_> {
         tagged: bool,
     ) -> Result<usize, DpeErrorCode> {
         if measurements.tci_nodes.is_empty()? {
-            return Err(DpeErrorCode::InternalError);
+            return Err(InternalErrorCode::EmptyTciNodes.into());
         }
 
         // Size of concatenated tcb infos
@@ -678,7 +678,7 @@ impl CertWriter<'_> {
                 measurements
                     .tci_nodes
                     .first_node()?
-                    .ok_or(DpeErrorCode::InternalError)?,
+                    .ok_or(DpeErrorCode::from(InternalErrorCode::EmptyTciNodes))?,
                 measurements.supports_recursive,
                 /*tagged=*/ true,
             )?;
@@ -1151,7 +1151,7 @@ impl CertWriter<'_> {
     /// encoders call this before returning so a too-small buffer fails loudly.
     fn check_not_truncated(&self) -> Result<(), DpeErrorCode> {
         if self.offset > self.certificate.len() {
-            return Err(DpeErrorCode::InternalError);
+            return Err(InternalErrorCode::CertSizeOverflow.into());
         }
         Ok(())
     }
@@ -1660,7 +1660,7 @@ impl CertWriter<'_> {
                 measurements
                     .tci_nodes
                     .first_node()?
-                    .ok_or(DpeErrorCode::InternalError)?,
+                    .ok_or(DpeErrorCode::from(InternalErrorCode::EmptyTciNodes))?,
                 measurements.supports_recursive,
                 /*tagged=*/ true,
             )? * measurements.tci_nodes.num_nodes()?
@@ -2376,7 +2376,7 @@ impl CertWriter<'_> {
             let signed = self
                 .certificate
                 .get(offset..payload_bytes_written + offset)
-                .ok_or(DpeErrorCode::InternalError)?;
+                .ok_or(DpeErrorCode::from(InternalErrorCode::TbsSliceOob))?;
             sign_cb(signed, is_csr)
         };
         let sig = okref(&sig)?;
@@ -2545,7 +2545,7 @@ impl CertWriter<'_> {
             };
             self.certificate
                 .get(csr_range.0..csr_range.1)
-                .ok_or(DpeErrorCode::InternalError)?
+                .ok_or(DpeErrorCode::from(InternalErrorCode::CmsCsrRangeOob))?
         };
 
         let sig = sign_cb(csr, false)?;
@@ -2676,7 +2676,7 @@ fn get_subject_key_identifier(
         PubKey::Mldsa(pub_key) => crypto.hash(pub_key.as_slice())?,
     };
     if hashed_pub_key.size() < MAX_KEY_IDENTIFIER_SIZE {
-        return Err(DpeErrorCode::InternalError);
+        return Err(InternalErrorCode::KeyIdHashTooSmall.into());
     }
     // truncate key identifier to 20 bytes
     subject_key_identifier.copy_from_slice(&hashed_pub_key.as_slice()[..MAX_KEY_IDENTIFIER_SIZE]);
@@ -2794,7 +2794,7 @@ fn generate_cert_or_csr(
                     .serial
                     .bytes()
                     .get(..20)
-                    .ok_or(DpeErrorCode::InternalError)?;
+                    .ok_or(DpeErrorCode::from(InternalErrorCode::SerialNumberSliceOob))?;
                 let bytes_written = cert_writer.encode_certificate(
                     sign_cb,
                     serial_number,
@@ -2804,7 +2804,8 @@ fn generate_cert_or_csr(
                     measurements,
                     cert_validity,
                 )?;
-                u32::try_from(bytes_written).map_err(|_| DpeErrorCode::InternalError)
+                u32::try_from(bytes_written)
+                    .map_err(|_| DpeErrorCode::from(InternalErrorCode::CertSizeOverflow))
             }
         }
         #[cfg(not(feature = "disable_csr"))]
@@ -2821,7 +2822,8 @@ fn generate_cert_or_csr(
                 measurements,
                 signer_identifier,
             )?;
-            u32::try_from(bytes_written).map_err(|_| DpeErrorCode::InternalError)
+            u32::try_from(bytes_written)
+                .map_err(|_| DpeErrorCode::from(InternalErrorCode::CsrSizeOverflow))
         }
     }
 }
@@ -2928,7 +2930,7 @@ fn create_dpe_cert_or_csr(
             let issuer_name = {
                 let issuer_len = platform.get_issuer_name(&mut issuer_name)?;
                 if issuer_len > MAX_ISSUER_NAME_SIZE {
-                    return Err(DpeErrorCode::InternalError);
+                    return Err(InternalErrorCode::IssuerNameTooLong.into());
                 }
                 &issuer_name[..issuer_len]
             };
@@ -2955,7 +2957,9 @@ fn create_dpe_cert_or_csr(
 
     let exported_cdi_handle = match cert_type {
         // If the `CertificateType::Exported` is set then we should have a valid exported_cdi_handle at this point.
-        CertificateType::Exported => exported_cdi_handle.ok_or(DpeErrorCode::InternalError)?,
+        CertificateType::Exported => exported_cdi_handle.ok_or(DpeErrorCode::from(
+            InternalErrorCode::MissingExportedCdiHandle,
+        ))?,
         _ => [0; MAX_EXPORTED_CDI_SIZE],
     };
 
@@ -2970,7 +2974,7 @@ fn create_dpe_cert_or_csr(
 pub(crate) mod tests {
     use crate::context::{Context, ContextState};
     use crate::dpe_instance::tests::DPE_PROFILE;
-    use crate::response::DpeErrorCode;
+    use crate::error::{DpeErrorCode, InternalErrorCode};
     use crate::tci::{TciMeasurement, TciNodeData};
     use crate::x509::{CertWriter, DirectoryString, MeasurementData, Name, TciNodes};
     use crate::DpeProfile;
@@ -3143,7 +3147,9 @@ pub(crate) mod tests {
             let (writable, canary) = backing.split_at_mut(len);
             assert_eq!(
                 encode(&mut CertWriter::new(writable, DPE_PROFILE, true)),
-                Err(DpeErrorCode::InternalError),
+                Err(DpeErrorCode::InternalError(
+                    InternalErrorCode::CertSizeOverflow
+                )),
                 "undersized buffer ({len} of {exact}) must report truncation",
             );
             assert!(

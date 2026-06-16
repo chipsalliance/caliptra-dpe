@@ -3,9 +3,8 @@ use super::CommandExecution;
 use crate::{
     context::{ContextHandle, ContextType},
     dpe_instance::{DpeEnv, DpeInstance},
-    mutresp, okref,
-    response::DpeErrorCode,
-    DpeProfile,
+    error::{DpeErrorCode, InternalErrorCode},
+    mutresp, okref, DpeProfile,
 };
 use bitflags::bitflags;
 #[cfg(feature = "cfi")]
@@ -177,7 +176,7 @@ impl CommandExecution for SignCommand<'_> {
             .state()
             .contexts
             .get(idx)
-            .ok_or(DpeErrorCode::InternalError)?;
+            .ok_or(DpeErrorCode::from(InternalErrorCode::ContextIndexOob))?;
 
         if context.context_type == ContextType::Simulation {
             return Err(DpeErrorCode::InvalidArgument);

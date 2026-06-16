@@ -113,6 +113,7 @@ impl CryptoError {
         }
     }
 
+    /// caliptra-sw uses this function to populate extra error reporting registers.
     pub fn get_error_detail(&self) -> Option<u32> {
         match self {
             CryptoError::AbstractionLayer(code)
@@ -127,6 +128,26 @@ impl CryptoError {
         }
     }
 }
+
+impl core::fmt::Display for CryptoError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::AbstractionLayer(code) => write!(f, "abstraction layer error (code: {code})"),
+            Self::CryptoLibError(code) => write!(f, "crypto library error (code: {code})"),
+            Self::Size => f.write_str("size error"),
+            Self::NotImplemented => f.write_str("not implemented"),
+            Self::HashError(code) => write!(f, "hash error (code: {code})"),
+            Self::InvalidExportedCdiHandle => f.write_str("invalid exported CDI handle"),
+            Self::ExportedCdiHandleDuplicateCdi => f.write_str("exported CDI handle duplicate CDI"),
+            Self::ExportedCdiHandleLimitExceeded => {
+                f.write_str("exported CDI handle limit exceeded")
+            }
+            Self::MismatchedAlgorithm => f.write_str("mismatched algorithm"),
+        }
+    }
+}
+
+impl core::error::Error for CryptoError {}
 
 pub trait Hasher {
     /// Initialize a running hash operation.

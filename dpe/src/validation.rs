@@ -3,7 +3,7 @@
 use crate::{
     context::{Context, ContextState, ContextType},
     dpe_instance::flags_iter,
-    response::DpeErrorCode,
+    error::DpeErrorCode,
     tci::TciNodeData,
     State, MAX_HANDLES,
 };
@@ -47,6 +47,48 @@ impl ValidationError {
         *self as u16
     }
 }
+
+impl core::fmt::Display for ValidationError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::MultipleNormalConnectedComponents => {
+                f.write_str("multiple normal connected components")
+            }
+            Self::CyclesInTree => f.write_str("cycles in tree"),
+            Self::InactiveContextInvalidParent => {
+                f.write_str("inactive context has invalid parent")
+            }
+            Self::InactiveContextWithChildren => f.write_str("inactive context has children"),
+            Self::BadContextState => f.write_str("bad context state"),
+            Self::BadContextType => f.write_str("bad context type"),
+            Self::InactiveContextWithMeasurement => f.write_str("inactive context has measurement"),
+            Self::MixedContextLocality => f.write_str("mixed context locality"),
+            Self::MultipleDefaultContexts => f.write_str("multiple default contexts"),
+            Self::SimulationNotSupported => f.write_str("simulation not supported"),
+            Self::ParentDoesNotExist => f.write_str("parent does not exist"),
+            Self::InternalDiceNotSupported => f.write_str("internal DICE not supported"),
+            Self::InternalInfoNotSupported => f.write_str("internal info not supported"),
+            Self::ChildDoesNotExist => f.write_str("child does not exist"),
+            Self::InactiveContextWithFlagSet => f.write_str("inactive context with flag set"),
+            Self::LocalityMismatch => f.write_str("locality mismatch"),
+            Self::DanglingRetiredContext => f.write_str("dangling retired context"),
+            Self::MixedContextTypeConnectedComponents => {
+                f.write_str("mixed context type connected components")
+            }
+            Self::ChildWithMultipleParents => f.write_str("child with multiple parents"),
+            Self::ParentChildLinksCorrupted => f.write_str("parent-child links corrupted"),
+            Self::AllowCaNotSupported => f.write_str("allow CA not supported"),
+            Self::AllowX509NotSupported => f.write_str("allow X.509 not supported"),
+            Self::InactiveParent => f.write_str("inactive parent"),
+            Self::InactiveChild => f.write_str("inactive child"),
+            Self::DpeNotMarkedInitialized => f.write_str("DPE not marked initialized"),
+            Self::InvalidMarker => f.write_str("invalid marker"),
+            Self::VersionMismatch => f.write_str("version mismatch"),
+        }
+    }
+}
+
+impl core::error::Error for ValidationError {}
 
 pub struct DpeValidator<'a> {
     pub dpe: &'a mut State,

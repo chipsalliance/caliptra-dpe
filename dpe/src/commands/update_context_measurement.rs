@@ -12,8 +12,9 @@ use super::CommandExecution;
 use crate::{
     context::ContextState,
     dpe_instance::{DpeEnv, DpeInstance},
+    error::{DpeErrorCode, InternalErrorCode},
     mutresp,
-    response::{DpeErrorCode, UpdateContextMeasurementResp},
+    response::UpdateContextMeasurementResp,
     tci::TciMeasurement,
 };
 #[cfg(feature = "cfi")]
@@ -75,7 +76,7 @@ impl CommandExecution for UpdateContextMeasurementCmd {
             .state()
             .contexts
             .get(parent_idx)
-            .ok_or(DpeErrorCode::InternalError)?
+            .ok_or(DpeErrorCode::from(InternalErrorCode::ContextIndexOob))?
             .children;
         let child_idx = parent_children
             .iter()
@@ -97,7 +98,7 @@ impl CommandExecution for UpdateContextMeasurementCmd {
             .state()
             .contexts
             .get(child_idx)
-            .ok_or(DpeErrorCode::InternalError)?;
+            .ok_or(DpeErrorCode::from(InternalErrorCode::ChildIndexOob))?;
         // The child's locality authorizes the TCI update (parent provides the authorization).
         let child_locality = tmp_child.locality;
 
@@ -109,12 +110,12 @@ impl CommandExecution for UpdateContextMeasurementCmd {
             .state()
             .contexts
             .get(parent_idx)
-            .ok_or(DpeErrorCode::InternalError)?;
+            .ok_or(DpeErrorCode::from(InternalErrorCode::ContextIndexOob))?;
         dpe.roll_onetime_use_handle(env, &mut tmp_parent)?;
         *env.state()
             .contexts
             .get_mut(parent_idx)
-            .ok_or(DpeErrorCode::InternalError)? = tmp_parent;
+            .ok_or(DpeErrorCode::from(InternalErrorCode::ContextIndexOob))? = tmp_parent;
 
         // Rotate the child handle.
         dpe.roll_onetime_use_handle(env, &mut tmp_child)?;
@@ -123,7 +124,7 @@ impl CommandExecution for UpdateContextMeasurementCmd {
         *env.state()
             .contexts
             .get_mut(child_idx)
-            .ok_or(DpeErrorCode::InternalError)? = tmp_child;
+            .ok_or(DpeErrorCode::from(InternalErrorCode::ChildIndexOob))? = tmp_child;
 
         *response = UpdateContextMeasurementResp {
             resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
@@ -145,7 +146,8 @@ mod tests {
         },
         context::ContextHandle,
         dpe_instance::{tests::TEST_LOCALITIES, DpeInstance},
-        response::{DpeErrorCode, Response},
+        error::DpeErrorCode,
+        response::Response,
         support::Support,
         test_env, DpeFlags, State, TCI_SIZE,
     };

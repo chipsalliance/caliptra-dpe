@@ -26,6 +26,7 @@ use zeroize::Zeroize;
 pub mod commands;
 pub mod context;
 pub mod dpe_instance;
+pub mod error;
 pub mod response;
 mod state;
 pub mod support;
@@ -38,7 +39,8 @@ use response::GetProfileResp;
 pub mod tci;
 pub mod x509;
 
-use crate::response::{DpeErrorCode, ResponseHdr};
+use crate::error::DpeErrorCode;
+use crate::response::ResponseHdr;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes};
 
 pub use caliptra_dpe_crypto::{ecdsa::EcdsaAlgorithm, ExportedCdiHandle, MAX_EXPORTED_CDI_SIZE};

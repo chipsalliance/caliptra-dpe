@@ -7,23 +7,33 @@ import "fmt"
 // Status is a DPE status code
 type Status uint32
 
-// All spec-defined DPE status codes
+// DPE status codes per the TCG DPE Specification, Section 5.11 (values 0-7)
+// and the OCP "Server iRoT Profile for DPE" v0.13.0 (values 0x80+).
 const (
-	StatusInternalError        Status = 1
-	StatusInvalidCommand       Status = 2
-	StatusInvalidArgument      Status = 3
-	StatusArgumentNotSupported Status = 4
-	StatusInvalidHandle        Status = 0x1000
-	StatusInvalidLocality      Status = 0x1001
-	StatusBadTag               Status = 0x1002
-	StatusMaxTCIs              Status = 0x1003
-	StatusPlatformError        Status = 0x1004
-	StatusCryptoError          Status = 0x1005
-	StatusHashError            Status = 0x1006
-	StatusRandError            Status = 0x1007
-	// Returned by UpdateContextMeasurement when PARENT_CONTEXT_HANDLE does not
-	// exist in the caller's locality. Value matches the OCP iROT profile spec (0x85).
+	// TCG DPE Specification
+	StatusInternalError          Status = 0x1
+	StatusInvalidCommand         Status = 0x2
+	StatusInvalidArgument        Status = 0x3
+	StatusSessionExhausted       Status = 0x4
+	StatusInitializationSeedLock Status = 0x5
+	StatusOutOfMemory            Status = 0x6
+	StatusCancelledCommand       Status = 0x7
+
+	// OCP iRoT Profile for DPE
+	StatusInvalidHandle         Status = 0x80
+	StatusInvalidLocality       Status = 0x81
+	StatusHandleDefined         Status = 0x82
+	StatusArgumentNotSupported  Status = 0x83
+	StatusAlreadyInitialized    Status = 0x84
 	StatusInvalidParentLocality Status = 0x85
+
+	// Vendor-defined (continuation of 0x80 range)
+	StatusMaxTCIs Status = 0x91
+
+	// Compound error bases
+	StatusPlatformError   Status = 0x01000000
+	StatusCryptoError     Status = 0x02000000
+	StatusValidationError Status = 0x03000000
 )
 
 // Error returns an informational string for all DPE error codes
@@ -35,12 +45,24 @@ func (s Status) Error() string {
 		return "command ID is invalid"
 	case StatusInvalidArgument:
 		return "argument is invalid"
-	case StatusArgumentNotSupported:
-		return "argument is not supported by this profile, implementation, or integration"
+	case StatusSessionExhausted:
+		return "session exhausted"
+	case StatusInitializationSeedLock:
+		return "initialization seed locked"
+	case StatusOutOfMemory:
+		return "out of memory"
+	case StatusCancelledCommand:
+		return "cancelled command"
 	case StatusInvalidHandle:
 		return "contextHandle does not exist"
 	case StatusInvalidLocality:
 		return "Hardware Locality does not exist"
+	case StatusHandleDefined:
+		return "handle already defined"
+	case StatusArgumentNotSupported:
+		return "argument is not supported by this profile, implementation, or integration"
+	case StatusAlreadyInitialized:
+		return "already initialized"
 	case StatusInvalidParentLocality:
 		return "Parent ContextHandle does not exist in the caller's locality"
 	case StatusMaxTCIs:
@@ -49,10 +71,8 @@ func (s Status) Error() string {
 		return "error internal to platform"
 	case StatusCryptoError:
 		return "cryptography error"
-	case StatusHashError:
-		return "error in hashing buffer"
-	case StatusRandError:
-		return "error in random byte generation"
+	case StatusValidationError:
+		return "validation error"
 	default:
 		return fmt.Sprintf("unrecognized status code 0x%0x", uint32(s))
 	}

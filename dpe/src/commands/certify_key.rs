@@ -3,8 +3,8 @@ use super::CommandExecution;
 use crate::{
     context::ContextHandle,
     dpe_instance::{DpeEnv, DpeInstance},
+    error::{DpeErrorCode, InternalErrorCode},
     mutresp, okref,
-    response::DpeErrorCode,
     x509::{create_dpe_cert, CreateDpeCertArgs, CreateDpeCertResult},
     DpeFlags, DpeProfile,
 };
@@ -155,7 +155,7 @@ impl CommandExecution for CertifyKeyCommand<'_> {
             .state()
             .contexts
             .get(idx)
-            .ok_or(DpeErrorCode::InternalError)?;
+            .ok_or(DpeErrorCode::from(InternalErrorCode::ContextIndexOob))?;
 
         if format == Self::FORMAT_X509 {
             if !env.state().support.x509() {

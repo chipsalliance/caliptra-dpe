@@ -9,7 +9,8 @@ use crate::INTERNAL_INPUT_INFO_SIZE;
 use crate::{
     commands::{Command, CommandExecution, CommandHdr, InitCtxCmd},
     context::{ChildToRootIter, Context, ContextHandle, ContextState},
-    response::{DpeErrorCode, GetProfileResp, NewHandleResp, Response, ResponseHdr},
+    error::{DpeErrorCode, InternalErrorCode},
+    response::{GetProfileResp, NewHandleResp, Response, ResponseHdr},
     support::Support,
     tci::TciMeasurement,
     AlignedBuf, DpeProfile, State,
@@ -125,7 +126,7 @@ impl DpeInstance {
         let context = state
             .contexts
             .get_mut(idx)
-            .ok_or(DpeErrorCode::InternalError)?;
+            .ok_or(DpeErrorCode::from(InternalErrorCode::InitContextIndexOob))?;
         // add measurement to auto-initialized context
         dpe.add_tci_measurement(crypto, context, auto_init_measurement, locality)?;
         context.tci.tci_type = tci_type;
@@ -217,7 +218,7 @@ impl DpeInstance {
                 return Ok(handle);
             }
         }
-        Err(DpeErrorCode::InternalError)
+        Err(InternalErrorCode::HandleGenerationExhausted.into())
     }
 
     /// Rolls the context handle if the context is not the default context.
@@ -276,7 +277,7 @@ impl DpeInstance {
         let digest_bytes = digest.as_slice();
 
         if digest_bytes.len() != context.tci.tci_cumulative.0.len() {
-            return Err(DpeErrorCode::InternalError);
+            return Err(InternalErrorCode::DigestLengthMismatch.into());
         }
         context.tci.tci_cumulative.0.copy_from_slice(digest_bytes);
         context.tci.tci_current = *measurement;
@@ -302,12 +303,16 @@ impl DpeInstance {
         let profile_bytes = profile.as_bytes();
         internal_input_info
             .get_mut(..profile_bytes.len())
-            .ok_or(DpeErrorCode::InternalError)?
+            .ok_or(DpeErrorCode::from(
+                InternalErrorCode::InputInfoProfileSliceOob,
+            ))?
             .copy_from_slice(profile_bytes);
 
         internal_input_info
             .get_mut(profile_bytes.len()..)
-            .ok_or(DpeErrorCode::InternalError)?
+            .ok_or(DpeErrorCode::from(
+                InternalErrorCode::InputInfoRemainderSliceOob,
+            ))?
             .copy_from_slice(&(u32::from(self.profile)).to_le_bytes());
 
         Ok(())
@@ -366,11 +371,9 @@ impl DpeInstance {
             while let Ok(len) =
                 platform.get_certificate_chain(offset, MAX_CHUNK_SIZE as u32, &mut cert_chunk)
             {
-                hasher.update(
-                    cert_chunk
-                        .get(..len as usize)
-                        .ok_or(DpeErrorCode::InternalError)?,
-                )?;
+                hasher.update(cert_chunk.get(..len as usize).ok_or(DpeErrorCode::from(
+                    InternalErrorCode::CertChainChunkSliceOob,
+                ))?)?;
                 offset += len;
             }
         }

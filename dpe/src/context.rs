@@ -1,7 +1,7 @@
 // Licensed under the Apache-2.0 license.
 use crate::{
     dpe_instance::{flags_iter, FlagsIter},
-    response::DpeErrorCode,
+    error::{DpeErrorCode, InternalErrorCode},
     tci::TciNodeData,
     U8Bool, MAX_HANDLES,
 };
@@ -155,7 +155,7 @@ impl Context {
     /// This function does not mutate DPE state.
     pub fn add_child(&mut self, idx: usize) -> Result<Children, DpeErrorCode> {
         if idx >= MAX_HANDLES {
-            return Err(DpeErrorCode::InternalError);
+            return Err(InternalErrorCode::ChildIndexOob.into());
         }
         let mut children_with_idx = self.children;
         children_with_idx.add_child(idx)?;
@@ -232,7 +232,7 @@ impl Children {
     /// Add a child to the bitmap.
     pub fn add_child(&mut self, idx: usize) -> Result<(), DpeErrorCode> {
         if idx >= MAX_HANDLES {
-            return Err(DpeErrorCode::InternalError);
+            return Err(InternalErrorCode::ChildrenBitmapIndexOob.into());
         }
         self.0 |= 1 << idx;
         Ok(())
@@ -371,7 +371,7 @@ impl<'a> ChildToRootIter<'a> {
             let context = iter.get_context(curr_idx)?;
             iter.path_len += 1;
             if iter.path_len > MAX_HANDLES {
-                return Err(DpeErrorCode::InternalError);
+                return Err(InternalErrorCode::TciNodeCountExceeded.into());
             }
             if context.parent_idx == Context::ROOT_INDEX {
                 iter.back_idx = curr_idx;
@@ -395,7 +395,7 @@ impl<'a> ChildToRootIter<'a> {
     fn get_context(&mut self, idx: usize) -> Result<&'a Context, DpeErrorCode> {
         let Some(context) = self.contexts.get(idx) else {
             self.done = true;
-            return Err(DpeErrorCode::InternalError);
+            return Err(InternalErrorCode::ContextIndexOob.into());
         };
 
         // Check if context is valid.
@@ -497,7 +497,7 @@ impl DoubleEndedIterator for ChildToRootIter<'_> {
             }
             match found_child_idx {
                 Some(child_idx) => self.back_idx = child_idx,
-                None => return Some(Err(DpeErrorCode::InternalError)),
+                None => return Some(Err(InternalErrorCode::ParentChainIndexOob.into())),
             }
         }
 
@@ -575,7 +575,7 @@ mod tests {
         contexts[1].state = ContextState::Active;
 
         let iter = ChildToRootIter::new(0, &contexts);
-        assert!(matches!(iter, Err(DpeErrorCode::InternalError)));
+        assert!(matches!(iter, Err(DpeErrorCode::InternalError(_))));
     }
 
     #[test]
@@ -583,7 +583,7 @@ mod tests {
         let mut contexts = [CONTEXT_INITIALIZER; MAX_HANDLES];
         assert_eq!(
             contexts[0].add_child(MAX_HANDLES + 1),
-            Err(DpeErrorCode::InternalError)
+            Err(InternalErrorCode::ChildIndexOob.into())
         );
     }
 
@@ -606,7 +606,7 @@ mod tests {
         // Retired.
         contexts[0].state = ContextState::Retired;
         let iter = ChildToRootIter::new(0, &contexts);
-        assert!(matches!(iter, Err(DpeErrorCode::InternalError)));
+        assert!(matches!(iter, Err(DpeErrorCode::InternalError(_))));
 
         // Active and upper bound of handles.
         contexts[0].state = ContextState::Active;
@@ -707,7 +707,7 @@ mod tests {
         // Consume the iterator once. This should fail because now we can't find any child of node
         // 1 on the path from node 6 to the root.
         let context = iter.next_back();
-        assert!(matches!(context, Some(Err(DpeErrorCode::InternalError))));
+        assert!(matches!(context, Some(Err(DpeErrorCode::InternalError(_)))));
     }
 
     /// This is intended for testing a list of parent to children relationships. These are indices of contexts within a DPE instance.

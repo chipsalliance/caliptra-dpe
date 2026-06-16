@@ -12,6 +12,9 @@ pub mod default;
 
 pub mod printer;
 
+use core::error::Error;
+use core::fmt::Display;
+
 // Max cert chunk returned by GetCertificateChain
 pub const MAX_CHUNK_SIZE: usize = 2048;
 #[cfg(not(feature = "arbitrary_issuer_name_size"))]
@@ -99,22 +102,57 @@ impl PlatformError {
         unsafe { *<*const _>::from(self).cast::<u16>() }
     }
 
+    /// caliptra-sw uses this function to populate extra error reporting registers.
     pub fn get_error_detail(&self) -> Option<u32> {
         match self {
-            PlatformError::CertificateChainError => None,
-            PlatformError::NotImplemented => None,
-            PlatformError::MissingUeidError => None,
-            PlatformError::InvalidUeidError => None,
-            PlatformError::IssuerNameError(code) => Some(*code),
-            PlatformError::PrintError(code) => Some(*code),
-            PlatformError::SerialNumberError(code) => Some(*code),
-            PlatformError::SubjectKeyIdentifierError(code) => Some(*code),
-            PlatformError::CertValidityError(code) => Some(*code),
-            PlatformError::IssuerKeyIdentifierError(code) => Some(*code),
-            PlatformError::SubjectAlternativeNameError(code) => Some(*code),
+            PlatformError::CertificateChainError
+            | PlatformError::NotImplemented
+            | PlatformError::MissingUeidError
+            | PlatformError::InvalidUeidError => None,
+            PlatformError::IssuerNameError(code)
+            | PlatformError::PrintError(code)
+            | PlatformError::SerialNumberError(code)
+            | PlatformError::SubjectKeyIdentifierError(code)
+            | PlatformError::CertValidityError(code)
+            | PlatformError::IssuerKeyIdentifierError(code)
+            | PlatformError::SubjectAlternativeNameError(code) => Some(*code),
         }
     }
 }
+
+impl Display for PlatformError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::CertificateChainError => f.write_str("certificate chain error"),
+            Self::NotImplemented => f.write_str("not implemented"),
+            Self::MissingUeidError => f.write_str("missing ueid"),
+            Self::InvalidUeidError => f.write_str("invalid ueid"),
+            Self::IssuerNameError(code) => {
+                write!(f, "issuer name error (code: {code})")
+            }
+            Self::PrintError(code) => {
+                write!(f, "print error (code: {code})")
+            }
+            Self::SerialNumberError(code) => {
+                write!(f, "serial number error (code: {code})")
+            }
+            Self::SubjectKeyIdentifierError(code) => {
+                write!(f, "subject key identifier error (code: {code})")
+            }
+            Self::CertValidityError(code) => {
+                write!(f, "cert validity error (code: {code})")
+            }
+            Self::IssuerKeyIdentifierError(code) => {
+                write!(f, "issuer key identifier error (code: {code})")
+            }
+            Self::SubjectAlternativeNameError(code) => {
+                write!(f, "subject alternative name error (code: {code})")
+            }
+        }
+    }
+}
+
+impl Error for PlatformError {}
 
 pub trait Platform {
     /// Retrieves a chunk of the parent certificates in the certificate chain.

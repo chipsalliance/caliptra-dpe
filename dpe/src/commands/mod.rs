@@ -31,9 +31,10 @@ use crate::response::{CertifyKeyP256Resp, SignP256Resp};
 use crate::response::{CertifyKeyP384Resp, SignP384Resp};
 use crate::{
     dpe_instance::{DpeEnv, DpeInstance},
+    error::{DpeErrorCode, InternalErrorCode},
     response::{
-        CertifyKeyResp, DeriveContextExportedCdiResp, DeriveContextResp, DpeErrorCode,
-        GetCertificateChainResp, GetProfileResp, NewHandleResp, Response, ResponseHdr, SignResp,
+        CertifyKeyResp, DeriveContextExportedCdiResp, DeriveContextResp, GetCertificateChainResp,
+        GetProfileResp, NewHandleResp, Response, ResponseHdr, SignResp,
         UpdateContextMeasurementResp,
     },
     DpeProfile,
@@ -348,7 +349,9 @@ pub trait CommandExecution {
                 self.execute_serialized(dpe, env, locality, buf.as_mut_bytes())?;
                 <$resp_type>::try_read_from_bytes(buf.as_bytes())
                     .map($f)
-                    .map_err(|_| DpeErrorCode::InternalError)
+                    .map_err(|_| {
+                        DpeErrorCode::from(InternalErrorCode::ResponseDeserializationFailed)
+                    })
             }};
         }
 

@@ -7,12 +7,12 @@ Abstract:
 use crate::{
     commands::{CertifyKeyCommand, Command, DeriveContextCmd, SignCommand},
     context::ContextHandle,
-    validation::ValidationError,
+    error::{DpeErrorCode, InternalErrorCode},
     AlignedBuf, DpeProfile, CURRENT_PROFILE_MAJOR_VERSION, CURRENT_PROFILE_MINOR_VERSION,
     MAX_CERT_SIZE, MAX_EXPORTED_CDI_SIZE, MAX_HANDLES,
 };
-use caliptra_dpe_crypto::{ecdsa::EcdsaAlgorithm, CryptoError};
-use caliptra_dpe_platform::{PlatformError, MAX_CHUNK_SIZE};
+use caliptra_dpe_crypto::ecdsa::EcdsaAlgorithm;
+use caliptra_dpe_platform::MAX_CHUNK_SIZE;
 use zerocopy::{Immutable, IntoBytes, KnownLayout, TryFromBytes};
 
 #[cfg(feature = "ml-dsa")]
@@ -281,7 +281,7 @@ impl DeriveContextExportedCdiResp {
         let len = size_of::<Self>() - MAX_CERT_SIZE + self.certificate_size as usize;
         self.as_bytes()
             .get(..len)
-            .ok_or(DpeErrorCode::InternalError)
+            .ok_or(DpeErrorCode::from(InternalErrorCode::DeriveCtxRespSliceOob))
     }
 }
 
@@ -350,7 +350,9 @@ impl CertifyKeyResp {
             #[cfg(feature = "ml-dsa")]
             CertifyKeyResp::Mldsa87(r) => (&r.cert, r.cert_size),
         };
-        buf.get(..size as usize).ok_or(DpeErrorCode::InternalError)
+        buf.get(..size as usize).ok_or(DpeErrorCode::from(
+            InternalErrorCode::CertifyKeyCertSliceOob,
+        ))
     }
 }
 
@@ -368,9 +370,9 @@ pub struct CertifyKeyP256Resp {
 impl CertifyKeyP256Resp {
     pub fn as_bytes_partial(&self) -> Result<&[u8], DpeErrorCode> {
         let len = size_of::<Self>() - MAX_CERT_SIZE + self.cert_size as usize;
-        self.as_bytes()
-            .get(..len)
-            .ok_or(DpeErrorCode::InternalError)
+        self.as_bytes().get(..len).ok_or(DpeErrorCode::from(
+            InternalErrorCode::CertifyKeyP256RespSliceOob,
+        ))
     }
 }
 
@@ -388,9 +390,9 @@ pub struct CertifyKeyP384Resp {
 impl CertifyKeyP384Resp {
     pub fn as_bytes_partial(&self) -> Result<&[u8], DpeErrorCode> {
         let len = size_of::<Self>() - MAX_CERT_SIZE + self.cert_size as usize;
-        self.as_bytes()
-            .get(..len)
-            .ok_or(DpeErrorCode::InternalError)
+        self.as_bytes().get(..len).ok_or(DpeErrorCode::from(
+            InternalErrorCode::CertifyKeyP384RespSliceOob,
+        ))
     }
 }
 
@@ -409,9 +411,9 @@ pub struct CertifyKeyMldsa87Resp {
 impl CertifyKeyMldsa87Resp {
     pub fn as_bytes_partial(&self) -> Result<&[u8], DpeErrorCode> {
         let len = size_of::<Self>() - MAX_CERT_SIZE + self.cert_size as usize;
-        self.as_bytes()
-            .get(..len)
-            .ok_or(DpeErrorCode::InternalError)
+        self.as_bytes().get(..len).ok_or(DpeErrorCode::from(
+            InternalErrorCode::CertifyKeyMldsa87RespSliceOob,
+        ))
     }
 }
 
@@ -495,77 +497,4 @@ pub struct GetCertificateChainResp {
     pub resp_hdr: ResponseHdr,
     pub certificate_size: u32,
     pub certificate_chain: [u8; MAX_CHUNK_SIZE],
-}
-
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-#[repr(u32)]
-pub enum DpeErrorCode {
-    NoError = 0,
-    InternalError = 1,
-    InvalidCommand = 2,
-    InvalidArgument = 3,
-    ArgumentNotSupported = 4,
-    X509CsrUnset = 5,
-    X509InvalidState = 6,
-    X509SkipsExhausted = 7,
-    X509InvalidWidth = 8,
-    X509AlgorithmMismatch = 9,
-    InvalidHandle = 0x1000,
-    InvalidLocality = 0x1001,
-    MaxTcis = 0x1003,
-    InvalidMutRefBuf = 0x1004,
-    InvalidResponseBuf = 0x1005,
-    UninitializedResponseHeader = 0x1006,
-    /// Returned by UpdateContextMeasurement when PARENT_CONTEXT_HANDLE does not
-    /// exist in the caller's locality. Value matches the OCP iROT profile spec (0x85).
-    InvalidParentLocality = 0x85,
-    Platform(PlatformError) = 0x01000000,
-    Crypto(CryptoError) = 0x02000000,
-    Validation(ValidationError) = 0x03000000,
-}
-
-impl From<PlatformError> for DpeErrorCode {
-    fn from(e: PlatformError) -> Self {
-        DpeErrorCode::Platform(e)
-    }
-}
-
-impl From<CryptoError> for DpeErrorCode {
-    fn from(e: CryptoError) -> Self {
-        DpeErrorCode::Crypto(e)
-    }
-}
-
-impl DpeErrorCode {
-    /// Get the spec-defined numeric error code. This does not include the
-    /// extended error information returned from the Platform and Crypto
-    /// implementations.
-    pub fn discriminant(&self) -> u32 {
-        // SAFETY: Because `Self` is marked `repr(u32)`, its layout is a `repr(C)` `union`
-        // between `repr(C)` structs, each of which has the `u32` discriminant as its first
-        // field, so we can read the discriminant without offsetting the pointer.
-        unsafe { *<*const _>::from(self).cast::<u32>() }
-    }
-
-    pub fn get_error_code(&self) -> u32 {
-        match self {
-            DpeErrorCode::Platform(e) => self.discriminant() | e.discriminant() as u32,
-            DpeErrorCode::Crypto(e) => self.discriminant() | e.discriminant() as u32,
-            DpeErrorCode::Validation(e) => self.discriminant() | e.discriminant() as u32,
-            _ => self.discriminant(),
-        }
-    }
-
-    /// For error variants which have extended error info returned from
-    /// underlying libraries (Platform and Crypto), return that extended error
-    /// code. For all other variants, return None.
-    ///
-    /// Reporting of detailed error information is platform-defined.
-    pub fn get_error_detail(&self) -> Option<u32> {
-        match self {
-            DpeErrorCode::Platform(e) => e.get_error_detail(),
-            DpeErrorCode::Crypto(e) => e.get_error_detail(),
-            _ => None,
-        }
-    }
 }
