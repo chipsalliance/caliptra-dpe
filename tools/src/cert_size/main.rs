@@ -1,5 +1,7 @@
 // Licensed under the Apache-2.0 license
 
+mod benchmark;
+
 use std::fmt::Display;
 
 use anyhow::{anyhow, Result};
@@ -78,7 +80,7 @@ impl From<Algorithm> for DpeProfile {
     }
 }
 
-/// Starts a DPE simulator that will receive commands and send responses over unix streams.
+/// Measure DPE certificate and CSR sizes.
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
@@ -91,15 +93,23 @@ struct Args {
     /// Whether to generate a cert or CSR
     #[arg(long)]
     cert: bool,
+    /// Run a sweep over handle counts and derive build.rs constants.
+    #[arg(long)]
+    benchmark: bool,
 }
 
-fn send_certify_key(dpe: &mut DpeInstance, env: &mut dyn DpeEnv, args: &Args) -> Result<Response> {
-    let format = if args.cert {
+fn send_certify_key(
+    dpe: &mut DpeInstance,
+    env: &mut dyn DpeEnv,
+    algorithm: Algorithm,
+    cert: bool,
+) -> Result<Response> {
+    let format = if cert {
         CertifyKeyCommand::FORMAT_X509
     } else {
         CertifyKeyCommand::FORMAT_CSR
     };
-    match args.algorithm {
+    match algorithm {
         #[cfg(any(feature = "p256", feature = "p384"))]
         Algorithm::Ec => CertifyKeyCmd {
             format,
@@ -125,6 +135,14 @@ pub(crate) enum CertOrCsrSize {
     Csr(usize),
 }
 
+impl CertOrCsrSize {
+    pub(crate) fn size(&self) -> usize {
+        match self {
+            CertOrCsrSize::Cert(s) | CertOrCsrSize::Csr(s) => *s,
+        }
+    }
+}
+
 impl Display for CertOrCsrSize {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -138,55 +156,23 @@ impl Display for CertOrCsrSize {
     }
 }
 
-pub(crate) fn calculate_cert_csr_size(env: &mut dyn DpeEnv, args: &Args) -> Result<CertOrCsrSize> {
-    let mut dpe = DpeInstance::new(env, args.algorithm.into())
-        .map_err(|e| anyhow!("DPE error creating instance: {e:?}"))?;
-
-    if args.num_contexts > MAX_HANDLES {
-        return Err(anyhow!("Too many contexts. Max is {MAX_HANDLES}."));
+/// Measure the cert or CSR size for a given number of contexts.
+pub(crate) fn measure_cert_csr(
+    algorithm: Algorithm,
+    num_contexts: usize,
+    cert: bool,
+) -> Result<CertOrCsrSize> {
+    if num_contexts == 0 || num_contexts > MAX_HANDLES {
+        return Err(anyhow!(
+            "num_contexts must be in 1..={MAX_HANDLES}, got {num_contexts}"
+        ));
     }
-    let mut flags = DeriveContextFlags::MAKE_DEFAULT
-        | DeriveContextFlags::INTERNAL_INPUT_INFO
-        | DeriveContextFlags::INTERNAL_INPUT_DICE;
-    if args.cert {
-        flags |= DeriveContextFlags::INPUT_ALLOW_X509;
-    }
-
-    // Minus 1 to account for the default context
-    for i in 0..args.num_contexts - 1 {
-        let _resp = DeriveContextCmd {
-            flags,
-            tci_type: i as u32 + 1,
-            ..Default::default()
-        }
-        .execute(&mut dpe, env, 0)
-        .map_err(|e| anyhow!("DPE error creating {i}th context: {e:?}"))?;
-    }
-
-    let certify_resp = send_certify_key(&mut dpe, env, args)?;
-    let Response::CertifyKey(certify_resp) = certify_resp else {
-        return Err(anyhow!("Unexpected response type"));
-    };
-    let len = certify_resp
-        .cert()
-        .map_err(|_| anyhow!("Error retrieving certificate"))?
-        .len();
-
-    if args.cert {
-        Ok(CertOrCsrSize::Cert(len))
-    } else {
-        Ok(CertOrCsrSize::Csr(len))
-    }
-}
-
-fn main() -> Result<()> {
-    let args = Args::parse();
 
     let mut support = Support::default();
     support.set(Support::SIMULATION, true);
     support.set(Support::AUTO_INIT, true);
-    support.set(Support::X509, args.cert);
-    support.set(Support::CSR, !args.cert);
+    support.set(Support::X509, cert);
+    support.set(Support::CSR, !cert);
     support.set(Support::RECURSIVE, true);
     support.set(Support::ROTATE_CONTEXT, true);
     support.set(Support::INTERNAL_DICE, true);
@@ -197,36 +183,89 @@ fn main() -> Result<()> {
     let flags = DpeFlags::empty();
     let mut state = caliptra_dpe::State::new(support, flags);
 
-    let size: Result<CertOrCsrSize> = match args.algorithm {
+    let result: Result<CertOrCsrSize> = match algorithm {
         #[cfg(any(feature = "p256", feature = "p384"))]
-        Algorithm::Ec => calculate_cert_csr_size(
+        Algorithm::Ec => execute_and_measure(
             &mut DpeEnvImpl {
                 crypto: &mut ec::new_crypto(),
-                platform: &mut DefaultPlatform(args.algorithm.into()),
+                platform: &mut DefaultPlatform(algorithm.into()),
                 state: &mut state,
             },
-            &args,
+            algorithm,
+            num_contexts,
+            cert,
         ),
         #[cfg(feature = "ml-dsa")]
-        Algorithm::Mldsa => calculate_cert_csr_size(
+        Algorithm::Mldsa => execute_and_measure(
             &mut DpeEnvImpl {
                 crypto: &mut caliptra_dpe_crypto::RustCryptoImpl::new_mldsa87(),
                 platform: &mut DefaultPlatform(DefaultPlatformProfile::Mldsa87),
                 state: &mut state,
             },
-            &args,
+            algorithm,
+            num_contexts,
+            cert,
         ),
         #[allow(unreachable_patterns)]
         _ => Err(anyhow!("Unsupported algorithm")),
     };
+    result
+}
 
-    match size {
-        Ok(ccs) => {
-            println!("{}", ccs);
+/// Generate a `DeriveContextCmd`, execute it for a newly created `DpeInstance`,
+/// and measure the certificate size.
+fn execute_and_measure(
+    env: &mut dyn DpeEnv,
+    algorithm: Algorithm,
+    num_contexts: usize,
+    cert: bool,
+) -> Result<CertOrCsrSize> {
+    let mut dpe = DpeInstance::new(env, algorithm.into())
+        .map_err(|e| anyhow!("DPE error creating instance: {e:?}"))?;
+
+    let mut flags = DeriveContextFlags::MAKE_DEFAULT
+        | DeriveContextFlags::INTERNAL_INPUT_INFO
+        | DeriveContextFlags::INTERNAL_INPUT_DICE;
+    if cert {
+        flags |= DeriveContextFlags::INPUT_ALLOW_X509;
+    }
+
+    for i in 0..num_contexts - 1 {
+        DeriveContextCmd {
+            flags,
+            tci_type: i as u32 + 1,
+            ..Default::default()
         }
-        Err(e) => {
-            eprintln!("{:?}", e);
-        }
+        .execute(&mut dpe, env, 0)
+        .map_err(|e| anyhow!("DPE error creating {i}th context: {e:?}"))?;
+    }
+
+    let certify_resp = send_certify_key(&mut dpe, env, algorithm, cert)?;
+    let Response::CertifyKey(certify_resp) = certify_resp else {
+        return Err(anyhow!("Unexpected response type"));
+    };
+    let len = certify_resp
+        .cert()
+        .map_err(|_| anyhow!("Error retrieving certificate"))?
+        .len();
+
+    if cert {
+        Ok(CertOrCsrSize::Cert(len))
+    } else {
+        Ok(CertOrCsrSize::Csr(len))
+    }
+}
+
+fn main() -> Result<()> {
+    let args = Args::parse();
+
+    if args.benchmark {
+        return benchmark::run(args.algorithm);
+    }
+
+    match measure_cert_csr(args.algorithm, args.num_contexts, args.cert) {
+        Ok(ccs) => println!("{ccs}"),
+        Err(e) => eprintln!("{e:?}"),
     }
 
     Ok(())

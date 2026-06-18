@@ -40,4 +40,4 @@ path = "src/sample_dpe_cert.rs"
 
 [[bin]]
 name = "cert-size"
-path = "src/cert_size.rs"
+path = "src/cert_size/main.rs"
