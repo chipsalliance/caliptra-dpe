@@ -289,6 +289,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "caliptra-dpe-response-buffer"
+version = "0.1.0"
+
+[[package]]
 name = "caliptra-dpe-simulator"
 version = "0.1.0"
 dependencies = [
