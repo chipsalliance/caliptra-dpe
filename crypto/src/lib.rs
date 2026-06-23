@@ -462,11 +462,91 @@ pub trait CryptoSuite: Crypto + SignatureType + DigestType {
 }
 
 pub trait Signer {
-    /// Sign `data` with the derived private key
-    fn sign(&mut self, data: &SignData) -> Result<Signature, CryptoError>;
+    /// Sign `data` with the derived private key into a caller-provided byte slice.
+    /// For ECDSA, writes raw r||s bytes (64 bytes for P-256, 96 bytes for P-384).
+    /// For ML-DSA, writes raw signature bytes (4627 bytes for ML-DSA-87).
+    /// The `pub_key` parameter is used by implementations that need the public key
+    /// for post-sign verification (e.g., ML-DSA hardware).
+    fn sign_into_slice(
+        &mut self,
+        data: &SignData,
+        pub_key: Option<&[u8]>,
+        signature: &mut [u8],
+    ) -> Result<(), CryptoError>;
 
-    /// Get the public key associated with the derived key-pair
-    fn public_key(&mut self) -> Result<PubKey, CryptoError>;
+    /// Sign `data` with the derived private key, returning the signature by value.
+    /// Default implementation calls `sign_into_slice`.
+    fn sign(&mut self, data: &SignData) -> Result<Signature, CryptoError> {
+        match self.signature_alg() {
+            SignatureAlgorithm::Ecdsa(alg) => {
+                let curve_size = alg.curve_size();
+                let mut buf = [0u8; ecdsa::curve_384::CURVE_SIZE * 2];
+                self.sign_into_slice(data, None, &mut buf[..curve_size * 2])?;
+                let (r, s) = buf[..curve_size * 2].split_at(curve_size);
+                Ok(Signature::Ecdsa(match alg {
+                    ecdsa::EcdsaAlgorithm::Bit256 => {
+                        ecdsa::EcdsaSignature::Ecdsa256(ecdsa::EcdsaSig::from_slice(
+                            r.try_into().map_err(|_| CryptoError::Size)?,
+                            s.try_into().map_err(|_| CryptoError::Size)?,
+                        ))
+                    }
+                    ecdsa::EcdsaAlgorithm::Bit384 => {
+                        ecdsa::EcdsaSignature::Ecdsa384(ecdsa::EcdsaSig::from_slice(
+                            r.try_into().map_err(|_| CryptoError::Size)?,
+                            s.try_into().map_err(|_| CryptoError::Size)?,
+                        ))
+                    }
+                }))
+            }
+            #[cfg(feature = "ml-dsa")]
+            SignatureAlgorithm::Mldsa(_) => {
+                let mut buf = [0u8; ml_dsa::MldsaAlgorithm::Mldsa87.signature_size()];
+                self.sign_into_slice(data, None, &mut buf)?;
+                Ok(Signature::Mldsa(ml_dsa::MldsaSignature(buf)))
+            }
+        }
+    }
+
+    /// Get the public key associated with the derived key-pair into a caller-provided byte slice.
+    /// For ECDSA, writes raw x||y bytes (64 bytes for P-256, 96 bytes for P-384).
+    /// For ML-DSA, writes raw public key bytes (2592 bytes for ML-DSA-87).
+    fn public_key_into(&mut self, pub_key: &mut [u8]) -> Result<(), CryptoError>;
+
+    /// Get the public key associated with the derived key-pair, returning by value.
+    /// Default implementation calls `public_key_into`.
+    fn public_key(&mut self) -> Result<PubKey, CryptoError> {
+        match self.signature_alg() {
+            SignatureAlgorithm::Ecdsa(alg) => {
+                let curve_size = alg.curve_size();
+                let mut buf = [0u8; ecdsa::curve_384::CURVE_SIZE * 2];
+                self.public_key_into(&mut buf[..curve_size * 2])?;
+                let (x, y) = buf[..curve_size * 2].split_at(curve_size);
+                Ok(PubKey::Ecdsa(match alg {
+                    ecdsa::EcdsaAlgorithm::Bit256 => {
+                        ecdsa::EcdsaPubKey::Ecdsa256(ecdsa::EcdsaPub::from_slice(
+                            x.try_into().map_err(|_| CryptoError::Size)?,
+                            y.try_into().map_err(|_| CryptoError::Size)?,
+                        ))
+                    }
+                    ecdsa::EcdsaAlgorithm::Bit384 => {
+                        ecdsa::EcdsaPubKey::Ecdsa384(ecdsa::EcdsaPub::from_slice(
+                            x.try_into().map_err(|_| CryptoError::Size)?,
+                            y.try_into().map_err(|_| CryptoError::Size)?,
+                        ))
+                    }
+                }))
+            }
+            #[cfg(feature = "ml-dsa")]
+            SignatureAlgorithm::Mldsa(_) => {
+                let mut buf = [0u8; ml_dsa::MldsaAlgorithm::Mldsa87.public_key_size()];
+                self.public_key_into(&mut buf)?;
+                Ok(PubKey::Mldsa(ml_dsa::MldsaPublicKey(buf)))
+            }
+        }
+    }
+
+    /// Returns the signature algorithm used by this signer.
+    fn signature_alg(&self) -> SignatureAlgorithm;
 }
 
 pub trait CdiManager {
@@ -509,6 +589,19 @@ pub trait CdiManager {
         self.derive_key_pair(label, info)?.sign(data)
     }
 
+    /// Sign `data` with a derived key-pair from the CDI into a caller-provided byte slice.
+    fn sign_with_derived_into_slice(
+        &mut self,
+        label: &[u8],
+        info: &[u8],
+        data: &SignData,
+        pub_key: Option<&[u8]>,
+        signature: &mut [u8],
+    ) -> Result<(), CryptoError> {
+        self.derive_key_pair(label, info)?
+            .sign_into_slice(data, pub_key, signature)
+    }
+
     /// Get the public key of a derived key-pair from the CDI
     ///
     /// # Arguments
@@ -517,6 +610,16 @@ pub trait CdiManager {
     /// * `info` - Caller-supplied info string to use in asymmetric key derivation
     fn derive_pub_key(&mut self, label: &[u8], info: &[u8]) -> Result<PubKey, CryptoError> {
         self.derive_key_pair(label, info)?.public_key()
+    }
+
+    /// Get the public key of a derived key-pair from the CDI into a caller-provided byte slice.
+    fn derive_pub_key_into(
+        &mut self,
+        label: &[u8],
+        info: &[u8],
+        pub_key: &mut [u8],
+    ) -> Result<(), CryptoError> {
+        self.derive_key_pair(label, info)?.public_key_into(pub_key)
     }
 
     /// This should only be used in testing
@@ -649,11 +752,14 @@ pub trait Crypto {
         info: &[u8],
     ) -> Result<&mut dyn Signer, CryptoError>;
 
-    /// Sign `digest` with the platform Alias Key
-    ///
-    /// # Arguments
-    ///
-    /// * `data` - Data to be signed.
+    /// Sign `data` with the platform Alias Key into a caller-provided byte slice.
+    fn sign_with_alias_into_slice(
+        &mut self,
+        data: &SignData,
+        signature: &mut [u8],
+    ) -> Result<(), CryptoError>;
+
+    /// Sign `digest` with the platform Alias Key, returning the signature by value.
     fn sign_with_alias(&mut self, data: &SignData) -> Result<Signature, CryptoError>;
 
     /// Sign `data` with a key derived from the current CDI and measurements.
@@ -677,6 +783,22 @@ pub trait Crypto {
             .sign_with_derived(label, derived_info, data)
     }
 
+    /// Sign `data` with a key derived from the current CDI and measurements into a caller-provided byte slice.
+    #[allow(clippy::too_many_arguments)]
+    fn sign_with_derived_into_slice(
+        &mut self,
+        measurement: &Digest,
+        info: &[u8],
+        label: &[u8],
+        derived_info: &[u8],
+        data: &SignData,
+        pub_key: Option<&[u8]>,
+        signature: &mut [u8],
+    ) -> Result<(), CryptoError> {
+        self.derive_cdi(measurement, info)?
+            .sign_with_derived_into_slice(label, derived_info, data, pub_key, signature)
+    }
+
     /// Derive the public key for a key derived from the current CDI and measurements.
     ///
     /// # Arguments
@@ -694,5 +816,18 @@ pub trait Crypto {
     ) -> Result<PubKey, CryptoError> {
         self.derive_cdi(measurement, info)?
             .derive_pub_key(label, derived_info)
+    }
+
+    /// Derive the public key for a key derived from the current CDI and measurements into a caller-provided byte slice.
+    fn derive_pub_key_into(
+        &mut self,
+        measurement: &Digest,
+        info: &[u8],
+        label: &[u8],
+        derived_info: &[u8],
+        pub_key: &mut [u8],
+    ) -> Result<(), CryptoError> {
+        self.derive_cdi(measurement, info)?
+            .derive_pub_key_into(label, derived_info, pub_key)
     }
 }

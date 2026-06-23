@@ -78,6 +78,14 @@ impl Crypto for DummyCrypto {
         let _ = data;
         Err(CryptoError::NotImplemented)
     }
+
+    fn sign_with_alias_into_slice(
+        &mut self,
+        _data: &SignData,
+        _signature: &mut [u8],
+    ) -> Result<(), CryptoError> {
+        Err(CryptoError::NotImplemented)
+    }
 }
 
 impl CryptoSuite for DummyCrypto {}
@@ -135,12 +143,20 @@ impl CdiManager for DummyCdiManager {
 pub struct DummySigner;
 
 impl Signer for DummySigner {
-    fn sign(&mut self, data: &SignData) -> Result<crypto::Signature, CryptoError> {
-        let _ = data;
+    fn sign_into_slice(
+        &mut self,
+        _data: &SignData,
+        _pub_key: Option<&[u8]>,
+        _signature: &mut [u8],
+    ) -> Result<(), CryptoError> {
         Err(CryptoError::NotImplemented)
     }
 
-    fn public_key(&mut self) -> Result<PubKey, CryptoError> {
+    fn public_key_into(&mut self, _pub_key: &mut [u8]) -> Result<(), CryptoError> {
         Err(CryptoError::NotImplemented)
+    }
+
+    fn signature_alg(&self) -> SignatureAlgorithm {
+        SignatureAlgorithm::Ecdsa(crypto::ecdsa::EcdsaAlgorithm::Bit384)
     }
 }
