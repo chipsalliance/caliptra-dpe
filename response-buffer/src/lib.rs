@@ -22,7 +22,7 @@ pub trait ResponseBuffer {
     /// times with consecutive chunks that together cover exactly the bytes in
     /// `range`.
     ///
-    /// Implementations can `f` exactly once, e.g. if they are backed by
+    /// Implementations can call `f` exactly once, e.g. if they are backed by
     /// contiguous storage.
     /// Implementations backed by word-addressed storage (e.g. MBOX SRAM) may
     /// call `f` multiple times to handle unaligned head/tail bytes.
@@ -55,7 +55,11 @@ impl<'a> OffsetResponseBuffer<'a> {
 
 impl ResponseBuffer for OffsetResponseBuffer<'_> {
     fn clear(&mut self) -> Result<(), ResponseBufError> {
-        self.inner.clear()
+        for i in 0..self.capacity() {
+            self.write_at(i, &[0])?;
+        }
+
+        Ok(())
     }
 
     fn write_at(&mut self, offset: usize, bytes: &[u8]) -> Result<(), ResponseBufError> {
@@ -101,9 +105,7 @@ impl<'a> SliceResponseBuffer<'a> {
 
 impl<'a> ResponseBuffer for SliceResponseBuffer<'a> {
     fn clear(&mut self) -> Result<(), ResponseBufError> {
-        for b in self.buf.iter_mut() {
-            *b = 0;
-        }
+        self.buf.fill(0);
         Ok(())
     }
 
@@ -254,19 +256,19 @@ mod tests {
         // clear() zeroes the entire underlying buffer
         {
             let mut slice_buf = SliceResponseBuffer::new(&mut storage);
+            slice_buf.write_at(0, &[0xAA, 0xBB, 0xCC]).unwrap();
             let mut obuf = OffsetResponseBuffer::new(&mut slice_buf, 3);
+            obuf.write_at(0, &[0x01, 0x02, 0x03, 0x04, 0x05]).unwrap();
             obuf.clear().unwrap();
         }
-        assert_eq!(storage, &[0u8; 8][..]);
+        assert_eq!(&storage[..3], &[0xAA, 0xBB, 0xCC]);
+        assert_eq!(&storage[3..], &[0u8; 5][..]);
 
         // Error: base + offset wraps usize::MAX
         {
             let mut slice_buf = SliceResponseBuffer::new(&mut storage);
             let mut obuf = OffsetResponseBuffer::new(&mut slice_buf, usize::MAX);
-            assert_eq!(
-                obuf.write_at(1, &[0x01]),
-                Err(ResponseBufError::Overflow)
-            );
+            assert_eq!(obuf.write_at(1, &[0x01]), Err(ResponseBufError::Overflow));
         }
 
         // Error: write lands past the inner buffer's end
@@ -274,10 +276,7 @@ mod tests {
             let mut slice_buf = SliceResponseBuffer::new(&mut storage);
             let mut obuf = OffsetResponseBuffer::new(&mut slice_buf, 3);
             // base(3) + offset(6) = 9, but inner capacity is 8
-            assert_eq!(
-                obuf.write_at(6, &[0x01]),
-                Err(ResponseBufError::Overflow)
-            );
+            assert_eq!(obuf.write_at(6, &[0x01]), Err(ResponseBufError::Overflow));
         }
 
         // Error: read_range start addition wraps usize::MAX
