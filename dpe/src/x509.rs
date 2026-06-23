@@ -32,7 +32,7 @@ use caliptra_dpe_platform::{
 use zerocopy::IntoBytes;
 
 #[cfg(feature = "ml-dsa")]
-use caliptra_dpe_crypto::ml_dsa::{MldsaPublicKey, MldsaSignature};
+use caliptra_dpe_crypto::ml_dsa::{MldsaAlgorithm, MldsaPublicKey, MldsaSignature};
 
 /// Max amount of backtracks during encoding.
 /// Currently the deepest backtrack path is 7.
@@ -136,6 +136,25 @@ pub struct MeasurementData<'a> {
     pub subject_key_identifier: [u8; MAX_KEY_IDENTIFIER_SIZE],
     pub authority_key_identifier: [u8; MAX_KEY_IDENTIFIER_SIZE],
     pub subject_alt_name: Option<SubjectAltName>,
+}
+
+#[derive(Clone, Copy)]
+enum SubjectPubKeyRef<'a> {
+    Ecdsa(&'a EcdsaPubKey),
+    #[cfg(feature = "ml-dsa")]
+    Mldsa(&'a [u8]),
+}
+
+impl<'a> TryFrom<&'a PubKey> for SubjectPubKeyRef<'a> {
+    type Error = DpeErrorCode;
+
+    fn try_from(pub_key: &'a PubKey) -> Result<Self, Self::Error> {
+        match pub_key {
+            PubKey::Ecdsa(pub_key) => Ok(Self::Ecdsa(pub_key)),
+            #[cfg(feature = "ml-dsa")]
+            PubKey::Mldsa(pub_key) => Ok(Self::Mldsa(pub_key.as_slice())),
+        }
+    }
 }
 
 pub struct CertWriter<'a> {
@@ -483,12 +502,22 @@ impl CertWriter<'_> {
     /// Calculate the number of bytes an MLDSA-87 SubjectPublicKeyInfo will be
     /// If `tagged`, include the tag and size fields
     #[cfg(feature = "ml-dsa")]
+    #[allow(dead_code)]
     fn get_mldsa_subject_pubkey_info_size(
         &self,
         pubkey: &MldsaPublicKey,
         tagged: bool,
     ) -> Result<usize, DpeErrorCode> {
-        let bitstring_size = Self::get_structure_size(1 + pubkey.0.len(), true);
+        self.get_mldsa_subject_pubkey_info_size_from_len(pubkey.0.len(), tagged)
+    }
+
+    #[cfg(feature = "ml-dsa")]
+    fn get_mldsa_subject_pubkey_info_size_from_len(
+        &self,
+        pubkey_len: usize,
+        tagged: bool,
+    ) -> Result<usize, DpeErrorCode> {
+        let bitstring_size = Self::get_structure_size(1 + pubkey_len, true);
         let seq_size = bitstring_size + self.get_mldsa_sig_alg_id_size(true)?;
 
         Ok(Self::get_structure_size(seq_size, tagged))
@@ -516,15 +545,23 @@ impl CertWriter<'_> {
         pubkey: &PubKey,
         tagged: bool,
     ) -> Result<usize, DpeErrorCode> {
+        self.get_subject_pubkey_info_size_ref(SubjectPubKeyRef::try_from(pubkey)?, tagged)
+    }
+
+    fn get_subject_pubkey_info_size_ref(
+        &self,
+        pubkey: SubjectPubKeyRef<'_>,
+        tagged: bool,
+    ) -> Result<usize, DpeErrorCode> {
         let size = match pubkey {
-            PubKey::Ecdsa(pubkey) => {
+            SubjectPubKeyRef::Ecdsa(pubkey) => {
                 self.get_ecdsa_sig_alg_id_size(tagged)?
                     + self.get_ecdsa_subject_pubkey_info_size(pubkey, tagged)?
             }
             #[cfg(feature = "ml-dsa")]
-            PubKey::Mldsa(pubkey) => {
+            SubjectPubKeyRef::Mldsa(pubkey) => {
                 self.get_mldsa_sig_alg_id_size(tagged)?
-                    + self.get_mldsa_subject_pubkey_info_size(pubkey, tagged)?
+                    + self.get_mldsa_subject_pubkey_info_size_from_len(pubkey.len(), tagged)?
             }
         };
         Ok(size)
@@ -551,6 +588,15 @@ impl CertWriter<'_> {
         Ok(signature_size)
     }
 
+    #[cfg(all(not(feature = "disable_csr"), feature = "ml-dsa"))]
+    fn get_mldsa_signature_octet_string_size_from_len(
+        &self,
+        sig_len: usize,
+        tagged: bool,
+    ) -> Result<usize, DpeErrorCode> {
+        Ok(self.get_mldsa_sig_alg_id_size(tagged)? + Self::get_structure_size(sig_len, tagged))
+    }
+
     /// If `tagged`, include the tag and size fields
     #[cfg(all(not(feature = "disable_csr"), feature = "ml-dsa"))]
     fn get_mldsa_signature_octet_string_size(sig: &MldsaSignature, tagged: bool) -> usize {
@@ -561,6 +607,11 @@ impl CertWriter<'_> {
     #[cfg(not(feature = "disable_csr"))]
     fn get_ecdsa_signature_octet_string_size(sig: &EcdsaSignature, tagged: bool) -> usize {
         let (r, s) = sig.as_slice();
+        Self::get_ecdsa_signature_octet_string_size_from_bytes(r, s, tagged)
+    }
+
+    #[cfg(not(feature = "disable_csr"))]
+    fn get_ecdsa_signature_octet_string_size_from_bytes(r: &[u8], s: &[u8], tagged: bool) -> usize {
         let seq_size = Self::get_structure_size(
             Self::get_integer_bytes_size(r, /*tagged=*/ true)
                 + Self::get_integer_bytes_size(s, /*tagged=*/ true),
@@ -569,6 +620,126 @@ impl CertWriter<'_> {
 
         // Wrapping structure size
         Self::get_structure_size(seq_size, tagged)
+    }
+
+    #[cfg(any(not(feature = "disable_csr"), not(feature = "disable_x509")))]
+    fn raw_signature_size(pubkey: SubjectPubKeyRef<'_>) -> usize {
+        match pubkey {
+            SubjectPubKeyRef::Ecdsa(pubkey) => pubkey.curve_size() * 2,
+            #[cfg(feature = "ml-dsa")]
+            SubjectPubKeyRef::Mldsa(_) => MldsaAlgorithm::Mldsa87.signature_size(),
+        }
+    }
+
+    #[cfg(not(feature = "disable_csr"))]
+    fn copy_signature_to_raw(
+        pubkey: SubjectPubKeyRef<'_>,
+        sig: &Signature,
+        out: &mut [u8],
+    ) -> Result<(), CryptoError> {
+        #[allow(unreachable_patterns)]
+        match (pubkey, sig) {
+            (SubjectPubKeyRef::Ecdsa(pubkey), Signature::Ecdsa(sig)) => {
+                let curve_size = pubkey.curve_size();
+                if out.len() != curve_size * 2 {
+                    return Err(CryptoError::Size);
+                }
+                let (r, s) = sig.as_slice();
+                if r.len() != curve_size || s.len() != curve_size {
+                    return Err(CryptoError::Size);
+                }
+                out[..curve_size].copy_from_slice(r);
+                out[curve_size..].copy_from_slice(s);
+                Ok(())
+            }
+            #[cfg(feature = "ml-dsa")]
+            (SubjectPubKeyRef::Mldsa(_), Signature::Mldsa(sig)) => {
+                if out.len() != sig.0.len() {
+                    return Err(CryptoError::Size);
+                }
+                out.copy_from_slice(&sig.0);
+                Ok(())
+            }
+            _ => Err(CryptoError::MismatchedAlgorithm),
+        }
+    }
+
+    #[cfg(not(feature = "disable_csr"))]
+    fn ecdsa_signature_from_raw(
+        pubkey: SubjectPubKeyRef<'_>,
+        _sig: &[u8],
+    ) -> Result<Signature, DpeErrorCode> {
+        match pubkey {
+            #[cfg(feature = "p256")]
+            SubjectPubKeyRef::Ecdsa(EcdsaPubKey::Ecdsa256(_)) => {
+                let curve_size = caliptra_dpe_crypto::ecdsa::curve_256::CURVE_SIZE;
+                if _sig.len() != curve_size * 2 {
+                    return Err(DpeErrorCode::X509AlgorithmMismatch);
+                }
+                let r = <&[u8; caliptra_dpe_crypto::ecdsa::curve_256::CURVE_SIZE]>::try_from(
+                    &_sig[..curve_size],
+                )
+                .map_err(|_| DpeErrorCode::X509AlgorithmMismatch)?;
+                let s = <&[u8; caliptra_dpe_crypto::ecdsa::curve_256::CURVE_SIZE]>::try_from(
+                    &_sig[curve_size..],
+                )
+                .map_err(|_| DpeErrorCode::X509AlgorithmMismatch)?;
+                Ok(Signature::Ecdsa(EcdsaSignature::Ecdsa256(
+                    caliptra_dpe_crypto::ecdsa::curve_256::EcdsaSignature256::from_slice(r, s),
+                )))
+            }
+            #[cfg(feature = "p384")]
+            SubjectPubKeyRef::Ecdsa(EcdsaPubKey::Ecdsa384(_)) => {
+                let curve_size = caliptra_dpe_crypto::ecdsa::curve_384::CURVE_SIZE;
+                if _sig.len() != curve_size * 2 {
+                    return Err(DpeErrorCode::X509AlgorithmMismatch);
+                }
+                let r = <&[u8; caliptra_dpe_crypto::ecdsa::curve_384::CURVE_SIZE]>::try_from(
+                    &_sig[..curve_size],
+                )
+                .map_err(|_| DpeErrorCode::X509AlgorithmMismatch)?;
+                let s = <&[u8; caliptra_dpe_crypto::ecdsa::curve_384::CURVE_SIZE]>::try_from(
+                    &_sig[curve_size..],
+                )
+                .map_err(|_| DpeErrorCode::X509AlgorithmMismatch)?;
+                Ok(Signature::Ecdsa(EcdsaSignature::Ecdsa384(
+                    caliptra_dpe_crypto::ecdsa::curve_384::EcdsaSignature384::from_slice(r, s),
+                )))
+            }
+            SubjectPubKeyRef::Ecdsa(_) => Err(DpeErrorCode::X509AlgorithmMismatch),
+            #[cfg(feature = "ml-dsa")]
+            SubjectPubKeyRef::Mldsa(_) => Err(DpeErrorCode::X509AlgorithmMismatch),
+        }
+    }
+
+    #[cfg(not(feature = "disable_csr"))]
+    fn get_signature_octet_string_size_from_bytes(
+        &self,
+        pubkey: SubjectPubKeyRef<'_>,
+        sig: &[u8],
+        tagged: bool,
+    ) -> Result<usize, DpeErrorCode> {
+        match pubkey {
+            SubjectPubKeyRef::Ecdsa(pubkey) => {
+                let curve_size = pubkey.curve_size();
+                if sig.len() != curve_size * 2 {
+                    return Err(DpeErrorCode::X509AlgorithmMismatch);
+                }
+                Ok(self.get_ecdsa_sig_alg_id_size(tagged)?
+                    + Self::get_ecdsa_signature_octet_string_size_from_bytes(
+                        &sig[..curve_size],
+                        &sig[curve_size..],
+                        tagged,
+                    ))
+            }
+            #[cfg(feature = "ml-dsa")]
+            SubjectPubKeyRef::Mldsa(_) => {
+                if sig.len() != MldsaAlgorithm::Mldsa87.signature_size() {
+                    return Err(DpeErrorCode::X509AlgorithmMismatch);
+                }
+                self.get_mldsa_signature_octet_string_size_from_len(sig.len(), tagged)
+            }
+        }
     }
 
     /// version is marked as EXPLICIT [0]
@@ -891,20 +1062,22 @@ impl CertWriter<'_> {
         Ok(Self::get_structure_size(tbs_size, tagged))
     }
 
-    /// Get the size of the ASN.1 CertificationRequestInfo structure
-    /// If `tagged`, include the tag and size fields
     #[cfg(not(feature = "disable_csr"))]
-    fn get_certification_request_info_size(
+    fn get_certification_request_info_size_ref(
         &self,
         subject_name: &Name,
-        pubkey: &PubKey,
+        pubkey: SubjectPubKeyRef<'_>,
         measurements: &MeasurementData,
         tagged: bool,
     ) -> Result<usize, DpeErrorCode> {
         let pubkey_size = match pubkey {
-            PubKey::Ecdsa(pubkey) => self.get_ecdsa_subject_pubkey_info_size(pubkey, true)?,
+            SubjectPubKeyRef::Ecdsa(pubkey) => {
+                self.get_ecdsa_subject_pubkey_info_size(pubkey, true)?
+            }
             #[cfg(feature = "ml-dsa")]
-            PubKey::Mldsa(pubkey) => self.get_mldsa_subject_pubkey_info_size(pubkey, true)?,
+            SubjectPubKeyRef::Mldsa(pubkey) => {
+                self.get_mldsa_subject_pubkey_info_size_from_len(pubkey.len(), true)?
+            }
         };
         let cert_req_info_size = Self::get_integer_size(Self::CSR_V0, true)
             + Self::get_rdn_size(subject_name, /*tagged=*/ true)
@@ -943,8 +1116,49 @@ impl CertWriter<'_> {
         Ok(Self::get_structure_size(signer_info_size, tagged))
     }
 
-    /// Get the size of the ASN.1 SignedData structure
-    /// If `tagged`, include the tag and size fields
+    #[cfg(not(feature = "disable_csr"))]
+    fn get_signer_info_size_from_raw_signature(
+        &self,
+        pubkey: SubjectPubKeyRef<'_>,
+        sig_len: usize,
+        sid: &SignerIdentifier,
+        tagged: bool,
+    ) -> Result<usize, DpeErrorCode> {
+        let sig_placeholder = [0u8; 96];
+        let sig = match pubkey {
+            SubjectPubKeyRef::Ecdsa(_) => sig_placeholder
+                .get(..sig_len)
+                .ok_or(DpeErrorCode::X509AlgorithmMismatch)?,
+            #[cfg(feature = "ml-dsa")]
+            SubjectPubKeyRef::Mldsa(_) => {
+                return self.get_mldsa_signer_info_size(sid, tagged);
+            }
+        };
+        let signer_info_size = Self::get_cms_version_size(sid)
+            + Self::get_signer_identifier_size(sid, /*tagged=*/ true)
+            + self.get_hash_alg_id_size(/*tagged=*/ true)?
+            + self.get_signature_octet_string_size_from_bytes(pubkey, sig, true)?;
+
+        Ok(Self::get_structure_size(signer_info_size, tagged))
+    }
+
+    #[cfg(all(not(feature = "disable_csr"), feature = "ml-dsa"))]
+    fn get_mldsa_signer_info_size(
+        &self,
+        sid: &SignerIdentifier,
+        tagged: bool,
+    ) -> Result<usize, DpeErrorCode> {
+        let signer_info_size = Self::get_cms_version_size(sid)
+            + Self::get_signer_identifier_size(sid, /*tagged=*/ true)
+            + self.get_hash_alg_id_size(/*tagged=*/ true)?
+            + self.get_mldsa_signature_octet_string_size_from_len(
+                MldsaAlgorithm::Mldsa87.signature_size(),
+                true,
+            )?;
+
+        Ok(Self::get_structure_size(signer_info_size, tagged))
+    }
+
     #[cfg(not(feature = "disable_csr"))]
     fn get_signed_data_size(
         &self,
@@ -965,7 +1179,34 @@ impl CertWriter<'_> {
                 /*tagged=*/ true,
             );
 
-        // Determine whether to include the explicit tag wrapping in the size calculation
+        let explicit_signed_data_size = Self::get_structure_size(signed_data_size, explicit);
+
+        Ok(Self::get_structure_size(explicit_signed_data_size, tagged))
+    }
+
+    #[cfg(not(feature = "disable_csr"))]
+    fn get_signed_data_size_from_raw_signature(
+        &self,
+        csr_len: usize,
+        pubkey: SubjectPubKeyRef<'_>,
+        sig_len: usize,
+        sid: &SignerIdentifier,
+        tagged: bool,
+        explicit: bool,
+    ) -> Result<usize, DpeErrorCode> {
+        let signed_data_size = Self::get_cms_version_size(sid)
+            + Self::get_structure_size(
+                self.get_hash_alg_id_size(/*tagged=*/ true)?,
+                /*tagged=*/ true,
+            )
+            + Self::get_encap_content_info_size(csr_len, /*tagged=*/ true)
+            + Self::get_structure_size(
+                self.get_signer_info_size_from_raw_signature(
+                    pubkey, sig_len, sid, /*tagged=*/ true,
+                )?,
+                /*tagged=*/ true,
+            );
+
         let explicit_signed_data_size = Self::get_structure_size(signed_data_size, explicit);
 
         Ok(Self::get_structure_size(explicit_signed_data_size, tagged))
@@ -1108,6 +1349,16 @@ impl CertWriter<'_> {
         // of encoding overflows.
         self.offset += size;
         size
+    }
+
+    #[cfg(all(not(feature = "disable_csr"), feature = "ml-dsa"))]
+    fn reserve_bytes(&mut self, size: usize) -> Result<usize, DpeErrorCode> {
+        let offset = self.offset;
+        if self.certificate.get_mut(offset..offset + size).is_none() {
+            return Err(InternalErrorCode::CertSizeOverflow.into());
+        }
+        self.offset += size;
+        Ok(offset)
     }
 
     /// Write a single `byte` to the certificate buffer.
@@ -1399,6 +1650,14 @@ impl CertWriter<'_> {
         sig: &EcdsaSignature,
     ) -> Result<usize, DpeErrorCode> {
         let (r, s) = sig.as_slice();
+        self.encode_ecdsa_signature_bit_string_bytes(r, s)
+    }
+
+    fn encode_ecdsa_signature_bit_string_bytes(
+        &mut self,
+        r: &[u8],
+        s: &[u8],
+    ) -> Result<usize, DpeErrorCode> {
         let seq_size = Self::get_integer_bytes_size(r, /*tagged=*/ true)
             + Self::get_integer_bytes_size(s, /*tagged=*/ true);
 
@@ -1471,6 +1730,11 @@ impl CertWriter<'_> {
     #[cfg(not(feature = "disable_csr"))]
     fn encode_ecdsa_signature_octet_string(&mut self, sig: &EcdsaSignature) -> usize {
         let (r, s) = sig.as_slice();
+        self.encode_ecdsa_signature_octet_string_bytes(r, s)
+    }
+
+    #[cfg(not(feature = "disable_csr"))]
+    fn encode_ecdsa_signature_octet_string_bytes(&mut self, r: &[u8], s: &[u8]) -> usize {
         let seq_size = Self::get_integer_bytes_size(r, /*tagged=*/ true)
             + Self::get_integer_bytes_size(s, /*tagged=*/ true);
 
@@ -1488,13 +1752,74 @@ impl CertWriter<'_> {
         bytes_written
     }
 
+    #[cfg(not(feature = "disable_csr"))]
+    fn encode_signature_bit_string_bytes(
+        &mut self,
+        pubkey: SubjectPubKeyRef<'_>,
+        sig: &[u8],
+    ) -> Result<usize, DpeErrorCode> {
+        match pubkey {
+            SubjectPubKeyRef::Ecdsa(pubkey) => {
+                let curve_size = pubkey.curve_size();
+                if sig.len() != curve_size * 2 {
+                    return Err(DpeErrorCode::X509AlgorithmMismatch);
+                }
+                Ok(self.encode_ecdsa_sig_alg_id()?
+                    + self.encode_ecdsa_signature_bit_string_bytes(
+                        &sig[..curve_size],
+                        &sig[curve_size..],
+                    )?)
+            }
+            #[cfg(feature = "ml-dsa")]
+            SubjectPubKeyRef::Mldsa(_) => {
+                if sig.len() != MldsaAlgorithm::Mldsa87.signature_size() {
+                    return Err(DpeErrorCode::X509AlgorithmMismatch);
+                }
+                Ok(self.encode_mldsa_sig_alg_id()?
+                    + self.encode_mldsa_signature_bit_string_bytes(sig))
+            }
+        }
+    }
+
+    #[cfg(not(feature = "disable_csr"))]
+    fn encode_signature_octet_string_bytes(
+        &mut self,
+        pubkey: SubjectPubKeyRef<'_>,
+        sig: &[u8],
+    ) -> Result<usize, DpeErrorCode> {
+        match pubkey {
+            SubjectPubKeyRef::Ecdsa(pubkey) => {
+                let curve_size = pubkey.curve_size();
+                if sig.len() != curve_size * 2 {
+                    return Err(DpeErrorCode::X509AlgorithmMismatch);
+                }
+                Ok(self.encode_ecdsa_sig_alg_id()?
+                    + self.encode_ecdsa_signature_octet_string_bytes(
+                        &sig[..curve_size],
+                        &sig[curve_size..],
+                    ))
+            }
+            #[cfg(feature = "ml-dsa")]
+            SubjectPubKeyRef::Mldsa(_) => {
+                if sig.len() != MldsaAlgorithm::Mldsa87.signature_size() {
+                    return Err(DpeErrorCode::X509AlgorithmMismatch);
+                }
+                Ok(self.encode_mldsa_sig_alg_id()?
+                    + self.encode_mldsa_signature_octet_string_bytes(sig))
+            }
+        }
+    }
+
     /// OCTET STRING containing
     ///
     /// MLDSA-87 Signature
     #[cfg(all(not(feature = "disable_csr"), feature = "ml-dsa"))]
     fn encode_mldsa_signature_octet_string(&mut self, sig: &MldsaSignature) -> usize {
-        let sig = sig.as_bytes();
+        self.encode_mldsa_signature_octet_string_bytes(sig.as_bytes())
+    }
 
+    #[cfg(all(not(feature = "disable_csr"), feature = "ml-dsa"))]
+    fn encode_mldsa_signature_octet_string_bytes(&mut self, sig: &[u8]) -> usize {
         // Encode OCTET STRING
         self.encode_tlv(Self::OCTET_STRING_TAG, sig)
     }
@@ -1517,32 +1842,173 @@ impl CertWriter<'_> {
         &mut self,
         pub_key: &MldsaPublicKey,
     ) -> Result<usize, DpeErrorCode> {
-        let seq_size = self.get_mldsa_subject_pubkey_info_size(pub_key, false)?;
+        self.encode_mldsa_subject_pubkey_info_bytes(&pub_key.0)
+    }
+
+    #[cfg(feature = "ml-dsa")]
+    fn encode_mldsa_subject_pubkey_info_bytes(
+        &mut self,
+        pub_key: &[u8],
+    ) -> Result<usize, DpeErrorCode> {
+        let seq_size = self.get_mldsa_subject_pubkey_info_size_from_len(pub_key.len(), false)?;
 
         let mut bytes_written = self.encode_tag_field(Self::SEQUENCE_TAG);
         bytes_written += self.encode_size_field(seq_size);
         bytes_written += self.encode_mldsa_sig_alg_id()?;
 
         bytes_written += self.encode_tag_field(Self::BIT_STRING_TAG);
-        bytes_written += self.encode_size_field(1 + pub_key.0.len());
+        bytes_written += self.encode_size_field(1 + pub_key.len());
         // First byte of BIT STRING is the number of unused bits.
         bytes_written += self.encode_byte(0);
-        bytes_written += self.encode_bytes(&pub_key.0);
+        bytes_written += self.encode_bytes(pub_key);
 
         Ok(bytes_written)
+    }
+
+    fn encode_subject_pubkey_info_ref(
+        &mut self,
+        pub_key: SubjectPubKeyRef<'_>,
+    ) -> Result<usize, DpeErrorCode> {
+        match pub_key {
+            SubjectPubKeyRef::Ecdsa(pub_key) => self.encode_ecdsa_subject_pubkey_info(pub_key),
+            #[cfg(feature = "ml-dsa")]
+            SubjectPubKeyRef::Mldsa(pub_key) => {
+                self.encode_mldsa_subject_pubkey_info_bytes(pub_key)
+            }
+        }
     }
 
     /// BIT STRING containing signature
     #[cfg(feature = "ml-dsa")]
     fn encode_mldsa_signature_bit_string(&mut self, sig: &MldsaSignature) -> usize {
+        self.encode_mldsa_signature_bit_string_bytes(&sig.0)
+    }
+
+    #[cfg(feature = "ml-dsa")]
+    fn encode_mldsa_signature_bit_string_bytes(&mut self, sig: &[u8]) -> usize {
         // Encode BIT STRING
         let mut bytes_written = self.encode_tag_field(Self::BIT_STRING_TAG);
-        bytes_written += self.encode_size_field(1 + sig.0.len());
+        bytes_written += self.encode_size_field(1 + sig.len());
         // Unused bits
         bytes_written += self.encode_byte(0);
-        bytes_written += self.encode_bytes(&sig.0);
+        bytes_written += self.encode_bytes(sig);
 
         bytes_written
+    }
+
+    #[cfg(any(not(feature = "disable_csr"), not(feature = "disable_x509")))]
+    fn encode_signature_bit_string_from_cb(
+        &mut self,
+        sign_cb: &mut (impl FnMut(&[u8], bool, &mut [u8]) -> Result<(), CryptoError> + ?Sized),
+        data_range: core::ops::Range<usize>,
+        use_derived: bool,
+        pubkey: SubjectPubKeyRef<'_>,
+    ) -> Result<usize, DpeErrorCode> {
+        match pubkey {
+            SubjectPubKeyRef::Ecdsa(_) => {
+                let sig_len = Self::raw_signature_size(pubkey);
+                let mut sig = [0u8; 96];
+                let signed = self
+                    .certificate
+                    .get(data_range)
+                    .ok_or(DpeErrorCode::from(InternalErrorCode::TbsSliceOob))?;
+                let sig = sig
+                    .get_mut(..sig_len)
+                    .ok_or(DpeErrorCode::from(InternalErrorCode::TbsSliceOob))?;
+                sign_cb(signed, use_derived, sig)?;
+                self.encode_signature_bit_string_bytes(pubkey, sig)
+            }
+            #[cfg(feature = "ml-dsa")]
+            SubjectPubKeyRef::Mldsa(_) => {
+                let mut bytes_written = self.encode_mldsa_sig_alg_id()?;
+
+                let sig_len = MldsaAlgorithm::Mldsa87.signature_size();
+                bytes_written += self.encode_tag_field(Self::BIT_STRING_TAG);
+                bytes_written += self.encode_size_field(1 + sig_len);
+                bytes_written += self.encode_byte(0);
+
+                let sig_offset = self.reserve_bytes(sig_len)?;
+                if data_range.start > data_range.end || data_range.end > sig_offset {
+                    return Err(InternalErrorCode::TbsSliceOob.into());
+                }
+                let sig_end = sig_offset
+                    .checked_add(sig_len)
+                    .ok_or(DpeErrorCode::from(InternalErrorCode::EncodeBytesOverflow))?;
+                if sig_end > self.certificate.len() {
+                    return Err(InternalErrorCode::CertSizeOverflow.into());
+                }
+                let (left, right) = self
+                    .certificate
+                    .split_at_mut_checked(sig_offset)
+                    .ok_or(DpeErrorCode::from(InternalErrorCode::CertSizeOverflow))?;
+                let data = left
+                    .get(data_range)
+                    .ok_or(DpeErrorCode::from(InternalErrorCode::TbsSliceOob))?;
+                let sig = right
+                    .get_mut(..sig_len)
+                    .ok_or(DpeErrorCode::from(InternalErrorCode::CertSizeOverflow))?;
+                sign_cb(data, use_derived, sig)?;
+
+                Ok(bytes_written + sig_len)
+            }
+        }
+    }
+
+    #[cfg(not(feature = "disable_csr"))]
+    fn encode_signature_octet_string_from_cb(
+        &mut self,
+        sign_cb: &mut (impl FnMut(&[u8], bool, &mut [u8]) -> Result<(), CryptoError> + ?Sized),
+        data_range: core::ops::Range<usize>,
+        use_derived: bool,
+        pubkey: SubjectPubKeyRef<'_>,
+    ) -> Result<usize, DpeErrorCode> {
+        match pubkey {
+            SubjectPubKeyRef::Ecdsa(_) => {
+                let sig_len = Self::raw_signature_size(pubkey);
+                let mut sig = [0u8; 96];
+                let signed = self
+                    .certificate
+                    .get(data_range)
+                    .ok_or(DpeErrorCode::from(InternalErrorCode::CmsCsrRangeOob))?;
+                let sig = sig
+                    .get_mut(..sig_len)
+                    .ok_or(DpeErrorCode::from(InternalErrorCode::CmsCsrRangeOob))?;
+                sign_cb(signed, use_derived, sig)?;
+                self.encode_signature_octet_string_bytes(pubkey, sig)
+            }
+            #[cfg(feature = "ml-dsa")]
+            SubjectPubKeyRef::Mldsa(_) => {
+                let mut bytes_written = self.encode_mldsa_sig_alg_id()?;
+
+                let sig_len = MldsaAlgorithm::Mldsa87.signature_size();
+                bytes_written += self.encode_tag_field(Self::OCTET_STRING_TAG);
+                bytes_written += self.encode_size_field(sig_len);
+
+                let sig_offset = self.reserve_bytes(sig_len)?;
+                if data_range.start > data_range.end || data_range.end > sig_offset {
+                    return Err(InternalErrorCode::CmsCsrRangeOob.into());
+                }
+                let sig_end = sig_offset
+                    .checked_add(sig_len)
+                    .ok_or(DpeErrorCode::from(InternalErrorCode::EncodeBytesOverflow))?;
+                if sig_end > self.certificate.len() {
+                    return Err(InternalErrorCode::CertSizeOverflow.into());
+                }
+                let (left, right) = self
+                    .certificate
+                    .split_at_mut_checked(sig_offset)
+                    .ok_or(DpeErrorCode::from(InternalErrorCode::CertSizeOverflow))?;
+                let data = left
+                    .get(data_range)
+                    .ok_or(DpeErrorCode::from(InternalErrorCode::CmsCsrRangeOob))?;
+                let sig = right
+                    .get_mut(..sig_len)
+                    .ok_or(DpeErrorCode::from(InternalErrorCode::CertSizeOverflow))?;
+                sign_cb(data, use_derived, sig)?;
+
+                Ok(bytes_written + sig_len)
+            }
+        }
     }
 
     fn encode_version(&mut self) -> usize {
@@ -2058,6 +2524,30 @@ impl CertWriter<'_> {
         Ok(bytes_written)
     }
 
+    #[cfg(not(feature = "disable_csr"))]
+    fn encode_signer_info_from_cb(
+        &mut self,
+        sign_cb: &mut (impl FnMut(&[u8], bool, &mut [u8]) -> Result<(), CryptoError> + ?Sized),
+        data_range: core::ops::Range<usize>,
+        pubkey: SubjectPubKeyRef<'_>,
+        sid: &SignerIdentifier,
+    ) -> Result<usize, DpeErrorCode> {
+        let sig_len = Self::raw_signature_size(pubkey);
+        let signer_info_size = self.get_signer_info_size_from_raw_signature(
+            pubkey, sig_len, sid, /*tagged=*/ false,
+        )?;
+
+        let mut bytes_written = self.encode_tag_field(Self::SEQUENCE_TAG);
+        bytes_written += self.encode_size_field(signer_info_size);
+        bytes_written += self.encode_cms_version(sid);
+        bytes_written += self.encode_signer_identifier(sid);
+        bytes_written += self.encode_hash_alg_id()?;
+        bytes_written +=
+            self.encode_signature_octet_string_from_cb(sign_cb, data_range, false, pubkey)?;
+
+        Ok(bytes_written)
+    }
+
     /// Encode a SignerIdentifier
     ///
     /// SignerIdentifier ::= CHOICE {
@@ -2137,36 +2627,27 @@ impl CertWriter<'_> {
         self.encode_tlv(Self::CONTEXT_SPECIFIC | 0x0, key_identifier)
     }
 
-    /// Encode an EncapsulatedContentInfo
-    ///
-    /// EncapsulatedContentInfo  ::=  SEQUENCE  {
-    ///    eContentType ContentType,
-    ///    eContent [0] EXPLICIT OCTET STRING OPTIONAL
-    /// }
     #[cfg(not(feature = "disable_csr"))]
-    #[allow(clippy::identity_op)]
-    fn encode_encapsulated_content_info(
+    fn encode_encapsulated_content_info_with_signature_output(
         &mut self,
-        sign_cb: &mut (impl FnMut(&[u8], bool) -> Result<Signature, CryptoError> + ?Sized),
-        pub_key: &PubKey,
+        sign_cb: &mut (impl FnMut(&[u8], bool, &mut [u8]) -> Result<(), CryptoError> + ?Sized),
+        pub_key: SubjectPubKeyRef<'_>,
         subject_name: &Name,
         measurements: &MeasurementData,
     ) -> Result<usize, DpeErrorCode> {
         let mut size_bytes_written = self.encode_byte(Self::SEQUENCE_TAG);
         self.push_backtrack(SIZE_TAG_OFFSET)?;
 
-        // EncapsulatedContentInfo Sequence
         let mut bytes_written = self.encode_oid(Self::ID_DATA_OID);
 
-        // eContent is EXPLICIT field number 0
-        bytes_written += self.encode_byte(Self::CONTEXT_SPECIFIC | Self::CONSTRUCTED | 0x0);
+        bytes_written += self.encode_byte(Self::CONTEXT_SPECIFIC | Self::CONSTRUCTED);
         self.push_backtrack(SIZE_TAG_OFFSET)?;
 
-        // eContent OCTET STRING
         bytes_written += self.encode_byte(Self::OCTET_STRING_TAG);
         let offset = self.push_backtrack(SIZE_TAG_OFFSET)?;
 
-        let csr_bytes_written = self.encode_csr(sign_cb, pub_key, subject_name, measurements)?;
+        let csr_bytes_written =
+            self.encode_csr_with_signature_output(sign_cb, pub_key, subject_name, measurements)?;
         self.csr_range = Some((offset, offset + csr_bytes_written));
 
         let econtent_1_size = Self::get_econtent_size(
@@ -2190,7 +2671,6 @@ impl CertWriter<'_> {
             bytes_written += self.encode_size_field(econtent_0_size);
 
             self.pop_backtrack(Self::get_size_width(bytes_written + csr_bytes_written))?;
-
             size_bytes_written += self.encode_size_field(bytes_written + csr_bytes_written);
             self.end_backtrack()?;
         }
@@ -2361,15 +2841,6 @@ impl CertWriter<'_> {
                 )?,
                 false,
             ),
-            #[cfg(not(feature = "disable_csr"))]
-            SignedPayload::CertReqInfo {
-                pub_key,
-                subject_name,
-                measurements,
-            } => (
-                self.encode_certification_request_info(pub_key, subject_name, measurements)?,
-                true,
-            ),
         };
 
         let sig = {
@@ -2422,7 +2893,21 @@ impl CertWriter<'_> {
         subject_name: &Name,
         measurements: &MeasurementData,
     ) -> Result<usize, DpeErrorCode> {
-        let cert_req_info_size = self.get_certification_request_info_size(
+        self.encode_certification_request_info_ref(
+            SubjectPubKeyRef::try_from(pub_key)?,
+            subject_name,
+            measurements,
+        )
+    }
+
+    #[cfg(not(feature = "disable_csr"))]
+    fn encode_certification_request_info_ref(
+        &mut self,
+        pub_key: SubjectPubKeyRef<'_>,
+        subject_name: &Name,
+        measurements: &MeasurementData,
+    ) -> Result<usize, DpeErrorCode> {
+        let cert_req_info_size = self.get_certification_request_info_size_ref(
             subject_name,
             pub_key,
             measurements,
@@ -2440,21 +2925,46 @@ impl CertWriter<'_> {
         bytes_written += self.encode_rdn(subject_name)?;
 
         // subjectPublicKeyInfo
-        match pub_key {
-            PubKey::Ecdsa(pub_key) => {
-                bytes_written += self.encode_ecdsa_subject_pubkey_info(pub_key)?;
-            }
-            #[cfg(feature = "ml-dsa")]
-            PubKey::Mldsa(pub_key) => {
-                bytes_written += self.encode_mldsa_subject_pubkey_info(pub_key)?;
-            }
-        }
+        bytes_written += self.encode_subject_pubkey_info_ref(pub_key)?;
 
         // attributes
         bytes_written += self.encode_attributes(measurements)?;
 
         self.check_not_truncated()?;
         Ok(bytes_written)
+    }
+
+    #[cfg(not(feature = "disable_csr"))]
+    fn encode_csr_with_signature_output(
+        &mut self,
+        sign_cb: &mut (impl FnMut(&[u8], bool, &mut [u8]) -> Result<(), CryptoError> + ?Sized),
+        pub_key: SubjectPubKeyRef<'_>,
+        subject_name: &Name,
+        measurements: &MeasurementData,
+    ) -> Result<usize, DpeErrorCode> {
+        let mut prefix_bytes_written = self.encode_tag_field(Self::SEQUENCE_TAG);
+        let offset = self.push_backtrack(SIZE_TAG_OFFSET)?;
+
+        let cert_req_size =
+            self.encode_certification_request_info_ref(pub_key, subject_name, measurements)?;
+
+        let sig_bytes_written = self.encode_signature_bit_string_from_cb(
+            sign_cb,
+            offset..cert_req_size + offset,
+            true,
+            pub_key,
+        )?;
+
+        let body_size = cert_req_size + sig_bytes_written;
+
+        {
+            self.start_backtrack()?;
+            self.pop_backtrack(Self::get_size_width(body_size))?;
+            prefix_bytes_written += self.encode_size_field(body_size);
+            self.end_backtrack()?;
+        }
+
+        Ok(body_size + prefix_bytes_written)
     }
 
     /// Encode an PKCS #10 CSR
@@ -2474,13 +2984,16 @@ impl CertWriter<'_> {
         subject_name: &Name,
         measurements: &MeasurementData,
     ) -> Result<usize, DpeErrorCode> {
-        let bytes_written = self.encode_signed_payload(
-            sign_cb,
-            SignedPayload::CertReqInfo {
-                pub_key,
-                subject_name,
-                measurements,
-            },
+        let pub_key = SubjectPubKeyRef::try_from(pub_key)?;
+        let mut sign_cb_into = |data: &[u8], use_derived: bool, out: &mut [u8]| {
+            let sig = sign_cb(data, use_derived)?;
+            Self::copy_signature_to_raw(pub_key, &sig, out)
+        };
+        let bytes_written = self.encode_csr_with_signature_output(
+            &mut sign_cb_into,
+            pub_key,
+            subject_name,
+            measurements,
         )?;
 
         self.check_not_truncated()?;
@@ -2503,66 +3016,115 @@ impl CertWriter<'_> {
         measurements: &MeasurementData,
         sid: &SignerIdentifier,
     ) -> Result<usize, DpeErrorCode> {
+        let pub_key = SubjectPubKeyRef::try_from(pub_key)?;
+        let mut sign_cb_into = |data: &[u8], use_derived: bool, out: &mut [u8]| {
+            let sig = sign_cb(data, use_derived)?;
+            Self::copy_signature_to_raw(pub_key, &sig, out)
+        };
+        self.encode_cms_with_signature_output(
+            &mut sign_cb_into,
+            pub_key,
+            subject_name,
+            measurements,
+            sid,
+        )
+    }
+
+    #[cfg(not(feature = "disable_csr"))]
+    fn encode_cms_with_signature_output(
+        &mut self,
+        sign_cb: &mut (impl FnMut(&[u8], bool, &mut [u8]) -> Result<(), CryptoError> + ?Sized),
+        pub_key: SubjectPubKeyRef<'_>,
+        subject_name: &Name,
+        measurements: &MeasurementData,
+        sid: &SignerIdentifier,
+    ) -> Result<usize, DpeErrorCode> {
         let mut size_bytes_written = self.encode_byte(Self::SEQUENCE_TAG);
         let _ = self.push_backtrack(SIZE_TAG_OFFSET)?;
 
         let mut bytes_written = self.encode_oid(Self::ID_SIGNED_DATA_OID);
 
-        // Encode a SignedData
-        //
-        // SignedData  ::=  SEQUENCE  {
-        //    version CMSVersion,
-        //    digestAlgorithms DigestAlgorithmIdentifiers,
-        //    encapContentInfo EncapsulatedContentInfo,
-        //    certificates [0] IMPLICIT CertificateSet OPTIONAL,
-        //    crls [1] IMPLICIT RevocationInfoChoices OPTIONAL,
-        //    signerInfos SignerInfos
-        // }
-
-        // SignedData is EXPLICIT field number 0
-        bytes_written += self.encode_byte(Self::CONTEXT_SPECIFIC | Self::CONSTRUCTED | 0x0);
+        bytes_written += self.encode_byte(Self::CONTEXT_SPECIFIC | Self::CONSTRUCTED);
         let _ = self.push_backtrack(SIZE_TAG_OFFSET)?;
 
-        // SignedData sequence
         bytes_written += self.encode_tag_field(Self::SEQUENCE_TAG);
         let _ = self.push_backtrack(SIZE_TAG_OFFSET)?;
 
-        // CMS version
         bytes_written += self.encode_cms_version(sid);
 
-        // digestAlgorithms
         bytes_written += self.encode_tag_field(Self::SET_OF_TAG);
         bytes_written += self.encode_size_field(self.get_hash_alg_id_size(/*tagged=*/ true)?);
         bytes_written += self.encode_hash_alg_id()?;
 
-        // encapContentInfo
-        bytes_written +=
-            self.encode_encapsulated_content_info(sign_cb, pub_key, subject_name, measurements)?;
+        bytes_written += self.encode_encapsulated_content_info_with_signature_output(
+            sign_cb,
+            pub_key,
+            subject_name,
+            measurements,
+        )?;
 
-        let csr = {
-            let Some(csr_range) = self.csr_range else {
-                Err(DpeErrorCode::X509CsrUnset)?
-            };
-            self.certificate
-                .get(csr_range.0..csr_range.1)
-                .ok_or(DpeErrorCode::from(InternalErrorCode::CmsCsrRangeOob))?
+        let csr_range = self.csr_range.ok_or(DpeErrorCode::X509CsrUnset)?;
+        let csr_len = csr_range.1 - csr_range.0;
+        let sig_len = Self::raw_signature_size(pub_key);
+        let mut ecdsa_sig = [0u8; 96];
+        let ecdsa_sig = match pub_key {
+            SubjectPubKeyRef::Ecdsa(_) => {
+                let csr = self
+                    .certificate
+                    .get(csr_range.0..csr_range.1)
+                    .ok_or(DpeErrorCode::from(InternalErrorCode::CmsCsrRangeOob))?;
+                sign_cb(csr, false, &mut ecdsa_sig[..sig_len])?;
+                Some(Self::ecdsa_signature_from_raw(
+                    pub_key,
+                    &ecdsa_sig[..sig_len],
+                )?)
+            }
+            #[cfg(feature = "ml-dsa")]
+            SubjectPubKeyRef::Mldsa(_) => None,
         };
 
-        let sig = sign_cb(csr, false)?;
+        let signed_data_field_0 = if let Some(sig) = &ecdsa_sig {
+            let csr = self
+                .certificate
+                .get(csr_range.0..csr_range.1)
+                .ok_or(DpeErrorCode::from(InternalErrorCode::CmsCsrRangeOob))?;
+            self.get_signed_data_size(
+                csr, sig, sid, /*tagged=*/ true, /*explicit=*/ false,
+            )?
+        } else {
+            self.get_signed_data_size_from_raw_signature(
+                csr_len, pub_key, sig_len, sid, /*tagged=*/ true, /*explicit=*/ false,
+            )?
+        };
 
-        let signed_data_field_0 = self.get_signed_data_size(
-            csr, &sig, sid, /*tagged=*/ true, /*explicit=*/ false,
-        )?;
+        let signed_data_field_1 = if let Some(sig) = &ecdsa_sig {
+            let csr = self
+                .certificate
+                .get(csr_range.0..csr_range.1)
+                .ok_or(DpeErrorCode::from(InternalErrorCode::CmsCsrRangeOob))?;
+            self.get_signed_data_size(
+                csr, sig, sid, /*tagged=*/ false, /*explicit=*/ false,
+            )?
+        } else {
+            self.get_signed_data_size_from_raw_signature(
+                csr_len, pub_key, sig_len, sid, /*tagged=*/ false, /*explicit=*/ false,
+            )?
+        };
 
-        let signed_data_field_1 = self.get_signed_data_size(
-            csr, &sig, sid, /*tagged=*/ false, /*explicit=*/ false,
-        )?;
-
-        // signerInfos
         bytes_written += self.encode_tag_field(Self::SET_OF_TAG);
-        bytes_written +=
-            self.encode_size_field(self.get_signer_info_size(&sig, sid, /*tagged=*/ true)?);
-        bytes_written += self.encode_signer_info(&sig, sid)?;
+        let signer_info_size = if let Some(sig) = &ecdsa_sig {
+            self.get_signer_info_size(sig, sid, /*tagged=*/ true)?
+        } else {
+            self.get_signer_info_size_from_raw_signature(
+                pub_key, sig_len, sid, /*tagged=*/ true,
+            )?
+        };
+        bytes_written += self.encode_size_field(signer_info_size);
+        bytes_written += if let Some(sig) = &ecdsa_sig {
+            self.encode_signer_info(sig, sid)?
+        } else {
+            self.encode_signer_info_from_cb(sign_cb, csr_range.0..csr_range.1, pub_key, sid)?
+        };
 
         {
             self.start_backtrack()?;
@@ -2587,6 +3149,7 @@ impl CertWriter<'_> {
     }
 }
 
+#[allow(dead_code)]
 enum CertificateFormat {
     X509,
     #[cfg(not(feature = "disable_csr"))]
@@ -2617,6 +3180,7 @@ pub(crate) struct CreateDpeCertArgs<'a> {
 }
 
 /// Results for DPE cert or CSR creation.
+#[allow(dead_code)]
 pub(crate) struct CreateDpeCertResult {
     /// Size of certificate or CSR in bytes.
     pub cert_size: u32,
@@ -2661,6 +3225,21 @@ fn get_subject_name<'a>(
     Ok(subject_name)
 }
 
+#[cfg(all(not(feature = "disable_csr"), feature = "ml-dsa"))]
+fn get_mldsa_subject_name<'a>(
+    crypto: &mut dyn CryptoSuite,
+    pub_key: &[u8],
+    subj_serial: &'a mut [u8],
+) -> Result<Name<'a>, DpeErrorCode> {
+    let digest = crypto.hash(pub_key)?;
+    digest.write_hex_str(subj_serial)?;
+
+    Ok(Name {
+        cn: DirectoryString::PrintableString(b"DPE Leaf"),
+        serial: DirectoryString::PrintableString(&subj_serial[..64]),
+    })
+}
+
 fn get_subject_key_identifier(
     crypto: &mut dyn CryptoSuite,
     pub_key: &PubKey,
@@ -2680,6 +3259,32 @@ fn get_subject_key_identifier(
     }
     // truncate key identifier to 20 bytes
     subject_key_identifier.copy_from_slice(&hashed_pub_key.as_slice()[..MAX_KEY_IDENTIFIER_SIZE]);
+    Ok(())
+}
+
+#[cfg(all(not(feature = "disable_csr"), feature = "ml-dsa"))]
+fn get_mldsa_subject_key_identifier(
+    crypto: &mut dyn CryptoSuite,
+    pub_key: &[u8],
+    subject_key_identifier: &mut [u8],
+) -> Result<(), DpeErrorCode> {
+    let hashed_pub_key = crypto.hash(pub_key)?;
+    if hashed_pub_key.size() < MAX_KEY_IDENTIFIER_SIZE {
+        return Err(InternalErrorCode::KeyIdHashTooSmall.into());
+    }
+    if subject_key_identifier.len() != MAX_KEY_IDENTIFIER_SIZE {
+        return Err(InternalErrorCode::CertSizeOverflow.into());
+    }
+    let truncated_key_identifier = hashed_pub_key
+        .as_slice()
+        .get(..MAX_KEY_IDENTIFIER_SIZE)
+        .ok_or(DpeErrorCode::from(InternalErrorCode::KeyIdHashTooSmall))?;
+    for (dst, src) in subject_key_identifier
+        .iter_mut()
+        .zip(truncated_key_identifier.iter())
+    {
+        *dst = *src;
+    }
     Ok(())
 }
 
@@ -2716,6 +3321,7 @@ pub(crate) fn create_dpe_cert(
 }
 
 #[cfg(not(feature = "disable_csr"))]
+#[allow(dead_code)]
 pub(crate) fn create_dpe_csr(
     args: &CreateDpeCertArgs,
     dpe: &mut DpeInstance,
@@ -2732,8 +3338,142 @@ pub(crate) fn create_dpe_csr(
     )
 }
 
-/// The signed payload variants handled by [`CertWriter::encode_signed_payload`]:
-/// an X.509 TBSCertificate or a PKCS #10 CertificationRequestInfo.
+#[cfg(not(feature = "disable_csr"))]
+pub(crate) fn create_dpe_csr_into(
+    args: &CreateDpeCertArgs,
+    dpe: &mut DpeInstance,
+    env: &mut dyn DpeEnv,
+    csr: &mut [u8],
+    pub_key_out: &mut [u8],
+) -> Result<u32, DpeErrorCode> {
+    let digest = get_dpe_measurement_digest(dpe, env, args.handle, args.locality)?;
+    let (crypto, platform, state) = env.get();
+
+    // Derive public key into caller-provided buffer
+    crypto.derive_pub_key_into(
+        &digest,
+        args.cdi_label,
+        args.key_label,
+        args.context,
+        pub_key_out,
+    )?;
+
+    // Get subject name and key identifiers based on profile
+    let mut subj_serial = [0u8; MAX_HASH_SIZE * 2];
+    let mut subject_key_identifier = [0u8; MAX_KEY_IDENTIFIER_SIZE];
+
+    // Reconstruct PubKey for ECDSA or use raw bytes for ML-DSA
+    #[cfg(any(feature = "p256", feature = "p384"))]
+    let pub_key;
+
+    let (subject_name, pub_key_ref) = match dpe.profile {
+        #[cfg(any(feature = "p256", feature = "p384"))]
+        DpeProfile::P256Sha256 | DpeProfile::P384Sha384 => {
+            // For ECDSA: reconstruct PubKey from raw x||y bytes
+            let curve_size = dpe.profile.ecc_int_size();
+            if pub_key_out.len() != curve_size * 2 {
+                return Err(InternalErrorCode::CertSizeOverflow.into());
+            }
+
+            pub_key = if curve_size == 32 {
+                #[cfg(feature = "p256")]
+                {
+                    use caliptra_dpe_crypto::ecdsa::curve_256::{EcdsaPub256, CURVE_SIZE};
+                    let mut x = [0u8; CURVE_SIZE];
+                    let mut y = [0u8; CURVE_SIZE];
+                    x.copy_from_slice(&pub_key_out[..CURVE_SIZE]);
+                    y.copy_from_slice(&pub_key_out[CURVE_SIZE..]);
+                    PubKey::Ecdsa(EcdsaPubKey::Ecdsa256(EcdsaPub256::from_slice(&x, &y)))
+                }
+                #[cfg(not(feature = "p256"))]
+                {
+                    return Err(InternalErrorCode::CertSizeOverflow.into());
+                }
+            } else {
+                #[cfg(feature = "p384")]
+                {
+                    use caliptra_dpe_crypto::ecdsa::curve_384::{EcdsaPub384, CURVE_SIZE};
+                    let mut x = [0u8; CURVE_SIZE];
+                    let mut y = [0u8; CURVE_SIZE];
+                    x.copy_from_slice(&pub_key_out[..CURVE_SIZE]);
+                    y.copy_from_slice(&pub_key_out[CURVE_SIZE..]);
+                    PubKey::Ecdsa(EcdsaPubKey::Ecdsa384(EcdsaPub384::from_slice(&x, &y)))
+                }
+                #[cfg(not(feature = "p384"))]
+                {
+                    return Err(InternalErrorCode::CertSizeOverflow.into());
+                }
+            };
+
+            let name =
+                get_subject_name(crypto, &CertificateType::Leaf, &pub_key, &mut subj_serial)?;
+            get_subject_key_identifier(crypto, &pub_key, &mut subject_key_identifier)?;
+            let key_ref = SubjectPubKeyRef::try_from(&pub_key)?;
+            (name, key_ref)
+        }
+        #[cfg(feature = "ml-dsa")]
+        DpeProfile::Mldsa87 => {
+            // For ML-DSA: use raw bytes directly
+            let name = get_mldsa_subject_name(crypto, pub_key_out, &mut subj_serial)?;
+            get_mldsa_subject_key_identifier(crypto, pub_key_out, &mut subject_key_identifier)?;
+            let key_ref = SubjectPubKeyRef::Mldsa(pub_key_out);
+            (name, key_ref)
+        }
+        #[allow(unreachable_patterns)]
+        _ => return Err(InternalErrorCode::CertSizeOverflow.into()),
+    };
+
+    let mut authority_key_identifier = [0u8; MAX_KEY_IDENTIFIER_SIZE];
+    platform.get_issuer_key_identifier(&mut authority_key_identifier)?;
+
+    let subject_alt_name = match platform.get_subject_alternative_name() {
+        Ok(subject_alt_name) => Some(subject_alt_name),
+        Err(PlatformError::NotImplemented) => None,
+        Err(e) => Err(DpeErrorCode::Platform(e))?,
+    };
+
+    let measurements = MeasurementData {
+        tci_nodes: TciNodes::new(
+            state.get_active_context_pos(args.handle, args.locality)?,
+            &state.contexts,
+        )?,
+        label: args.ueid,
+        is_ca: false,
+        supports_recursive: state.support.recursive(),
+        subject_key_identifier,
+        authority_key_identifier,
+        subject_alt_name,
+    };
+
+    let mut sign_cb = |data: &[u8], use_derived: bool, signature: &mut [u8]| {
+        if use_derived {
+            crypto.sign_with_derived_into_slice(
+                &digest,
+                args.cdi_label,
+                args.key_label,
+                args.context,
+                &SignData::Raw(data),
+                Some(pub_key_out),
+                signature,
+            )
+        } else {
+            crypto.sign_with_alias_into_slice(&SignData::Raw(data), signature)
+        }
+    };
+
+    let signer_identifier = platform.get_signer_identifier()?;
+    let mut cms_writer = CertWriter::new(csr, dpe.profile, args.dice_extensions_are_critical);
+    let bytes_written = cms_writer.encode_cms_with_signature_output(
+        &mut sign_cb,
+        pub_key_ref,
+        &subject_name,
+        &measurements,
+        &signer_identifier,
+    )?;
+    u32::try_from(bytes_written).map_err(|_| InternalErrorCode::CsrSizeOverflow.into())
+}
+
+/// The signed payload variants handled by [`CertWriter::encode_signed_payload`].
 enum SignedPayload<'a> {
     #[cfg(not(feature = "disable_x509"))]
     Tbs {
@@ -2743,12 +3483,6 @@ enum SignedPayload<'a> {
         pubkey: &'a PubKey,
         measurements: &'a MeasurementData<'a>,
         validity: &'a CertValidity,
-    },
-    #[cfg(not(feature = "disable_csr"))]
-    CertReqInfo {
-        pub_key: &'a PubKey,
-        subject_name: &'a Name<'a>,
-        measurements: &'a MeasurementData<'a>,
     },
 }
 
@@ -2774,7 +3508,7 @@ fn generate_cert_or_csr(
     subject_name: &Name,
     pub_key: &PubKey,
     measurements: &MeasurementData,
-    sign_cb: &mut dyn FnMut(&[u8], bool) -> Result<Signature, CryptoError>,
+    sign_cb: &mut dyn FnMut(&[u8], bool, &mut [u8]) -> Result<(), CryptoError>,
     output_cert_or_csr: &mut [u8],
 ) -> Result<u32, DpeErrorCode> {
     match format_specific_args {
@@ -2784,6 +3518,7 @@ fn generate_cert_or_csr(
         } => {
             #[cfg(not(feature = "disable_x509"))]
             {
+                let pub_key_ref = SubjectPubKeyRef::try_from(pub_key)?;
                 let mut cert_writer = CertWriter::new(
                     output_cert_or_csr,
                     dpe_profile,
@@ -2795,8 +3530,13 @@ fn generate_cert_or_csr(
                     .bytes()
                     .get(..20)
                     .ok_or(DpeErrorCode::from(InternalErrorCode::SerialNumberSliceOob))?;
-                let bytes_written = cert_writer.encode_certificate(
-                    sign_cb,
+
+                // Encode TBS + sign directly via callback
+                let mut prefix_bytes_written =
+                    cert_writer.encode_tag_field(CertWriter::SEQUENCE_TAG);
+                let offset = cert_writer.push_backtrack(SIZE_TAG_OFFSET)?;
+
+                let payload_bytes_written = cert_writer.encode_tbs(
                     serial_number,
                     issuer_name,
                     subject_name,
@@ -2804,20 +3544,40 @@ fn generate_cert_or_csr(
                     measurements,
                     cert_validity,
                 )?;
+
+                let data_range = offset..payload_bytes_written + offset;
+                let sig_bytes_written = cert_writer.encode_signature_bit_string_from_cb(
+                    sign_cb,
+                    data_range,
+                    false,
+                    pub_key_ref,
+                )?;
+
+                let body_size = payload_bytes_written + sig_bytes_written;
+                {
+                    cert_writer.start_backtrack()?;
+                    cert_writer.pop_backtrack(CertWriter::get_size_width(body_size))?;
+                    prefix_bytes_written += cert_writer.encode_size_field(body_size);
+                    cert_writer.end_backtrack()?;
+                }
+
+                cert_writer.check_not_truncated()?;
+                let bytes_written = body_size + prefix_bytes_written;
                 u32::try_from(bytes_written)
                     .map_err(|_| DpeErrorCode::from(InternalErrorCode::CertSizeOverflow))
             }
         }
         #[cfg(not(feature = "disable_csr"))]
         CertOrCsrArgs::Csr { signer_identifier } => {
+            let pub_key_ref = SubjectPubKeyRef::try_from(pub_key)?;
             let mut cms_writer = CertWriter::new(
                 output_cert_or_csr,
                 dpe_profile,
                 dice_extensions_are_critical,
             );
-            let bytes_written = cms_writer.encode_cms(
+            let bytes_written = cms_writer.encode_cms_with_signature_output(
                 sign_cb,
-                pub_key,
+                pub_key_ref,
                 subject_name,
                 measurements,
                 signer_identifier,
@@ -2899,7 +3659,15 @@ fn create_dpe_cert_or_csr(
         subject_alt_name,
     };
 
-    let mut sign_cb = |data: &[u8], use_derived: bool| {
+    // Extract raw public key bytes for ML-DSA verify-after-sign.
+    // ECDSA doesn't need this; ML-DSA hardware requires it.
+    let signing_pub_key: Option<&[u8]> = match pub_key {
+        #[cfg(feature = "ml-dsa")]
+        PubKey::Mldsa(key) => Some(&key.0),
+        _ => None,
+    };
+
+    let mut sign_cb = |data: &[u8], use_derived: bool, signature: &mut [u8]| {
         if use_derived {
             match cert_type {
                 CertificateType::Exported => {
@@ -2907,18 +3675,20 @@ fn create_dpe_cert_or_csr(
                         exported_cdi_handle.ok_or(CryptoError::CryptoLibError(0))?;
                     crypto
                         .derive_key_pair_exported(&exported_handle, args.key_label, args.context)?
-                        .sign(&SignData::Raw(data))
+                        .sign_into_slice(&SignData::Raw(data), signing_pub_key, signature)
                 }
-                CertificateType::Leaf => crypto.sign_with_derived(
+                CertificateType::Leaf => crypto.sign_with_derived_into_slice(
                     &digest,
                     args.cdi_label,
                     args.key_label,
                     args.context,
                     &SignData::Raw(data),
+                    signing_pub_key,
+                    signature,
                 ),
             }
         } else {
-            crypto.sign_with_alias(&SignData::Raw(data))
+            crypto.sign_with_alias_into_slice(&SignData::Raw(data), signature)
         }
     };
 
