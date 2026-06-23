@@ -776,14 +776,18 @@ mod tests {
             let pub_key = match certify_resp {
                 #[cfg(feature = "p256")]
                 CertifyKeyResp::P256(r) => PubKey::Ecdsa(
-                    EcdsaPub::from_slice(&r.derived_pubkey_x, &r.derived_pubkey_y).into(),
+                    EcdsaPub::from_slice(&r.header.derived_pubkey_x, &r.header.derived_pubkey_y)
+                        .into(),
                 ),
                 #[cfg(feature = "p384")]
                 CertifyKeyResp::P384(r) => PubKey::Ecdsa(
-                    EcdsaPub::from_slice(&r.derived_pubkey_x, &r.derived_pubkey_y).into(),
+                    EcdsaPub::from_slice(&r.header.derived_pubkey_x, &r.header.derived_pubkey_y)
+                        .into(),
                 ),
                 #[cfg(feature = "ml-dsa")]
-                CertifyKeyResp::Mldsa87(r) => PubKey::Mldsa(MldsaPublicKey::from_slice(&r.pubkey)),
+                CertifyKeyResp::Mldsa87(r) => {
+                    PubKey::Mldsa(MldsaPublicKey::from_slice(&r.header.pubkey))
+                }
             };
             env.crypto
                 .get_pubkey_serial(&pub_key, &mut subj_serial)

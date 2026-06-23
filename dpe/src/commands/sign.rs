@@ -325,6 +325,7 @@ impl CommandExecution for SignP384Cmd {
     }
 }
 
+#[cfg(feature = "ml-dsa")]
 #[repr(C, align(4))]
 #[derive(Debug, PartialEq, Eq, IntoBytes, FromBytes, Immutable, KnownLayout)]
 pub struct SignMldsa87Cmd {
@@ -573,7 +574,7 @@ mod tests {
                     ml_dsa::Signature::decode(&encoded_sig).expect("Error decoding signature");
 
                 let key_bytes = match certify_resp {
-                    CertifyKeyResp::Mldsa87(resp) => resp.pubkey,
+                    CertifyKeyResp::Mldsa87(resp) => resp.header.pubkey,
                     _ => panic!("Expected Mldsa87 CertifyKeyResp"),
                 };
 
@@ -713,7 +714,7 @@ mod tests {
         let sig = ml_dsa::Signature::decode(&encoded_sig).expect("Error decoding signature");
 
         let key_bytes = match certify_resp {
-            CertifyKeyResp::Mldsa87(resp) => resp.pubkey,
+            CertifyKeyResp::Mldsa87(resp) => resp.header.pubkey,
             _ => panic!("Expected Mldsa87 CertifyKeyResp"),
         };
 

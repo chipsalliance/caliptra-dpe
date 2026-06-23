@@ -72,7 +72,7 @@ fn handle_request(dpe: &mut DpeInstance, env: &mut dyn DpeEnv, stream: &mut Unix
         Response::GetProfile(ref res) => res.resp_hdr.status,
         Response::InitCtx(ref res) => res.resp_hdr.status,
         Response::DeriveContext(ref res) => res.resp_hdr.status,
-        Response::DeriveContextExportedCdi(ref res) => res.resp_hdr.status,
+        Response::DeriveContextExportedCdi(ref res) => res.header.resp_hdr.status,
         Response::RotateCtx(ref res) => res.resp_hdr.status,
         Response::CertifyKey(ref res) => res.resp_hdr().status,
         Response::Sign(ref res) => res.resp_hdr().status,

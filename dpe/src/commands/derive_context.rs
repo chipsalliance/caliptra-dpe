@@ -1247,11 +1247,11 @@ mod tests {
             Ok(Response::DeriveContextExportedCdi(res)) => res,
             _ => panic!("expected to get a valid DeriveContextExportedCdi response."),
         };
-        assert_eq!(res.parent_handle, ContextHandle::new_invalid());
-        assert_eq!(res.handle, ContextHandle::new_invalid());
-        assert_ne!(res.certificate_size, 0);
+        assert_eq!(res.header.parent_handle, ContextHandle::new_invalid());
+        assert_eq!(res.header.handle, ContextHandle::new_invalid());
+        assert_ne!(res.header.certificate_size, 0);
         assert_ne!(res.new_certificate, [0; MAX_CERT_SIZE]);
-        assert_ne!(res.exported_cdi, [0; MAX_EXPORTED_CDI_SIZE]);
+        assert_ne!(res.header.exported_cdi, [0; MAX_EXPORTED_CDI_SIZE]);
 
         *env.state = State::new(
             Support::AUTO_INIT | Support::INTERNAL_INFO | Support::INTERNAL_DICE | Support::X509,
@@ -1329,11 +1329,11 @@ mod tests {
             Err(e) => panic!("{:?}", e),
             _ => panic!("expected to get a valid DeriveContextExportedCdi response."),
         };
-        assert_ne!(res.parent_handle, handle);
-        assert_eq!(res.handle, ContextHandle::new_invalid());
-        assert_ne!(res.certificate_size, 0);
+        assert_ne!(res.header.parent_handle, handle);
+        assert_eq!(res.header.handle, ContextHandle::new_invalid());
+        assert_ne!(res.header.certificate_size, 0);
         assert_ne!(res.new_certificate, [0; MAX_CERT_SIZE]);
-        assert_ne!(res.exported_cdi, [0; MAX_EXPORTED_CDI_SIZE]);
+        assert_ne!(res.header.exported_cdi, [0; MAX_EXPORTED_CDI_SIZE]);
 
         // New ENV so the exported-cdi slot is clear.
         let mut state = State::new(
@@ -1361,11 +1361,11 @@ mod tests {
             Ok(Response::DeriveContextExportedCdi(res)) => res,
             _ => panic!("expected to get a valid DeriveContextExportedCdi response."),
         };
-        assert_eq!(res.parent_handle, ContextHandle::default());
-        assert_eq!(res.handle, ContextHandle::new_invalid());
-        assert_ne!(res.certificate_size, 0);
+        assert_eq!(res.header.parent_handle, ContextHandle::default());
+        assert_eq!(res.header.handle, ContextHandle::new_invalid());
+        assert_ne!(res.header.certificate_size, 0);
         assert_ne!(res.new_certificate, [0; MAX_CERT_SIZE]);
-        assert_ne!(res.exported_cdi, [0; MAX_EXPORTED_CDI_SIZE]);
+        assert_ne!(res.header.exported_cdi, [0; MAX_EXPORTED_CDI_SIZE]);
 
         // Children that did not have `DeriveContextFlags::ALLOW_NEW_CONTEXT_TO_EXPORT` should not
         // be able to use `DeriveContextFlags::EXPORT_CDI`.
@@ -1470,11 +1470,11 @@ mod tests {
             Ok(Response::DeriveContextExportedCdi(res)) => res,
             _ => panic!("expected to get a valid DeriveContextExportedCdi response."),
         };
-        assert_eq!(res.parent_handle, ContextHandle::new_invalid());
-        assert_eq!(res.handle, ContextHandle::new_invalid());
-        assert_ne!(res.certificate_size, 0);
+        assert_eq!(res.header.parent_handle, ContextHandle::new_invalid());
+        assert_eq!(res.header.handle, ContextHandle::new_invalid());
+        assert_ne!(res.header.certificate_size, 0);
         assert_ne!(res.new_certificate, [0; MAX_CERT_SIZE]);
-        assert_ne!(res.exported_cdi, [0; MAX_EXPORTED_CDI_SIZE]);
+        assert_ne!(res.header.exported_cdi, [0; MAX_EXPORTED_CDI_SIZE]);
     }
 
     #[test]
@@ -1780,11 +1780,15 @@ mod tests {
                 Response::DeriveContextExportedCdi(resp) => resp,
                 _ => panic!("Wrong response type."),
             };
-            assert_eq!(ContextHandle::new_invalid(), derive_resp.handle);
-            assert_eq!(ContextHandle::new_invalid(), derive_resp.parent_handle);
+            assert_eq!(ContextHandle::new_invalid(), derive_resp.header.handle);
+            assert_eq!(
+                ContextHandle::new_invalid(),
+                derive_resp.header.parent_handle
+            );
             let mut parser = X509CertificateParser::new().with_deep_parse_extensions(true);
             match parser.parse(
-                &derive_resp.new_certificate[..derive_resp.certificate_size.try_into().unwrap()],
+                &derive_resp.new_certificate
+                    [..derive_resp.header.certificate_size.try_into().unwrap()],
             ) {
                 Ok((_, cert)) => {
                     match cert.basic_constraints() {
@@ -1868,8 +1872,12 @@ mod tests {
                 ..
             }))
             | Ok(Response::DeriveContextExportedCdi(DeriveContextExportedCdiResp {
-                handle,
-                parent_handle,
+                header:
+                    DeriveContextExportedCdiRespHdr {
+                        handle,
+                        parent_handle,
+                        ..
+                    },
                 ..
             })) => {
                 assert_eq!(
@@ -1917,9 +1925,9 @@ mod tests {
         };
 
         let mut parser = X509CertificateParser::new().with_deep_parse_extensions(true);
-        match parser
-            .parse(&derive_resp.new_certificate[..derive_resp.certificate_size.try_into().unwrap()])
-        {
+        match parser.parse(
+            &derive_resp.new_certificate[..derive_resp.header.certificate_size.try_into().unwrap()],
+        ) {
             Ok((_, cert)) => {
                 let subject = cert.subject().to_string();
                 assert!(subject.contains("CN=DPE Exported CDI"));
