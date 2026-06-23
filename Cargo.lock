@@ -234,6 +234,7 @@ dependencies = [
  "caliptra-cfi-lib",
  "caliptra-dpe-crypto",
  "caliptra-dpe-platform",
+ "caliptra-dpe-response-buffer",
  "cfg-if",
  "cms",
  "const-oid 0.10.2",

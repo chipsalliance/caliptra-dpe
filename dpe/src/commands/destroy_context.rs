@@ -4,8 +4,6 @@ use crate::{
     context::{Children, Context, ContextHandle, ContextState},
     dpe_instance::{DpeEnv, DpeInstance},
     error::{DpeErrorCode, InternalErrorCode},
-    mutresp,
-    response::ResponseHdr,
     State,
 };
 #[cfg(feature = "cfi")]
@@ -13,6 +11,8 @@ use caliptra_cfi_derive::cfi_impl_fn;
 use caliptra_cfi_lib::cfi_launder;
 #[cfg(feature = "cfi")]
 use caliptra_cfi_lib::{cfi_assert, cfi_assert_bool, cfi_assert_eq};
+use caliptra_dpe_response_buffer::ResponseBuffer;
+use zerocopy::IntoBytes;
 
 #[repr(C)]
 #[derive(
@@ -93,12 +93,14 @@ impl CommandExecution for DestroyCtxCmd {
         dpe: &mut DpeInstance,
         env: &mut dyn DpeEnv,
         locality: u32,
-        out: &mut [u8],
+        out: &mut dyn ResponseBuffer,
     ) -> Result<usize, DpeErrorCode> {
-        let response = mutresp::<ResponseHdr>(dpe.profile, out)?;
         destroy_context(&self.handle, env.state(), locality)?;
-        *response = dpe.response_hdr(DpeErrorCode::NoError);
-        Ok(size_of_val(response))
+        let resp = dpe.response_hdr(DpeErrorCode::NoError);
+        let bytes = resp.as_bytes();
+        out.write_at(0, bytes)
+            .map_err(|_| DpeErrorCode::InvalidResponseBuf)?;
+        Ok(bytes.len())
     }
 }
 

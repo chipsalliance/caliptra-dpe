@@ -4,7 +4,6 @@ use crate::{
     context::{ContextHandle, ContextState},
     dpe_instance::{DpeEnv, DpeInstance},
     error::{DpeErrorCode, InternalErrorCode},
-    mutresp,
     response::NewHandleResp,
     State,
 };
@@ -14,6 +13,8 @@ use caliptra_cfi_derive::cfi_impl_fn;
 use caliptra_cfi_lib::cfi_launder;
 #[cfg(feature = "cfi")]
 use caliptra_cfi_lib::{cfi_assert, cfi_assert_bool};
+use caliptra_dpe_response_buffer::ResponseBuffer;
+use zerocopy::IntoBytes;
 
 #[repr(C, align(4))]
 #[derive(
@@ -87,7 +88,7 @@ impl CommandExecution for RotateCtxCmd {
         dpe: &mut DpeInstance,
         env: &mut dyn DpeEnv,
         locality: u32,
-        out: &mut [u8],
+        out: &mut dyn ResponseBuffer,
     ) -> Result<usize, DpeErrorCode> {
         if !env.state().support.rotate_context() {
             return Err(DpeErrorCode::InvalidCommand);
@@ -95,7 +96,6 @@ impl CommandExecution for RotateCtxCmd {
             #[cfg(feature = "cfi")]
             cfi_assert!(env.state().support.rotate_context());
         }
-        let response = mutresp::<NewHandleResp>(dpe.profile, out)?;
         let idx = env.state().get_active_context_pos(&self.handle, locality)?;
 
         // Make sure caller's locality does not already have a default context.
@@ -127,11 +127,14 @@ impl CommandExecution for RotateCtxCmd {
             .ok_or(DpeErrorCode::from(InternalErrorCode::ContextIndexOob))?
             .handle = new_handle;
 
-        *response = NewHandleResp {
+        let resp = NewHandleResp {
             handle: new_handle,
             resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
         };
-        Ok(size_of_val(response))
+        let bytes = resp.as_bytes();
+        out.write_at(0, bytes)
+            .map_err(|_| DpeErrorCode::InvalidResponseBuf)?;
+        Ok(bytes.len())
     }
 }
 

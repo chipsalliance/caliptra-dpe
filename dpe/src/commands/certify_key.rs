@@ -4,7 +4,6 @@ use crate::{
     context::ContextHandle,
     dpe_instance::{DpeEnv, DpeInstance},
     error::{DpeErrorCode, InternalErrorCode},
-    mutresp, okref,
     x509::{create_dpe_cert, CreateDpeCertArgs, CreateDpeCertResult},
     DpeFlags, DpeProfile,
 };
@@ -16,6 +15,7 @@ use caliptra_cfi_lib::{cfi_assert, cfi_assert_bool, cfi_assert_eq};
 #[cfg(any(feature = "p256", feature = "p384"))]
 use caliptra_dpe_crypto::ecdsa::EcdsaPubKey;
 use caliptra_dpe_crypto::PubKey;
+use caliptra_dpe_response_buffer::{OffsetResponseBuffer, ResponseBuffer};
 use cfg_if::cfg_if;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
@@ -94,20 +94,15 @@ impl CertifyKeyCommand<'_> {
         }
     }
 
-    fn response_bytes<'a>(
-        &self,
-        p: DpeProfile,
-        out: &'a mut [u8],
-    ) -> Result<CertifyKeyResponseBytes<'a>, DpeErrorCode> {
-        let r = match self {
+    fn response_bytes(&self) -> CertifyKeyResponseBytes {
+        match self {
             #[cfg(feature = "p256")]
-            CertifyKeyCommand::P256(_) => CertifyKeyResponseBytes::P256(mutresp(p, out)?),
+            CertifyKeyCommand::P256(_) => CertifyKeyResponseBytes::P256,
             #[cfg(feature = "p384")]
-            CertifyKeyCommand::P384(_) => CertifyKeyResponseBytes::P384(mutresp(p, out)?),
+            CertifyKeyCommand::P384(_) => CertifyKeyResponseBytes::P384,
             #[cfg(feature = "ml-dsa")]
-            CertifyKeyCommand::Mldsa87(_) => CertifyKeyResponseBytes::Mldsa87(mutresp(p, out)?),
-        };
-        Ok(r)
+            CertifyKeyCommand::Mldsa87(_) => CertifyKeyResponseBytes::Mldsa87,
+        }
     }
 }
 
@@ -140,7 +135,7 @@ impl CommandExecution for CertifyKeyCommand<'_> {
         dpe: &mut DpeInstance,
         env: &mut dyn DpeEnv,
         locality: u32,
-        out: &mut [u8],
+        out: &mut dyn ResponseBuffer,
     ) -> Result<usize, DpeErrorCode> {
         let (handle, format, label) = match *self {
             #[cfg(feature = "p256")]
@@ -196,16 +191,38 @@ impl CommandExecution for CertifyKeyCommand<'_> {
                 .contains(DpeFlags::MARK_DICE_EXTENSIONS_CRITICAL),
         };
 
-        let mut response = self.response_bytes(dpe.profile, out)?;
-        let cert = response.cert_mut();
+        let response = self.response_bytes();
+        let hdr_size = response.hdr_size();
+        let mut cert_view = OffsetResponseBuffer::new(out, hdr_size);
+        let result = Self::run_cert_format(format, &args, dpe, env, &mut cert_view)?;
 
-        let result = match format {
+        #[allow(clippy::indexing_slicing)]
+        let new_handle = {
+            let mut ctx = env.state().contexts[idx];
+            dpe.roll_onetime_use_handle(env, &mut ctx)?;
+            env.state().contexts[idx] = ctx;
+            ctx.handle
+        };
+
+        response.write_header(out, dpe, &result, new_handle)
+    }
+}
+
+impl CertifyKeyCommand<'_> {
+    fn run_cert_format(
+        format: u32,
+        args: &CreateDpeCertArgs,
+        dpe: &mut DpeInstance,
+        env: &mut dyn DpeEnv,
+        out: &mut dyn ResponseBuffer,
+    ) -> Result<CreateDpeCertResult, DpeErrorCode> {
+        match format {
             Self::FORMAT_X509 => {
                 cfg_if! {
                     if #[cfg(not(feature = "disable_x509"))] {
                         #[cfg(feature = "cfi")]
                         cfi_assert_eq(format, Self::FORMAT_X509);
-                        create_dpe_cert(&args, dpe, env, cert)
+                        create_dpe_cert(args, dpe, env, out)
                     } else {
                         Err(DpeErrorCode::ArgumentNotSupported)
                     }
@@ -216,69 +233,14 @@ impl CommandExecution for CertifyKeyCommand<'_> {
                     if #[cfg(not(feature = "disable_csr"))] {
                         #[cfg(feature = "cfi")]
                         cfi_assert_eq(format, Self::FORMAT_CSR);
-                        crate::x509::create_dpe_csr(&args, dpe, env, cert)
+                        crate::x509::create_dpe_csr(args, dpe, env, out)
                     } else {
                         Err(DpeErrorCode::ArgumentNotSupported)
                     }
                 }
             }
-            _ => return Err(DpeErrorCode::InvalidArgument),
-        };
-
-        let CreateDpeCertResult {
-            cert_size,
-            ref pub_key,
-            ..
-        } = *okref(&result)?;
-
-        match (&mut response, pub_key) {
-            #[cfg(feature = "p256")]
-            (
-                CertifyKeyResponseBytes::P256(resp),
-                PubKey::Ecdsa(EcdsaPubKey::Ecdsa256(pub_key)),
-            ) => {
-                let (x, y) = pub_key.as_slice();
-                resp.new_context_handle = ContextHandle::new_invalid();
-                resp.derived_pubkey_x = *x;
-                resp.derived_pubkey_y = *y;
-                resp.cert_size = cert_size;
-                resp.resp_hdr = dpe.response_hdr(DpeErrorCode::NoError);
-            }
-            #[cfg(feature = "p384")]
-            (
-                CertifyKeyResponseBytes::P384(resp),
-                PubKey::Ecdsa(EcdsaPubKey::Ecdsa384(pub_key)),
-            ) => {
-                let (x, y) = pub_key.as_slice();
-                resp.new_context_handle = ContextHandle::new_invalid();
-                resp.derived_pubkey_x = *x;
-                resp.derived_pubkey_y = *y;
-                resp.cert_size = cert_size;
-                resp.resp_hdr = dpe.response_hdr(DpeErrorCode::NoError);
-            }
-            #[cfg(feature = "ml-dsa")]
-            (
-                CertifyKeyResponseBytes::Mldsa87(resp),
-                PubKey::Mldsa(caliptra_dpe_crypto::ml_dsa::MldsaPublicKey(pubkey)),
-            ) => {
-                resp.new_context_handle = ContextHandle::new_invalid();
-                resp.pubkey = *pubkey;
-                resp.cert_size = cert_size;
-                resp.resp_hdr = dpe.response_hdr(DpeErrorCode::NoError);
-            }
-            _ => Err(DpeErrorCode::InvalidArgument)?,
-        };
-
-        let len = response.size()?;
-        // Rotate handle if it isn't the default
-        #[allow(clippy::indexing_slicing)]
-        {
-            let mut ctx = env.state().contexts[idx];
-            dpe.roll_onetime_use_handle(env, &mut ctx)?;
-            env.state().contexts[idx] = ctx;
-            response.set_handle(ctx.handle);
+            _ => Err(DpeErrorCode::InvalidArgument),
         }
-        Ok(len)
     }
 }
 
@@ -299,7 +261,7 @@ impl CommandExecution for CertifyKeyP256Cmd {
         dpe: &mut DpeInstance,
         env: &mut dyn DpeEnv,
         locality: u32,
-        out: &mut [u8],
+        out: &mut dyn ResponseBuffer,
     ) -> Result<usize, DpeErrorCode> {
         CertifyKeyCommand::from(self).execute_serialized(dpe, env, locality, out)
     }
@@ -333,7 +295,7 @@ impl CommandExecution for CertifyKeyP384Cmd {
         dpe: &mut DpeInstance,
         env: &mut dyn DpeEnv,
         locality: u32,
-        out: &mut [u8],
+        out: &mut dyn ResponseBuffer,
     ) -> Result<usize, DpeErrorCode> {
         CertifyKeyCommand::from(self).execute_serialized(dpe, env, locality, out)
     }
@@ -368,52 +330,86 @@ impl CommandExecution for CertifyKeyMldsa87Cmd {
         dpe: &mut DpeInstance,
         env: &mut dyn DpeEnv,
         locality: u32,
-        out: &mut [u8],
+        out: &mut dyn ResponseBuffer,
     ) -> Result<usize, DpeErrorCode> {
         CertifyKeyCommand::from(self).execute_serialized(dpe, env, locality, out)
     }
 }
 
-enum CertifyKeyResponseBytes<'a> {
+enum CertifyKeyResponseBytes {
     #[cfg(feature = "p256")]
-    P256(&'a mut crate::response::CertifyKeyP256Resp),
+    P256,
     #[cfg(feature = "p384")]
-    P384(&'a mut crate::response::CertifyKeyP384Resp),
+    P384,
     #[cfg(feature = "ml-dsa")]
-    Mldsa87(&'a mut crate::response::CertifyKeyMldsa87Resp),
+    Mldsa87,
 }
 
-impl CertifyKeyResponseBytes<'_> {
-    fn cert_mut(&mut self) -> &mut [u8] {
+impl CertifyKeyResponseBytes {
+    fn hdr_size(&self) -> usize {
         match self {
             #[cfg(feature = "p256")]
-            CertifyKeyResponseBytes::P256(resp) => &mut resp.cert,
+            Self::P256 => core::mem::size_of::<crate::response::CertifyKeyP256RespHdr>(),
             #[cfg(feature = "p384")]
-            CertifyKeyResponseBytes::P384(resp) => &mut resp.cert,
+            Self::P384 => core::mem::size_of::<crate::response::CertifyKeyP384RespHdr>(),
             #[cfg(feature = "ml-dsa")]
-            CertifyKeyResponseBytes::Mldsa87(resp) => &mut resp.cert,
+            Self::Mldsa87 => core::mem::size_of::<crate::response::CertifyKeyMldsa87RespHdr>(),
         }
     }
 
-    fn set_handle(&mut self, handle: ContextHandle) {
-        match self {
+    fn write_header(
+        &self,
+        out: &mut dyn ResponseBuffer,
+        dpe: &mut DpeInstance,
+        result: &CreateDpeCertResult,
+        new_handle: ContextHandle,
+    ) -> Result<usize, DpeErrorCode> {
+        let cert_size = result.cert_size;
+        match (self, &result.pub_key) {
             #[cfg(feature = "p256")]
-            CertifyKeyResponseBytes::P256(resp) => resp.new_context_handle = handle,
+            (Self::P256, PubKey::Ecdsa(EcdsaPubKey::Ecdsa256(pk))) => {
+                use crate::response::CertifyKeyP256RespHdr;
+                let (pk_x, pk_y) = pk.as_slice();
+                let hdr = CertifyKeyP256RespHdr {
+                    resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
+                    new_context_handle: new_handle,
+                    derived_pubkey_x: *pk_x,
+                    derived_pubkey_y: *pk_y,
+                    cert_size,
+                };
+                out.write_at(0, hdr.as_bytes())
+                    .map_err(|_| DpeErrorCode::InvalidResponseBuf)?;
+                Ok(core::mem::size_of::<CertifyKeyP256RespHdr>() + cert_size as usize)
+            }
             #[cfg(feature = "p384")]
-            CertifyKeyResponseBytes::P384(resp) => resp.new_context_handle = handle,
+            (Self::P384, PubKey::Ecdsa(EcdsaPubKey::Ecdsa384(pk))) => {
+                use crate::response::CertifyKeyP384RespHdr;
+                let (pk_x, pk_y) = pk.as_slice();
+                let hdr = CertifyKeyP384RespHdr {
+                    resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
+                    new_context_handle: new_handle,
+                    derived_pubkey_x: *pk_x,
+                    derived_pubkey_y: *pk_y,
+                    cert_size,
+                };
+                out.write_at(0, hdr.as_bytes())
+                    .map_err(|_| DpeErrorCode::InvalidResponseBuf)?;
+                Ok(core::mem::size_of::<CertifyKeyP384RespHdr>() + cert_size as usize)
+            }
             #[cfg(feature = "ml-dsa")]
-            CertifyKeyResponseBytes::Mldsa87(resp) => resp.new_context_handle = handle,
-        }
-    }
-
-    fn size(&self) -> Result<usize, DpeErrorCode> {
-        match self {
-            #[cfg(feature = "p256")]
-            CertifyKeyResponseBytes::P256(resp) => Ok(resp.as_bytes_partial()?.len()),
-            #[cfg(feature = "p384")]
-            CertifyKeyResponseBytes::P384(resp) => Ok(resp.as_bytes_partial()?.len()),
-            #[cfg(feature = "ml-dsa")]
-            CertifyKeyResponseBytes::Mldsa87(resp) => Ok(resp.as_bytes_partial()?.len()),
+            (Self::Mldsa87, PubKey::Mldsa(caliptra_dpe_crypto::ml_dsa::MldsaPublicKey(pubkey))) => {
+                use crate::response::CertifyKeyMldsa87RespHdr;
+                let hdr = CertifyKeyMldsa87RespHdr {
+                    resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
+                    new_context_handle: new_handle,
+                    pubkey: *pubkey,
+                    cert_size,
+                };
+                out.write_at(0, hdr.as_bytes())
+                    .map_err(|_| DpeErrorCode::InvalidResponseBuf)?;
+                Ok(core::mem::size_of::<CertifyKeyMldsa87RespHdr>() + cert_size as usize)
+            }
+            _ => Err(DpeErrorCode::InvalidArgument),
         }
     }
 }

@@ -29,6 +29,7 @@ use caliptra_dpe_platform::{
     ArrayVec, OtherName, PlatformError, SubjectAltName, MAX_ISSUER_NAME_SIZE,
     MAX_KEY_IDENTIFIER_SIZE,
 };
+use caliptra_dpe_response_buffer::ResponseBuffer;
 use zerocopy::IntoBytes;
 
 #[cfg(feature = "ml-dsa")]
@@ -108,7 +109,7 @@ impl<'a> TciNodes<'a> {
         }
     }
 
-    fn iter(&self) -> Result<ChildToRootIter, DpeErrorCode> {
+    fn iter(&self) -> Result<ChildToRootIter<'_>, DpeErrorCode> {
         ChildToRootIter::new(self.start_idx, self.contexts)
     }
 
@@ -139,7 +140,7 @@ pub struct MeasurementData<'a> {
 }
 
 pub struct CertWriter<'a> {
-    certificate: &'a mut [u8],
+    certificate: &'a mut dyn ResponseBuffer,
     profile: DpeProfile,
     offset: usize,
     crit_dice: bool,
@@ -255,7 +256,11 @@ impl CertWriter<'_> {
     ///
     /// If `crit_dice`, all tcg-dice-* extensions will be marked as critical.
     /// Else they will be marked as non-critical.
-    pub fn new(cert: &mut [u8], profile: DpeProfile, crit_dice: bool) -> CertWriter {
+    pub fn new(
+        cert: &mut dyn ResponseBuffer,
+        profile: DpeProfile,
+        crit_dice: bool,
+    ) -> CertWriter<'_> {
         CertWriter {
             certificate: cert,
             profile,
@@ -948,7 +953,7 @@ impl CertWriter<'_> {
     #[cfg(not(feature = "disable_csr"))]
     fn get_signed_data_size(
         &self,
-        csr: &[u8],
+        csr_len: usize,
         sig: &Signature,
         sid: &SignerIdentifier,
         tagged: bool,
@@ -959,7 +964,7 @@ impl CertWriter<'_> {
                 self.get_hash_alg_id_size(/*tagged=*/ true)?,
                 /*tagged=*/ true,
             )
-            + Self::get_encap_content_info_size(csr.len(), /*tagged=*/ true)
+            + Self::get_encap_content_info_size(csr_len, /*tagged=*/ true)
             + Self::get_structure_size(
                 self.get_signer_info_size(sig, sid, /*tagged=*/ true)?,
                 /*tagged=*/ true,
@@ -1097,12 +1102,10 @@ impl CertWriter<'_> {
     /// Write all of `bytes` to the certificate buffer.
     fn encode_bytes(&mut self, bytes: &[u8]) -> usize {
         let size = bytes.len();
-        match self.certificate.get_mut(self.offset..self.offset + size) {
-            Some(s) => s.copy_from_slice(bytes),
-            // Buffer full: skip the write. The overflow is reported by the
-            // post-serialization `check_not_truncated()` in the public encoders.
-            None => {}
-        }
+        // This could error if `write_at` prevents an overwrite and returns an error.  That is
+        // detected by the offset surpassing the certificate length at the end of an encode run,
+        // and thus the error reporting is elided here to save instruction space.
+        let _ = self.certificate.write_at(self.offset, bytes);
 
         // Note: Increment the offset regardless of whether the write occurred to allow detection
         // of encoding overflows.
@@ -1112,12 +1115,10 @@ impl CertWriter<'_> {
 
     /// Write a single `byte` to the certificate buffer.
     fn encode_byte(&mut self, byte: u8) -> usize {
-        match self.certificate.get_mut(self.offset) {
-            Some(b) => *b = byte,
-            // Buffer full: skip the write. The overflow is reported by the
-            // post-serialization `check_not_truncated()` in the public encoders.
-            None => {}
-        }
+        // This could error if `write_at` prevents an overwrite and returns an error.  That is
+        // detected by the offset surpassing the certificate length at the end of an encode run,
+        // and thus the error reporting is elided here to save instruction space.
+        let _ = self.certificate.write_at(self.offset, &[byte]);
 
         // Note: Increment the offset regardless of whether the write occurred to allow detection
         // of encoding overflows.
@@ -1150,9 +1151,10 @@ impl CertWriter<'_> {
     /// past the buffer end means the output was silently truncated. Public
     /// encoders call this before returning so a too-small buffer fails loudly.
     fn check_not_truncated(&self) -> Result<(), DpeErrorCode> {
-        if self.offset > self.certificate.len() {
+        if self.offset > self.certificate.capacity() {
             return Err(InternalErrorCode::CertSizeOverflow.into());
         }
+
         Ok(())
     }
 
@@ -2147,7 +2149,12 @@ impl CertWriter<'_> {
     #[allow(clippy::identity_op)]
     fn encode_encapsulated_content_info(
         &mut self,
-        sign_cb: &mut (impl FnMut(&[u8], bool) -> Result<Signature, CryptoError> + ?Sized),
+        sign_cb: &mut (impl FnMut(
+            &dyn ResponseBuffer,
+            core::ops::Range<usize>,
+            bool,
+        ) -> Result<Signature, CryptoError>
+                  + ?Sized),
         pub_key: &PubKey,
         subject_name: &Name,
         measurements: &MeasurementData,
@@ -2296,7 +2303,12 @@ impl CertWriter<'_> {
     #[allow(clippy::too_many_arguments)]
     pub fn encode_certificate(
         &mut self,
-        sign_cb: &mut (impl FnMut(&[u8], bool) -> Result<Signature, CryptoError> + ?Sized),
+        sign_cb: &mut (impl FnMut(
+            &dyn ResponseBuffer,
+            core::ops::Range<usize>,
+            bool,
+        ) -> Result<Signature, CryptoError>
+                  + ?Sized),
         serial_number: &[u8],
         issuer_name: &[u8],
         subject_name: &Name,
@@ -2325,7 +2337,7 @@ impl CertWriter<'_> {
     /// both an X.509 `Certificate` (TBSCertificate + signature) and a PKCS #10
     /// `CertificateRequest` (CertificationRequestInfo + signature).
     ///
-    /// The payload is encoded first, signed via `sign_cb`, and the signature
+    /// The payload is encoded, signed via `sign_cb`, and the signature
     /// appended; the outer SEQUENCE length is backfilled once both sizes are
     /// known.
     ///
@@ -2333,14 +2345,17 @@ impl CertWriter<'_> {
     #[cfg(any(not(feature = "disable_x509"), not(feature = "disable_csr")))]
     fn encode_signed_payload(
         &mut self,
-        sign_cb: &mut (impl FnMut(&[u8], bool) -> Result<Signature, CryptoError> + ?Sized),
+        sign_cb: &mut (impl FnMut(
+            &dyn ResponseBuffer,
+            core::ops::Range<usize>,
+            bool,
+        ) -> Result<Signature, CryptoError>
+                  + ?Sized),
         payload: SignedPayload,
     ) -> Result<usize, DpeErrorCode> {
         let mut prefix_bytes_written = self.encode_tag_field(Self::SEQUENCE_TAG);
         let offset = self.push_backtrack(SIZE_TAG_OFFSET)?;
 
-        // Encode the payload. `is_csr` selects the domain separation passed to
-        // the signing callback (PKCS #10 requests are signed differently).
         let (payload_bytes_written, is_csr) = match payload {
             #[cfg(not(feature = "disable_x509"))]
             SignedPayload::Tbs {
@@ -2373,11 +2388,9 @@ impl CertWriter<'_> {
         };
 
         let sig = {
-            let signed = self
-                .certificate
-                .get(offset..payload_bytes_written + offset)
-                .ok_or(DpeErrorCode::from(InternalErrorCode::TbsSliceOob))?;
-            sign_cb(signed, is_csr)
+            let abs_start = offset;
+            let abs_end = offset + payload_bytes_written;
+            sign_cb(&*self.certificate, abs_start..abs_end, is_csr)
         };
         let sig = okref(&sig)?;
 
@@ -2469,7 +2482,12 @@ impl CertWriter<'_> {
     #[cfg(not(feature = "disable_csr"))]
     pub fn encode_csr(
         &mut self,
-        sign_cb: &mut (impl FnMut(&[u8], bool) -> Result<Signature, CryptoError> + ?Sized),
+        sign_cb: &mut (impl FnMut(
+            &dyn ResponseBuffer,
+            core::ops::Range<usize>,
+            bool,
+        ) -> Result<Signature, CryptoError>
+                  + ?Sized),
         pub_key: &PubKey,
         subject_name: &Name,
         measurements: &MeasurementData,
@@ -2497,7 +2515,12 @@ impl CertWriter<'_> {
     #[allow(clippy::identity_op)]
     pub fn encode_cms(
         &mut self,
-        sign_cb: &mut (impl FnMut(&[u8], bool) -> Result<Signature, CryptoError> + ?Sized),
+        sign_cb: &mut (impl FnMut(
+            &dyn ResponseBuffer,
+            core::ops::Range<usize>,
+            bool,
+        ) -> Result<Signature, CryptoError>
+                  + ?Sized),
         pub_key: &PubKey,
         subject_name: &Name,
         measurements: &MeasurementData,
@@ -2539,23 +2562,22 @@ impl CertWriter<'_> {
         bytes_written +=
             self.encode_encapsulated_content_info(sign_cb, pub_key, subject_name, measurements)?;
 
-        let csr = {
-            let Some(csr_range) = self.csr_range else {
+        let (csr_start, csr_end) = {
+            let Some(r) = self.csr_range else {
                 Err(DpeErrorCode::X509CsrUnset)?
             };
-            self.certificate
-                .get(csr_range.0..csr_range.1)
-                .ok_or(DpeErrorCode::from(InternalErrorCode::CmsCsrRangeOob))?
+            r
         };
+        let csr_len = csr_end - csr_start;
 
-        let sig = sign_cb(csr, false)?;
+        let sig = sign_cb(&*self.certificate, (csr_start)..(csr_end), false)?;
 
         let signed_data_field_0 = self.get_signed_data_size(
-            csr, &sig, sid, /*tagged=*/ true, /*explicit=*/ false,
+            csr_len, &sig, sid, /*tagged=*/ true, /*explicit=*/ false,
         )?;
 
         let signed_data_field_1 = self.get_signed_data_size(
-            csr, &sig, sid, /*tagged=*/ false, /*explicit=*/ false,
+            csr_len, &sig, sid, /*tagged=*/ false, /*explicit=*/ false,
         )?;
 
         // signerInfos
@@ -2687,7 +2709,7 @@ pub(crate) fn create_exported_dpe_cert(
     args: &CreateDpeCertArgs,
     dpe: &mut DpeInstance,
     env: &mut dyn DpeEnv,
-    cert: &mut [u8],
+    cert: &mut dyn ResponseBuffer,
 ) -> Result<CreateDpeCertResult, DpeErrorCode> {
     create_dpe_cert_or_csr(
         args,
@@ -2703,7 +2725,7 @@ pub(crate) fn create_dpe_cert(
     args: &CreateDpeCertArgs,
     dpe: &mut DpeInstance,
     env: &mut dyn DpeEnv,
-    cert: &mut [u8],
+    cert: &mut dyn ResponseBuffer,
 ) -> Result<CreateDpeCertResult, DpeErrorCode> {
     create_dpe_cert_or_csr(
         args,
@@ -2720,7 +2742,7 @@ pub(crate) fn create_dpe_csr(
     args: &CreateDpeCertArgs,
     dpe: &mut DpeInstance,
     env: &mut dyn DpeEnv,
-    csr: &mut [u8],
+    csr: &mut dyn ResponseBuffer,
 ) -> Result<CreateDpeCertResult, DpeErrorCode> {
     create_dpe_cert_or_csr(
         args,
@@ -2734,7 +2756,7 @@ pub(crate) fn create_dpe_csr(
 
 /// The signed payload variants handled by [`CertWriter::encode_signed_payload`]:
 /// an X.509 TBSCertificate or a PKCS #10 CertificationRequestInfo.
-enum SignedPayload<'a> {
+pub(crate) enum SignedPayload<'a> {
     #[cfg(not(feature = "disable_x509"))]
     Tbs {
         serial_number: &'a [u8],
@@ -2774,8 +2796,12 @@ fn generate_cert_or_csr(
     subject_name: &Name,
     pub_key: &PubKey,
     measurements: &MeasurementData,
-    sign_cb: &mut dyn FnMut(&[u8], bool) -> Result<Signature, CryptoError>,
-    output_cert_or_csr: &mut [u8],
+    sign_cb: &mut dyn FnMut(
+        &dyn ResponseBuffer,
+        core::ops::Range<usize>,
+        bool,
+    ) -> Result<Signature, CryptoError>,
+    output_cert_or_csr: &mut dyn ResponseBuffer,
 ) -> Result<u32, DpeErrorCode> {
     match format_specific_args {
         CertOrCsrArgs::Cert {
@@ -2834,7 +2860,7 @@ fn create_dpe_cert_or_csr(
     env: &mut dyn DpeEnv,
     cert_format: CertificateFormat,
     cert_type: CertificateType,
-    output_cert_or_csr: &mut [u8],
+    output_cert_or_csr: &mut dyn ResponseBuffer,
 ) -> Result<CreateDpeCertResult, DpeErrorCode> {
     let digest = get_dpe_measurement_digest(dpe, env, args.handle, args.locality)?;
     let (crypto, platform, state) = env.get();
@@ -2899,7 +2925,9 @@ fn create_dpe_cert_or_csr(
         subject_alt_name,
     };
 
-    let mut sign_cb = |data: &[u8], use_derived: bool| {
+    let mut sign_cb = |buf: &dyn ResponseBuffer,
+                       range: core::ops::Range<usize>,
+                       use_derived: bool| {
         if use_derived {
             match cert_type {
                 CertificateType::Exported => {
@@ -2907,18 +2935,18 @@ fn create_dpe_cert_or_csr(
                         exported_cdi_handle.ok_or(CryptoError::CryptoLibError(0))?;
                     crypto
                         .derive_key_pair_exported(&exported_handle, args.key_label, args.context)?
-                        .sign(&SignData::Raw(data))
+                        .sign(&SignData::ResponseBuffer(buf, range))
                 }
                 CertificateType::Leaf => crypto.sign_with_derived(
                     &digest,
                     args.cdi_label,
                     args.key_label,
                     args.context,
-                    &SignData::Raw(data),
+                    &SignData::ResponseBuffer(buf, range),
                 ),
             }
         } else {
-            crypto.sign_with_alias(&SignData::Raw(data))
+            crypto.sign_with_alias(&SignData::ResponseBuffer(buf, range))
         }
     };
 
@@ -2990,6 +3018,7 @@ pub(crate) mod tests {
         ArrayVec, CertValidity, OtherName, SignerIdentifier, SubjectAltName,
         MAX_KEY_IDENTIFIER_SIZE, MAX_OTHER_NAME_SIZE, MAX_SN_SIZE, MAX_UEID_SIZE,
     };
+    use caliptra_dpe_response_buffer::{ResponseBuffer, SliceResponseBuffer};
     #[cfg(not(feature = "disable_csr"))]
     use cms::content_info::CmsVersion;
     #[cfg(not(feature = "disable_csr"))]
@@ -3069,7 +3098,8 @@ pub(crate) mod tests {
 
         for c in buffer_cases {
             let mut cert = [0u8; 128];
-            let mut w = CertWriter::new(&mut cert, DPE_PROFILE, true);
+            let mut cert_buf = SliceResponseBuffer::new(&mut cert);
+            let mut w = CertWriter::new(&mut cert_buf, DPE_PROFILE, true);
             let byte_count = w.encode_integer_bytes(&c, true);
             let n = asn1::parse_single::<u64>(&cert[..byte_count]).unwrap();
             assert_eq!(n, u64::from_be_bytes(c));
@@ -3079,8 +3109,9 @@ pub(crate) mod tests {
         let integer_cases = [0xFFFFFFFF00000000, 0x0102030405060708, 0x2];
 
         for c in integer_cases {
-            let mut cert = [0; 128];
-            let mut w = CertWriter::new(&mut cert, DPE_PROFILE, true);
+            let mut cert = [0u8; 128];
+            let mut cert_buf = SliceResponseBuffer::new(&mut cert);
+            let mut w = CertWriter::new(&mut cert_buf, DPE_PROFILE, true);
             let byte_count = w.encode_integer(c, true);
             let n = asn1::parse_single::<u64>(&cert[..byte_count]).unwrap();
             assert_eq!(n, c);
@@ -3096,7 +3127,8 @@ pub(crate) mod tests {
             serial: DirectoryString::PrintableString(&[0x0u8; DPE_PROFILE.hash_size() * 2]),
         };
 
-        let mut w = CertWriter::new(&mut cert, DPE_PROFILE, true);
+        let mut cert_buf = SliceResponseBuffer::new(&mut cert);
+        let mut w = CertWriter::new(&mut cert_buf, DPE_PROFILE, true);
         let bytes_written = w.encode_rdn(&test_name).unwrap();
 
         let name = match X509Name::from_der(&cert[..bytes_written]) {
@@ -3128,12 +3160,17 @@ pub(crate) mod tests {
         F: FnMut(&mut CertWriter) -> Result<usize, DpeErrorCode>,
     {
         let mut big = vec![0u8; 16384];
-        let exact = encode(&mut CertWriter::new(&mut big, DPE_PROFILE, true))
+        let mut sbuf = SliceResponseBuffer::new(&mut big);
+        let exact = encode(&mut CertWriter::new(&mut sbuf, DPE_PROFILE, true))
             .expect("encoding into a large buffer should succeed");
 
         let mut buf = vec![0u8; exact];
         assert_eq!(
-            encode(&mut CertWriter::new(&mut buf, DPE_PROFILE, true)),
+            encode(&mut CertWriter::new(
+                &mut SliceResponseBuffer::new(&mut buf),
+                DPE_PROFILE,
+                true
+            )),
             Ok(exact),
             "exact-fit buffer ({exact}) should succeed",
         );
@@ -3146,7 +3183,11 @@ pub(crate) mod tests {
             let mut backing = vec![CANARY; len + CANARY_LEN];
             let (writable, canary) = backing.split_at_mut(len);
             assert_eq!(
-                encode(&mut CertWriter::new(writable, DPE_PROFILE, true)),
+                encode(&mut CertWriter::new(
+                    &mut SliceResponseBuffer::new(writable),
+                    DPE_PROFILE,
+                    true
+                )),
                 Err(DpeErrorCode::InternalError(
                     InternalErrorCode::CertSizeOverflow
                 )),
@@ -3165,7 +3206,8 @@ pub(crate) mod tests {
     fn test_pub_fn_buffer_overflow_is_detected() {
         // ----- shared inputs (mirror build_test_cert_*) -----
         let mut issuer_der = [0u8; 1024];
-        let issuer_len = CertWriter::new(&mut issuer_der, DPE_PROFILE, true)
+        let mut ibuf = SliceResponseBuffer::new(&mut issuer_der);
+        let issuer_len = CertWriter::new(&mut ibuf, DPE_PROFILE, true)
             .encode_rdn(&TEST_ISSUER_NAME)
             .unwrap();
         let issuer = &issuer_der[..issuer_len];
@@ -3240,7 +3282,9 @@ pub(crate) mod tests {
             )
         };
 
-        let mut sign_cb = |_data: &[u8], _use_derived: bool| Ok(test_sig.clone());
+        let mut sign_cb = |_buf: &dyn ResponseBuffer,
+                           _range: core::ops::Range<usize>,
+                           _use_derived: bool| Ok(test_sig.clone());
 
         // SubjectKeyIdentifier keeps the SignerIdentifier setup simple.
         let mut ski = ArrayVec::new();
@@ -3294,13 +3338,16 @@ pub(crate) mod tests {
         let mut cert = [0u8; 384];
         let test_key = EcdsaPubKey::Ecdsa384(EcdsaPub::default());
 
-        let mut w = CertWriter::new(&mut cert, DPE_PROFILE, true);
+        let mut cert_buf = SliceResponseBuffer::new(&mut cert);
+        let mut w = CertWriter::new(&mut cert_buf, DPE_PROFILE, true);
         let bytes_written = w.encode_ecdsa_subject_pubkey_info(&test_key).unwrap();
 
         SubjectPublicKeyInfo::from_der(&cert[..bytes_written]).unwrap();
 
+        let mut empty: [u8; 0] = [];
+        let mut ebuf = SliceResponseBuffer::new(&mut empty);
         assert_eq!(
-            CertWriter::new(&mut [], DPE_PROFILE, true)
+            CertWriter::new(&mut ebuf, DPE_PROFILE, true)
                 .get_ecdsa_subject_pubkey_info_size(&test_key, true)
                 .unwrap(),
             bytes_written
@@ -3313,13 +3360,16 @@ pub(crate) mod tests {
         let mut cert = [0u8; 4096];
         let test_key = MldsaPublicKey([0; MldsaAlgorithm::Mldsa87.public_key_size()]);
 
-        let mut w = CertWriter::new(&mut cert, DPE_PROFILE, true);
+        let mut cert_buf = SliceResponseBuffer::new(&mut cert);
+        let mut w = CertWriter::new(&mut cert_buf, DPE_PROFILE, true);
         let bytes_written = w.encode_mldsa_subject_pubkey_info(&test_key).unwrap();
 
         SubjectPublicKeyInfo::from_der(&cert[..bytes_written]).unwrap();
 
+        let mut empty: [u8; 0] = [];
+        let mut ebuf = SliceResponseBuffer::new(&mut empty);
         assert_eq!(
-            CertWriter::new(&mut [], DPE_PROFILE, true)
+            CertWriter::new(&mut ebuf, DPE_PROFILE, true)
                 .get_mldsa_subject_pubkey_info_size(&test_key, true)
                 .unwrap(),
             bytes_written
@@ -3337,11 +3387,13 @@ pub(crate) mod tests {
         node.svn = 0xFFFFFFFF;
 
         let mut cert = [0u8; 256];
-        let mut w = CertWriter::new(&mut cert, DPE_PROFILE, true);
         let mut supports_recursive = true;
+        let mut cert_buf = SliceResponseBuffer::new(&mut cert);
+        let mut w = CertWriter::new(&mut cert_buf, DPE_PROFILE, true);
         let mut bytes_written = w.encode_tcb_info(&node, supports_recursive).unwrap();
-
-        let checker = CertWriter::new(&mut [], DPE_PROFILE, true);
+        let mut empty: [u8; 0] = [];
+        let mut ebuf = SliceResponseBuffer::new(&mut empty);
+        let checker = CertWriter::new(&mut ebuf, DPE_PROFILE, true);
         let mut parsed_tcb_info = asn1::parse_single::<TcbInfo>(&cert[..bytes_written]).unwrap();
 
         assert_eq!(
@@ -3373,7 +3425,8 @@ pub(crate) mod tests {
 
         // test tbs_info with supports_recursive = false
         supports_recursive = false;
-        w = CertWriter::new(&mut cert, DPE_PROFILE, true);
+        let mut cert_buf = SliceResponseBuffer::new(&mut cert);
+        let mut w = CertWriter::new(&mut cert_buf, DPE_PROFILE, true);
         bytes_written = w.encode_tcb_info(&node, supports_recursive).unwrap();
 
         parsed_tcb_info = asn1::parse_single::<TcbInfo>(&cert[..bytes_written]).unwrap();
@@ -3394,7 +3447,8 @@ pub(crate) mod tests {
 
     fn get_key_usage(is_ca: bool) -> KeyUsage {
         let mut cert = [0u8; 32];
-        let mut w = CertWriter::new(&mut cert, DPE_PROFILE, true);
+        let mut cert_buf = SliceResponseBuffer::new(&mut cert);
+        let mut w = CertWriter::new(&mut cert_buf, DPE_PROFILE, true);
         let bytes_written = w.encode_key_usage(is_ca);
         assert_eq!(
             bytes_written,
@@ -3438,7 +3492,8 @@ pub(crate) mod tests {
     #[cfg(not(feature = "ml-dsa"))]
     fn build_test_cert_ecdsa(is_ca: bool, cert_buf: &mut [u8]) -> (usize, X509Certificate<'_>) {
         let mut issuer_der = [0u8; 1024];
-        let mut issuer_writer = CertWriter::new(&mut issuer_der, DPE_PROFILE, true);
+        let mut ibuf = SliceResponseBuffer::new(&mut issuer_der);
+        let mut issuer_writer = CertWriter::new(&mut ibuf, DPE_PROFILE, true);
         let issuer_len = issuer_writer.encode_rdn(&TEST_ISSUER_NAME).unwrap();
 
         let test_pub = EcdsaPub::from_slice(&[0xAA; ECC_INT_SIZE], &[0xBB; ECC_INT_SIZE]);
@@ -3519,9 +3574,12 @@ pub(crate) mod tests {
             _ => panic!("Missing signature"),
         };
 
-        let mut sign_cb = |_data: &[u8], _use_derived: bool| Ok(test_sig.clone());
+        let mut sign_cb = |_buf: &dyn ResponseBuffer,
+                           _range: core::ops::Range<usize>,
+                           _use_derived: bool| Ok(test_sig.clone());
 
-        let mut w = CertWriter::new(cert_buf, DPE_PROFILE, true);
+        let mut cbuf = SliceResponseBuffer::new(cert_buf);
+        let mut w = CertWriter::new(&mut cbuf, DPE_PROFILE, true);
         let bytes_written = w
             .encode_certificate(
                 &mut sign_cb,
@@ -3557,7 +3615,8 @@ pub(crate) mod tests {
     #[cfg(feature = "ml-dsa")]
     fn build_test_cert_mldsa(is_ca: bool, cert_buf: &mut [u8]) -> (usize, X509Certificate<'_>) {
         let mut issuer_der = [0u8; 1024];
-        let mut issuer_writer = CertWriter::new(&mut issuer_der, DPE_PROFILE, true);
+        let mut ibuf = SliceResponseBuffer::new(&mut issuer_der);
+        let mut issuer_writer = CertWriter::new(&mut ibuf, DPE_PROFILE, true);
         let issuer_len = issuer_writer.encode_rdn(&TEST_ISSUER_NAME).unwrap();
 
         const ALGORITHM: MldsaAlgorithm = match DPE_PROFILE.alg() {
@@ -3626,9 +3685,12 @@ pub(crate) mod tests {
             _ => panic!("Missing signature"),
         };
 
-        let mut sign_cb = |_data: &[u8], _use_derived: bool| Ok(test_sig.clone());
+        let mut sign_cb = |_buf: &dyn ResponseBuffer,
+                           _range: core::ops::Range<usize>,
+                           _use_derived: bool| Ok(test_sig.clone());
 
-        let mut w = CertWriter::new(cert_buf, DPE_PROFILE, true);
+        let mut cbuf = SliceResponseBuffer::new(cert_buf);
+        let mut w = CertWriter::new(&mut cbuf, DPE_PROFILE, true);
         let bytes_written = w
             .encode_certificate(
                 &mut sign_cb,
@@ -3861,7 +3923,8 @@ pub(crate) mod tests {
         let measurements = build_test_measurements(&contexts, true);
 
         let mut buf = [0u8; 1024];
-        let mut w = CertWriter::new(&mut buf, DPE_PROFILE, true);
+        let mut sbuf = SliceResponseBuffer::new(&mut buf);
+        let mut w = CertWriter::new(&mut sbuf, DPE_PROFILE, true);
         let n = w.encode_multi_tcb_info(&measurements).unwrap();
 
         let expected: &[u8] = match DPE_PROFILE {
@@ -3944,7 +4007,8 @@ pub(crate) mod tests {
         let measurements = build_test_measurements(&contexts, true);
 
         let mut buf = [0u8; 1024];
-        let mut w = CertWriter::new(&mut buf, DPE_PROFILE, true);
+        let mut sbuf = SliceResponseBuffer::new(&mut buf);
+        let mut w = CertWriter::new(&mut sbuf, DPE_PROFILE, true);
         let n = w.encode_ueid(&measurements);
 
         let expected: &[u8] = &[
@@ -3965,7 +4029,8 @@ pub(crate) mod tests {
         let measurements = build_test_measurements(&contexts, true);
 
         let mut buf = [0u8; 1024];
-        let mut w = CertWriter::new(&mut buf, DPE_PROFILE, true);
+        let mut sbuf = SliceResponseBuffer::new(&mut buf);
+        let mut w = CertWriter::new(&mut sbuf, DPE_PROFILE, true);
         let n = w.encode_basic_constraints(&measurements);
 
         let expected: &[u8] = &[
@@ -3982,7 +4047,8 @@ pub(crate) mod tests {
     #[test]
     fn test_encode_key_usage_bytes() {
         let mut buf = [0u8; 1024];
-        let mut w = CertWriter::new(&mut buf, DPE_PROFILE, true);
+        let mut sbuf = SliceResponseBuffer::new(&mut buf);
+        let mut w = CertWriter::new(&mut sbuf, DPE_PROFILE, true);
         let n = w.encode_key_usage(true);
 
         let expected: &[u8] = &[
@@ -4002,7 +4068,8 @@ pub(crate) mod tests {
         let measurements = build_test_measurements(&contexts, true);
 
         let mut buf = [0u8; 1024];
-        let mut w = CertWriter::new(&mut buf, DPE_PROFILE, true);
+        let mut sbuf = SliceResponseBuffer::new(&mut buf);
+        let mut w = CertWriter::new(&mut sbuf, DPE_PROFILE, true);
         let n = w.encode_extended_key_usage(&measurements);
 
         let expected: &[u8] = &[
@@ -4031,7 +4098,8 @@ pub(crate) mod tests {
         measurements.subject_alt_name = Some(san);
 
         let mut buf = [0u8; 1024];
-        let mut w = CertWriter::new(&mut buf, DPE_PROFILE, true);
+        let mut sbuf = SliceResponseBuffer::new(&mut buf);
+        let mut w = CertWriter::new(&mut sbuf, DPE_PROFILE, true);
         let n = w.encode_subject_alt_name_extension(&measurements);
 
         let expected: &[u8] = &[
@@ -4053,7 +4121,8 @@ pub(crate) mod tests {
         let measurements = build_test_measurements(&contexts, true);
 
         let mut buf = [0u8; 1024];
-        let mut w = CertWriter::new(&mut buf, DPE_PROFILE, true);
+        let mut sbuf = SliceResponseBuffer::new(&mut buf);
+        let mut w = CertWriter::new(&mut sbuf, DPE_PROFILE, true);
         let n = w.encode_authority_key_identifier_extension(&measurements, true);
 
         let expected: &[u8] = &[
@@ -4076,7 +4145,8 @@ pub(crate) mod tests {
         let measurements = build_test_measurements(&contexts, true);
 
         let mut buf = [0u8; 1024];
-        let mut w = CertWriter::new(&mut buf, DPE_PROFILE, true);
+        let mut sbuf = SliceResponseBuffer::new(&mut buf);
+        let mut w = CertWriter::new(&mut sbuf, DPE_PROFILE, true);
         let n = w.encode_subject_key_identifier_extension(&measurements, true);
 
         let expected: &[u8] = &[
@@ -4095,7 +4165,8 @@ pub(crate) mod tests {
     #[cfg(not(feature = "ml-dsa"))]
     fn test_encode_cms_rejects_unresolved_backtrack() {
         let mut buf = [0u8; 4096];
-        let mut w = CertWriter::new(&mut buf, DPE_PROFILE, true);
+        let mut sbuf = SliceResponseBuffer::new(&mut buf);
+        let mut w = CertWriter::new(&mut sbuf, DPE_PROFILE, true);
 
         // Pre-push one extra backtrack to simulate a push/pop imbalance.
         // encode_cms pushes 3 and pops 3; this extra entry survives those
@@ -4126,7 +4197,9 @@ pub(crate) mod tests {
             ),
             _ => panic!("unsupported algorithm"),
         };
-        let mut sign_cb = |_data: &[u8], _use_derived: bool| Ok(test_sig.clone());
+        let mut sign_cb = |_buf: &dyn ResponseBuffer,
+                           _range: core::ops::Range<usize>,
+                           _use_derived: bool| Ok(test_sig.clone());
 
         let context = Context {
             state: ContextState::Active,
@@ -4192,7 +4265,8 @@ pub(crate) mod tests {
             serial: DirectoryString::PrintableString(&sn),
         };
         let mut buf = vec![0u8; 1024];
-        let n = CertWriter::new(&mut buf, DPE_PROFILE, true)
+        let mut sbuf = SliceResponseBuffer::new(&mut buf);
+        let n = CertWriter::new(&mut sbuf, DPE_PROFILE, true)
             .encode_rdn(&name)
             .unwrap();
         buf.truncate(n);
@@ -4287,7 +4361,8 @@ pub(crate) mod tests {
         let validity = make_validity(max_size);
 
         let mut buf = vec![0u8; 65536];
-        let mut w = CertWriter::new(&mut buf, DPE_PROFILE, true);
+        let mut sbuf = SliceResponseBuffer::new(&mut buf);
+        let mut w = CertWriter::new(&mut sbuf, DPE_PROFILE, true);
         let n = w
             .encode_tbs(
                 &serial,
@@ -4398,7 +4473,8 @@ pub(crate) mod tests {
         let validity = make_validity(max_size);
 
         let mut buf = vec![0u8; 65536];
-        let mut w = CertWriter::new(&mut buf, DPE_PROFILE, true);
+        let mut sbuf = SliceResponseBuffer::new(&mut buf);
+        let mut w = CertWriter::new(&mut sbuf, DPE_PROFILE, true);
         let n = w
             .encode_tbs(
                 &serial,
@@ -4509,7 +4585,8 @@ pub(crate) mod tests {
         };
 
         let mut buf = vec![0u8; 65536];
-        let mut w = CertWriter::new(&mut buf, DPE_PROFILE, true);
+        let mut sbuf = SliceResponseBuffer::new(&mut buf);
+        let mut w = CertWriter::new(&mut sbuf, DPE_PROFILE, true);
         let n = w
             .encode_certification_request_info(&pub_key, &TEST_SUBJECT_NAME, &measurements)
             .unwrap();
@@ -4603,7 +4680,8 @@ pub(crate) mod tests {
         };
 
         let mut buf = vec![0u8; 65536];
-        let mut w = CertWriter::new(&mut buf, DPE_PROFILE, true);
+        let mut sbuf = SliceResponseBuffer::new(&mut buf);
+        let mut w = CertWriter::new(&mut sbuf, DPE_PROFILE, true);
         let n = w
             .encode_certification_request_info(&pub_key, &TEST_SUBJECT_NAME, &measurements)
             .unwrap();
@@ -4661,7 +4739,9 @@ pub(crate) mod tests {
             ),
             _ => panic!("not an ECDSA profile"),
         };
-        let mut sign_cb = |_data: &[u8], _use_derived: bool| Ok(test_sig.clone());
+        let mut sign_cb = |_buf: &dyn ResponseBuffer,
+                           _range: core::ops::Range<usize>,
+                           _use_derived: bool| Ok(test_sig.clone());
 
         let label_bytes: Vec<u8> = if max_size {
             vec![0xAB; MAX_UEID_SIZE]
@@ -4694,7 +4774,8 @@ pub(crate) mod tests {
         };
 
         let mut buf = vec![0u8; 65536];
-        let mut w = CertWriter::new(&mut buf, DPE_PROFILE, true);
+        let mut sbuf = SliceResponseBuffer::new(&mut buf);
+        let mut w = CertWriter::new(&mut sbuf, DPE_PROFILE, true);
         let n = w
             .encode_csr(&mut sign_cb, &pub_key, &TEST_SUBJECT_NAME, &measurements)
             .unwrap();
@@ -4760,7 +4841,9 @@ pub(crate) mod tests {
         let test_pub = MldsaPublicKey::from_slice(&[0xAAu8; ALGORITHM.public_key_size()]);
         let pub_key = PubKey::Mldsa(test_pub);
         let test_sig = Signature::Mldsa(MldsaSignature([0xBBu8; ALGORITHM.signature_size()]));
-        let mut sign_cb = |_data: &[u8], _use_derived: bool| Ok(test_sig.clone());
+        let mut sign_cb = |_buf: &dyn ResponseBuffer,
+                           _range: core::ops::Range<usize>,
+                           _use_derived: bool| Ok(test_sig.clone());
 
         let label_bytes: Vec<u8> = if max_size {
             vec![0xAB; MAX_UEID_SIZE]
@@ -4793,7 +4876,8 @@ pub(crate) mod tests {
         };
 
         let mut buf = vec![0u8; 65536];
-        let mut w = CertWriter::new(&mut buf, DPE_PROFILE, true);
+        let mut sbuf = SliceResponseBuffer::new(&mut buf);
+        let mut w = CertWriter::new(&mut sbuf, DPE_PROFILE, true);
         let n = w
             .encode_csr(&mut sign_cb, &pub_key, &TEST_SUBJECT_NAME, &measurements)
             .unwrap();
@@ -4875,7 +4959,8 @@ pub(crate) mod tests {
         };
 
         let mut buf = vec![0u8; 65536];
-        let mut w = CertWriter::new(&mut buf, DPE_PROFILE, true);
+        let mut sbuf = SliceResponseBuffer::new(&mut buf);
+        let mut w = CertWriter::new(&mut sbuf, DPE_PROFILE, true);
         let n = w.encode_signer_info(&test_sig, &sid_isn).unwrap();
 
         let si = CmsSignerInfo::from_der(&buf[..n])
@@ -4917,7 +5002,8 @@ pub(crate) mod tests {
         let sid_ski = SignerIdentifier::SubjectKeyIdentifier(ski_av);
 
         let mut buf2 = vec![0u8; 65536];
-        let mut w2 = CertWriter::new(&mut buf2, DPE_PROFILE, true);
+        let mut sbuf2 = SliceResponseBuffer::new(&mut buf2);
+        let mut w2 = CertWriter::new(&mut sbuf2, DPE_PROFILE, true);
         let n2 = w2.encode_signer_info(&test_sig, &sid_ski).unwrap();
 
         let si2 = CmsSignerInfo::from_der(&buf2[..n2])
@@ -4988,7 +5074,8 @@ pub(crate) mod tests {
         };
 
         let mut buf = vec![0u8; 1_048_576]; // MLDSA sig is large
-        let mut w = CertWriter::new(&mut buf, DPE_PROFILE, true);
+        let mut sbuf = SliceResponseBuffer::new(&mut buf);
+        let mut w = CertWriter::new(&mut sbuf, DPE_PROFILE, true);
         let n = w.encode_signer_info(&test_sig, &sid_isn).unwrap();
 
         let si = CmsSignerInfo::from_der(&buf[..n])
@@ -5020,7 +5107,8 @@ pub(crate) mod tests {
         let sid_ski = SignerIdentifier::SubjectKeyIdentifier(ski_av);
 
         let mut buf2 = vec![0u8; 1_048_576];
-        let mut w2 = CertWriter::new(&mut buf2, DPE_PROFILE, true);
+        let mut sbuf2 = SliceResponseBuffer::new(&mut buf2);
+        let mut w2 = CertWriter::new(&mut sbuf2, DPE_PROFILE, true);
         let n2 = w2.encode_signer_info(&test_sig, &sid_ski).unwrap();
 
         let si2 = CmsSignerInfo::from_der(&buf2[..n2])

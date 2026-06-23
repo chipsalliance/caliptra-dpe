@@ -39,6 +39,7 @@ caliptra-cfi-derive.workspace = true
 caliptra-cfi-lib = { workspace = true, default-features = false }
 caliptra-dpe-crypto = { workspace = true, default-features = false }
 caliptra-dpe-platform = { workspace = true, default-features = false }
+caliptra-dpe-response-buffer.workspace = true
 cfg-if.workspace = true
 constant_time_eq.workspace = true
 log = { version = "0.4.28", optional = true }

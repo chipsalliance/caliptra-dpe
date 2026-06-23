@@ -4,11 +4,12 @@ use super::CommandExecution;
 use crate::{
     dpe_instance::{DpeEnv, DpeInstance},
     error::DpeErrorCode,
-    mutresp,
     response::GetProfileResp,
 };
 #[cfg(feature = "cfi")]
 use caliptra_cfi_derive::cfi_impl_fn;
+use caliptra_dpe_response_buffer::ResponseBuffer;
+use zerocopy::IntoBytes;
 
 #[repr(C, align(4))]
 #[derive(
@@ -31,12 +32,13 @@ impl CommandExecution for GetProfileCmd {
         dpe: &mut DpeInstance,
         env: &mut dyn DpeEnv,
         _locality: u32,
-        out: &mut [u8],
+        out: &mut dyn ResponseBuffer,
     ) -> Result<usize, DpeErrorCode> {
-        let response = mutresp::<GetProfileResp>(dpe.profile, out)?;
         let support = env.state().support;
-        *response = dpe.get_profile(env.platform(), support)?;
-
-        Ok(size_of_val(response))
+        let resp: GetProfileResp = dpe.get_profile(env.platform(), support)?;
+        let bytes = resp.as_bytes();
+        out.write_at(0, bytes)
+            .map_err(|_| DpeErrorCode::InvalidResponseBuf)?;
+        Ok(bytes.len())
     }
 }

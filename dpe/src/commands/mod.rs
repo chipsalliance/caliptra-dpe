@@ -16,6 +16,7 @@ pub use self::sign::{SignCommand, SignFlags, SignP256Cmd, SignP384Cmd};
 pub use self::update_context_measurement::UpdateContextMeasurementCmd;
 #[cfg(feature = "cfi")]
 use caliptra_cfi_derive::{cfi_impl_fn, Launder};
+use caliptra_dpe_response_buffer::{ResponseBuffer, SliceResponseBuffer};
 
 #[cfg(feature = "ml-dsa")]
 pub use {self::certify_key::CertifyKeyMldsa87Cmd, sign::SignMldsa87Cmd, sign::SignMldsa87RawCmd};
@@ -88,7 +89,7 @@ impl Command<'_> {
     /// # Arguments
     ///
     /// * `bytes` - serialized command
-    pub fn deserialize(profile: DpeProfile, bytes: &'_ [u8]) -> Result<Command, DpeErrorCode> {
+    pub fn deserialize(profile: DpeProfile, bytes: &'_ [u8]) -> Result<Command<'_>, DpeErrorCode> {
         let header = CommandHdr::try_from_with_profile(profile, bytes)?;
         let bytes = bytes
             .get(size_of::<CommandHdr>()..)
@@ -310,7 +311,7 @@ impl CommandExecution for Command<'_> {
         dpe: &mut DpeInstance,
         env: &mut dyn DpeEnv,
         locality: u32,
-        out: &mut [u8],
+        out: &mut dyn ResponseBuffer,
     ) -> Result<usize, DpeErrorCode> {
         match self {
             Command::CertifyKey(cmd) => cmd.execute_serialized(dpe, env, locality, out),
@@ -346,7 +347,8 @@ pub trait CommandExecution {
         macro_rules! exec {
             ($resp_type:ty, $f:expr) => {{
                 let mut buf = [0u32; (size_of::<$resp_type>() + 3) / 4];
-                self.execute_serialized(dpe, env, locality, buf.as_mut_bytes())?;
+                let mut resp_buf = SliceResponseBuffer::new(buf.as_mut_bytes());
+                self.execute_serialized(dpe, env, locality, &mut resp_buf)?;
                 <$resp_type>::try_read_from_bytes(buf.as_bytes())
                     .map($f)
                     .map_err(|_| {
@@ -427,7 +429,7 @@ pub trait CommandExecution {
         dpe: &mut DpeInstance,
         env: &mut dyn DpeEnv,
         locality: u32,
-        out: &mut [u8],
+        out: &mut dyn ResponseBuffer,
     ) -> Result<usize, DpeErrorCode>;
 
     /// CFI wrapper around execute
@@ -440,7 +442,7 @@ pub trait CommandExecution {
         dpe: &mut DpeInstance,
         env: &mut dyn DpeEnv,
         locality: u32,
-        out: &mut [u8],
+        out: &mut dyn ResponseBuffer,
     ) -> Result<usize, DpeErrorCode>;
 }
 
