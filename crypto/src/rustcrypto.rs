@@ -220,6 +220,59 @@ impl crate::Signer for RustCryptoSigner {
             }
         }
     }
+
+    fn sign_into_slice(
+        &mut self,
+        data: &SignData,
+        _pub_key: Option<&[u8]>,
+        signature: &mut [u8],
+    ) -> Result<(), CryptoError> {
+        let sig = self.sign(data)?;
+        match &sig {
+            super::Signature::Ecdsa(ecdsa_sig) => {
+                let (r, s) = ecdsa_sig.as_slice();
+                if signature.len() != r.len() + s.len() {
+                    return Err(CryptoError::Size);
+                }
+                signature[..r.len()].copy_from_slice(r);
+                signature[r.len()..].copy_from_slice(s);
+            }
+            #[cfg(feature = "ml-dsa")]
+            super::Signature::Mldsa(mldsa_sig) => {
+                if signature.len() != mldsa_sig.0.len() {
+                    return Err(CryptoError::Size);
+                }
+                signature.copy_from_slice(&mldsa_sig.0);
+            }
+        }
+        Ok(())
+    }
+
+    fn public_key_into(&mut self, pub_key: &mut [u8]) -> Result<(), CryptoError> {
+        let key = self.public_key()?;
+        match &key {
+            PubKey::Ecdsa(ecdsa_key) => {
+                let (x, y) = ecdsa_key.as_slice();
+                if pub_key.len() != x.len() + y.len() {
+                    return Err(CryptoError::Size);
+                }
+                pub_key[..x.len()].copy_from_slice(x);
+                pub_key[x.len()..].copy_from_slice(y);
+            }
+            #[cfg(feature = "ml-dsa")]
+            PubKey::Mldsa(mldsa_key) => {
+                if pub_key.len() != mldsa_key.0.len() {
+                    return Err(CryptoError::Size);
+                }
+                pub_key.copy_from_slice(&mldsa_key.0);
+            }
+        }
+        Ok(())
+    }
+
+    fn signature_alg(&self) -> SignatureAlgorithm {
+        self.signature_alg
+    }
 }
 
 pub struct RustCryptoCdi {
@@ -479,5 +532,31 @@ impl Crypto for RustCryptoImpl {
                 Self::mldsa_sign_data_inner(&ml_dsa_secret, data)
             }
         }
+    }
+
+    fn sign_with_alias_into_slice(
+        &mut self,
+        data: &SignData,
+        signature: &mut [u8],
+    ) -> Result<(), CryptoError> {
+        let sig = self.sign_with_alias(data)?;
+        match &sig {
+            super::Signature::Ecdsa(ecdsa_sig) => {
+                let (r, s) = ecdsa_sig.as_slice();
+                if signature.len() != r.len() + s.len() {
+                    return Err(CryptoError::Size);
+                }
+                signature[..r.len()].copy_from_slice(r);
+                signature[r.len()..].copy_from_slice(s);
+            }
+            #[cfg(feature = "ml-dsa")]
+            super::Signature::Mldsa(mldsa_sig) => {
+                if signature.len() != mldsa_sig.0.len() {
+                    return Err(CryptoError::Size);
+                }
+                signature.copy_from_slice(&mldsa_sig.0);
+            }
+        }
+        Ok(())
     }
 }
