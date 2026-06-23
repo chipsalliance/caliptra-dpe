@@ -7,6 +7,7 @@ members = [
   "dpe",
   "crypto",
   "platform",
+  "response-buffer",
   "simulator",
   "tools",
   "xtask",
@@ -32,6 +33,7 @@ caliptra-cfi-lib = { git = "https://github.com/chipsalliance/caliptra-cfi.git", 
 caliptra-dpe = { path = "dpe", default-features = false }
 caliptra-dpe-crypto = { path = "crypto", default-features = false }
 caliptra-dpe-platform = { path = "platform", default-features = false }
+caliptra-dpe-response-buffer = { path = "response-buffer" }
 caliptra-dpe-test-artifacts = { path = "test-artifacts" }
 cfg-if = "1.0.0"
 clap = { version = "4.3", features = ["derive"] }

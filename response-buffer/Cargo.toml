@@ -1,0 +1,9 @@
+# Licensed under the Apache-2.0 license
+
+[package]
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+name = "caliptra-dpe-response-buffer"
+publish.workspace = true
+version.workspace = true
