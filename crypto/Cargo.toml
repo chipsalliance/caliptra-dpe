@@ -32,6 +32,7 @@ test-artifacts = ["dep:caliptra-dpe-test-artifacts"]
 arrayvec.workspace = true
 caliptra-cfi-derive.workspace = true
 caliptra-cfi-lib = { workspace = true, default-features = false }
+caliptra-dpe-response-buffer.workspace = true
 caliptra-dpe-test-artifacts = { workspace = true, optional = true }
 constant_time_eq.workspace = true
 ecdsa = { version = "0.16.9", optional = true, features = ["pem"] }

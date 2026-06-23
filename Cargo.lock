@@ -260,6 +260,7 @@ dependencies = [
  "base64ct",
  "caliptra-cfi-derive",
  "caliptra-cfi-lib",
+ "caliptra-dpe-response-buffer",
  "caliptra-dpe-test-artifacts",
  "constant_time_eq",
  "ecdsa",
