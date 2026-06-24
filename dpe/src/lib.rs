@@ -45,14 +45,9 @@ use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes};
 
 pub use caliptra_dpe_crypto::{ecdsa::EcdsaAlgorithm, ExportedCdiHandle, MAX_EXPORTED_CDI_SIZE};
 
-// Max cert/CSR size returned by CertifyKey. Computed in build.rs as a
-// linear function of MAX_HANDLES and the algorithm (see build.rs for details).
+// Max cert/CSR size returned by CertifyKey.
 include!(concat!(env!("OUT_DIR"), "/max_cert_size.rs"));
-
-#[cfg(not(feature = "arbitrary_max_handles"))]
-pub const MAX_HANDLES: usize = 64;
-#[cfg(feature = "arbitrary_max_handles")]
-include!(concat!(env!("OUT_DIR"), "/arbitrary_max_handles.rs"));
+include!(concat!(env!("OUT_DIR"), "/max_handles.rs"));
 
 const CURRENT_PROFILE_MAJOR_VERSION: u16 = 0;
 const CURRENT_PROFILE_MINOR_VERSION: u16 = 13;

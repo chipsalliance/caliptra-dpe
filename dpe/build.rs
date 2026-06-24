@@ -34,7 +34,7 @@ fn main() {
     println!("cargo:rerun-if-changed=build.rs");
 
     let max_handles_str = format!("pub const MAX_HANDLES: usize = {};", max_handles);
-    let handles_path = PathBuf::from(format!("{}/arbitrary_max_handles.rs", out_dir));
+    let handles_path = PathBuf::from(format!("{}/max_handles.rs", out_dir));
 
     write_if_changed(&handles_path, &max_handles_str);
     println!("cargo:rerun-if-changed={}", handles_path.display());
@@ -51,12 +51,9 @@ fn main() {
         (P384_BASE, P384_HANDLE)
     };
 
-    let max_cert_size = base + per_handle * max_handles;
-
-    // Round up to next multiple of 4 for alignment. The response structs (e.g.
-    // CertifyKeyP384Resp) contain [u8; MAX_CERT_SIZE] followed by u32 fields,
-    // and `zerocopy::IntoBytes` requires no padding.
-    let max_cert_size = (max_cert_size + 3) & !3;
+    // The response structs (for example CertifyKeyP384Resp) contain [u8; MAX_CERT_SIZE]
+    // followed by u32 fields, and `zerocopy::IntoBytes` requires no padding.
+    let max_cert_size: usize = (base + per_handle * max_handles).next_multiple_of(4);
 
     let max_cert_size_str = format!("const MAX_CERT_SIZE: usize = {};", max_cert_size);
     let cert_size_path = PathBuf::from(format!("{}/max_cert_size.rs", out_dir));
