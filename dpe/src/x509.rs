@@ -1128,7 +1128,6 @@ impl CertWriter<'_> {
         // detected by the offset surpassing the certificate length at the end of an encode run,
         // and thus the error reporting is elided here to save instruction space.
         let _ = self.certificate.write_at(self.offset, bytes);
-
         // Note: Increment the offset regardless of whether the write occurred to allow detection
         // of encoding overflows.
         self.offset += size;
@@ -1141,7 +1140,6 @@ impl CertWriter<'_> {
         // detected by the offset surpassing the certificate length at the end of an encode run,
         // and thus the error reporting is elided here to save instruction space.
         let _ = self.certificate.write_at(self.offset, &[byte]);
-
         // Note: Increment the offset regardless of whether the write occurred to allow detection
         // of encoding overflows.
         self.offset += 1;
