@@ -37,16 +37,26 @@ use caliptra_dpe_crypto::ml_dsa::{MldsaPublicKey, MldsaSignature};
 
 /// Signing callback passed to cert and CSR encoding functions.
 ///
-/// Arguments: `(buf, range, use_derived)` where `range` is the byte span of
-/// the payload to sign within `buf`, and `use_derived` selects the derived key
-/// (`true`) or the alias key (`false`).
+/// Arguments: `(buf, range, use_derived, out_sig)` where `range` is the byte span of
+/// the payload to sign within `buf`, `use_derived` selects the derived key
+/// (`true`) or the alias key (`false`), and `out_sig` is a mutable reference to store the signature.
 pub trait SignCallback:
-    FnMut(&dyn ResponseBuffer, core::ops::Range<usize>, bool) -> Result<Signature, CryptoError>
+    FnMut(
+    &dyn ResponseBuffer,
+    core::ops::Range<usize>,
+    bool,
+    &mut Signature,
+) -> Result<(), DpeErrorCode>
 {
 }
 
 impl<F> SignCallback for F where
-    F: FnMut(&dyn ResponseBuffer, core::ops::Range<usize>, bool) -> Result<Signature, CryptoError>
+    F: FnMut(
+        &dyn ResponseBuffer,
+        core::ops::Range<usize>,
+        bool,
+        &mut Signature,
+    ) -> Result<(), DpeErrorCode>
 {
 }
 
@@ -2387,14 +2397,14 @@ impl CertWriter<'_> {
             ),
         };
 
-        let sig = {
+        let mut sig = Signature::Ecdsa(EcdsaSignature::Ecdsa256(Default::default()));
+        {
             let abs_start = offset;
             let abs_end = offset + payload_bytes_written;
-            sign_cb(&*self.certificate, abs_start..abs_end, is_csr)
-        };
-        let sig = okref(&sig)?;
+            sign_cb(&*self.certificate, abs_start..abs_end, is_csr, &mut sig)?;
+        }
 
-        let sig_bytes_written = self.encode_signature_bit_string(sig)?;
+        let sig_bytes_written = self.encode_signature_bit_string(&sig)?;
 
         let body_size = payload_bytes_written + sig_bytes_written;
 
@@ -2555,7 +2565,8 @@ impl CertWriter<'_> {
         let (csr_start, csr_end) = self.csr_range.ok_or(DpeErrorCode::X509CsrUnset)?;
         let csr_len = csr_end - csr_start;
 
-        let sig = sign_cb(&*self.certificate, (csr_start)..(csr_end), false)?;
+        let mut sig = Signature::Ecdsa(EcdsaSignature::Ecdsa256(Default::default()));
+        sign_cb(&*self.certificate, (csr_start)..(csr_end), false, &mut sig)?;
 
         let signed_data_field_0 = self.get_signed_data_size(
             csr_len, &sig, sid, /*tagged=*/ true, /*explicit=*/ false,
@@ -2908,8 +2919,9 @@ fn create_dpe_cert_or_csr(
 
     let mut sign_cb = |buf: &dyn ResponseBuffer,
                        range: core::ops::Range<usize>,
-                       use_derived: bool| {
-        if use_derived {
+                       use_derived: bool,
+                       out_sig: &mut Signature| {
+        let sig = if use_derived {
             match cert_type {
                 CertificateType::Exported => {
                     let exported_handle =
@@ -2928,7 +2940,10 @@ fn create_dpe_cert_or_csr(
             }
         } else {
             crypto.sign_with_alias(&SignData::ResponseBuffer(buf, range))
-        }
+        };
+        let sig = sig.map_err(DpeErrorCode::from)?;
+        *out_sig = sig;
+        Ok(())
     };
 
     let mut issuer_name = [0u8; MAX_ISSUER_NAME_SIZE];
@@ -3265,7 +3280,11 @@ pub(crate) mod tests {
 
         let mut sign_cb = |_buf: &dyn ResponseBuffer,
                            _range: core::ops::Range<usize>,
-                           _use_derived: bool| Ok(test_sig.clone());
+                           _use_derived: bool,
+                           out_sig: &mut Signature| {
+            *out_sig = test_sig.clone();
+            Ok(())
+        };
 
         // SubjectKeyIdentifier keeps the SignerIdentifier setup simple.
         let mut ski = ArrayVec::new();
@@ -3557,7 +3576,11 @@ pub(crate) mod tests {
 
         let mut sign_cb = |_buf: &dyn ResponseBuffer,
                            _range: core::ops::Range<usize>,
-                           _use_derived: bool| Ok(test_sig.clone());
+                           _use_derived: bool,
+                           out_sig: &mut Signature| {
+            *out_sig = test_sig.clone();
+            Ok(())
+        };
 
         let mut cbuf = SliceResponseBuffer::new(cert_buf);
         let mut w = CertWriter::new(&mut cbuf, DPE_PROFILE, true);
@@ -3668,7 +3691,11 @@ pub(crate) mod tests {
 
         let mut sign_cb = |_buf: &dyn ResponseBuffer,
                            _range: core::ops::Range<usize>,
-                           _use_derived: bool| Ok(test_sig.clone());
+                           _use_derived: bool,
+                           out_sig: &mut Signature| {
+            *out_sig = test_sig.clone();
+            Ok(())
+        };
 
         let mut cbuf = SliceResponseBuffer::new(cert_buf);
         let mut w = CertWriter::new(&mut cbuf, DPE_PROFILE, true);
@@ -4180,7 +4207,11 @@ pub(crate) mod tests {
         };
         let mut sign_cb = |_buf: &dyn ResponseBuffer,
                            _range: core::ops::Range<usize>,
-                           _use_derived: bool| Ok(test_sig.clone());
+                           _use_derived: bool,
+                           out_sig: &mut Signature| {
+            *out_sig = test_sig.clone();
+            Ok(())
+        };
 
         let context = Context {
             state: ContextState::Active,
@@ -4722,7 +4753,11 @@ pub(crate) mod tests {
         };
         let mut sign_cb = |_buf: &dyn ResponseBuffer,
                            _range: core::ops::Range<usize>,
-                           _use_derived: bool| Ok(test_sig.clone());
+                           _use_derived: bool,
+                           out_sig: &mut Signature| {
+            *out_sig = test_sig.clone();
+            Ok(())
+        };
 
         let label_bytes: Vec<u8> = if max_size {
             vec![0xAB; MAX_UEID_SIZE]
@@ -4824,7 +4859,11 @@ pub(crate) mod tests {
         let test_sig = Signature::Mldsa(MldsaSignature([0xBBu8; ALGORITHM.signature_size()]));
         let mut sign_cb = |_buf: &dyn ResponseBuffer,
                            _range: core::ops::Range<usize>,
-                           _use_derived: bool| Ok(test_sig.clone());
+                           _use_derived: bool,
+                           out_sig: &mut Signature| {
+            *out_sig = test_sig.clone();
+            Ok(())
+        };
 
         let label_bytes: Vec<u8> = if max_size {
             vec![0xAB; MAX_UEID_SIZE]
