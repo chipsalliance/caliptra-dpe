@@ -6,17 +6,19 @@ use crate::{
     dpe_instance::{DpeEnv, DpeInstance},
     error::{DpeErrorCode, InternalErrorCode},
     mutresp, okref,
-    response::{DeriveContextExportedCdiResp, DeriveContextResp},
+    response::{DeriveContextExportedCdiRespHdr, DeriveContextResp},
     tci::TciMeasurement,
     x509::{create_exported_dpe_cert, CreateDpeCertArgs, CreateDpeCertResult},
-    DpeFlags, State,
+    AlignedBuf, DpeFlags, State,
 };
 use bitflags::bitflags;
 #[cfg(feature = "cfi")]
 use caliptra_cfi_derive::cfi_impl_fn;
 #[cfg(feature = "cfi")]
 use caliptra_cfi_lib::{cfi_assert, cfi_assert_bool, cfi_assert_eq};
+use caliptra_dpe_response_buffer::{OffsetResponseBuffer, ResponseBuffer};
 use cfg_if::cfg_if;
+use core::mem::size_of;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 #[repr(C)]
@@ -220,7 +222,7 @@ impl CommandExecution for DeriveContextCmd {
         dpe: &mut DpeInstance,
         env: &mut dyn DpeEnv,
         locality: u32,
-        out: &mut [u8],
+        out: &mut dyn ResponseBuffer,
     ) -> Result<usize, DpeErrorCode> {
         let support = env.state().support;
         let DeriveContextCmd {
@@ -290,7 +292,8 @@ impl CommandExecution for DeriveContextCmd {
         if flags.is_recursive() {
             cfg_if! {
                 if #[cfg(not(feature = "disable_recursive"))] {
-                    let response = mutresp::<DeriveContextResp>(dpe.profile, out)?;
+                    let mut scratch = AlignedBuf::<{ size_of::<DeriveContextResp>() }>::new();
+                    let response = mutresp::<DeriveContextResp>(dpe.profile, scratch.as_mut_bytes())?;
                     let mut tmp_context = *env.state().contexts.get(parent_idx).ok_or(DpeErrorCode::from(InternalErrorCode::ContextIndexOob))?;
                     if tmp_context.tci.tci_type != tci_type {
                         return Err(DpeErrorCode::InvalidArgument);
@@ -317,7 +320,9 @@ impl CommandExecution for DeriveContextCmd {
                         parent_handle: ContextHandle::default(),
                         resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
                     };
-                    return Ok(size_of_val(response));
+                    let n = size_of_val(response);
+                    out.write_at(0, &scratch.as_bytes()[..n]).map_err(|_| DpeErrorCode::InvalidResponseBuf)?;
+                    return Ok(n);
                 } else {
                     Err(DpeErrorCode::ArgumentNotSupported)?
                 }
@@ -357,7 +362,10 @@ impl CommandExecution for DeriveContextCmd {
         if flags.creates_certificate() && flags.exports_cdi() {
             cfg_if! {
                 if #[cfg(not(feature = "disable_export_cdi"))] {
-                    let response = mutresp::<DeriveContextExportedCdiResp>(dpe.profile, out)?;
+                    // Create a view into just the cert for serialization.
+                    let hdr_size = core::mem::size_of::<DeriveContextExportedCdiRespHdr>();
+                    let mut cert_view = OffsetResponseBuffer::new(out, hdr_size);
+
                     let ueid = &env.platform().get_ueid()?;
                     let ueid = ueid.get()?;
                     let profile_descriptor = match dpe.profile {
@@ -379,7 +387,7 @@ impl CommandExecution for DeriveContextCmd {
                         &args,
                         dpe,
                         env,
-                        &mut response.new_certificate,
+                        &mut cert_view,
                     );
                     let CreateDpeCertResult { cert_size, exported_cdi_handle, .. } = okref(&result)?;
 
@@ -394,19 +402,25 @@ impl CommandExecution for DeriveContextCmd {
                         *env.state().contexts.get_mut(parent_idx).ok_or(DpeErrorCode::from(InternalErrorCode::ContextIndexOob))? = tmp_parent_context;
                     }
 
-                    response.handle = ContextHandle::new_invalid();
-                    #[allow(clippy::indexing_slicing)] { response.parent_handle = env.state().contexts[parent_idx].handle; }
-                    response.resp_hdr = dpe.response_hdr(DpeErrorCode::NoError);
-                    response.exported_cdi = *exported_cdi_handle;
-                    response.certificate_size = *cert_size;
-                    let response_size = size_of_val(response) - size_of_val(&response.new_certificate) + *cert_size as usize;
-                    return Ok(response_size);
+                    #[allow(clippy::indexing_slicing)]
+                    let parent_handle = env.state().contexts[parent_idx].handle;
+                    let hdr = DeriveContextExportedCdiRespHdr {
+                        resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
+                        handle: ContextHandle::new_invalid(),
+                        parent_handle,
+                        exported_cdi: *exported_cdi_handle,
+                        certificate_size: *cert_size,
+                    };
+                    let total = hdr_size + *cert_size as usize;
+                    out.write_at(0, hdr.as_bytes()).map_err(|_| DpeErrorCode::InvalidResponseBuf)?;
+                    return Ok(total);
                 } else {
                     Err(DpeErrorCode::ArgumentNotSupported)?
                 }
             }
         }
-        let response = mutresp::<DeriveContextResp>(dpe.profile, out)?;
+        let mut scratch_normal = AlignedBuf::<{ size_of::<DeriveContextResp>() }>::new();
+        let response = mutresp::<DeriveContextResp>(dpe.profile, scratch_normal.as_mut_bytes())?;
 
         let child_idx = env
             .state()
@@ -469,7 +483,7 @@ impl CommandExecution for DeriveContextCmd {
 
         // At this point we cannot error out anymore, so it is safe to set the updated child and parent contexts.
         #[allow(clippy::indexing_slicing)]
-        {
+        let n = {
             env.state().contexts[child_idx] = tmp_child_context;
             env.state().contexts[parent_idx] = tmp_parent_context;
 
@@ -478,8 +492,11 @@ impl CommandExecution for DeriveContextCmd {
                 parent_handle: env.state().contexts[parent_idx].handle,
                 resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
             };
-        }
-        Ok(size_of_val(response))
+            size_of_val(response)
+        };
+        out.write_at(0, &scratch_normal.as_bytes()[..n])
+            .map_err(|_| DpeErrorCode::InvalidResponseBuf)?;
+        Ok(n)
     }
 }
 
@@ -511,7 +528,7 @@ mod tests {
         },
         context::ContextType,
         dpe_instance::tests::{DPE_PROFILE, RANDOM_HANDLE, SIMULATION_HANDLE, TEST_LOCALITIES},
-        response::{NewHandleResp, Response},
+        response::{DeriveContextExportedCdiResp, NewHandleResp, Response},
         support::Support,
         test_env,
         validation::DpeValidator,
@@ -1247,11 +1264,11 @@ mod tests {
             Ok(Response::DeriveContextExportedCdi(res)) => res,
             _ => panic!("expected to get a valid DeriveContextExportedCdi response."),
         };
-        assert_eq!(res.parent_handle, ContextHandle::new_invalid());
-        assert_eq!(res.handle, ContextHandle::new_invalid());
-        assert_ne!(res.certificate_size, 0);
+        assert_eq!(res.header.parent_handle, ContextHandle::new_invalid());
+        assert_eq!(res.header.handle, ContextHandle::new_invalid());
+        assert_ne!(res.header.certificate_size, 0);
         assert_ne!(res.new_certificate, [0; MAX_CERT_SIZE]);
-        assert_ne!(res.exported_cdi, [0; MAX_EXPORTED_CDI_SIZE]);
+        assert_ne!(res.header.exported_cdi, [0; MAX_EXPORTED_CDI_SIZE]);
 
         *env.state = State::new(
             Support::AUTO_INIT | Support::INTERNAL_INFO | Support::INTERNAL_DICE | Support::X509,
@@ -1329,11 +1346,11 @@ mod tests {
             Err(e) => panic!("{:?}", e),
             _ => panic!("expected to get a valid DeriveContextExportedCdi response."),
         };
-        assert_ne!(res.parent_handle, handle);
-        assert_eq!(res.handle, ContextHandle::new_invalid());
-        assert_ne!(res.certificate_size, 0);
+        assert_ne!(res.header.parent_handle, handle);
+        assert_eq!(res.header.handle, ContextHandle::new_invalid());
+        assert_ne!(res.header.certificate_size, 0);
         assert_ne!(res.new_certificate, [0; MAX_CERT_SIZE]);
-        assert_ne!(res.exported_cdi, [0; MAX_EXPORTED_CDI_SIZE]);
+        assert_ne!(res.header.exported_cdi, [0; MAX_EXPORTED_CDI_SIZE]);
 
         // New ENV so the exported-cdi slot is clear.
         let mut state = State::new(
@@ -1361,11 +1378,11 @@ mod tests {
             Ok(Response::DeriveContextExportedCdi(res)) => res,
             _ => panic!("expected to get a valid DeriveContextExportedCdi response."),
         };
-        assert_eq!(res.parent_handle, ContextHandle::default());
-        assert_eq!(res.handle, ContextHandle::new_invalid());
-        assert_ne!(res.certificate_size, 0);
+        assert_eq!(res.header.parent_handle, ContextHandle::default());
+        assert_eq!(res.header.handle, ContextHandle::new_invalid());
+        assert_ne!(res.header.certificate_size, 0);
         assert_ne!(res.new_certificate, [0; MAX_CERT_SIZE]);
-        assert_ne!(res.exported_cdi, [0; MAX_EXPORTED_CDI_SIZE]);
+        assert_ne!(res.header.exported_cdi, [0; MAX_EXPORTED_CDI_SIZE]);
 
         // Children that did not have `DeriveContextFlags::ALLOW_NEW_CONTEXT_TO_EXPORT` should not
         // be able to use `DeriveContextFlags::EXPORT_CDI`.
@@ -1470,11 +1487,11 @@ mod tests {
             Ok(Response::DeriveContextExportedCdi(res)) => res,
             _ => panic!("expected to get a valid DeriveContextExportedCdi response."),
         };
-        assert_eq!(res.parent_handle, ContextHandle::new_invalid());
-        assert_eq!(res.handle, ContextHandle::new_invalid());
-        assert_ne!(res.certificate_size, 0);
+        assert_eq!(res.header.parent_handle, ContextHandle::new_invalid());
+        assert_eq!(res.header.handle, ContextHandle::new_invalid());
+        assert_ne!(res.header.certificate_size, 0);
         assert_ne!(res.new_certificate, [0; MAX_CERT_SIZE]);
-        assert_ne!(res.exported_cdi, [0; MAX_EXPORTED_CDI_SIZE]);
+        assert_ne!(res.header.exported_cdi, [0; MAX_EXPORTED_CDI_SIZE]);
     }
 
     #[test]
@@ -1780,11 +1797,15 @@ mod tests {
                 Response::DeriveContextExportedCdi(resp) => resp,
                 _ => panic!("Wrong response type."),
             };
-            assert_eq!(ContextHandle::new_invalid(), derive_resp.handle);
-            assert_eq!(ContextHandle::new_invalid(), derive_resp.parent_handle);
+            assert_eq!(ContextHandle::new_invalid(), derive_resp.header.handle);
+            assert_eq!(
+                ContextHandle::new_invalid(),
+                derive_resp.header.parent_handle
+            );
             let mut parser = X509CertificateParser::new().with_deep_parse_extensions(true);
             match parser.parse(
-                &derive_resp.new_certificate[..derive_resp.certificate_size.try_into().unwrap()],
+                &derive_resp.new_certificate
+                    [..derive_resp.header.certificate_size.try_into().unwrap()],
             ) {
                 Ok((_, cert)) => {
                     match cert.basic_constraints() {
@@ -1868,8 +1889,12 @@ mod tests {
                 ..
             }))
             | Ok(Response::DeriveContextExportedCdi(DeriveContextExportedCdiResp {
-                handle,
-                parent_handle,
+                header:
+                    DeriveContextExportedCdiRespHdr {
+                        handle,
+                        parent_handle,
+                        ..
+                    },
                 ..
             })) => {
                 assert_eq!(
@@ -1917,9 +1942,9 @@ mod tests {
         };
 
         let mut parser = X509CertificateParser::new().with_deep_parse_extensions(true);
-        match parser
-            .parse(&derive_resp.new_certificate[..derive_resp.certificate_size.try_into().unwrap()])
-        {
+        match parser.parse(
+            &derive_resp.new_certificate[..derive_resp.header.certificate_size.try_into().unwrap()],
+        ) {
             Ok((_, cert)) => {
                 let subject = cert.subject().to_string();
                 assert!(subject.contains("CN=DPE Exported CDI"));

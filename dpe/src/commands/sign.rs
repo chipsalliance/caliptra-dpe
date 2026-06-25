@@ -4,7 +4,7 @@ use crate::{
     context::{ContextHandle, ContextType},
     dpe_instance::{DpeEnv, DpeInstance},
     error::{DpeErrorCode, InternalErrorCode},
-    mutresp, okref, DpeProfile,
+    okref, DpeProfile,
 };
 use bitflags::bitflags;
 #[cfg(feature = "cfi")]
@@ -15,10 +15,10 @@ use caliptra_cfi_lib::{cfi_assert, cfi_assert_bool, cfi_assert_ne};
 #[cfg(any(feature = "p256", feature = "p384"))]
 use caliptra_dpe_crypto::ecdsa::EcdsaSignature;
 use caliptra_dpe_crypto::{SignData, Signature};
+use caliptra_dpe_response_buffer::ResponseBuffer;
 use cfg_if::cfg_if;
 #[cfg(feature = "ml-dsa")]
 use core::mem::size_of;
-use core::mem::size_of_val;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 #[repr(C, align(4))]
@@ -67,7 +67,7 @@ pub enum SignCommand<'a> {
 }
 
 impl SignCommand<'_> {
-    pub fn deserialize(profile: DpeProfile, bytes: &[u8]) -> Result<SignCommand, DpeErrorCode> {
+    pub fn deserialize(profile: DpeProfile, bytes: &[u8]) -> Result<SignCommand<'_>, DpeErrorCode> {
         match profile {
             #[cfg(feature = "p256")]
             DpeProfile::P256Sha256 => SignCommand::parse_command(SignCommand::P256, bytes),
@@ -139,7 +139,7 @@ impl CommandExecution for SignCommand<'_> {
         dpe: &mut DpeInstance,
         env: &mut dyn DpeEnv,
         locality: u32,
-        out: &mut [u8],
+        out: &mut dyn ResponseBuffer,
     ) -> Result<usize, DpeErrorCode> {
         let (handle, label, data) = match *self {
             #[cfg(feature = "p256")]
@@ -193,55 +193,58 @@ impl CommandExecution for SignCommand<'_> {
             #[cfg(feature = "p256")]
             Signature::Ecdsa(EcdsaSignature::Ecdsa256(sig)) => {
                 use crate::response::SignP256Resp;
-                let response = mutresp::<SignP256Resp>(dpe.profile, out)?;
-
                 // Rotate the handle if it isn't the default context.
                 let mut ctx = env.state().contexts[idx];
                 dpe.roll_onetime_use_handle(env, &mut ctx)?;
                 env.state().contexts[idx] = ctx;
                 let (&sig_r, &sig_s) = sig.as_slice();
-                *response = SignP256Resp {
+                let resp = SignP256Resp {
                     new_context_handle: ctx.handle,
                     sig_r,
                     sig_s,
                     resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
                 };
-                Ok(size_of_val(response))
+                let bytes = resp.as_bytes();
+                out.write_at(0, bytes)
+                    .map_err(|_| DpeErrorCode::InvalidResponseBuf)?;
+                Ok(bytes.len())
             }
             #[cfg(feature = "p384")]
             Signature::Ecdsa(EcdsaSignature::Ecdsa384(sig)) => {
                 use crate::response::SignP384Resp;
-                let response = mutresp::<SignP384Resp>(dpe.profile, out)?;
-
                 // Rotate the handle if it isn't the default context.
                 let mut ctx = env.state().contexts[idx];
                 dpe.roll_onetime_use_handle(env, &mut ctx)?;
                 env.state().contexts[idx] = ctx;
                 let (&sig_r, &sig_s) = sig.as_slice();
-                *response = SignP384Resp {
+                let resp = SignP384Resp {
                     new_context_handle: ctx.handle,
                     sig_r,
                     sig_s,
                     resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
                 };
-                Ok(size_of_val(response))
+                let bytes = resp.as_bytes();
+                out.write_at(0, bytes)
+                    .map_err(|_| DpeErrorCode::InvalidResponseBuf)?;
+                Ok(bytes.len())
             }
             #[cfg(feature = "ml-dsa")]
             Signature::Mldsa(caliptra_dpe_crypto::ml_dsa::MldsaSignature(sig)) => {
                 use crate::response::SignMlDsaResp;
-                let response = mutresp::<SignMlDsaResp>(dpe.profile, out)?;
-
                 // Rotate the handle if it isn't the default context.
                 let mut ctx = env.state().contexts[idx];
                 dpe.roll_onetime_use_handle(env, &mut ctx)?;
                 env.state().contexts[idx] = ctx;
-                *response = SignMlDsaResp {
+                let resp = SignMlDsaResp {
                     new_context_handle: ctx.handle,
                     sig: *sig,
                     _padding: [0; 1],
                     resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
                 };
-                Ok(size_of_val(response))
+                let bytes = resp.as_bytes();
+                out.write_at(0, bytes)
+                    .map_err(|_| DpeErrorCode::InvalidResponseBuf)?;
+                Ok(bytes.len())
             }
             _ => Err(DpeErrorCode::InvalidArgument)?,
         }
@@ -296,7 +299,7 @@ impl CommandExecution for SignP256Cmd {
         dpe: &mut DpeInstance,
         env: &mut dyn DpeEnv,
         locality: u32,
-        out: &mut [u8],
+        out: &mut dyn ResponseBuffer,
     ) -> Result<usize, DpeErrorCode> {
         SignCommand::P256(self).execute_serialized(dpe, env, locality, out)
     }
@@ -319,12 +322,13 @@ impl CommandExecution for SignP384Cmd {
         dpe: &mut DpeInstance,
         env: &mut dyn DpeEnv,
         locality: u32,
-        out: &mut [u8],
+        out: &mut dyn ResponseBuffer,
     ) -> Result<usize, DpeErrorCode> {
         SignCommand::P384(self).execute_serialized(dpe, env, locality, out)
     }
 }
 
+#[cfg(feature = "ml-dsa")]
 #[repr(C, align(4))]
 #[derive(Debug, PartialEq, Eq, IntoBytes, FromBytes, Immutable, KnownLayout)]
 pub struct SignMldsa87Cmd {
@@ -342,7 +346,7 @@ impl CommandExecution for SignMldsa87Cmd {
         dpe: &mut DpeInstance,
         env: &mut dyn DpeEnv,
         locality: u32,
-        out: &mut [u8],
+        out: &mut dyn ResponseBuffer,
     ) -> Result<usize, DpeErrorCode> {
         SignCommand::Mldsa87(self).execute_serialized(dpe, env, locality, out)
     }
@@ -356,7 +360,7 @@ impl CommandExecution for SignMldsa87RawCmd {
         dpe: &mut DpeInstance,
         env: &mut dyn DpeEnv,
         locality: u32,
-        out: &mut [u8],
+        out: &mut dyn ResponseBuffer,
     ) -> Result<usize, DpeErrorCode> {
         SignCommand::Mldsa87Raw(self).execute_serialized(dpe, env, locality, out)
     }
@@ -573,7 +577,7 @@ mod tests {
                     ml_dsa::Signature::decode(&encoded_sig).expect("Error decoding signature");
 
                 let key_bytes = match certify_resp {
-                    CertifyKeyResp::Mldsa87(resp) => resp.pubkey,
+                    CertifyKeyResp::Mldsa87(resp) => resp.header.pubkey,
                     _ => panic!("Expected Mldsa87 CertifyKeyResp"),
                 };
 
@@ -713,7 +717,7 @@ mod tests {
         let sig = ml_dsa::Signature::decode(&encoded_sig).expect("Error decoding signature");
 
         let key_bytes = match certify_resp {
-            CertifyKeyResp::Mldsa87(resp) => resp.pubkey,
+            CertifyKeyResp::Mldsa87(resp) => resp.header.pubkey,
             _ => panic!("Expected Mldsa87 CertifyKeyResp"),
         };
 

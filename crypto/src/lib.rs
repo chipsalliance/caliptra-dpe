@@ -5,8 +5,12 @@ Abstract:
 --*/
 #![cfg_attr(not(any(feature = "rustcrypto", test)), no_std)]
 
+use core::ops::Range;
+
 use ecdsa::EcdsaSignature;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
+
+use caliptra_dpe_response_buffer::ResponseBuffer;
 
 #[cfg(feature = "rustcrypto")]
 pub use crate::rustcrypto::*;
@@ -313,10 +317,10 @@ impl From<Mu> for PrecomputedSignData {
     }
 }
 
-#[derive(Debug)]
 pub enum SignData<'a> {
     Digest(Digest),
     Mu(Mu),
+    ResponseBuffer(&'a dyn ResponseBuffer, Range<usize>),
     Raw(&'a [u8]),
 }
 
@@ -325,14 +329,8 @@ impl SignData<'_> {
         match self {
             Self::Digest(dig) => dig.size(),
             Self::Mu(mu) => mu.0.len(),
+            Self::ResponseBuffer(_, range) => range.len(),
             Self::Raw(raw) => raw.len(),
-        }
-    }
-    pub fn as_slice(&self) -> &[u8] {
-        match self {
-            Self::Digest(dig) => dig.as_slice(),
-            Self::Mu(mu) => mu.0.as_slice(),
-            Self::Raw(raw) => raw,
         }
     }
 }

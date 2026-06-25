@@ -409,21 +409,33 @@ impl RustCryptoImpl {
         data: &SignData,
         alg: SignatureAlgorithm,
     ) -> Result<Signature<C>, CryptoError> {
+        let digest = |raw| match alg {
+            SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit256) => {
+                use sha2::{Digest, Sha256};
+                Ok(Sha256::digest(raw).to_vec())
+            }
+            SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384) => {
+                use sha2::{Digest, Sha384};
+                Ok(Sha384::digest(raw).to_vec())
+            }
+            #[allow(unreachable_patterns)]
+            _ => Err(CryptoError::MismatchedAlgorithm),
+        };
+
         match data {
             SignData::Digest(dig) => Ok(key.sign_prehash(dig.as_slice())?),
+            SignData::ResponseBuffer(buf, range) => {
+                let mut raw = Vec::new();
+                buf.read_range(range.clone(), &mut |data| {
+                    raw.extend_from_slice(data);
+                    Ok(())
+                })
+                .map_err(|_| CryptoError::Size)?;
+                let digest_bytes = digest(raw.as_slice())?;
+                Ok(key.sign_prehash(&digest_bytes)?)
+            }
             SignData::Raw(raw) => {
-                let digest_bytes = match alg {
-                    SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit256) => {
-                        use sha2::{Digest, Sha256};
-                        Sha256::digest(raw).to_vec()
-                    }
-                    SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384) => {
-                        use sha2::{Digest, Sha384};
-                        Sha384::digest(raw).to_vec()
-                    }
-                    #[allow(unreachable_patterns)]
-                    _ => return Err(CryptoError::MismatchedAlgorithm),
-                };
+                let digest_bytes = digest(raw)?;
                 Ok(key.sign_prehash(&digest_bytes)?)
             }
             _ => Err(CryptoError::MismatchedAlgorithm),
@@ -437,6 +449,15 @@ impl RustCryptoImpl {
     ) -> Result<super::Signature, CryptoError> {
         let sig = match data {
             SignData::Mu(mu) => key.signing_key().sign_mu_deterministic((&mu.0).into()),
+            SignData::ResponseBuffer(buf, range) => {
+                let mut raw = Vec::new();
+                buf.read_range(range.clone(), &mut |data| {
+                    raw.extend_from_slice(data);
+                    Ok(())
+                })
+                .map_err(|_| CryptoError::Size)?;
+                key.sign(raw.as_slice())
+            }
             SignData::Raw(raw) => key.sign(raw),
             SignData::Digest(_) => return Err(CryptoError::MismatchedAlgorithm),
         };

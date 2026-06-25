@@ -24,6 +24,7 @@ use caliptra_dpe_crypto::{CryptoSuite, Digest};
 use caliptra_dpe_platform::Platform;
 #[cfg(not(feature = "disable_internal_dice"))]
 use caliptra_dpe_platform::MAX_CHUNK_SIZE;
+use caliptra_dpe_response_buffer::SliceResponseBuffer;
 use cfg_if::cfg_if;
 use zerocopy::IntoBytes;
 
@@ -81,11 +82,12 @@ impl DpeInstance {
         if env.state().support.auto_init() {
             let locality = env.platform().get_auto_init_locality()?;
             let mut buf = AlignedBuf::<{ size_of::<NewHandleResp>() }>::new();
+            let mut resp_buf = SliceResponseBuffer::new(buf.as_mut_bytes());
             InitCtxCmd::new_use_default().execute_serialized(
                 &mut dpe,
                 env,
                 locality,
-                buf.as_mut_bytes(),
+                &mut resp_buf,
             )?;
         } else {
             #[cfg(feature = "cfi")]

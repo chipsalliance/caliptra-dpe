@@ -103,7 +103,7 @@ impl<'a> SliceResponseBuffer<'a> {
     }
 }
 
-impl<'a> ResponseBuffer for SliceResponseBuffer<'a> {
+impl ResponseBuffer for SliceResponseBuffer<'_> {
     fn clear(&mut self) -> Result<(), ResponseBufError> {
         self.buf.fill(0);
         Ok(())

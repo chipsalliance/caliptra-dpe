@@ -13,13 +13,12 @@ use crate::{
     context::ContextState,
     dpe_instance::{DpeEnv, DpeInstance},
     error::{DpeErrorCode, InternalErrorCode},
-    mutresp,
     response::UpdateContextMeasurementResp,
     tci::TciMeasurement,
 };
 #[cfg(feature = "cfi")]
 use caliptra_cfi_derive::cfi_impl_fn;
-use core::mem::size_of_val;
+use caliptra_dpe_response_buffer::ResponseBuffer;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 /// ABI input structure for UpdateContextMeasurement.
@@ -56,7 +55,7 @@ impl CommandExecution for UpdateContextMeasurementCmd {
         dpe: &mut DpeInstance,
         env: &mut dyn DpeEnv,
         locality: u32,
-        out: &mut [u8],
+        out: &mut dyn ResponseBuffer,
     ) -> Result<usize, DpeErrorCode> {
         // PARENT_CONTEXT_HANDLE must not be the default (null) handle.
         if self.parent_handle.is_default() {
@@ -91,8 +90,6 @@ impl CommandExecution for UpdateContextMeasurementCmd {
             })
             .ok_or(DpeErrorCode::InvalidArgument)?;
 
-        let response = mutresp::<UpdateContextMeasurementResp>(dpe.profile, out)?;
-
         // Copy the child context for mutation to avoid touching internal state on error.
         let mut tmp_child = *env
             .state()
@@ -126,12 +123,15 @@ impl CommandExecution for UpdateContextMeasurementCmd {
             .get_mut(child_idx)
             .ok_or(DpeErrorCode::from(InternalErrorCode::ChildIndexOob))? = tmp_child;
 
-        *response = UpdateContextMeasurementResp {
+        let resp = UpdateContextMeasurementResp {
             resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
             new_context_handle: tmp_child.handle,
             new_parent_context_handle: tmp_parent.handle,
         };
-        Ok(size_of_val(response))
+        let bytes = resp.as_bytes();
+        out.write_at(0, bytes)
+            .map_err(|_| DpeErrorCode::InvalidResponseBuf)?;
+        Ok(bytes.len())
     }
 }
 

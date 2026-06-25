@@ -4,7 +4,6 @@ use crate::{
     context::{ActiveContextArgs, Context, ContextHandle, ContextType},
     dpe_instance::{DpeEnv, DpeInstance},
     error::{DpeErrorCode, InternalErrorCode},
-    mutresp,
     response::NewHandleResp,
 };
 use bitflags::bitflags;
@@ -12,7 +11,9 @@ use bitflags::bitflags;
 use caliptra_cfi_derive::cfi_impl_fn;
 #[cfg(feature = "cfi")]
 use caliptra_cfi_lib::{cfi_assert, cfi_assert_bool};
+use caliptra_dpe_response_buffer::ResponseBuffer;
 use cfg_if::cfg_if;
+use zerocopy::IntoBytes;
 
 #[repr(C, align(4))]
 #[derive(
@@ -59,10 +60,8 @@ impl CommandExecution for InitCtxCmd {
         dpe: &mut DpeInstance,
         env: &mut dyn DpeEnv,
         locality: u32,
-        out: &mut [u8],
+        out: &mut dyn ResponseBuffer,
     ) -> Result<usize, DpeErrorCode> {
-        let response = mutresp::<NewHandleResp>(dpe.profile, out)?;
-
         // This function can only be called once for non-simulation contexts.
         if (self.flag_is_default() && env.state().has_initialized())
             || (self.flag_is_simulation() && !env.state().support.simulation())
@@ -120,11 +119,14 @@ impl CommandExecution for InitCtxCmd {
                 // creating a child, leaving no auditable record of the mutation.
                 allow_recursive: self.flag_is_default(),
             });
-        *response = NewHandleResp {
+        let resp = NewHandleResp {
             handle,
             resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
         };
-        Ok(size_of_val(response))
+        let bytes = resp.as_bytes();
+        out.write_at(0, bytes)
+            .map_err(|_| DpeErrorCode::InvalidResponseBuf)?;
+        Ok(bytes.len())
     }
 }
 
