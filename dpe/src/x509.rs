@@ -2918,11 +2918,12 @@ fn create_dpe_cert_or_csr(
                         .derive_key_pair_exported(&exported_handle, args.key_label, args.context)?
                         .sign(&SignData::ResponseBuffer(buf, range))
                 }
-                CertificateType::Leaf => crypto.sign_with_derived(
+                CertificateType::Leaf => crypto.sign_with_derived_and_pub_key(
                     &digest,
                     args.cdi_label,
                     args.key_label,
                     args.context,
+                    pub_key,
                     &SignData::ResponseBuffer(buf, range),
                 ),
             }

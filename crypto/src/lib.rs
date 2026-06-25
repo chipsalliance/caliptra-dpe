@@ -675,6 +675,22 @@ pub trait Crypto {
             .sign_with_derived(label, derived_info, data)
     }
 
+    /// Sign `data` with a key derived from the current CDI and measurements,
+    /// using `pub_key` if the platform can avoid re-deriving it.
+    #[allow(clippy::too_many_arguments)]
+    fn sign_with_derived_and_pub_key(
+        &mut self,
+        measurement: &Digest,
+        info: &[u8],
+        label: &[u8],
+        derived_info: &[u8],
+        pub_key: &PubKey,
+        data: &SignData,
+    ) -> Result<Signature, CryptoError> {
+        let _ = pub_key;
+        self.sign_with_derived(measurement, info, label, derived_info, data)
+    }
+
     /// Derive the public key for a key derived from the current CDI and measurements.
     ///
     /// # Arguments
