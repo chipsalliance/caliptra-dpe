@@ -94,14 +94,14 @@ impl CertifyKeyCommand<'_> {
         }
     }
 
-    fn response_bytes(&self) -> CertifyKeyResponseBytes {
+    fn response_header(&self) -> CertifyKeyResponseHeader {
         match self {
             #[cfg(feature = "p256")]
-            CertifyKeyCommand::P256(_) => CertifyKeyResponseBytes::P256,
+            CertifyKeyCommand::P256(_) => CertifyKeyResponseHeader::P256,
             #[cfg(feature = "p384")]
-            CertifyKeyCommand::P384(_) => CertifyKeyResponseBytes::P384,
+            CertifyKeyCommand::P384(_) => CertifyKeyResponseHeader::P384,
             #[cfg(feature = "ml-dsa")]
-            CertifyKeyCommand::Mldsa87(_) => CertifyKeyResponseBytes::Mldsa87,
+            CertifyKeyCommand::Mldsa87(_) => CertifyKeyResponseHeader::Mldsa87,
         }
     }
 }
@@ -191,8 +191,8 @@ impl CommandExecution for CertifyKeyCommand<'_> {
                 .contains(DpeFlags::MARK_DICE_EXTENSIONS_CRITICAL),
         };
 
-        let response = self.response_bytes();
-        let hdr_size = response.hdr_size();
+        let response_header = self.response_header();
+        let hdr_size = response_header.hdr_size();
         let mut cert_view = OffsetResponseBuffer::new(out, hdr_size);
         let result = Self::run_cert_format(format, &args, dpe, env, &mut cert_view)?;
 
@@ -204,7 +204,7 @@ impl CommandExecution for CertifyKeyCommand<'_> {
             ctx.handle
         };
 
-        response.write_header(out, dpe, &result, new_handle)
+        response_header.write_header(out, dpe, &result, new_handle)
     }
 }
 
@@ -336,7 +336,7 @@ impl CommandExecution for CertifyKeyMldsa87Cmd {
     }
 }
 
-enum CertifyKeyResponseBytes {
+enum CertifyKeyResponseHeader {
     #[cfg(feature = "p256")]
     P256,
     #[cfg(feature = "p384")]
@@ -345,7 +345,7 @@ enum CertifyKeyResponseBytes {
     Mldsa87,
 }
 
-impl CertifyKeyResponseBytes {
+impl CertifyKeyResponseHeader {
     fn hdr_size(&self) -> usize {
         match self {
             #[cfg(feature = "p256")]
@@ -378,8 +378,7 @@ impl CertifyKeyResponseBytes {
                     cert_size,
                 };
                 out.write_at(0, hdr.as_bytes())
-                    .map_err(|_| DpeErrorCode::InvalidResponseBuf)?;
-                Ok(core::mem::size_of::<CertifyKeyP256RespHdr>() + cert_size as usize)
+                    .map_err(|_| DpeErrorCode::InvalidResponseBuf)
             }
             #[cfg(feature = "p384")]
             (Self::P384, PubKey::Ecdsa(EcdsaPubKey::Ecdsa384(pk))) => {
@@ -393,8 +392,7 @@ impl CertifyKeyResponseBytes {
                     cert_size,
                 };
                 out.write_at(0, hdr.as_bytes())
-                    .map_err(|_| DpeErrorCode::InvalidResponseBuf)?;
-                Ok(core::mem::size_of::<CertifyKeyP384RespHdr>() + cert_size as usize)
+                    .map_err(|_| DpeErrorCode::InvalidResponseBuf)
             }
             #[cfg(feature = "ml-dsa")]
             (Self::Mldsa87, PubKey::Mldsa(caliptra_dpe_crypto::ml_dsa::MldsaPublicKey(pubkey))) => {
@@ -406,11 +404,12 @@ impl CertifyKeyResponseBytes {
                     cert_size,
                 };
                 out.write_at(0, hdr.as_bytes())
-                    .map_err(|_| DpeErrorCode::InvalidResponseBuf)?;
-                Ok(core::mem::size_of::<CertifyKeyMldsa87RespHdr>() + cert_size as usize)
+                    .map_err(|_| DpeErrorCode::InvalidResponseBuf)
             }
             _ => Err(DpeErrorCode::InvalidArgument),
-        }
+        }?;
+
+        Ok(self.hdr_size() + cert_size as usize)
     }
 }
 

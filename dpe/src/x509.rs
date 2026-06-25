@@ -35,6 +35,21 @@ use zerocopy::IntoBytes;
 #[cfg(feature = "ml-dsa")]
 use caliptra_dpe_crypto::ml_dsa::{MldsaPublicKey, MldsaSignature};
 
+/// Signing callback passed to cert and CSR encoding functions.
+///
+/// Arguments: `(buf, range, use_derived)` where `range` is the byte span of
+/// the payload to sign within `buf`, and `use_derived` selects the derived key
+/// (`true`) or the alias key (`false`).
+pub trait SignCallback:
+    FnMut(&dyn ResponseBuffer, core::ops::Range<usize>, bool) -> Result<Signature, CryptoError>
+{
+}
+
+impl<F> SignCallback for F where
+    F: FnMut(&dyn ResponseBuffer, core::ops::Range<usize>, bool) -> Result<Signature, CryptoError>
+{
+}
+
 /// Max amount of backtracks during encoding.
 /// Currently the deepest backtrack path is 7.
 const MAX_BACKTRACKS: usize = 10;
@@ -2149,12 +2164,7 @@ impl CertWriter<'_> {
     #[allow(clippy::identity_op)]
     fn encode_encapsulated_content_info(
         &mut self,
-        sign_cb: &mut (impl FnMut(
-            &dyn ResponseBuffer,
-            core::ops::Range<usize>,
-            bool,
-        ) -> Result<Signature, CryptoError>
-                  + ?Sized),
+        sign_cb: &mut dyn SignCallback,
         pub_key: &PubKey,
         subject_name: &Name,
         measurements: &MeasurementData,
@@ -2303,12 +2313,7 @@ impl CertWriter<'_> {
     #[allow(clippy::too_many_arguments)]
     pub fn encode_certificate(
         &mut self,
-        sign_cb: &mut (impl FnMut(
-            &dyn ResponseBuffer,
-            core::ops::Range<usize>,
-            bool,
-        ) -> Result<Signature, CryptoError>
-                  + ?Sized),
+        sign_cb: &mut dyn SignCallback,
         serial_number: &[u8],
         issuer_name: &[u8],
         subject_name: &Name,
@@ -2345,12 +2350,7 @@ impl CertWriter<'_> {
     #[cfg(any(not(feature = "disable_x509"), not(feature = "disable_csr")))]
     fn encode_signed_payload(
         &mut self,
-        sign_cb: &mut (impl FnMut(
-            &dyn ResponseBuffer,
-            core::ops::Range<usize>,
-            bool,
-        ) -> Result<Signature, CryptoError>
-                  + ?Sized),
+        sign_cb: &mut dyn SignCallback,
         payload: SignedPayload,
     ) -> Result<usize, DpeErrorCode> {
         let mut prefix_bytes_written = self.encode_tag_field(Self::SEQUENCE_TAG);
@@ -2482,12 +2482,7 @@ impl CertWriter<'_> {
     #[cfg(not(feature = "disable_csr"))]
     pub fn encode_csr(
         &mut self,
-        sign_cb: &mut (impl FnMut(
-            &dyn ResponseBuffer,
-            core::ops::Range<usize>,
-            bool,
-        ) -> Result<Signature, CryptoError>
-                  + ?Sized),
+        sign_cb: &mut dyn SignCallback,
         pub_key: &PubKey,
         subject_name: &Name,
         measurements: &MeasurementData,
@@ -2515,12 +2510,7 @@ impl CertWriter<'_> {
     #[allow(clippy::identity_op)]
     pub fn encode_cms(
         &mut self,
-        sign_cb: &mut (impl FnMut(
-            &dyn ResponseBuffer,
-            core::ops::Range<usize>,
-            bool,
-        ) -> Result<Signature, CryptoError>
-                  + ?Sized),
+        sign_cb: &mut dyn SignCallback,
         pub_key: &PubKey,
         subject_name: &Name,
         measurements: &MeasurementData,
@@ -2562,12 +2552,7 @@ impl CertWriter<'_> {
         bytes_written +=
             self.encode_encapsulated_content_info(sign_cb, pub_key, subject_name, measurements)?;
 
-        let (csr_start, csr_end) = {
-            let Some(r) = self.csr_range else {
-                Err(DpeErrorCode::X509CsrUnset)?
-            };
-            r
-        };
+        let (csr_start, csr_end) = self.csr_range.ok_or(DpeErrorCode::X509CsrUnset)?;
         let csr_len = csr_end - csr_start;
 
         let sig = sign_cb(&*self.certificate, (csr_start)..(csr_end), false)?;
@@ -2796,11 +2781,7 @@ fn generate_cert_or_csr(
     subject_name: &Name,
     pub_key: &PubKey,
     measurements: &MeasurementData,
-    sign_cb: &mut dyn FnMut(
-        &dyn ResponseBuffer,
-        core::ops::Range<usize>,
-        bool,
-    ) -> Result<Signature, CryptoError>,
+    sign_cb: &mut dyn SignCallback,
     output_cert_or_csr: &mut dyn ResponseBuffer,
 ) -> Result<u32, DpeErrorCode> {
     match format_specific_args {
