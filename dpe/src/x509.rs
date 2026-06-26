@@ -2555,21 +2555,22 @@ impl CertWriter<'_> {
         let (csr_start, csr_end) = self.csr_range.ok_or(DpeErrorCode::X509CsrUnset)?;
         let csr_len = csr_end - csr_start;
 
-        let sig = sign_cb(&*self.certificate, (csr_start)..(csr_end), false)?;
+        let sig = sign_cb(&*self.certificate, (csr_start)..(csr_end), false);
+        let sig = okref(&sig)?;
 
         let signed_data_field_0 = self.get_signed_data_size(
-            csr_len, &sig, sid, /*tagged=*/ true, /*explicit=*/ false,
+            csr_len, sig, sid, /*tagged=*/ true, /*explicit=*/ false,
         )?;
 
         let signed_data_field_1 = self.get_signed_data_size(
-            csr_len, &sig, sid, /*tagged=*/ false, /*explicit=*/ false,
+            csr_len, sig, sid, /*tagged=*/ false, /*explicit=*/ false,
         )?;
 
         // signerInfos
         bytes_written += self.encode_tag_field(Self::SET_OF_TAG);
         bytes_written +=
-            self.encode_size_field(self.get_signer_info_size(&sig, sid, /*tagged=*/ true)?);
-        bytes_written += self.encode_signer_info(&sig, sid)?;
+            self.encode_size_field(self.get_signer_info_size(sig, sid, /*tagged=*/ true)?);
+        bytes_written += self.encode_signer_info(sig, sid)?;
 
         {
             self.start_backtrack()?;
