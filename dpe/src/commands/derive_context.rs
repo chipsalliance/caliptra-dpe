@@ -173,11 +173,19 @@ impl DeriveContextCmd {
         state: &State,
         parent_ctx: &Context,
         tci_type: u32,
-    ) -> bool {
-        parent_ctx
-            .children
-            .iter()
-            .all(|idx| state.contexts[idx].tci.tci_type != tci_type)
+    ) -> Result<bool, DpeErrorCode> {
+        for idx in parent_ctx.children.iter() {
+            let child = state
+                .contexts
+                .get(idx)
+                .ok_or(InternalErrorCode::ChildIndexOob)?;
+
+            if child.tci.tci_type == tci_type {
+                return Ok(false);
+            }
+        }
+
+        Ok(true)
     }
 
     /// Whether it is okay to create a child in the given environment.
@@ -330,7 +338,7 @@ impl CommandExecution for DeriveContextCmd {
         }
 
         // Each INPUT_TYPE value SHALL be unique among the direct children of a given context.
-        if !Self::tci_type_is_unique_among_children(env.state(), &parent_ctx, tci_type) {
+        if !Self::tci_type_is_unique_among_children(env.state(), &parent_ctx, tci_type)? {
             return Err(DpeErrorCode::InvalidArgument);
         }
 
