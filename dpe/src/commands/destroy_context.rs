@@ -105,6 +105,7 @@ impl CommandExecution for DestroyCtxCmd {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
     use crate::{
@@ -164,8 +165,8 @@ mod tests {
         );
 
         // create two dummy contexts at indices 0 and 1, with 1 being the child of 0
-        activate_dummy_context(&mut env.state, 0, Context::ROOT_INDEX, &TEST_HANDLE, &[1]);
-        activate_dummy_context(&mut env.state, 1, 0, &ContextHandle::default(), &[]);
+        activate_dummy_context(env.state, 0, Context::ROOT_INDEX, &TEST_HANDLE, &[1]);
+        activate_dummy_context(env.state, 1, 0, &ContextHandle::default(), &[]);
         // destroy context[1]
         assert_eq!(
             Ok(Response::DestroyCtx(
@@ -191,49 +192,49 @@ mod tests {
         assert_eq!(env.state.contexts[0].state, ContextState::Inactive);
 
         activate_dummy_context(
-            &mut env.state,
+            env.state,
             0,
             Context::ROOT_INDEX,
             &ContextHandle::default(),
             &[1, 2],
         );
         activate_dummy_context(
-            &mut env.state,
+            env.state,
             1,
             0,
             &ContextHandle([1; ContextHandle::SIZE]),
             &[3, 4],
         );
         activate_dummy_context(
-            &mut env.state,
+            env.state,
             2,
             0,
             &ContextHandle([2; ContextHandle::SIZE]),
             &[5, 6],
         );
         activate_dummy_context(
-            &mut env.state,
+            env.state,
             3,
             1,
             &ContextHandle([3; ContextHandle::SIZE]),
             &[],
         );
         activate_dummy_context(
-            &mut env.state,
+            env.state,
             4,
             1,
             &ContextHandle([4; ContextHandle::SIZE]),
             &[],
         );
         activate_dummy_context(
-            &mut env.state,
+            env.state,
             5,
             2,
             &ContextHandle([5; ContextHandle::SIZE]),
             &[],
         );
         activate_dummy_context(
-            &mut env.state,
+            env.state,
             6,
             2,
             &ContextHandle([6; ContextHandle::SIZE]),
@@ -263,21 +264,21 @@ mod tests {
         assert!(env.state.contexts[3].children.is_empty());
 
         activate_dummy_context(
-            &mut env.state,
+            env.state,
             0,
             Context::ROOT_INDEX,
             &ContextHandle::default(),
             &[1, 2],
         );
         activate_dummy_context(
-            &mut env.state,
+            env.state,
             1,
             0,
             &ContextHandle([1; ContextHandle::SIZE]),
             &[],
         );
         activate_dummy_context(
-            &mut env.state,
+            env.state,
             2,
             0,
             &ContextHandle([2; ContextHandle::SIZE]),

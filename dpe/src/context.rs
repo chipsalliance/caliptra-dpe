@@ -61,7 +61,7 @@ const _: () = assert!(
 impl Debug for Context {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("Context")
-            .field("handle", &self.handle.0.get(0..2).unwrap())
+            .field("handle", &self.handle.0.get(0..2).unwrap_or(&[]))
             .field("state", &self.state)
             .field("chilren", &self.children.bits())
             .field("locality", &self.locality)
@@ -519,6 +519,7 @@ fn launder_u64(val: u64) -> u64 {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
     use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
@@ -637,12 +638,12 @@ mod tests {
         let mut contexts = [CONTEXT_INITIALIZER; MAX_HANDLES];
         let mut parent_idx = Context::ROOT_INDEX;
         let leaf_idx = 4;
-        for i in 0..=leaf_idx {
-            contexts[i].state = ContextState::Active;
-            contexts[i].parent_idx = parent_idx;
+        for (i, context) in contexts.iter_mut().enumerate().take(leaf_idx + 1) {
+            context.state = ContextState::Active;
+            context.parent_idx = parent_idx;
             parent_idx = i as u8;
             if i < leaf_idx {
-                contexts[i].children.add_child(i + 1).unwrap();
+                context.children.add_child(i + 1).unwrap();
             }
         }
 
@@ -683,8 +684,8 @@ mod tests {
             (5, 1),
             (6, 3),
         ];
-        for i in 0..=6 {
-            contexts[i].state = ContextState::Active;
+        for context in contexts.iter_mut().take(7) {
+            context.state = ContextState::Active;
         }
         for (node_idx, parent_idx) in parent_map.iter() {
             contexts[*node_idx].parent_idx = *parent_idx as u8;
