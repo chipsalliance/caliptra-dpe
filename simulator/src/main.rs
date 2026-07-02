@@ -11,7 +11,7 @@ use clap::Parser;
 use log::{error, info, trace, warn};
 use profile::*;
 use std::fs;
-use std::io::{Error, ErrorKind, Read, Write};
+use std::io::{Error, Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
 use std::process;
@@ -191,12 +191,8 @@ fn main() -> std::io::Result<()> {
         platform: &mut platform,
         state: &mut state,
     };
-    let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).map_err(|err| {
-        Error::new(
-            ErrorKind::Other,
-            format!("{err:?} while creating new DPE instance"),
-        )
-    })?;
+    let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE)
+        .map_err(|err| Error::other(format!("{err:?} while creating new DPE instance")))?;
 
     info!("DPE listening to socket {SOCKET_PATH}");
 
