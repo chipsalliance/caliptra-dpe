@@ -371,6 +371,7 @@ impl CommandExecution for SignMldsa87RawCmd {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
     #[cfg(any(feature = "p256", feature = "p384"))]
