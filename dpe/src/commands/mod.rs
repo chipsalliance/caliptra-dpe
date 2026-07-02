@@ -510,7 +510,7 @@ pub mod tests {
     use caliptra_dpe_platform::default::{DefaultPlatform, DefaultPlatformProfile};
     use zerocopy::IntoBytes;
 
-    #[cfg(feature = "p256")]
+    #[cfg(all(feature = "p256", not(feature = "p384"), not(feature = "ml-dsa")))]
     pub const TEST_DIGEST: [u8; DPE_PROFILE.hash_size()] = [
         1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
         26, 27, 28, 29, 30, 31, 32,
@@ -521,7 +521,7 @@ pub mod tests {
         26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48,
     ];
 
-    #[cfg(feature = "p256")]
+    #[cfg(all(feature = "p256", not(feature = "p384"), not(feature = "ml-dsa")))]
     pub const TEST_LABEL: [u8; DPE_PROFILE.hash_size()] = [
         32, 31, 30, 29, 28, 27, 26, 25, 24, 23, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10,
         9, 8, 7, 6, 5, 4, 3, 2, 1,
@@ -532,14 +532,14 @@ pub mod tests {
         25, 24, 23, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1,
     ];
 
-    #[cfg(feature = "p256")]
-    pub const DEFAULT_PLATFORM: DefaultPlatform = DefaultPlatform(DefaultPlatformProfile::P256);
     #[cfg(feature = "p384")]
     pub const DEFAULT_PLATFORM: DefaultPlatform = DefaultPlatform(DefaultPlatformProfile::P384);
-    #[cfg(feature = "ml-dsa")]
+    #[cfg(all(feature = "p256", not(feature = "p384")))]
+    pub const DEFAULT_PLATFORM: DefaultPlatform = DefaultPlatform(DefaultPlatformProfile::P256);
+    #[cfg(all(feature = "ml-dsa", not(feature = "p384"), not(feature = "p256")))]
     pub const DEFAULT_PLATFORM: DefaultPlatform = DefaultPlatform(DefaultPlatformProfile::Mldsa87);
 
-    pub const PROFILES: [DpeProfile; 2] = [DpeProfile::P256Sha256, DpeProfile::P384Sha384];
+    pub const PROFILES: [DpeProfile; 1] = [DPE_PROFILE];
 
     const TEST_GET_PROFILE_CMD: GetProfileCmd = GetProfileCmd;
 
@@ -552,13 +552,13 @@ pub mod tests {
     #[test]
     fn test_deserialize_get_profile() {
         CfiCounter::reset_for_test();
-        for p in [DpeProfile::P256Sha256, DpeProfile::P384Sha384] {
-            assert_eq!(
-                // The expected command now includes a reference to the empty struct
-                Ok(Command::GetProfile(&TEST_GET_PROFILE_CMD)),
-                Command::deserialize(p, CommandHdr::new(p, Command::GET_PROFILE).as_bytes())
-            );
-        }
+        assert_eq!(
+            Ok(Command::GetProfile(&TEST_GET_PROFILE_CMD)),
+            Command::deserialize(
+                DPE_PROFILE,
+                CommandHdr::new(DPE_PROFILE, Command::GET_PROFILE).as_bytes()
+            )
+        );
     }
 
     #[test]
@@ -584,14 +584,9 @@ pub mod tests {
             )
         );
 
-        // Test wrong profile.
+        // Test wrong profile. Use 0 which is never a valid DpeProfile discriminant.
         let profile = DPE_PROFILE;
-        #[cfg(feature = "p256")]
-        let wrong_profile = DpeProfile::P384Sha384 as u32;
-        #[cfg(feature = "p384")]
-        let wrong_profile = DpeProfile::P256Sha256 as u32;
-        #[cfg(feature = "ml-dsa")]
-        let wrong_profile = DpeProfile::P256Sha256 as u32;
+        let wrong_profile: u32 = 0;
 
         // All commands should check the profile except GetProfile.
         assert_eq!(

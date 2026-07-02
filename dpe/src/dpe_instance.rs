@@ -430,24 +430,22 @@ pub mod tests {
     use core::mem::size_of;
     use zerocopy::IntoBytes;
 
-    #[cfg(feature = "p256")]
-    pub const DPE_PROFILE: DpeProfile = DpeProfile::P256Sha256;
-
     #[cfg(feature = "p384")]
     pub const DPE_PROFILE: DpeProfile = DpeProfile::P384Sha384;
-
-    #[cfg(feature = "ml-dsa")]
+    #[cfg(all(feature = "p256", not(feature = "p384")))]
+    pub const DPE_PROFILE: DpeProfile = DpeProfile::P256Sha256;
+    #[cfg(all(feature = "ml-dsa", not(feature = "p384"), not(feature = "p256")))]
     pub const DPE_PROFILE: DpeProfile = DpeProfile::Mldsa87;
 
-    #[cfg(feature = "p256")]
-    pub fn new_crypto() -> RustCryptoImpl {
-        RustCryptoImpl::new_ecc256()
-    }
     #[cfg(feature = "p384")]
     pub fn new_crypto() -> RustCryptoImpl {
         RustCryptoImpl::new_ecc384()
     }
-    #[cfg(feature = "ml-dsa")]
+    #[cfg(all(feature = "p256", not(feature = "p384")))]
+    pub fn new_crypto() -> RustCryptoImpl {
+        RustCryptoImpl::new_ecc256()
+    }
+    #[cfg(all(feature = "ml-dsa", not(feature = "p384"), not(feature = "p256")))]
     pub fn new_crypto() -> RustCryptoImpl {
         RustCryptoImpl::new_mldsa87()
     }

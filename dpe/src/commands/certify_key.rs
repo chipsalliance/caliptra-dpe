@@ -59,7 +59,6 @@ impl CertifyKeyCommand<'_> {
             DpeProfile::Mldsa87 => {
                 CertifyKeyCommand::parse_command(CertifyKeyCommand::Mldsa87, bytes)
             }
-            _ => Err(DpeErrorCode::InvalidArgument)?,
         }
     }
 
@@ -416,9 +415,9 @@ impl CertifyKeyResponseHeader {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[cfg(feature = "ml-dsa")]
+    #[cfg(all(feature = "ml-dsa", not(feature = "p384"), not(feature = "p256")))]
     use crate::commands::CertifyKeyMldsa87Cmd as CertifyKeyCmd;
-    #[cfg(feature = "p256")]
+    #[cfg(all(feature = "p256", not(feature = "p384")))]
     use crate::commands::CertifyKeyP256Cmd as CertifyKeyCmd;
     #[cfg(feature = "p384")]
     use crate::commands::CertifyKeyP384Cmd as CertifyKeyCmd;
@@ -434,7 +433,7 @@ mod tests {
     };
     use caliptra_cfi_lib::CfiCounter;
     use caliptra_dpe_crypto::artifacts;
-    #[cfg(not(feature = "ml-dsa"))]
+    #[cfg(any(feature = "p256", feature = "p384"))]
     use caliptra_dpe_crypto::ecdsa::EcdsaPub;
     #[cfg(feature = "ml-dsa")]
     use caliptra_dpe_crypto::ml_dsa::{MldsaAlgorithm, MldsaPublicKey};
