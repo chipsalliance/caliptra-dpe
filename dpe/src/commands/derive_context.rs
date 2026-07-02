@@ -377,7 +377,9 @@ impl CommandExecution for DeriveContextCmd {
                     let ueid = &env.platform().get_ueid()?;
                     let ueid = ueid.get()?;
                     let profile_descriptor = match dpe.profile {
+                        #[cfg(feature = "p256")]
                         crate::DpeProfile::P256Sha256 => b"Exported ECC".as_slice(),
+                        #[cfg(feature = "p384")]
                         crate::DpeProfile::P384Sha384 => b"Exported ECC".as_slice(),
                         #[cfg(feature = "ml-dsa")]
                         crate::DpeProfile::Mldsa87 => b"Exported ML-DSA".as_slice(),
@@ -1825,9 +1827,11 @@ mod tests {
                     }
                     let pub_key = &cert.tbs_certificate.subject_pki.subject_public_key.data;
                     let mut hasher = match DPE_PROFILE {
+                        #[cfg(feature = "p256")]
                         DpeProfile::P256Sha256 => {
                             OpenSSLHasher::new(MessageDigest::sha256()).unwrap()
                         }
+                        #[cfg(feature = "p384")]
                         DpeProfile::P384Sha384 => {
                             OpenSSLHasher::new(MessageDigest::sha384()).unwrap()
                         }

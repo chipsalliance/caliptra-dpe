@@ -88,17 +88,20 @@ impl From<bool> for U8Bool {
 #[repr(u32)]
 pub enum DpeProfile {
     // Note: Min profiles (1 & 2) are not supported by this implementation
+    #[cfg(feature = "p256")]
     P256Sha256 = 3,
+    #[cfg(feature = "p384")]
     P384Sha384 = 4,
     #[cfg(feature = "ml-dsa")]
-    Mldsa87 = 5, // TODO(clundin): Added this to get past compiler / feature flags. We
-                 // will want a real solution here.
+    Mldsa87 = 5,
 }
 
 impl DpeProfile {
     pub const fn tci_size(&self) -> usize {
         match self {
+            #[cfg(feature = "p256")]
             DpeProfile::P256Sha256 => 32,
+            #[cfg(feature = "p384")]
             DpeProfile::P384Sha384 => 48,
             #[cfg(feature = "ml-dsa")]
             DpeProfile::Mldsa87 => 48,
@@ -112,9 +115,11 @@ impl DpeProfile {
     }
     pub const fn alg(&self) -> caliptra_dpe_crypto::SignatureAlgorithm {
         match self {
+            #[cfg(feature = "p256")]
             DpeProfile::P256Sha256 => {
                 caliptra_dpe_crypto::SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit256)
             }
+            #[cfg(feature = "p384")]
             DpeProfile::P384Sha384 => {
                 caliptra_dpe_crypto::SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384)
             }
@@ -126,7 +131,10 @@ impl DpeProfile {
     }
     pub fn key_context(&self) -> &[u8] {
         match self {
-            DpeProfile::P256Sha256 | DpeProfile::P384Sha384 => b"ECC",
+            #[cfg(feature = "p256")]
+            DpeProfile::P256Sha256 => b"ECC",
+            #[cfg(feature = "p384")]
+            DpeProfile::P384Sha384 => b"ECC",
             #[cfg(feature = "ml-dsa")]
             DpeProfile::Mldsa87 => b"MLDSA",
         }
