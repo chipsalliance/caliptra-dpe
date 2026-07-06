@@ -17,9 +17,11 @@ use bitflags::bitflags;
 use caliptra_cfi_lib::cfi_launder;
 #[cfg(feature = "cfi")]
 use caliptra_cfi_lib::{cfi_assert, cfi_assert_bool};
+#[cfg(any(feature = "p256", feature = "p384"))]
+use caliptra_dpe_crypto::ecdsa::EcdsaPubKey;
 use caliptra_dpe_crypto::{
-    ecdsa::{EcdsaPubKey, EcdsaSignature},
-    CryptoError, CryptoSuite, Digest, PubKey, SignData, Signature, MAX_EXPORTED_CDI_SIZE,
+    ecdsa::EcdsaSignature, CryptoError, CryptoSuite, Digest, PubKey, SignData, Signature,
+    MAX_EXPORTED_CDI_SIZE,
 };
 #[cfg(not(feature = "disable_x509"))]
 use caliptra_dpe_platform::CertValidity;
@@ -214,6 +216,7 @@ impl CertWriter<'_> {
     #[cfg(feature = "ml-dsa")]
     const MLDSA_OID: &'static [u8] = &[0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x03, 0x13];
 
+    #[cfg(any(feature = "p256", feature = "p384"))]
     const EC_PUB_OID: &'static [u8] = &[0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x02, 0x01];
 
     // SHA384
@@ -427,69 +430,58 @@ impl CertWriter<'_> {
         Self::get_structure_size(cn_set_size + serialnumber_set_size, tagged)
     }
 
-    fn sig_oid(&self) -> Result<&'static [u8], DpeErrorCode> {
+    fn sig_oid(&self) -> &'static [u8] {
         match self.profile {
             #[cfg(feature = "p256")]
-            DpeProfile::P256Sha256 => Ok(profile_oids::ECDSA_WITH_SHA256_OID),
+            DpeProfile::P256Sha256 => profile_oids::ECDSA_WITH_SHA256_OID,
             #[cfg(feature = "p384")]
-            DpeProfile::P384Sha384 => Ok(profile_oids::ECDSA_WITH_SHA384_OID),
+            DpeProfile::P384Sha384 => profile_oids::ECDSA_WITH_SHA384_OID,
             #[cfg(feature = "ml-dsa")]
-            DpeProfile::Mldsa87 => Ok(Self::MLDSA_OID),
-            _ => Err(DpeErrorCode::X509AlgorithmMismatch),
+            DpeProfile::Mldsa87 => Self::MLDSA_OID,
         }
     }
 
-    fn hash_oid(&self) -> Result<&'static [u8], DpeErrorCode> {
+    fn hash_oid(&self) -> &'static [u8] {
         match self.profile {
             #[cfg(feature = "p256")]
-            DpeProfile::P256Sha256 => Ok(profile_oids::HASH_SHA256_OID),
+            DpeProfile::P256Sha256 => profile_oids::HASH_SHA256_OID,
             #[cfg(feature = "p384")]
-            DpeProfile::P384Sha384 => Ok(Self::HASH_SHA384_OID),
+            DpeProfile::P384Sha384 => Self::HASH_SHA384_OID,
             #[cfg(feature = "ml-dsa")]
-            DpeProfile::Mldsa87 => Ok(Self::HASH_SHA384_OID),
-            _ => Err(DpeErrorCode::X509AlgorithmMismatch),
-        }
-    }
-
-    fn curve_oid(&self) -> Result<&'static [u8], DpeErrorCode> {
-        match self.profile {
-            #[cfg(feature = "p256")]
-            DpeProfile::P256Sha256 => Ok(profile_oids::CURVE_P256_OID),
-            #[cfg(feature = "p384")]
-            DpeProfile::P384Sha384 => Ok(profile_oids::CURVE_P384_OID),
-            _ => Err(DpeErrorCode::X509AlgorithmMismatch),
+            DpeProfile::Mldsa87 => Self::HASH_SHA384_OID,
         }
     }
 
     /// Calculate the number of bytes for an ECC Public Key AlgorithmIdentifier
     /// If `tagged`, include the tag and size fields
-    fn get_ec_pub_alg_id_size(&self, tagged: bool) -> Result<usize, DpeErrorCode> {
-        let len = Self::get_bytes_size(Self::EC_PUB_OID, true)
-            + Self::get_bytes_size(self.curve_oid()?, true);
-        Ok(Self::get_structure_size(len, tagged))
+    #[cfg(any(feature = "p256", feature = "p384"))]
+    fn get_ec_pub_alg_id_size(curve_oid: &[u8], tagged: bool) -> usize {
+        let len =
+            Self::get_bytes_size(Self::EC_PUB_OID, true) + Self::get_bytes_size(curve_oid, true);
+        Self::get_structure_size(len, tagged)
     }
 
     /// Calculate the number of bytes for an ECDSA signature AlgorithmIdentifier
     /// If `tagged`, include the tag and size fields
-    fn get_ecdsa_sig_alg_id_size(&self, tagged: bool) -> Result<usize, DpeErrorCode> {
-        let len = Self::get_bytes_size(self.sig_oid()?, true);
-        Ok(Self::get_structure_size(len, tagged))
+    fn get_ecdsa_sig_alg_id_size(&self, tagged: bool) -> usize {
+        let len = Self::get_bytes_size(self.sig_oid(), true);
+        Self::get_structure_size(len, tagged)
     }
 
     /// Calculate the number of bytes for an MLDSA-87 signature AlgorithmIdentifier
     /// If `tagged`, include the tag and size fields
     #[cfg(feature = "ml-dsa")]
-    fn get_mldsa_sig_alg_id_size(&self, tagged: bool) -> Result<usize, DpeErrorCode> {
-        let len = Self::get_bytes_size(self.sig_oid()?, true);
-        Ok(Self::get_structure_size(len, tagged))
+    fn get_mldsa_sig_alg_id_size(&self, tagged: bool) -> usize {
+        let len = Self::get_bytes_size(self.sig_oid(), true);
+        Self::get_structure_size(len, tagged)
     }
 
     /// Calculate the number of bytes for a Hash AlgorithmIdentifier
     /// If `tagged`, include the tag and size fields
     #[cfg(not(feature = "disable_csr"))]
-    fn get_hash_alg_id_size(&self, tagged: bool) -> Result<usize, DpeErrorCode> {
-        let len = Self::get_bytes_size(self.hash_oid()?, true);
-        Ok(Self::get_structure_size(len, tagged))
+    fn get_hash_alg_id_size(&self, tagged: bool) -> usize {
+        let len = Self::get_bytes_size(self.hash_oid(), true);
+        Self::get_structure_size(len, tagged)
     }
 
     /// If `tagged`, include the tag and size fields
@@ -503,72 +495,42 @@ impl CertWriter<'_> {
     /// Calculate the number of bytes an MLDSA-87 SubjectPublicKeyInfo will be
     /// If `tagged`, include the tag and size fields
     #[cfg(feature = "ml-dsa")]
-    fn get_mldsa_subject_pubkey_info_size(
-        &self,
-        pubkey: &MldsaPublicKey,
-        tagged: bool,
-    ) -> Result<usize, DpeErrorCode> {
+    fn get_mldsa_subject_pubkey_info_size(&self, pubkey: &MldsaPublicKey, tagged: bool) -> usize {
         let bitstring_size = Self::get_structure_size(1 + pubkey.0.len(), true);
-        let seq_size = bitstring_size + self.get_mldsa_sig_alg_id_size(true)?;
-
-        Ok(Self::get_structure_size(seq_size, tagged))
+        let seq_size = bitstring_size + self.get_mldsa_sig_alg_id_size(true);
+        Self::get_structure_size(seq_size, tagged)
     }
 
     /// Calculate the number of bytes an ECC SubjectPublicKeyInfo will be
     /// If `tagged`, include the tag and size fields
+    #[cfg(any(feature = "p256", feature = "p384"))]
     fn get_ecdsa_subject_pubkey_info_size(
         &self,
         pubkey: &EcdsaPubKey,
+        curve_oid: &[u8],
         tagged: bool,
-    ) -> Result<usize, DpeErrorCode> {
+    ) -> usize {
         let point_size = 1 + pubkey.curve_size() + pubkey.curve_size();
         let bitstring_size = 1 + point_size;
         let seq_size = Self::get_structure_size(bitstring_size, /*tagged=*/ true)
-            + self.get_ec_pub_alg_id_size(/*tagged=*/ true)?;
-
-        Ok(Self::get_structure_size(seq_size, tagged))
-    }
-
-    /// Calculate the number of bytes an SubjectPublicKeyInfo will be
-    /// If `tagged`, include the tag and size fields
-    fn get_subject_pubkey_info_size(
-        &self,
-        pubkey: &PubKey,
-        tagged: bool,
-    ) -> Result<usize, DpeErrorCode> {
-        let size = match pubkey {
-            PubKey::Ecdsa(pubkey) => {
-                self.get_ecdsa_sig_alg_id_size(tagged)?
-                    + self.get_ecdsa_subject_pubkey_info_size(pubkey, tagged)?
-            }
-            #[cfg(feature = "ml-dsa")]
-            PubKey::Mldsa(pubkey) => {
-                self.get_mldsa_sig_alg_id_size(tagged)?
-                    + self.get_mldsa_subject_pubkey_info_size(pubkey, tagged)?
-            }
-        };
-        Ok(size)
+            + Self::get_ec_pub_alg_id_size(curve_oid, /*tagged=*/ true);
+        Self::get_structure_size(seq_size, tagged)
     }
 
     /// If `tagged`, include the tag and size fields
     #[cfg(not(feature = "disable_csr"))]
-    fn get_signature_octet_string_size(
-        &self,
-        sig: &Signature,
-        tagged: bool,
-    ) -> Result<usize, DpeErrorCode> {
-        let signature_size = match sig {
+    fn get_signature_octet_string_size(&self, sig: &Signature, tagged: bool) -> usize {
+        match sig {
             Signature::Ecdsa(sig) => {
-                self.get_ecdsa_sig_alg_id_size(tagged)?
+                self.get_ecdsa_sig_alg_id_size(tagged)
                     + Self::get_ecdsa_signature_octet_string_size(sig, tagged)
             }
             #[cfg(feature = "ml-dsa")]
             Signature::Mldsa(sig) => {
-                self.get_mldsa_sig_alg_id_size(tagged)?
+                self.get_mldsa_sig_alg_id_size(tagged)
                     + Self::get_mldsa_signature_octet_string_size(sig, tagged)
             }
-        };
-        Ok(signature_size)
+        }
     }
 
     /// If `tagged`, include the tag and size fields
@@ -602,11 +564,10 @@ impl CertWriter<'_> {
     }
 
     /// Get the size of a DICE FWID structure
-    fn get_fwid_size(&self, digest: &[u8], tagged: bool) -> Result<usize, DpeErrorCode> {
-        let size = Self::get_structure_size(self.hash_oid()?.len(), /*tagged=*/ true)
+    fn get_fwid_size(&self, digest: &[u8], tagged: bool) -> usize {
+        let size = Self::get_structure_size(self.hash_oid().len(), /*tagged=*/ true)
             + Self::get_structure_size(digest.len(), /*tagged=*/ true);
-
-        Ok(Self::get_structure_size(size, tagged))
+        Self::get_structure_size(size, tagged)
     }
 
     /// Get the size of a tcg-dice-TcbInfo structure. For DPE, this is only used
@@ -617,11 +578,11 @@ impl CertWriter<'_> {
         node: &TciNodeData,
         supports_recursive: bool,
         tagged: bool,
-    ) -> Result<usize, DpeErrorCode> {
-        let fwid_size = self.get_fwid_size(&node.tci_current.0, /*tagged=*/ true)?;
+    ) -> usize {
+        let fwid_size = self.get_fwid_size(&node.tci_current.0, /*tagged=*/ true);
         let svn_size = Self::get_integer_size(node.svn.into(), true);
         let integrity_registers_size = if supports_recursive {
-            let fwid_size = self.get_fwid_size(&node.tci_cumulative.0, /*tagged=*/ true)?;
+            let fwid_size = self.get_fwid_size(&node.tci_cumulative.0, /*tagged=*/ true);
             let fwid_list_size = Self::get_structure_size(fwid_size, /*tagged=*/ true);
             let ir_num_size = Self::get_integer_size(Self::INTEGRITY_REGISTER_NUM, true);
             let integrity_register_size =
@@ -637,7 +598,7 @@ impl CertWriter<'_> {
             + integrity_registers_size
             + svn_size;
 
-        Ok(Self::get_structure_size(size, tagged))
+        Self::get_structure_size(size, tagged)
     }
 
     /// Get the size of an X.509 extension wrapper: SEQUENCE { OID, [BOOLEAN], OCTET STRING { content } }.
@@ -701,7 +662,7 @@ impl CertWriter<'_> {
                     .ok_or(DpeErrorCode::from(InternalErrorCode::EmptyTciNodes))?,
                 measurements.supports_recursive,
                 /*tagged=*/ true,
-            )?;
+            );
 
         // Size of tcb infos including SEQUENCE OF tag/size
         let multi_tcb_info_size = Self::get_structure_size(tcb_infos_size, /*tagged=*/ true);
@@ -895,9 +856,42 @@ impl CertWriter<'_> {
         validity: &CertValidity,
         tagged: bool,
     ) -> Result<usize, DpeErrorCode> {
+        let pubkey_size = match pubkey {
+            #[cfg_attr(
+                all(not(feature = "p256"), not(feature = "p384")),
+                expect(unused_variables)
+            )]
+            PubKey::Ecdsa(ecdsa_key) => match self.profile {
+                #[cfg(feature = "p256")]
+                DpeProfile::P256Sha256 => {
+                    self.get_ecdsa_sig_alg_id_size(true)
+                        + self.get_ecdsa_subject_pubkey_info_size(
+                            ecdsa_key,
+                            profile_oids::CURVE_P256_OID,
+                            true,
+                        )
+                }
+                #[cfg(feature = "p384")]
+                DpeProfile::P384Sha384 => {
+                    self.get_ecdsa_sig_alg_id_size(true)
+                        + self.get_ecdsa_subject_pubkey_info_size(
+                            ecdsa_key,
+                            profile_oids::CURVE_P384_OID,
+                            true,
+                        )
+                }
+                #[cfg(feature = "ml-dsa")]
+                DpeProfile::Mldsa87 => return Err(DpeErrorCode::InvalidArgument),
+            },
+            #[cfg(feature = "ml-dsa")]
+            PubKey::Mldsa(mldsa_key) => {
+                self.get_mldsa_sig_alg_id_size(true)
+                    + self.get_mldsa_subject_pubkey_info_size(mldsa_key, true)
+            }
+        };
         let tbs_size = Self::get_version_size(/*tagged=*/ true)
             + Self::get_integer_bytes_size(serial_number, /*tagged=*/ true)
-            + self.get_subject_pubkey_info_size(pubkey, true)?
+            + pubkey_size
             + issuer_der.len()
             + Self::get_validity_size(validity, /*tagged=*/ true)
             + Self::get_rdn_size(subject_name, /*tagged=*/ true)
@@ -922,9 +916,28 @@ impl CertWriter<'_> {
         tagged: bool,
     ) -> Result<usize, DpeErrorCode> {
         let pubkey_size = match pubkey {
-            PubKey::Ecdsa(pubkey) => self.get_ecdsa_subject_pubkey_info_size(pubkey, true)?,
+            #[cfg_attr(
+                all(not(feature = "p256"), not(feature = "p384")),
+                expect(unused_variables)
+            )]
+            PubKey::Ecdsa(ecdsa_key) => match self.profile {
+                #[cfg(feature = "p256")]
+                DpeProfile::P256Sha256 => self.get_ecdsa_subject_pubkey_info_size(
+                    ecdsa_key,
+                    profile_oids::CURVE_P256_OID,
+                    true,
+                ),
+                #[cfg(feature = "p384")]
+                DpeProfile::P384Sha384 => self.get_ecdsa_subject_pubkey_info_size(
+                    ecdsa_key,
+                    profile_oids::CURVE_P384_OID,
+                    true,
+                ),
+                #[cfg(feature = "ml-dsa")]
+                DpeProfile::Mldsa87 => return Err(DpeErrorCode::InvalidArgument),
+            },
             #[cfg(feature = "ml-dsa")]
-            PubKey::Mldsa(pubkey) => self.get_mldsa_subject_pubkey_info_size(pubkey, true)?,
+            PubKey::Mldsa(pubkey) => self.get_mldsa_subject_pubkey_info_size(pubkey, true),
         };
         let cert_req_info_size = Self::get_integer_size(Self::CSR_V0, true)
             + Self::get_rdn_size(subject_name, /*tagged=*/ true)
@@ -949,18 +962,12 @@ impl CertWriter<'_> {
     /// Get the size of the ASN.1 SignerInfo structure
     /// If `tagged`, include the tag and size fields
     #[cfg(not(feature = "disable_csr"))]
-    fn get_signer_info_size(
-        &self,
-        sig: &Signature,
-        sid: &SignerIdentifier,
-        tagged: bool,
-    ) -> Result<usize, DpeErrorCode> {
+    fn get_signer_info_size(&self, sig: &Signature, sid: &SignerIdentifier, tagged: bool) -> usize {
         let signer_info_size = Self::get_cms_version_size(sid)
             + Self::get_signer_identifier_size(sid, /*tagged=*/ true)
-            + self.get_hash_alg_id_size(/*tagged=*/ true)?
-            + self.get_signature_octet_string_size(sig, true)?;
-
-        Ok(Self::get_structure_size(signer_info_size, tagged))
+            + self.get_hash_alg_id_size(/*tagged=*/ true)
+            + self.get_signature_octet_string_size(sig, true);
+        Self::get_structure_size(signer_info_size, tagged)
     }
 
     /// Get the size of the ASN.1 SignedData structure
@@ -973,22 +980,22 @@ impl CertWriter<'_> {
         sid: &SignerIdentifier,
         tagged: bool,
         explicit: bool,
-    ) -> Result<usize, DpeErrorCode> {
+    ) -> usize {
         let signed_data_size = Self::get_cms_version_size(sid)
             + Self::get_structure_size(
-                self.get_hash_alg_id_size(/*tagged=*/ true)?,
+                self.get_hash_alg_id_size(/*tagged=*/ true),
                 /*tagged=*/ true,
             )
             + Self::get_encap_content_info_size(csr_len, /*tagged=*/ true)
             + Self::get_structure_size(
-                self.get_signer_info_size(sig, sid, /*tagged=*/ true)?,
+                self.get_signer_info_size(sig, sid, /*tagged=*/ true),
                 /*tagged=*/ true,
             );
 
         // Determine whether to include the explicit tag wrapping in the size calculation
         let explicit_signed_data_size = Self::get_structure_size(signed_data_size, explicit);
 
-        Ok(Self::get_structure_size(explicit_signed_data_size, tagged))
+        Self::get_structure_size(explicit_signed_data_size, tagged)
     }
 
     /// Get the size of the ASN.1 SignerIdentifier structure
@@ -1303,15 +1310,16 @@ impl CertWriter<'_> {
     ///       -- implicitCurve   NULL
     ///       -- specifiedCurve  SpecifiedECDomain
     ///     }
-    fn encode_ec_pub_alg_id(&mut self) -> Result<usize, DpeErrorCode> {
-        let seq_size = self.get_ec_pub_alg_id_size(/*tagged=*/ false)?;
+    #[cfg(any(feature = "p256", feature = "p384"))]
+    fn encode_ec_pub_alg_id(&mut self, curve_oid: &'static [u8]) -> usize {
+        let seq_size = Self::get_ec_pub_alg_id_size(curve_oid, /*tagged=*/ false);
 
         let mut bytes_written = self.encode_tag_field(Self::SEQUENCE_TAG);
         bytes_written += self.encode_size_field(seq_size);
         bytes_written += self.encode_oid(Self::EC_PUB_OID);
-        bytes_written += self.encode_oid(self.curve_oid()?);
+        bytes_written += self.encode_oid(curve_oid);
 
-        Ok(bytes_written)
+        bytes_written
     }
 
     /// DER-encodes the AlgorithmIdentifier for the ECDSA signature algorithm
@@ -1321,14 +1329,14 @@ impl CertWriter<'_> {
     ///     algorithm   OBJECT IDENTIFIER,
     ///     parameters  ECParameters
     ///     }
-    fn encode_ecdsa_sig_alg_id(&mut self) -> Result<usize, DpeErrorCode> {
-        let seq_size = self.get_ecdsa_sig_alg_id_size(/*tagged=*/ false)?;
+    fn encode_ecdsa_sig_alg_id(&mut self) -> usize {
+        let seq_size = self.get_ecdsa_sig_alg_id_size(/*tagged=*/ false);
 
         let mut bytes_written = self.encode_tag_field(Self::SEQUENCE_TAG);
         bytes_written += self.encode_size_field(seq_size);
-        bytes_written += self.encode_oid(self.sig_oid()?);
+        bytes_written += self.encode_oid(self.sig_oid());
 
-        Ok(bytes_written)
+        bytes_written
     }
 
     /// DER-encodes the AlgorithmIdentifier for the hash algorithm
@@ -1339,14 +1347,14 @@ impl CertWriter<'_> {
     ///     parameters  ECParameters
     ///     }
     #[cfg(not(feature = "disable_csr"))]
-    fn encode_hash_alg_id(&mut self) -> Result<usize, DpeErrorCode> {
-        let seq_size = self.get_hash_alg_id_size(/*tagged=*/ false)?;
+    fn encode_hash_alg_id(&mut self) -> usize {
+        let seq_size = self.get_hash_alg_id_size(/*tagged=*/ false);
 
         let mut bytes_written = self.encode_tag_field(Self::SEQUENCE_TAG);
         bytes_written += self.encode_size_field(seq_size);
-        bytes_written += self.encode_oid(self.hash_oid()?);
+        bytes_written += self.encode_oid(self.hash_oid());
 
-        Ok(bytes_written)
+        bytes_written
     }
 
     // Encode ASN.1 Validity according to Platform
@@ -1378,18 +1386,20 @@ impl CertWriter<'_> {
     /// directly, which means the OCTET STRING tag and size fields are omitted.
     ///
     /// Returns number of bytes written to `certificate`
+    #[cfg(any(feature = "p256", feature = "p384"))]
     fn encode_ecdsa_subject_pubkey_info(
         &mut self,
         pub_key: &EcdsaPubKey,
-    ) -> Result<usize, DpeErrorCode> {
+        curve_oid: &'static [u8],
+    ) -> usize {
         let point_size = 1 + pub_key.curve_size() + pub_key.curve_size();
         let bitstring_size = 1 + point_size;
         let seq_size = Self::get_structure_size(bitstring_size, /*tagged=*/ true)
-            + self.get_ec_pub_alg_id_size(/*tagged=*/ true)?;
+            + Self::get_ec_pub_alg_id_size(curve_oid, /*tagged=*/ true);
 
         let mut bytes_written = self.encode_tag_field(Self::SEQUENCE_TAG);
         bytes_written += self.encode_size_field(seq_size);
-        bytes_written += self.encode_ec_pub_alg_id()?;
+        bytes_written += self.encode_ec_pub_alg_id(curve_oid);
 
         bytes_written += self.encode_tag_field(Self::BIT_STRING_TAG);
         bytes_written += self.encode_size_field(bitstring_size);
@@ -1402,7 +1412,7 @@ impl CertWriter<'_> {
         bytes_written += self.encode_bytes(x);
         bytes_written += self.encode_bytes(y);
 
-        Ok(bytes_written)
+        bytes_written
     }
 
     /// BIT STRING containing
@@ -1411,10 +1421,7 @@ impl CertWriter<'_> {
     ///     r  INTEGER,
     ///     s  INTEGER
     ///   }
-    fn encode_ecdsa_signature_bit_string(
-        &mut self,
-        sig: &EcdsaSignature,
-    ) -> Result<usize, DpeErrorCode> {
+    fn encode_ecdsa_signature_bit_string(&mut self, sig: &EcdsaSignature) -> usize {
         let (r, s) = sig.as_slice();
         let seq_size = Self::get_integer_bytes_size(r, /*tagged=*/ true)
             + Self::get_integer_bytes_size(s, /*tagged=*/ true);
@@ -1434,49 +1441,47 @@ impl CertWriter<'_> {
         bytes_written += self.encode_integer_bytes(r, true);
         bytes_written += self.encode_integer_bytes(s, true);
 
-        Ok(bytes_written)
+        bytes_written
     }
 
     /// Encode Signature into BIT STRING
     #[cfg(not(feature = "disable_csr"))]
-    fn encode_signature_bit_string(&mut self, sig: &Signature) -> Result<usize, DpeErrorCode> {
-        let bytes_written = match sig {
+    fn encode_signature_bit_string(&mut self, sig: &Signature) -> usize {
+        match sig {
             Signature::Ecdsa(sig) => {
                 // Alg ID
-                self.encode_ecdsa_sig_alg_id()? +
+                self.encode_ecdsa_sig_alg_id() +
                 // Signature
-                self.encode_ecdsa_signature_bit_string(sig)?
+                self.encode_ecdsa_signature_bit_string(sig)
             }
             #[cfg(feature = "ml-dsa")]
             Signature::Mldsa(sig) => {
                 // Alg ID
-                self.encode_mldsa_sig_alg_id()? +
+                self.encode_mldsa_sig_alg_id() +
                 // Signature
                 self.encode_mldsa_signature_bit_string(sig)
             }
-        };
-        Ok(bytes_written)
+        }
     }
 
     /// Encode Signature into OCTET STRING
     #[cfg(not(feature = "disable_csr"))]
-    fn encode_signature_octet_string(&mut self, sig: &Signature) -> Result<usize, DpeErrorCode> {
-        let bytes_written = match sig {
+    fn encode_signature_octet_string(&mut self, sig: &Signature) -> usize {
+        match sig {
             Signature::Ecdsa(sig) => {
                 // Alg ID
-                self.encode_ecdsa_sig_alg_id()? +
+                self.encode_ecdsa_sig_alg_id() +
                 // Signature
                 self.encode_ecdsa_signature_octet_string(sig)
             }
             #[cfg(feature = "ml-dsa")]
             Signature::Mldsa(sig) => {
                 // Alg ID
-                self.encode_mldsa_sig_alg_id()? +
+                self.encode_mldsa_sig_alg_id() +
                 // Signature
                 self.encode_mldsa_signature_octet_string(sig)
             }
-        };
-        Ok(bytes_written)
+        }
     }
 
     /// OCTET STRING containing
@@ -1518,27 +1523,24 @@ impl CertWriter<'_> {
 
     /// DER-encodes the AlgorithmIdentifier for the MLDSA-87 signature algorithm
     #[cfg(feature = "ml-dsa")]
-    fn encode_mldsa_sig_alg_id(&mut self) -> Result<usize, DpeErrorCode> {
-        let seq_size = self.get_mldsa_sig_alg_id_size(false)?;
+    fn encode_mldsa_sig_alg_id(&mut self) -> usize {
+        let seq_size = self.get_mldsa_sig_alg_id_size(false);
 
         let mut bytes_written = self.encode_tag_field(Self::SEQUENCE_TAG);
         bytes_written += self.encode_size_field(seq_size);
-        bytes_written += self.encode_oid(self.sig_oid()?);
+        bytes_written += self.encode_oid(self.sig_oid());
 
-        Ok(bytes_written)
+        bytes_written
     }
 
     /// Encode SubjectPublicKeyInfo for an MLDSA-87 public key
     #[cfg(feature = "ml-dsa")]
-    fn encode_mldsa_subject_pubkey_info(
-        &mut self,
-        pub_key: &MldsaPublicKey,
-    ) -> Result<usize, DpeErrorCode> {
-        let seq_size = self.get_mldsa_subject_pubkey_info_size(pub_key, false)?;
+    fn encode_mldsa_subject_pubkey_info(&mut self, pub_key: &MldsaPublicKey) -> usize {
+        let seq_size = self.get_mldsa_subject_pubkey_info_size(pub_key, false);
 
         let mut bytes_written = self.encode_tag_field(Self::SEQUENCE_TAG);
         bytes_written += self.encode_size_field(seq_size);
-        bytes_written += self.encode_mldsa_sig_alg_id()?;
+        bytes_written += self.encode_mldsa_sig_alg_id();
 
         bytes_written += self.encode_tag_field(Self::BIT_STRING_TAG);
         bytes_written += self.encode_size_field(1 + pub_key.0.len());
@@ -1546,7 +1548,7 @@ impl CertWriter<'_> {
         bytes_written += self.encode_byte(0);
         bytes_written += self.encode_bytes(&pub_key.0);
 
-        Ok(bytes_written)
+        bytes_written
     }
 
     /// BIT STRING containing signature
@@ -1572,18 +1574,18 @@ impl CertWriter<'_> {
         bytes_written
     }
 
-    fn encode_fwid(&mut self, tci: &TciMeasurement) -> Result<usize, DpeErrorCode> {
+    fn encode_fwid(&mut self, tci: &TciMeasurement) -> usize {
         let mut bytes_written = self.encode_byte(Self::SEQUENCE_TAG);
-        bytes_written += self.encode_size_field(self.get_fwid_size(&tci.0, /*tagged=*/ false)?);
+        bytes_written += self.encode_size_field(self.get_fwid_size(&tci.0, /*tagged=*/ false));
 
         // hashAlg OID
-        let oid = self.hash_oid()?;
+        let oid = self.hash_oid();
         bytes_written += self.encode_oid(oid);
 
         // digest OCTET STRING
         bytes_written += self.encode_tlv(Self::OCTET_STRING_TAG, &tci.0);
 
-        Ok(bytes_written)
+        bytes_written
     }
 
     /// Encode a tcg-dice-TcbInfo structure
@@ -1598,13 +1600,9 @@ impl CertWriter<'_> {
     /// For constructed types (SEQUENCE, SEQUENCE OF, SET, SET OF) the 6th
     /// bit is also set. For example, "Implicit tag number 2" would be encoded
     /// with tag 0xA2 for constructed types.
-    fn encode_tcb_info(
-        &mut self,
-        node: &TciNodeData,
-        supports_recursive: bool,
-    ) -> Result<usize, DpeErrorCode> {
+    fn encode_tcb_info(&mut self, node: &TciNodeData, supports_recursive: bool) -> usize {
         let tcb_info_size =
-            self.get_tcb_info_size(node, supports_recursive, /*tagged=*/ false)?;
+            self.get_tcb_info_size(node, supports_recursive, /*tagged=*/ false);
         // TcbInfo sequence
         let mut bytes_written = self.encode_byte(Self::SEQUENCE_TAG);
         bytes_written += self.encode_size_field(tcb_info_size);
@@ -1616,12 +1614,12 @@ impl CertWriter<'_> {
 
         // fwids SEQUENCE OF
         // IMPLICIT [6] Constructed
-        let fwid_size = self.get_fwid_size(&node.tci_current.0, /*tagged=*/ true)?;
+        let fwid_size = self.get_fwid_size(&node.tci_current.0, /*tagged=*/ true);
         bytes_written += self.encode_byte(Self::CONTEXT_SPECIFIC | Self::CONSTRUCTED | 0x06);
         bytes_written += self.encode_size_field(fwid_size);
 
         // fwid[0] current measurement
-        bytes_written += self.encode_fwid(&node.tci_current)?;
+        bytes_written += self.encode_fwid(&node.tci_current);
 
         // vendorInfo OCTET STRING
         // IMPLICIT[8] Primitive
@@ -1636,7 +1634,7 @@ impl CertWriter<'_> {
         if supports_recursive {
             // integrityRegisters SEQUENCE OF
             // IMPLICIT [11] Constructed
-            let fwid_size = self.get_fwid_size(&node.tci_cumulative.0, /*tagged=*/ true)?;
+            let fwid_size = self.get_fwid_size(&node.tci_cumulative.0, /*tagged=*/ true);
             let fwid_list_size = Self::get_structure_size(fwid_size, /*tagged=*/ true);
             let ir_num_size = Self::get_integer_size(Self::INTEGRITY_REGISTER_NUM, true);
             let integrity_register_size =
@@ -1659,10 +1657,10 @@ impl CertWriter<'_> {
             // cumulative measurement
             bytes_written += self.encode_byte(Self::CONTEXT_SPECIFIC | Self::CONSTRUCTED | 0x02);
             bytes_written += self.encode_size_field(fwid_size);
-            bytes_written += self.encode_fwid(&node.tci_cumulative)?;
+            bytes_written += self.encode_fwid(&node.tci_cumulative);
         }
 
-        Ok(bytes_written)
+        bytes_written
     }
 
     /// Encode a tcg-dice-MultiTcbInfo extension
@@ -1680,7 +1678,7 @@ impl CertWriter<'_> {
                     .ok_or(DpeErrorCode::from(InternalErrorCode::EmptyTciNodes))?,
                 measurements.supports_recursive,
                 /*tagged=*/ true,
-            )? * measurements.tci_nodes.num_nodes()?
+            ) * measurements.tci_nodes.num_nodes()?
         } else {
             0
         };
@@ -1698,7 +1696,7 @@ impl CertWriter<'_> {
             bytes_written += self.encode_tcb_info(
                 node.map(|context| &context.tci)?,
                 measurements.supports_recursive,
-            )?;
+            );
         }
 
         Ok(bytes_written)
@@ -2054,7 +2052,7 @@ impl CertWriter<'_> {
         sig: &Signature,
         sid: &SignerIdentifier,
     ) -> Result<usize, DpeErrorCode> {
-        let signer_info_size = self.get_signer_info_size(sig, sid, /*tagged=*/ false)?;
+        let signer_info_size = self.get_signer_info_size(sig, sid, /*tagged=*/ false);
 
         // SignerInfo Sequence
         let mut bytes_written = self.encode_tag_field(Self::SEQUENCE_TAG);
@@ -2067,9 +2065,9 @@ impl CertWriter<'_> {
         bytes_written += self.encode_signer_identifier(sid);
 
         // digestAlgorithm
-        bytes_written += self.encode_hash_alg_id()?;
+        bytes_written += self.encode_hash_alg_id();
 
-        bytes_written += self.encode_signature_octet_string(sig)?;
+        bytes_written += self.encode_signature_octet_string(sig);
 
         self.check_not_truncated()?;
         Ok(bytes_written)
@@ -2273,9 +2271,9 @@ impl CertWriter<'_> {
 
         // signature
         bytes_written += match pubkey {
-            PubKey::Ecdsa(_) => self.encode_ecdsa_sig_alg_id()?,
+            PubKey::Ecdsa(_) => self.encode_ecdsa_sig_alg_id(),
             #[cfg(feature = "ml-dsa")]
-            PubKey::Mldsa(_) => self.encode_mldsa_sig_alg_id()?,
+            PubKey::Mldsa(_) => self.encode_mldsa_sig_alg_id(),
         };
 
         // issuer
@@ -2289,9 +2287,24 @@ impl CertWriter<'_> {
 
         // subjectPublicKeyInfo
         bytes_written += match pubkey {
-            PubKey::Ecdsa(pub_key) => self.encode_ecdsa_subject_pubkey_info(pub_key)?,
+            #[cfg_attr(
+                all(not(feature = "p256"), not(feature = "p384")),
+                expect(unused_variables)
+            )]
+            PubKey::Ecdsa(pub_key) => match self.profile {
+                #[cfg(feature = "p256")]
+                DpeProfile::P256Sha256 => {
+                    self.encode_ecdsa_subject_pubkey_info(pub_key, profile_oids::CURVE_P256_OID)
+                }
+                #[cfg(feature = "p384")]
+                DpeProfile::P384Sha384 => {
+                    self.encode_ecdsa_subject_pubkey_info(pub_key, profile_oids::CURVE_P384_OID)
+                }
+                #[cfg(feature = "ml-dsa")]
+                DpeProfile::Mldsa87 => return Err(DpeErrorCode::InvalidArgument),
+            },
             #[cfg(feature = "ml-dsa")]
-            PubKey::Mldsa(pub_key) => self.encode_mldsa_subject_pubkey_info(pub_key)?,
+            PubKey::Mldsa(pub_key) => self.encode_mldsa_subject_pubkey_info(pub_key),
         };
 
         // extensions
@@ -2394,7 +2407,7 @@ impl CertWriter<'_> {
         };
         let sig = okref(&sig)?;
 
-        let sig_bytes_written = self.encode_signature_bit_string(sig)?;
+        let sig_bytes_written = self.encode_signature_bit_string(sig);
 
         let body_size = payload_bytes_written + sig_bytes_written;
 
@@ -2453,15 +2466,26 @@ impl CertWriter<'_> {
         bytes_written += self.encode_rdn(subject_name)?;
 
         // subjectPublicKeyInfo
-        match pub_key {
-            PubKey::Ecdsa(pub_key) => {
-                bytes_written += self.encode_ecdsa_subject_pubkey_info(pub_key)?;
-            }
+        bytes_written += match pub_key {
+            #[cfg_attr(
+                all(not(feature = "p256"), not(feature = "p384")),
+                expect(unused_variables)
+            )]
+            PubKey::Ecdsa(pub_key) => match self.profile {
+                #[cfg(feature = "p256")]
+                DpeProfile::P256Sha256 => {
+                    self.encode_ecdsa_subject_pubkey_info(pub_key, profile_oids::CURVE_P256_OID)
+                }
+                #[cfg(feature = "p384")]
+                DpeProfile::P384Sha384 => {
+                    self.encode_ecdsa_subject_pubkey_info(pub_key, profile_oids::CURVE_P384_OID)
+                }
+                #[cfg(feature = "ml-dsa")]
+                DpeProfile::Mldsa87 => return Err(DpeErrorCode::InvalidArgument),
+            },
             #[cfg(feature = "ml-dsa")]
-            PubKey::Mldsa(pub_key) => {
-                bytes_written += self.encode_mldsa_subject_pubkey_info(pub_key)?;
-            }
-        }
+            PubKey::Mldsa(pub_key) => self.encode_mldsa_subject_pubkey_info(pub_key),
+        };
 
         // attributes
         bytes_written += self.encode_attributes(measurements)?;
@@ -2545,8 +2569,8 @@ impl CertWriter<'_> {
 
         // digestAlgorithms
         bytes_written += self.encode_tag_field(Self::SET_OF_TAG);
-        bytes_written += self.encode_size_field(self.get_hash_alg_id_size(/*tagged=*/ true)?);
-        bytes_written += self.encode_hash_alg_id()?;
+        bytes_written += self.encode_size_field(self.get_hash_alg_id_size(/*tagged=*/ true));
+        bytes_written += self.encode_hash_alg_id();
 
         // encapContentInfo
         bytes_written +=
@@ -2560,16 +2584,16 @@ impl CertWriter<'_> {
 
         let signed_data_field_0 = self.get_signed_data_size(
             csr_len, sig, sid, /*tagged=*/ true, /*explicit=*/ false,
-        )?;
+        );
 
         let signed_data_field_1 = self.get_signed_data_size(
             csr_len, sig, sid, /*tagged=*/ false, /*explicit=*/ false,
-        )?;
+        );
 
         // signerInfos
         bytes_written += self.encode_tag_field(Self::SET_OF_TAG);
         bytes_written +=
-            self.encode_size_field(self.get_signer_info_size(sig, sid, /*tagged=*/ true)?);
+            self.encode_size_field(self.get_signer_info_size(sig, sid, /*tagged=*/ true));
         bytes_written += self.encode_signer_info(sig, sid)?;
 
         {
@@ -2986,10 +3010,12 @@ pub(crate) mod tests {
     use crate::dpe_instance::tests::DPE_PROFILE;
     use crate::error::{DpeErrorCode, InternalErrorCode};
     use crate::tci::{TciMeasurement, TciNodeData};
+    #[cfg(any(feature = "p256", feature = "p384"))]
+    use crate::x509::profile_oids;
     use crate::x509::{CertWriter, DirectoryString, MeasurementData, Name, TciNodes};
     use crate::DpeProfile;
     use crate::MAX_HANDLES;
-    #[cfg(not(feature = "ml-dsa"))]
+    #[cfg(any(feature = "p384", feature = "p256"))]
     use caliptra_dpe_crypto::ecdsa::{EcdsaAlgorithm, EcdsaPub, EcdsaPubKey, EcdsaSig};
     #[cfg(feature = "ml-dsa")]
     use caliptra_dpe_crypto::ml_dsa::MldsaPublicKey;
@@ -3007,7 +3033,7 @@ pub(crate) mod tests {
     use cms::signed_data::{SignerIdentifier as CmsSignerIdentifier, SignerInfo as CmsSignerInfo};
     #[cfg(not(feature = "disable_csr"))]
     use der::Decode;
-    #[cfg(not(feature = "ml-dsa"))]
+    #[cfg(any(feature = "p384", feature = "p256"))]
     use der::Encode;
     use openssl::hash::{Hasher, MessageDigest};
     #[cfg(not(feature = "disable_csr"))]
@@ -3231,30 +3257,29 @@ pub(crate) mod tests {
         };
 
         // Public key + signature for the active profile.
-        #[cfg(not(feature = "ml-dsa"))]
+        #[cfg(feature = "p384")]
         let (pub_key, test_sig) = {
             let test_pub = EcdsaPub::from_slice(&[0xAA; ECC_INT_SIZE], &[0xBB; ECC_INT_SIZE]);
-            let pub_key = match DPE_PROFILE.alg() {
-                #[cfg(feature = "p256")]
-                SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit256) => {
-                    PubKey::Ecdsa(EcdsaPubKey::Ecdsa256(test_pub))
-                }
-                #[cfg(feature = "p384")]
-                SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384) => {
-                    PubKey::Ecdsa(EcdsaPubKey::Ecdsa384(test_pub))
-                }
-                _ => panic!("Missing signature"),
-            };
+            let pub_key = PubKey::Ecdsa(EcdsaPubKey::Ecdsa384(test_pub));
             let sig = Signature::Ecdsa(
                 EcdsaSig::from_slice(&[0xCC; ECC_INT_SIZE], &[0xDD; ECC_INT_SIZE]).into(),
             );
             (pub_key, sig)
         };
-        #[cfg(feature = "ml-dsa")]
+        #[cfg(all(feature = "p256", not(feature = "p384")))]
+        let (pub_key, test_sig) = {
+            let test_pub = EcdsaPub::from_slice(&[0xAA; ECC_INT_SIZE], &[0xBB; ECC_INT_SIZE]);
+            let pub_key = PubKey::Ecdsa(EcdsaPubKey::Ecdsa256(test_pub));
+            let sig = Signature::Ecdsa(
+                EcdsaSig::from_slice(&[0xCC; ECC_INT_SIZE], &[0xDD; ECC_INT_SIZE]).into(),
+            );
+            (pub_key, sig)
+        };
+        #[cfg(all(feature = "ml-dsa", not(feature = "p384"), not(feature = "p256")))]
         let (pub_key, test_sig) = {
             const ALGORITHM: MldsaAlgorithm = match DPE_PROFILE.alg() {
                 SignatureAlgorithm::Mldsa(a) => a,
-                _ => panic!("non ml-dsa profile"),
+                _ => panic!("non-ml-dsa profile in ml-dsa test"),
             };
             (
                 PubKey::Mldsa(MldsaPublicKey::from_slice(
@@ -3314,15 +3339,24 @@ pub(crate) mod tests {
         });
     }
 
-    #[cfg(not(feature = "ml-dsa"))]
+    #[cfg(any(feature = "p384", feature = "p256"))]
     #[test]
     fn test_subject_pubkey() {
         let mut cert = [0u8; 384];
         let test_key = EcdsaPubKey::Ecdsa384(EcdsaPub::default());
 
+        let curve_oid = match DPE_PROFILE {
+            #[cfg(feature = "p256")]
+            DpeProfile::P256Sha256 => profile_oids::CURVE_P256_OID,
+            #[cfg(feature = "p384")]
+            DpeProfile::P384Sha384 => profile_oids::CURVE_P384_OID,
+            #[cfg(feature = "ml-dsa")]
+            DpeProfile::Mldsa87 => unreachable!("mldsa87 is not an ecdsa profile"),
+        };
+
         let mut cert_buf = SliceResponseBuffer::new(&mut cert);
         let mut w = CertWriter::new(&mut cert_buf, DPE_PROFILE, true);
-        let bytes_written = w.encode_ecdsa_subject_pubkey_info(&test_key).unwrap();
+        let bytes_written = w.encode_ecdsa_subject_pubkey_info(&test_key, curve_oid);
 
         SubjectPublicKeyInfo::from_der(&cert[..bytes_written]).unwrap();
 
@@ -3330,13 +3364,12 @@ pub(crate) mod tests {
         let mut ebuf = SliceResponseBuffer::new(&mut empty);
         assert_eq!(
             CertWriter::new(&mut ebuf, DPE_PROFILE, true)
-                .get_ecdsa_subject_pubkey_info_size(&test_key, true)
-                .unwrap(),
+                .get_ecdsa_subject_pubkey_info_size(&test_key, curve_oid, true),
             bytes_written
         );
     }
 
-    #[cfg(feature = "ml-dsa")]
+    #[cfg(all(feature = "ml-dsa", not(feature = "p384"), not(feature = "p256")))]
     #[test]
     fn test_subject_pubkey() {
         let mut cert = [0u8; 4096];
@@ -3344,7 +3377,7 @@ pub(crate) mod tests {
 
         let mut cert_buf = SliceResponseBuffer::new(&mut cert);
         let mut w = CertWriter::new(&mut cert_buf, DPE_PROFILE, true);
-        let bytes_written = w.encode_mldsa_subject_pubkey_info(&test_key).unwrap();
+        let bytes_written = w.encode_mldsa_subject_pubkey_info(&test_key);
 
         SubjectPublicKeyInfo::from_der(&cert[..bytes_written]).unwrap();
 
@@ -3352,8 +3385,7 @@ pub(crate) mod tests {
         let mut ebuf = SliceResponseBuffer::new(&mut empty);
         assert_eq!(
             CertWriter::new(&mut ebuf, DPE_PROFILE, true)
-                .get_mldsa_subject_pubkey_info_size(&test_key, true)
-                .unwrap(),
+                .get_mldsa_subject_pubkey_info_size(&test_key, true),
             bytes_written
         );
     }
@@ -3372,7 +3404,7 @@ pub(crate) mod tests {
         let mut supports_recursive = true;
         let mut cert_buf = SliceResponseBuffer::new(&mut cert);
         let mut w = CertWriter::new(&mut cert_buf, DPE_PROFILE, true);
-        let mut bytes_written = w.encode_tcb_info(&node, supports_recursive).unwrap();
+        let mut bytes_written = w.encode_tcb_info(&node, supports_recursive);
         let mut empty: [u8; 0] = [];
         let mut ebuf = SliceResponseBuffer::new(&mut empty);
         let checker = CertWriter::new(&mut ebuf, DPE_PROFILE, true);
@@ -3380,9 +3412,7 @@ pub(crate) mod tests {
 
         assert_eq!(
             bytes_written,
-            checker
-                .get_tcb_info_size(&node, supports_recursive, true)
-                .unwrap()
+            checker.get_tcb_info_size(&node, supports_recursive, true)
         );
 
         // FWIDs
@@ -3409,15 +3439,13 @@ pub(crate) mod tests {
         supports_recursive = false;
         let mut cert_buf = SliceResponseBuffer::new(&mut cert);
         let mut w = CertWriter::new(&mut cert_buf, DPE_PROFILE, true);
-        bytes_written = w.encode_tcb_info(&node, supports_recursive).unwrap();
+        bytes_written = w.encode_tcb_info(&node, supports_recursive);
 
         parsed_tcb_info = asn1::parse_single::<TcbInfo>(&cert[..bytes_written]).unwrap();
 
         assert_eq!(
             bytes_written,
-            checker
-                .get_tcb_info_size(&node, supports_recursive, true)
-                .unwrap()
+            checker.get_tcb_info_size(&node, supports_recursive, true)
         );
 
         // Check that only FWID[0] is present
@@ -3465,13 +3493,13 @@ pub(crate) mod tests {
         serial: DirectoryString::PrintableString(&[0x00; DPE_PROFILE.hash_size() * 2]),
     };
 
-    #[cfg(not(feature = "ml-dsa"))]
+    #[cfg(any(feature = "p384", feature = "p256"))]
     const ECC_INT_SIZE: usize = DPE_PROFILE.ecc_int_size();
 
     const DEFAULT_OTHER_NAME_OID: &[u8] = &[0, 0, 0];
     const DEFAULT_OTHER_NAME_VALUE: &str = "default-other-name";
 
-    #[cfg(not(feature = "ml-dsa"))]
+    #[cfg(any(feature = "p384", feature = "p256"))]
     fn build_test_cert_ecdsa(is_ca: bool, cert_buf: &mut [u8]) -> (usize, X509Certificate<'_>) {
         let mut issuer_der = [0u8; 1024];
         let mut ibuf = SliceResponseBuffer::new(&mut issuer_der);
@@ -3487,12 +3515,12 @@ pub(crate) mod tests {
         let contexts = [context];
 
         let mut hasher = match DPE_PROFILE {
+            #[cfg(feature = "p256")]
             DpeProfile::P256Sha256 => Hasher::new(MessageDigest::sha256()).unwrap(),
+            #[cfg(feature = "p384")]
             DpeProfile::P384Sha384 => Hasher::new(MessageDigest::sha384()).unwrap(),
             #[cfg(feature = "ml-dsa")]
-            DpeProfile::Mldsa87 => {
-                unreachable!("tried to build ecdsa test cert for ml-dsa profile!")
-            }
+            DpeProfile::Mldsa87 => unreachable!("mldsa87 in ecdsa test"),
         };
         let (x, y) = test_pub.as_slice();
         hasher.update(&[0x04]).unwrap();
@@ -3594,7 +3622,7 @@ pub(crate) mod tests {
         (bytes_written, cert)
     }
 
-    #[cfg(feature = "ml-dsa")]
+    #[cfg(all(feature = "ml-dsa", not(feature = "p384"), not(feature = "p256")))]
     fn build_test_cert_mldsa(is_ca: bool, cert_buf: &mut [u8]) -> (usize, X509Certificate<'_>) {
         let mut issuer_der = [0u8; 1024];
         let mut ibuf = SliceResponseBuffer::new(&mut issuer_der);
@@ -3603,7 +3631,7 @@ pub(crate) mod tests {
 
         const ALGORITHM: MldsaAlgorithm = match DPE_PROFILE.alg() {
             SignatureAlgorithm::Mldsa(mldsa_algorithm) => mldsa_algorithm,
-            _ => panic!("tried to build ml-dsa test cert for non ml-dsa profile!"),
+            _ => panic!("non-ml-dsa profile in ml-dsa test"),
         };
 
         let test_pub = MldsaPublicKey::from_slice(&[0xAA; ALGORITHM.public_key_size()]);
@@ -3616,7 +3644,6 @@ pub(crate) mod tests {
 
         let mut hasher = match DPE_PROFILE {
             DpeProfile::Mldsa87 => Hasher::new(MessageDigest::sha384()).unwrap(),
-            _ => unreachable!("tried to build ml-dsa test cert for non ml-dsa profile!"),
         };
         hasher.update(test_pub.as_slice()).unwrap();
         let mut subject_key_identifier = [0u8; MAX_KEY_IDENTIFIER_SIZE];
@@ -3654,17 +3681,15 @@ pub(crate) mod tests {
         };
 
         let pub_key = match DPE_PROFILE.alg() {
-            #[cfg(feature = "ml-dsa")]
             SignatureAlgorithm::Mldsa(MldsaAlgorithm::Mldsa87) => PubKey::Mldsa(test_pub),
-            _ => panic!("Missing signature"),
+            _ => unreachable!("non-ml-dsa profile in ml-dsa test"),
         };
 
         let test_sig: Signature = match DPE_PROFILE.alg() {
-            #[cfg(feature = "ml-dsa")]
             SignatureAlgorithm::Mldsa(MldsaAlgorithm::Mldsa87) => {
                 Signature::Mldsa(MldsaSignature([0xBB; ALGORITHM.signature_size()]))
             }
-            _ => panic!("Missing signature"),
+            _ => unreachable!("non-ml-dsa profile in ml-dsa test"),
         };
 
         let mut sign_cb = |_buf: &dyn ResponseBuffer,
@@ -3712,13 +3737,13 @@ pub(crate) mod tests {
     #[test]
     #[cfg_attr(miri, ignore)]
     fn test_full_leaf() {
-        #[cfg(not(feature = "ml-dsa"))]
+        #[cfg(any(feature = "p384", feature = "p256"))]
         let mut cert_buf = [0u8; 1024];
-        #[cfg(not(feature = "ml-dsa"))]
+        #[cfg(any(feature = "p384", feature = "p256"))]
         let (_, cert) = build_test_cert_ecdsa(false, &mut cert_buf);
-        #[cfg(feature = "ml-dsa")]
+        #[cfg(all(feature = "ml-dsa", not(feature = "p384"), not(feature = "p256")))]
         let mut cert_buf = [0u8; 8192];
-        #[cfg(feature = "ml-dsa")]
+        #[cfg(all(feature = "ml-dsa", not(feature = "p384"), not(feature = "p256")))]
         let (_, cert) = build_test_cert_mldsa(false, &mut cert_buf);
 
         match cert.basic_constraints() {
@@ -3783,13 +3808,13 @@ pub(crate) mod tests {
     #[test]
     #[cfg_attr(miri, ignore)]
     fn test_full_ca() {
-        #[cfg(not(feature = "ml-dsa"))]
+        #[cfg(any(feature = "p384", feature = "p256"))]
         let mut cert_buf = [0u8; 1024];
-        #[cfg(not(feature = "ml-dsa"))]
+        #[cfg(any(feature = "p384", feature = "p256"))]
         let (_, cert) = build_test_cert_ecdsa(true, &mut cert_buf);
-        #[cfg(feature = "ml-dsa")]
+        #[cfg(all(feature = "ml-dsa", not(feature = "p384"), not(feature = "p256")))]
         let mut cert_buf = [0u8; 8192];
-        #[cfg(feature = "ml-dsa")]
+        #[cfg(all(feature = "ml-dsa", not(feature = "p384"), not(feature = "p256")))]
         let (_, cert) = build_test_cert_mldsa(true, &mut cert_buf);
 
         match cert.basic_constraints() {
@@ -3824,7 +3849,9 @@ pub(crate) mod tests {
 
         let pub_key = &cert.tbs_certificate.subject_pki.subject_public_key.data;
         let mut hasher = match DPE_PROFILE {
+            #[cfg(feature = "p256")]
             DpeProfile::P256Sha256 => Hasher::new(MessageDigest::sha256()).unwrap(),
+            #[cfg(feature = "p384")]
             DpeProfile::P384Sha384 => Hasher::new(MessageDigest::sha384()).unwrap(),
             #[cfg(feature = "ml-dsa")]
             DpeProfile::Mldsa87 => Hasher::new(MessageDigest::sha384()).unwrap(),
@@ -3910,6 +3937,7 @@ pub(crate) mod tests {
         let n = w.encode_multi_tcb_info(&measurements).unwrap();
 
         let expected: &[u8] = match DPE_PROFILE {
+            #[cfg(feature = "p256")]
             DpeProfile::P256Sha256 => &[
                 0x30, 0x81, 0x89, // SEQUENCE
                 0x06, 0x06, 0x67, 0x81, 0x05, 0x05, 0x04, 0x05, // OID 2.23.133.5.4.5
@@ -3942,7 +3970,45 @@ pub(crate) mod tests {
                 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, //
                 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, //
             ],
-            _ => &[
+            #[cfg(feature = "p384")]
+            DpeProfile::P384Sha384 => &[
+                0x30, 0x81, 0xac, // SEQUENCE
+                0x06, 0x06, 0x67, 0x81, 0x05, 0x05, 0x04, 0x05, // OID 2.23.133.5.4.5
+                0x01, 0x01, 0xff, // BOOLEAN critical
+                0x04, 0x81, 0x9e, // OCTET STRING
+                0x30, 0x81, 0x9b, // SEQUENCE OF
+                0x30, 0x81, 0x98, // TcbInfo SEQUENCE
+                0x83, 0x01, 0x00, // [3] svn
+                0xa6, 0x3f, // [6] fwids
+                0x30, 0x3d, // FWID SEQUENCE
+                0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, // hashAlg
+                0x04, 0x02, 0x02, // SHA-384
+                0x04, 0x30, // digest OCTET STRING (48 bytes)
+                0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, //
+                0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, //
+                0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, //
+                0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, //
+                0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, //
+                0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, //
+                0x88, 0x04, 0x05, 0x06, 0x07, 0x08, // [8] vendorInfo (locality)
+                0x89, 0x04, 0x04, 0x03, 0x02, 0x01, // [9] tci_type
+                0xab, 0x46, // [11] integrityRegisters
+                0x30, 0x44, // IntegrityRegister SEQUENCE
+                0x81, 0x01, 0x00, // [1] registerNum
+                0xa2, 0x3f, // [2] registerDigests
+                0x30, 0x3d, // FWID SEQUENCE
+                0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, // hashAlg
+                0x04, 0x02, 0x02, // SHA-384
+                0x04, 0x30, // digest OCTET STRING (48 bytes)
+                0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, //
+                0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, //
+                0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, //
+                0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, //
+                0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, //
+                0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, 0xbb, //
+            ],
+            #[cfg(feature = "ml-dsa")]
+            DpeProfile::Mldsa87 => &[
                 0x30, 0x81, 0xac, // SEQUENCE
                 0x06, 0x06, 0x67, 0x81, 0x05, 0x05, 0x04, 0x05, // OID 2.23.133.5.4.5
                 0x01, 0x01, 0xff, // BOOLEAN critical
@@ -4144,7 +4210,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    #[cfg(not(feature = "ml-dsa"))]
+    #[cfg(any(feature = "p384", feature = "p256"))]
     fn test_encode_cms_rejects_unresolved_backtrack() {
         let mut buf = [0u8; 4096];
         let mut sbuf = SliceResponseBuffer::new(&mut buf);
@@ -4267,7 +4333,7 @@ pub(crate) mod tests {
     // Expected DER bytes of SEQUENCE { INTEGER(r), INTEGER(s) } for our ECDSA test sig.
     // Both r=[0xCC; ECC_INT_SIZE] and s=[0xDD; ECC_INT_SIZE] have the high bit set,
     // so DER INTEGER encoding prepends 0x00.
-    #[cfg(not(feature = "ml-dsa"))]
+    #[cfg(any(feature = "p384", feature = "p256"))]
     fn expected_ecdsa_sig_der() -> Vec<u8> {
         let int_len = ECC_INT_SIZE + 1; // value bytes including 0x00 sign extension
         let seq_content = 4 + 2 * int_len; // two integers: (tag + len + value) * 2
@@ -4289,7 +4355,7 @@ pub(crate) mod tests {
 
     // ---- encode_tbs correctness tests ----
 
-    #[cfg(not(feature = "ml-dsa"))]
+    #[cfg(any(feature = "p384", feature = "p256"))]
     fn run_encode_tbs_ecdsa(n_nodes: usize, max_size: bool) {
         let test_pub = EcdsaPub::from_slice(&[0xAA; ECC_INT_SIZE], &[0xBB; ECC_INT_SIZE]);
         let pub_key = match DPE_PROFILE.alg() {
@@ -4400,18 +4466,18 @@ pub(crate) mod tests {
         );
     }
 
-    #[cfg(not(feature = "ml-dsa"))]
+    #[cfg(any(feature = "p384", feature = "p256"))]
     #[test]
     fn test_encode_tbs_ecdsa() {
         run_encode_tbs_ecdsa(1, false);
         run_encode_tbs_ecdsa(MAX_HANDLES, true);
     }
 
-    #[cfg(feature = "ml-dsa")]
+    #[cfg(all(feature = "ml-dsa", not(feature = "p384"), not(feature = "p256")))]
     fn run_encode_tbs_mldsa(n_nodes: usize, max_size: bool) {
         const ALGORITHM: MldsaAlgorithm = match DPE_PROFILE.alg() {
             SignatureAlgorithm::Mldsa(a) => a,
-            _ => panic!("non ml-dsa profile"),
+            _ => panic!("non-ml-dsa profile in ml-dsa test"),
         };
         let test_pub = MldsaPublicKey::from_slice(&[0xAAu8; ALGORITHM.public_key_size()]);
         let pub_key = PubKey::Mldsa(test_pub);
@@ -4500,7 +4566,7 @@ pub(crate) mod tests {
         );
     }
 
-    #[cfg(feature = "ml-dsa")]
+    #[cfg(all(feature = "ml-dsa", not(feature = "p384"), not(feature = "p256")))]
     #[test]
     fn test_encode_tbs_mldsa() {
         run_encode_tbs_mldsa(1, false);
@@ -4521,7 +4587,7 @@ pub(crate) mod tests {
         attributes: asn1::Tlv<'a>,
     }
 
-    #[cfg(not(feature = "ml-dsa"))]
+    #[cfg(any(feature = "p384", feature = "p256"))]
     fn run_encode_cri_ecdsa(n_nodes: usize, max_size: bool) {
         let test_pub = EcdsaPub::from_slice(&[0xAA; ECC_INT_SIZE], &[0xBB; ECC_INT_SIZE]);
         let pub_key = match DPE_PROFILE.alg() {
@@ -4615,18 +4681,18 @@ pub(crate) mod tests {
         );
     }
 
-    #[cfg(not(feature = "ml-dsa"))]
+    #[cfg(any(feature = "p384", feature = "p256"))]
     #[test]
     fn test_encode_cri_ecdsa() {
         run_encode_cri_ecdsa(1, false);
         run_encode_cri_ecdsa(MAX_HANDLES, true);
     }
 
-    #[cfg(feature = "ml-dsa")]
+    #[cfg(all(feature = "ml-dsa", not(feature = "p384"), not(feature = "p256")))]
     fn run_encode_cri_mldsa(n_nodes: usize, max_size: bool) {
         const ALGORITHM: MldsaAlgorithm = match DPE_PROFILE.alg() {
             SignatureAlgorithm::Mldsa(a) => a,
-            _ => panic!("non ml-dsa profile"),
+            _ => panic!("non-ml-dsa profile in ml-dsa test"),
         };
         let test_pub = MldsaPublicKey::from_slice(&[0xAAu8; ALGORITHM.public_key_size()]);
         let pub_key = PubKey::Mldsa(test_pub);
@@ -4687,7 +4753,7 @@ pub(crate) mod tests {
         );
     }
 
-    #[cfg(feature = "ml-dsa")]
+    #[cfg(all(feature = "ml-dsa", not(feature = "p384"), not(feature = "p256")))]
     #[test]
     fn test_encode_cri_mldsa() {
         run_encode_cri_mldsa(1, false);
@@ -4696,7 +4762,7 @@ pub(crate) mod tests {
 
     // ---- encode_csr correctness tests ----
 
-    #[cfg(not(feature = "ml-dsa"))]
+    #[cfg(any(feature = "p384", feature = "p256"))]
     fn run_encode_csr_ecdsa(n_nodes: usize, max_size: bool) {
         let test_pub = EcdsaPub::from_slice(&[0xAA; ECC_INT_SIZE], &[0xBB; ECC_INT_SIZE]);
         let pub_key = match DPE_PROFILE.alg() {
@@ -4807,18 +4873,18 @@ pub(crate) mod tests {
         );
     }
 
-    #[cfg(not(feature = "ml-dsa"))]
+    #[cfg(any(feature = "p384", feature = "p256"))]
     #[test]
     fn test_encode_csr_ecdsa() {
         run_encode_csr_ecdsa(1, false);
         run_encode_csr_ecdsa(MAX_HANDLES, true);
     }
 
-    #[cfg(feature = "ml-dsa")]
+    #[cfg(all(feature = "ml-dsa", not(feature = "p384"), not(feature = "p256")))]
     fn run_encode_csr_mldsa(n_nodes: usize, max_size: bool) {
         const ALGORITHM: MldsaAlgorithm = match DPE_PROFILE.alg() {
             SignatureAlgorithm::Mldsa(a) => a,
-            _ => panic!("non ml-dsa profile"),
+            _ => panic!("non-ml-dsa profile in ml-dsa test"),
         };
         let test_pub = MldsaPublicKey::from_slice(&[0xAAu8; ALGORITHM.public_key_size()]);
         let pub_key = PubKey::Mldsa(test_pub);
@@ -4888,7 +4954,7 @@ pub(crate) mod tests {
         );
     }
 
-    #[cfg(feature = "ml-dsa")]
+    #[cfg(all(feature = "ml-dsa", not(feature = "p384"), not(feature = "p256")))]
     #[test]
     fn test_encode_csr_mldsa() {
         run_encode_csr_mldsa(1, false);
@@ -4897,7 +4963,7 @@ pub(crate) mod tests {
 
     // ---- encode_signer_info correctness tests ----
 
-    #[cfg(not(feature = "ml-dsa"))]
+    #[cfg(any(feature = "p384", feature = "p256"))]
     fn run_encode_signer_info_ecdsa(
         issuer_der: &[u8],
         serial: &[u8],
@@ -5016,7 +5082,7 @@ pub(crate) mod tests {
         }
     }
 
-    #[cfg(not(feature = "ml-dsa"))]
+    #[cfg(any(feature = "p384", feature = "p256"))]
     #[test]
     fn test_encode_signer_info_ecdsa() {
         // Typical case: small issuer name that fits within MAX_ISSUER_NAME_SIZE=128
@@ -5033,7 +5099,7 @@ pub(crate) mod tests {
         run_encode_signer_info_ecdsa(&issuer_der_max, &serial_max, &ski_max);
     }
 
-    #[cfg(feature = "ml-dsa")]
+    #[cfg(all(feature = "ml-dsa", not(feature = "p384"), not(feature = "p256")))]
     fn run_encode_signer_info_mldsa(
         issuer_der: &[u8],
         serial: &[u8],
@@ -5041,7 +5107,7 @@ pub(crate) mod tests {
     ) {
         const ALGORITHM: MldsaAlgorithm = match DPE_PROFILE.alg() {
             SignatureAlgorithm::Mldsa(a) => a,
-            _ => panic!("non ml-dsa profile"),
+            _ => panic!("non-ml-dsa profile in ml-dsa test"),
         };
         let test_sig = Signature::Mldsa(MldsaSignature([0xBBu8; ALGORITHM.signature_size()]));
 
@@ -5111,7 +5177,7 @@ pub(crate) mod tests {
         }
     }
 
-    #[cfg(feature = "ml-dsa")]
+    #[cfg(all(feature = "ml-dsa", not(feature = "p384"), not(feature = "p256")))]
     #[test]
     fn test_encode_signer_info_mldsa() {
         let issuer_der_typical = encode_issuer_der(14, 20);

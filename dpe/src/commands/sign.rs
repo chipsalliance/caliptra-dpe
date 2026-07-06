@@ -75,12 +75,11 @@ impl SignCommand<'_> {
             DpeProfile::P384Sha384 => SignCommand::parse_command(SignCommand::P384, bytes),
             #[cfg(feature = "ml-dsa")]
             DpeProfile::Mldsa87 => SignCommand::deserialize_mldsa87(bytes),
-            _ => Err(DpeErrorCode::InvalidArgument)?,
         }
     }
 
     #[cfg(feature = "ml-dsa")]
-    fn deserialize_mldsa87(bytes: &[u8]) -> Result<SignCommand, DpeErrorCode> {
+    fn deserialize_mldsa87(bytes: &[u8]) -> Result<SignCommand<'_>, DpeErrorCode> {
         // Only need the prefix to inspect the flags.
         let header = SignMldsa87Header::ref_from_prefix(bytes)
             .map_err(|_| DpeErrorCode::InvalidArgument)?
@@ -371,9 +370,9 @@ mod tests {
     use super::*;
     #[cfg(any(feature = "p256", feature = "p384"))]
     use crate::commands::tests::TEST_DIGEST;
-    #[cfg(feature = "ml-dsa")]
+    #[cfg(all(feature = "ml-dsa", not(feature = "p384"), not(feature = "p256")))]
     use crate::commands::{sign::SignMldsa87Cmd as SignCmd, CertifyKeyMldsa87Cmd as CertifyKeyCmd};
-    #[cfg(feature = "p256")]
+    #[cfg(all(feature = "p256", not(feature = "p384")))]
     use crate::commands::{sign::SignP256Cmd as SignCmd, CertifyKeyP256Cmd as CertifyKeyCmd};
     #[cfg(feature = "p384")]
     use crate::commands::{sign::SignP384Cmd as SignCmd, CertifyKeyP384Cmd as CertifyKeyCmd};
@@ -400,13 +399,13 @@ mod tests {
     };
     use zerocopy::IntoBytes;
 
-    #[cfg(feature = "ml-dsa")]
+    #[cfg(all(feature = "ml-dsa", not(feature = "p384"), not(feature = "p256")))]
     const TEST_SIGN_DIGEST: [u8; 64] = [
         1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
         26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48,
         49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64,
     ];
-    #[cfg(not(feature = "ml-dsa"))]
+    #[cfg(any(feature = "p256", feature = "p384"))]
     const TEST_SIGN_DIGEST: [u8; DPE_PROFILE.hash_size()] = TEST_DIGEST;
 
     const TEST_SIGN_CMD: SignCmd = SignCmd {
@@ -425,11 +424,11 @@ mod tests {
         command[..size_of::<CommandHdr>()].copy_from_slice(hdr.as_bytes());
         command[size_of::<CommandHdr>()..].copy_from_slice(TEST_SIGN_CMD.as_bytes());
 
-        #[cfg(feature = "p256")]
-        let expected = Command::Sign(SignCommand::P256(&TEST_SIGN_CMD));
         #[cfg(feature = "p384")]
         let expected = Command::Sign(SignCommand::P384(&TEST_SIGN_CMD));
-        #[cfg(feature = "ml-dsa")]
+        #[cfg(all(feature = "p256", not(feature = "p384")))]
+        let expected = Command::Sign(SignCommand::P256(&TEST_SIGN_CMD));
+        #[cfg(all(feature = "ml-dsa", not(feature = "p384"), not(feature = "p256")))]
         let expected = Command::Sign(SignCommand::Mldsa87(&TEST_SIGN_CMD));
         assert_eq!(Ok(expected), Command::deserialize(DPE_PROFILE, command));
     }
@@ -540,13 +539,26 @@ mod tests {
             }
         };
         match DPE_PROFILE {
-            #[cfg(any(feature = "p256", feature = "p384"))]
-            DpeProfile::P256Sha256 | DpeProfile::P384Sha384 => {
+            #[cfg(feature = "p256")]
+            DpeProfile::P256Sha256 => {
                 let cert_bytes = certify_resp.cert().unwrap();
                 let (r, s) = match sign_resp {
-                    #[cfg(feature = "p256")]
                     SignResp::P256(resp) => (resp.sig_r.to_vec(), resp.sig_s.to_vec()),
-                    #[cfg(feature = "p384")]
+                    _ => panic!("Incorrect response type"),
+                };
+                let sig = EcdsaSig::from_private_components(
+                    BigNum::from_slice(&r).unwrap(),
+                    BigNum::from_slice(&s).unwrap(),
+                )
+                .unwrap();
+                let x509 = X509::from_der(cert_bytes).unwrap();
+                let pub_key = x509.public_key().unwrap().ec_key().unwrap();
+                assert!(sig.verify(&TEST_SIGN_DIGEST, &pub_key).unwrap());
+            }
+            #[cfg(feature = "p384")]
+            DpeProfile::P384Sha384 => {
+                let cert_bytes = certify_resp.cert().unwrap();
+                let (r, s) = match sign_resp {
                     SignResp::P384(resp) => (resp.sig_r.to_vec(), resp.sig_s.to_vec()),
                     _ => panic!("Incorrect response type"),
                 };
@@ -555,13 +567,11 @@ mod tests {
                     BigNum::from_slice(&s).unwrap(),
                 )
                 .unwrap();
-
                 let x509 = X509::from_der(cert_bytes).unwrap();
                 let pub_key = x509.public_key().unwrap().ec_key().unwrap();
-
                 assert!(sig.verify(&TEST_SIGN_DIGEST, &pub_key).unwrap());
             }
-            #[cfg(feature = "ml-dsa")]
+            #[cfg(all(feature = "ml-dsa", not(feature = "p384"), not(feature = "p256")))]
             DpeProfile::Mldsa87 => {
                 use crate::response::CertifyKeyResp;
                 use ml_dsa::{EncodedSignature, EncodedVerifyingKey, VerifyingKey};
