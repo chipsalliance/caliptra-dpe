@@ -43,7 +43,10 @@ use crate::error::DpeErrorCode;
 use crate::response::ResponseHdr;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout, TryFromBytes};
 
-pub use caliptra_dpe_crypto::{ecdsa::EcdsaAlgorithm, ExportedCdiHandle, MAX_EXPORTED_CDI_SIZE};
+pub use caliptra_dpe_crypto::{
+    ecdsa::EcdsaAlgorithm, DigestAlgorithm, DigestType, ExportedCdiHandle, SignDataType,
+    SignatureAlgorithm, SignatureType, MAX_EXPORTED_CDI_SIZE,
+};
 
 // Max cert/CSR size returned by CertifyKey.
 include!(concat!(env!("OUT_DIR"), "/max_cert_size.rs"));
