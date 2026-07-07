@@ -347,6 +347,7 @@ impl DpeValidator<'_> {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 pub mod tests {
     use crate::{
         context::{Children, Context, ContextHandle, ContextState, ContextType},

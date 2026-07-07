@@ -67,7 +67,10 @@ pub enum SignCommand<'a> {
 }
 
 impl SignCommand<'_> {
-    pub fn deserialize(profile: DpeProfile, bytes: &[u8]) -> Result<SignCommand<'_>, DpeErrorCode> {
+    pub fn deserialize(
+        profile: DpeProfile,
+        bytes: &'_ [u8],
+    ) -> Result<SignCommand<'_>, DpeErrorCode> {
         match profile {
             #[cfg(feature = "p256")]
             DpeProfile::P256Sha256 => SignCommand::parse_command(SignCommand::P256, bytes),
@@ -79,7 +82,7 @@ impl SignCommand<'_> {
     }
 
     #[cfg(feature = "ml-dsa")]
-    fn deserialize_mldsa87(bytes: &[u8]) -> Result<SignCommand<'_>, DpeErrorCode> {
+    fn deserialize_mldsa87(bytes: &'_ [u8]) -> Result<SignCommand<'_>, DpeErrorCode> {
         // Only need the prefix to inspect the flags.
         let header = SignMldsa87Header::ref_from_prefix(bytes)
             .map_err(|_| DpeErrorCode::InvalidArgument)?
@@ -330,6 +333,7 @@ impl CommandExecution for SignP384Cmd {
 #[cfg(feature = "ml-dsa")]
 #[repr(C, align(4))]
 #[derive(Debug, PartialEq, Eq, IntoBytes, FromBytes, Immutable, KnownLayout)]
+#[allow(dead_code)]
 pub struct SignMldsa87Cmd {
     pub handle: ContextHandle,
     pub label: [u8; 48],
@@ -366,6 +370,7 @@ impl CommandExecution for SignMldsa87RawCmd {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
     #[cfg(any(feature = "p256", feature = "p384"))]

@@ -346,7 +346,7 @@ pub trait CommandExecution {
         // miri alignment: use u32 buffer to ensure 4-byte alignment for zerocopy
         macro_rules! exec {
             ($resp_type:ty, $f:expr) => {{
-                let mut buf = [0u32; (size_of::<$resp_type>() + 3) / 4];
+                let mut buf = [0u32; size_of::<$resp_type>().div_ceil(4)];
                 let mut resp_buf = SliceResponseBuffer::new(buf.as_mut_bytes());
                 self.execute_serialized(dpe, env, locality, &mut resp_buf)?;
                 <$resp_type>::try_read_from_bytes(buf.as_bytes())
@@ -502,6 +502,7 @@ impl TryFrom<&[u8]> for CommandHdr {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 pub mod tests {
     use super::*;
     use crate::dpe_instance::tests::DPE_PROFILE;

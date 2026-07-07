@@ -5,7 +5,8 @@ use clap::{Parser, Subcommand};
 use std::path::Path;
 use std::process::Command;
 
-// TODO(clundin): Support "hybrid"
+// Note: "hybrid" is linted via the cert-size binary check in run_ci() but doesn't need
+// separate test runs since individual profiles already validate each algorithm's behavior
 const PROFILES: &[&str] = &["ml-dsa", "p256", "p384"];
 /// Pinned nightly toolchain version. Must match the version in flake.nix shellHook.
 const NIGHTLY: &str = "nightly-2025-07-08";
@@ -571,6 +572,9 @@ fn cargo_clippy(opts: &CargoOptions) -> Result<()> {
     let mut cmd = cargo().args(["clippy", "--manifest-path", opts.manifest_path]);
     if let Some(bin) = opts.bin {
         cmd = cmd.arg("--bin").arg(bin);
+    } else {
+        // Check all targets (lib, bins, tests, benches, examples) when not targeting a specific binary
+        cmd = cmd.arg("--all-targets");
     }
     if !opts.features.is_empty() {
         cmd = cmd.arg(format!("--features={}", opts.features));

@@ -416,6 +416,7 @@ impl Iterator for FlagsIter {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 pub mod tests {
     use super::*;
     use crate::commands::tests::DEFAULT_PLATFORM;

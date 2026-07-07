@@ -1128,7 +1128,6 @@ impl CertWriter<'_> {
         // detected by the offset surpassing the certificate length at the end of an encode run,
         // and thus the error reporting is elided here to save instruction space.
         let _ = self.certificate.write_at(self.offset, bytes);
-
         // Note: Increment the offset regardless of whether the write occurred to allow detection
         // of encoding overflows.
         self.offset += size;
@@ -1141,7 +1140,6 @@ impl CertWriter<'_> {
         // detected by the offset surpassing the certificate length at the end of an encode run,
         // and thus the error reporting is elided here to save instruction space.
         let _ = self.certificate.write_at(self.offset, &[byte]);
-
         // Note: Increment the offset regardless of whether the write occurred to allow detection
         // of encoding overflows.
         self.offset += 1;
@@ -3005,6 +3003,7 @@ fn create_dpe_cert_or_csr(
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 pub(crate) mod tests {
     use crate::context::{Context, ContextState};
     use crate::dpe_instance::tests::DPE_PROFILE;
@@ -3781,7 +3780,7 @@ pub(crate) mod tests {
             _ => (),
         }
 
-        if let Err(_) = cert.get_extension_unique(&oid!(2.5.29 .35)) {
+        if cert.get_extension_unique(&oid!(2.5.29 .35)).is_err() {
             panic!("multiple authority key identifier extensions found")
         }
 
@@ -3913,7 +3912,7 @@ pub(crate) mod tests {
         context
     }
 
-    fn build_test_measurements<'a>(contexts: &'a [Context], is_ca: bool) -> MeasurementData<'a> {
+    fn build_test_measurements(contexts: &[Context], is_ca: bool) -> MeasurementData<'_> {
         MeasurementData {
             label: &[0xAA; 4],
             tci_nodes: TciNodes::new(0, contexts).unwrap(),
@@ -4306,8 +4305,8 @@ pub(crate) mod tests {
     }
 
     fn encode_issuer_der(cn_len: usize, serial_len: usize) -> Vec<u8> {
-        let cn: Vec<u8> = std::iter::repeat(b'A').take(cn_len).collect();
-        let sn: Vec<u8> = std::iter::repeat(b'0').take(serial_len).collect();
+        let cn: Vec<u8> = std::iter::repeat_n(b'A', cn_len).collect();
+        let sn: Vec<u8> = std::iter::repeat_n(b'0', serial_len).collect();
         let name = Name {
             cn: DirectoryString::PrintableString(&cn),
             serial: DirectoryString::PrintableString(&sn),
@@ -4344,12 +4343,12 @@ pub(crate) mod tests {
         v.push(0x02);
         v.push(int_len as u8);
         v.push(0x00);
-        v.extend(std::iter::repeat(0xCC).take(ECC_INT_SIZE));
+        v.extend(std::iter::repeat_n(0xCC, ECC_INT_SIZE));
         // s
         v.push(0x02);
         v.push(int_len as u8);
         v.push(0x00);
-        v.extend(std::iter::repeat(0xDD).take(ECC_INT_SIZE));
+        v.extend(std::iter::repeat_n(0xDD, ECC_INT_SIZE));
         v
     }
 
@@ -4379,7 +4378,7 @@ pub(crate) mod tests {
         let (issuer_der, label_bytes, other_name_value) = if max_size {
             let issuer = encode_issuer_der(40, 60);
             let label = vec![0xAB; MAX_UEID_SIZE];
-            let other_name: Vec<u8> = std::iter::repeat(b'X').take(MAX_OTHER_NAME_SIZE).collect();
+            let other_name: Vec<u8> = std::iter::repeat_n(b'X', MAX_OTHER_NAME_SIZE).collect();
             (issuer, label, other_name)
         } else {
             let issuer = encode_issuer_der(14, DPE_PROFILE.hash_size() * 2);
@@ -4491,7 +4490,7 @@ pub(crate) mod tests {
         let (issuer_der, label_bytes, other_name_value) = if max_size {
             let issuer = encode_issuer_der(40, 60);
             let label = vec![0xAB; MAX_UEID_SIZE];
-            let other_name: Vec<u8> = std::iter::repeat(b'X').take(MAX_OTHER_NAME_SIZE).collect();
+            let other_name: Vec<u8> = std::iter::repeat_n(b'X', MAX_OTHER_NAME_SIZE).collect();
             (issuer, label, other_name)
         } else {
             let issuer = encode_issuer_der(14, DPE_PROFILE.hash_size() * 2);
@@ -4608,7 +4607,7 @@ pub(crate) mod tests {
             vec![0u8; DPE_PROFILE.hash_size()]
         };
         let other_name_value: Vec<u8> = if max_size {
-            std::iter::repeat(b'X').take(MAX_OTHER_NAME_SIZE).collect()
+            std::iter::repeat_n(b'X', MAX_OTHER_NAME_SIZE).collect()
         } else {
             DEFAULT_OTHER_NAME_VALUE.as_bytes().to_vec()
         };
@@ -4703,7 +4702,7 @@ pub(crate) mod tests {
             vec![0u8; DPE_PROFILE.hash_size()]
         };
         let other_name_value: Vec<u8> = if max_size {
-            std::iter::repeat(b'X').take(MAX_OTHER_NAME_SIZE).collect()
+            std::iter::repeat_n(b'X', MAX_OTHER_NAME_SIZE).collect()
         } else {
             DEFAULT_OTHER_NAME_VALUE.as_bytes().to_vec()
         };
@@ -4797,7 +4796,7 @@ pub(crate) mod tests {
             vec![0u8; DPE_PROFILE.hash_size()]
         };
         let other_name_value: Vec<u8> = if max_size {
-            std::iter::repeat(b'X').take(MAX_OTHER_NAME_SIZE).collect()
+            std::iter::repeat_n(b'X', MAX_OTHER_NAME_SIZE).collect()
         } else {
             DEFAULT_OTHER_NAME_VALUE.as_bytes().to_vec()
         };
@@ -4899,7 +4898,7 @@ pub(crate) mod tests {
             vec![0u8; DPE_PROFILE.hash_size()]
         };
         let other_name_value: Vec<u8> = if max_size {
-            std::iter::repeat(b'X').take(MAX_OTHER_NAME_SIZE).collect()
+            std::iter::repeat_n(b'X', MAX_OTHER_NAME_SIZE).collect()
         } else {
             DEFAULT_OTHER_NAME_VALUE.as_bytes().to_vec()
         };

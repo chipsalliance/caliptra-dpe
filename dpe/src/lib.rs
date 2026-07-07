@@ -231,6 +231,7 @@ impl<const N: usize> AlignedBuf<N> {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 pub(crate) mod tests {
     /// Convenience function to initialize logging for unit tests
     ///

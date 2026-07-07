@@ -103,6 +103,7 @@ impl Support {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 pub mod test {
     use super::*;
     use crate::bitflags_join;

@@ -413,6 +413,7 @@ impl CertifyKeyResponseHeader {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
     #[cfg(all(feature = "ml-dsa", not(feature = "p384"), not(feature = "p256")))]
@@ -937,7 +938,7 @@ mod tests {
         // Verify we have MAX_HANDLES TCB infos
         for _ in 0..MAX_HANDLES {
             let tcb_info = parsed_tcb_infos.next().unwrap();
-            assert_eq!(tcb_info.tci_type.unwrap(), &(0 as u32).to_le_bytes());
+            assert_eq!(tcb_info.tci_type.unwrap(), &0_u32.to_le_bytes());
         }
         assert!(parsed_tcb_infos.next().is_none());
     }

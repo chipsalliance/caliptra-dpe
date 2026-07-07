@@ -524,6 +524,7 @@ impl Default for DeriveContextCmd {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
     #[cfg(feature = "p256")]
@@ -880,7 +881,7 @@ mod tests {
                 Response::CertifyKey(resp) => resp,
                 _ => panic!("Incorrect response type"),
             };
-            let x509 = X509::from_der(&certify_resp.cert().unwrap()).unwrap();
+            let x509 = X509::from_der(certify_resp.cert().unwrap()).unwrap();
             x509.public_key().unwrap().ec_key().unwrap()
         };
         #[cfg(feature = "ml-dsa")]
@@ -1533,9 +1534,7 @@ mod tests {
                 .count(),
             env.state.contexts.len()
         );
-        let validator = DpeValidator {
-            dpe: &mut env.state,
-        };
+        let validator = DpeValidator { dpe: env.state };
         assert!(validator.validate_dpe().is_ok());
     }
 
@@ -1564,9 +1563,7 @@ mod tests {
             panic!("expected to get a valid DeriveContextExportedCdi response.");
         };
 
-        let validator = DpeValidator {
-            dpe: &mut env.state,
-        };
+        let validator = DpeValidator { dpe: env.state };
         assert!(validator.validate_dpe().is_ok());
 
         // Parent is still valid.
@@ -1676,9 +1673,7 @@ mod tests {
         assert_eq!(env.state.contexts[root_idx].state, ContextState::Active);
         assert_eq!(env.state.contexts[root_idx].handle, parent_handle);
 
-        let validator = DpeValidator {
-            dpe: &mut env.state,
-        };
+        let validator = DpeValidator { dpe: env.state };
         assert!(validator.validate_dpe().is_ok());
     }
 
@@ -1764,9 +1759,7 @@ mod tests {
             ContextHandle::new_invalid()
         );
 
-        let validator = DpeValidator {
-            dpe: &mut env.state,
-        };
+        let validator = DpeValidator { dpe: env.state };
         assert!(validator.validate_dpe().is_ok());
     }
 
