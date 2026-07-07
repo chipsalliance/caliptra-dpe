@@ -74,7 +74,7 @@ dependencies = [
 [[package]]
 name = "caliptra-cfi-derive"
 version = "0.1.0"
-source = "git+https://github.com/chipsalliance/caliptra-cfi.git?rev=aa96c53073ce7f298f7482c1ac57f5f65ffc115e#aa96c53073ce7f298f7482c1ac57f5f65ffc115e"
+source = "git+https://github.com/chipsalliance/caliptra-cfi.git?rev=72c75dc70cde4120a9ce149d4f5cb21621399958#72c75dc70cde4120a9ce149d4f5cb21621399958"
 dependencies = [
  "pastey",
  "proc-macro2",
@@ -83,19 +83,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "caliptra-cfi-lib"
-version = "0.1.0"
-source = "git+https://github.com/chipsalliance/caliptra-cfi.git?rev=aa96c53073ce7f298f7482c1ac57f5f65ffc115e#aa96c53073ce7f298f7482c1ac57f5f65ffc115e"
-
-[[package]]
 name = "caliptra-dpe"
 version = "0.1.0"
 dependencies = [
  "bitflags",
  "caliptra-cfi-derive",
- "caliptra-cfi-lib",
  "caliptra-dpe-crypto",
  "caliptra-dpe-platform",
+ "caliptra-dpe-response-buffer",
  "cfg-if",
  "constant_time_eq",
  "ufmt",
@@ -110,7 +105,7 @@ dependencies = [
  "arrayvec",
  "base64ct",
  "caliptra-cfi-derive",
- "caliptra-cfi-lib",
+ "caliptra-dpe-response-buffer",
  "caliptra-dpe-test-artifacts",
  "constant_time_eq",
  "ecdsa",
@@ -136,6 +131,10 @@ dependencies = [
  "ufmt",
  "x509-cert",
 ]
+
+[[package]]
+name = "caliptra-dpe-response-buffer"
+version = "0.1.0"
 
 [[package]]
 name = "caliptra-dpe-test-artifacts"

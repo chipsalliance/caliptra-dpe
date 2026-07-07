@@ -9,9 +9,8 @@ use crate::{
 use bitflags::bitflags;
 #[cfg(feature = "cfi")]
 use caliptra_cfi_derive::cfi_impl_fn;
-use caliptra_cfi_lib::cfi_launder;
 #[cfg(feature = "cfi")]
-use caliptra_cfi_lib::{cfi_assert, cfi_assert_bool, cfi_assert_ne};
+use caliptra_cfi_lib::{cfi_assert, cfi_assert_bool, cfi_assert_ne, cfi_launder};
 #[cfg(any(feature = "p256", feature = "p384"))]
 use caliptra_dpe_crypto::ecdsa::EcdsaSignature;
 use caliptra_dpe_crypto::{SignData, Signature};
@@ -273,7 +272,10 @@ fn sign(
     let profile = dpe.profile;
     let context = profile.key_context();
     let key_pair = cdi.derive_key_pair(label, context);
-    if cfi_launder(key_pair.is_ok()) {
+    let key_pair_ok = key_pair.is_ok();
+    #[cfg(feature = "cfi")]
+    let key_pair_ok = cfi_launder(key_pair_ok);
+    if key_pair_ok {
         #[cfg(feature = "cfi")]
         cfi_assert!(key_pair.is_ok());
     } else {

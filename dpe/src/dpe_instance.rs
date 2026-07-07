@@ -17,9 +17,8 @@ use crate::{
 };
 #[cfg(feature = "cfi")]
 use caliptra_cfi_derive::cfi_impl_fn;
-use caliptra_cfi_lib::cfi_launder;
 #[cfg(feature = "cfi")]
-use caliptra_cfi_lib::{cfi_assert, cfi_assert_bool, cfi_assert_eq};
+use caliptra_cfi_lib::{cfi_assert, cfi_assert_bool, cfi_assert_eq, cfi_launder};
 use caliptra_dpe_crypto::{CryptoSuite, Digest};
 use caliptra_dpe_platform::Platform;
 #[cfg(not(feature = "disable_internal_dice"))]
@@ -359,24 +358,36 @@ impl DpeInstance {
 
         // Add internal input info to hash
         #[cfg(not(feature = "disable_internal_info"))]
-        if cfi_launder(uses_internal_input_info) {
-            let mut internal_input_info = [0u8; INTERNAL_INPUT_INFO_SIZE];
-            self.serialize_internal_input_info(platform, state.support, &mut internal_input_info)?;
-            hasher.update(&internal_input_info[..INTERNAL_INPUT_INFO_SIZE])?;
+        {
+            #[cfg(feature = "cfi")]
+            let uses_internal_input_info = cfi_launder(uses_internal_input_info);
+            if uses_internal_input_info {
+                let mut internal_input_info = [0u8; INTERNAL_INPUT_INFO_SIZE];
+                self.serialize_internal_input_info(
+                    platform,
+                    state.support,
+                    &mut internal_input_info,
+                )?;
+                hasher.update(&internal_input_info[..INTERNAL_INPUT_INFO_SIZE])?;
+            }
         }
 
         // Add internal input dice to hash
         #[cfg(not(feature = "disable_internal_dice"))]
-        if cfi_launder(uses_internal_input_dice) {
-            let mut offset = 0;
-            let mut cert_chunk = [0u8; MAX_CHUNK_SIZE];
-            while let Ok(len) =
-                platform.get_certificate_chain(offset, MAX_CHUNK_SIZE as u32, &mut cert_chunk)
-            {
-                hasher.update(cert_chunk.get(..len as usize).ok_or(DpeErrorCode::from(
-                    InternalErrorCode::CertChainChunkSliceOob,
-                ))?)?;
-                offset += len;
+        {
+            #[cfg(feature = "cfi")]
+            let uses_internal_input_dice = cfi_launder(uses_internal_input_dice);
+            if uses_internal_input_dice {
+                let mut offset = 0;
+                let mut cert_chunk = [0u8; MAX_CHUNK_SIZE];
+                while let Ok(len) =
+                    platform.get_certificate_chain(offset, MAX_CHUNK_SIZE as u32, &mut cert_chunk)
+                {
+                    hasher.update(cert_chunk.get(..len as usize).ok_or(DpeErrorCode::from(
+                        InternalErrorCode::CertChainChunkSliceOob,
+                    ))?)?;
+                    offset += len;
+                }
             }
         }
 

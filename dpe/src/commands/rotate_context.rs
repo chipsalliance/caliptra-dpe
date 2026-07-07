@@ -10,9 +10,8 @@ use crate::{
 use bitflags::bitflags;
 #[cfg(feature = "cfi")]
 use caliptra_cfi_derive::cfi_impl_fn;
-use caliptra_cfi_lib::cfi_launder;
 #[cfg(feature = "cfi")]
-use caliptra_cfi_lib::{cfi_assert, cfi_assert_bool};
+use caliptra_cfi_lib::{cfi_assert, cfi_assert_bool, cfi_launder};
 use caliptra_dpe_response_buffer::ResponseBuffer;
 use zerocopy::IntoBytes;
 
@@ -105,7 +104,9 @@ impl CommandExecution for RotateCtxCmd {
                 .get_active_context_pos(&ContextHandle::default(), locality);
             let non_default_valid_handles_exist =
                 self.non_default_valid_handles_exist(env.state(), locality, idx);
-            if default_context_idx.is_ok() || cfi_launder(non_default_valid_handles_exist) {
+            #[cfg(feature = "cfi")]
+            let non_default_valid_handles_exist = cfi_launder(non_default_valid_handles_exist);
+            if default_context_idx.is_ok() || non_default_valid_handles_exist {
                 return Err(DpeErrorCode::InvalidArgument);
             } else {
                 #[cfg(feature = "cfi")]

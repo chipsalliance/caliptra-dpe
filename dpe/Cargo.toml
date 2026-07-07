@@ -17,6 +17,7 @@ p384 = []
 # Run ARBITRARY_MAX_HANDLES=n cargo build --features arbitrary_max_handles to use this feature
 arbitrary_max_handles = []
 cfi = [
+  "dep:caliptra-cfi-lib",
   "caliptra-dpe-crypto/cfi",
   "caliptra-cfi-lib/cfi",
   "caliptra-cfi-lib/cfi-counter",
@@ -36,7 +37,7 @@ log = ["dep:log"]
 [dependencies]
 bitflags = "2.4.0"
 caliptra-cfi-derive.workspace = true
-caliptra-cfi-lib = { workspace = true, default-features = false }
+caliptra-cfi-lib = { workspace = true, default-features = false, optional = true }
 caliptra-dpe-crypto = { workspace = true, default-features = false }
 caliptra-dpe-platform = { workspace = true, default-features = false }
 caliptra-dpe-response-buffer.workspace = true

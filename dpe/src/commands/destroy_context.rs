@@ -8,9 +8,8 @@ use crate::{
 };
 #[cfg(feature = "cfi")]
 use caliptra_cfi_derive::cfi_impl_fn;
-use caliptra_cfi_lib::cfi_launder;
 #[cfg(feature = "cfi")]
-use caliptra_cfi_lib::{cfi_assert, cfi_assert_bool, cfi_assert_eq};
+use caliptra_cfi_lib::{cfi_assert, cfi_assert_bool, cfi_assert_eq, cfi_launder};
 use caliptra_dpe_response_buffer::ResponseBuffer;
 use zerocopy::IntoBytes;
 
@@ -55,7 +54,9 @@ pub(crate) fn destroy_context(
             .ok_or(DpeErrorCode::from(InternalErrorCode::DestroyParentIndexOob))?;
         // make sure the retired context does not have other active child contexts
         let child_context_count = parent_context.children.iter().count();
-        if parent_context.state == ContextState::Retired && cfi_launder(child_context_count) == 1 {
+        #[cfg(feature = "cfi")]
+        let child_context_count = cfi_launder(child_context_count);
+        if parent_context.state == ContextState::Retired && child_context_count == 1 {
             retired_contexts.add_child(parent_idx)?;
         } else {
             #[cfg(feature = "cfi")]

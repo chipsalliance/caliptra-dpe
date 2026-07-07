@@ -14,9 +14,8 @@ use crate::{
     DpeInstance, DpeProfile, MAX_HANDLES,
 };
 use bitflags::bitflags;
-use caliptra_cfi_lib::cfi_launder;
 #[cfg(feature = "cfi")]
-use caliptra_cfi_lib::{cfi_assert, cfi_assert_bool};
+use caliptra_cfi_lib::{cfi_assert, cfi_assert_bool, cfi_launder};
 #[cfg(any(feature = "p256", feature = "p384"))]
 use caliptra_dpe_crypto::ecdsa::EcdsaPubKey;
 use caliptra_dpe_crypto::{
@@ -2883,7 +2882,10 @@ fn create_dpe_cert_or_csr(
             crypto.derive_pub_key(&digest, args.cdi_label, args.key_label, args.context)
         }
     };
-    if cfi_launder(pub_key.is_ok()) {
+    let pub_key_ok = pub_key.is_ok();
+    #[cfg(feature = "cfi")]
+    let pub_key_ok = cfi_launder(pub_key_ok);
+    if pub_key_ok {
         #[cfg(feature = "cfi")]
         cfi_assert!(pub_key.is_ok());
     } else {

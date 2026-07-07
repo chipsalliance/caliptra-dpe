@@ -9,7 +9,11 @@ publish.workspace = true
 version.workspace = true
 
 [features]
-cfi = ["caliptra-cfi-lib/cfi", "caliptra-cfi-lib/cfi-counter"]
+cfi = [
+  "dep:caliptra-cfi-lib",
+  "caliptra-cfi-lib/cfi",
+  "caliptra-cfi-lib/cfi-counter",
+]
 default = ["cfi"]
 deterministic_rand = ["dep:rand"]
 ml-dsa = []
@@ -31,7 +35,7 @@ test-artifacts = ["dep:caliptra-dpe-test-artifacts"]
 [dependencies]
 arrayvec.workspace = true
 caliptra-cfi-derive.workspace = true
-caliptra-cfi-lib = { workspace = true, default-features = false }
+caliptra-cfi-lib = { workspace = true, default-features = false, optional = true }
 caliptra-dpe-response-buffer.workspace = true
 caliptra-dpe-test-artifacts = { workspace = true, optional = true }
 constant_time_eq.workspace = true
