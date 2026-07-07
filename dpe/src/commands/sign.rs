@@ -190,6 +190,7 @@ impl CommandExecution for SignCommand<'_> {
         }
 
         let sig = sign(dpe, env, idx, label, &data);
+        #[allow(unreachable_patterns)]
         match okref(&sig)? {
             #[cfg(feature = "p256")]
             Signature::Ecdsa(EcdsaSignature::Ecdsa256(sig)) => {

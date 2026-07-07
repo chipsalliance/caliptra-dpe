@@ -35,6 +35,8 @@ enum Commands {
     Precheckin(PrecheckinArgs),
     /// Run a tool from the tools/ folder
     RunTool(RunToolArgs),
+    /// Build and host the DPE Certificate Visualizer WASM web app
+    CertGraph(CertGraphArgs),
 }
 
 #[derive(Parser)]
@@ -95,6 +97,25 @@ pub enum ToolSubcommands {
         #[arg(last = true)]
         args: Vec<String>,
     },
+
+    /// Build and host DPE Certificate Visualizer WASM app
+    CertGraph {
+        #[arg(short = 'p', long, default_value_t = 8080)]
+        port: u16,
+        #[arg(short = 's', long, default_value_t = false)]
+        serve: bool,
+    },
+}
+
+#[derive(Parser)]
+pub struct CertGraphArgs {
+    /// Port to host the WASM web app (default: 8080)
+    #[arg(short = 'p', long, default_value_t = 8080)]
+    pub port: u16,
+
+    /// Start local HTTP server to host the WASM web app after building
+    #[arg(short = 's', long, default_value_t = false)]
+    pub serve: bool,
 }
 
 #[derive(Parser)]
@@ -114,6 +135,7 @@ fn main() -> Result<()> {
         Commands::Test(args) => run_test_command(args)?,
         Commands::Precheckin(args) => run_precheckin_command(args)?,
         Commands::RunTool(args) => run_tool_command(args)?,
+        Commands::CertGraph(args) => run_cert_graph(args)?,
     }
 
     Ok(())
@@ -138,6 +160,13 @@ fn run_ci() -> Result<()> {
 
     // Run panic checks for all profiles
     run_panic_checks()?;
+
+    // Build WASM app to ensure visualizer remains functional
+    run_cert_graph(&CertGraphArgs {
+        port: 8080,
+        serve: false,
+    })?;
+
     Ok(())
 }
 
@@ -209,7 +238,111 @@ fn run_tool_command(args: &RunToolArgs) -> Result<()> {
                 &cargo_args,
             )?;
         }
+
+        ToolSubcommands::CertGraph { port, serve } => {
+            run_cert_graph(&CertGraphArgs {
+                port: *port,
+                serve: *serve,
+            })?;
+        }
     }
+    Ok(())
+}
+
+fn run_cert_graph(args: &CertGraphArgs) -> Result<()> {
+    println!("=== Building DPE Visualizer WASM Module ===");
+
+    Cmd::new("cargo")
+        .args([
+            "build",
+            "--target",
+            "wasm32-unknown-unknown",
+            "--manifest-path",
+            "tools/Cargo.toml",
+            "--lib",
+            "--release",
+        ])
+        .run()?;
+
+    println!("Generating JS & WASM bindings into tools/pkg/...");
+    Cmd::new("wasm-bindgen")
+        .args([
+            "target/wasm32-unknown-unknown/release/caliptra_dpe_tools.wasm",
+            "--out-dir",
+            "tools/pkg",
+            "--target",
+            "web",
+        ])
+        .run()?;
+
+    if !args.serve {
+        println!(
+            "WASM build complete (tools/pkg/ created). Pass --serve to start local web server."
+        );
+        return Ok(());
+    }
+
+    serve_tools_directory(args.port)
+}
+
+fn serve_tools_directory(port: u16) -> Result<()> {
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+
+    let listener = TcpListener::bind(("0.0.0.0", port))?;
+    println!("\n==========================================================");
+    println!("  DPE Visualizer WASM Web App Running!");
+    println!("  URL: http://localhost:{}", port);
+    println!("  Press Ctrl+C to stop.");
+    println!("==========================================================\n");
+
+    for stream in listener.incoming() {
+        let mut stream = match stream {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+        std::thread::spawn(move || {
+            let mut buf = [0u8; 4096];
+            let n = match stream.read(&mut buf) {
+                Ok(n) => n,
+                Err(_) => return,
+            };
+            let req = String::from_utf8_lossy(&buf[..n]);
+            let first_line = req.lines().next().unwrap_or("");
+            let path = first_line.split_whitespace().nth(1).unwrap_or("/");
+
+            let relative_path = if path == "/" {
+                "index.html".to_string()
+            } else {
+                path.trim_start_matches('/').to_string()
+            };
+
+            let full_path = Path::new("tools").join(&relative_path);
+            if full_path.exists() && full_path.is_file() {
+                if let Ok(content) = std::fs::read(&full_path) {
+                    let content_type = match full_path.extension().and_then(|s| s.to_str()) {
+                        Some("html") => "text/html; charset=utf-8",
+                        Some("js") => "application/javascript",
+                        Some("wasm") => "application/wasm",
+                        Some("css") => "text/css",
+                        _ => "application/octet-stream",
+                    };
+                    let header = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                        content_type,
+                        content.len()
+                    );
+                    let _ = stream.write_all(header.as_bytes());
+                    let _ = stream.write_all(&content);
+                    return;
+                }
+            }
+
+            let not_found = "HTTP/1.1 404 Not Found\r\nContent-Length: 9\r\n\r\nNot Found";
+            let _ = stream.write_all(not_found.as_bytes());
+        });
+    }
+
     Ok(())
 }
 

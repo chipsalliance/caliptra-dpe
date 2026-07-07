@@ -64,16 +64,17 @@ const SIZE_TAG_OFFSET: usize = 3;
 /// This is the size of a SHA384 digest.
 const MAX_HASH_SIZE: usize = 48;
 
-#[cfg(feature = "p256")]
 mod profile_oids {
+    #[cfg(feature = "p256")]
     pub const ECDSA_WITH_SHA256_OID: &[u8] = &[0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x04, 0x03, 0x02];
+    #[cfg(feature = "p256")]
     pub const CURVE_P256_OID: &[u8] = &[0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x03, 0x01, 0x07];
+    #[cfg(feature = "p256")]
     pub const HASH_SHA256_OID: &[u8] = &[0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01];
-}
 
-#[cfg(feature = "p384")]
-mod profile_oids {
+    #[cfg(feature = "p384")]
     pub const ECDSA_WITH_SHA384_OID: &[u8] = &[0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x04, 0x03, 0x03];
+    #[cfg(feature = "p384")]
     pub const CURVE_P384_OID: &[u8] = &[0x2B, 0x81, 0x04, 0x00, 0x22];
 }
 

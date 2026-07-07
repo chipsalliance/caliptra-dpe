@@ -19,8 +19,21 @@ cfi = ["caliptra-dpe/cfi"]
 hybrid = ["p384", "ml-dsa"]
 ml-dsa = ["caliptra-dpe/ml-dsa"]
 
+[lib]
+crate-type = ["cdylib", "rlib"]
+path = "src/lib.rs"
+
 [dependencies]
 anyhow.workspace = true
+asn1 = "0.13.0"
+clap.workspace = true
+cms = "0.2"
+der = "0.7"
+pem = "2"
+x509-parser = "0.15.1"
+zerocopy.workspace = true
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 caliptra-dpe = { workspace = true, default-features = false }
 caliptra-dpe-crypto = { workspace = true, default-features = false, features = [
   "deterministic_rand",
@@ -29,10 +42,25 @@ caliptra-dpe-crypto = { workspace = true, default-features = false, features = [
 caliptra-dpe-platform = { workspace = true, default-features = false, features = [
   "rustcrypto",
 ] }
-clap.workspace = true
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2", features = ["js"] }
+wasm-bindgen = "=0.2.114"
+
+
+[build-dependencies]
+caliptra-dpe = { workspace = true, default-features = false, features = [
+  "p384",
+] }
+caliptra-dpe-crypto = { workspace = true, default-features = false, features = [
+  "deterministic_rand",
+  "rustcrypto",
+] }
+caliptra-dpe-platform = { workspace = true, default-features = false, features = [
+  "rustcrypto",
+] }
 pem = "2"
 zerocopy.workspace = true
-
 
 [[bin]]
 name = "sample_dpe_cert"

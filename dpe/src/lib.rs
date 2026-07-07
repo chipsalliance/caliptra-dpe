@@ -147,7 +147,7 @@ impl From<DpeProfile> for u32 {
     }
 }
 
-#[cfg(feature = "p256")]
+#[cfg(all(feature = "p256", not(any(feature = "p384", feature = "ml-dsa"))))]
 pub const TCI_SIZE: usize = 32;
 
 #[cfg(any(feature = "p384", feature = "ml-dsa"))]

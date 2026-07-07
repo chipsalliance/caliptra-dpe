@@ -35,6 +35,7 @@ disable_x509 = []
 log = ["dep:log"]
 
 [dependencies]
+asn1 = { version = "0.13.0", default-features = false }
 bitflags = "2.4.0"
 caliptra-cfi-derive.workspace = true
 caliptra-cfi-lib = { workspace = true, default-features = false, optional = true }

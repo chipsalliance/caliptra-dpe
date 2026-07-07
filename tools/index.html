@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DPE Certificate & CSR TCB Visualizer (WASM)</title>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --text: #f8fafc;
+      --accent: #3b82f6;
+      --accent-hover: #2563eb;
+      --border: #334155;
+      --error-bg: #450a0a;
+      --error-border: #991b1b;
+      --error-text: #fca5a5;
+    }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 2rem;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    header {
+      margin-bottom: 2rem;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 1rem;
+    }
+    h1 { margin: 0 0 0.5rem 0; color: var(--accent); }
+    p.subtitle { margin: 0; color: #94a3b8; font-size: 0.95rem; }
+    .input-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.5rem;
+      margin-bottom: 2rem;
+    }
+    .drag-zone {
+      border: 2px dashed var(--border);
+      border-radius: 6px;
+      padding: 1.5rem;
+      text-align: center;
+      background: rgba(15, 23, 42, 0.5);
+      margin-bottom: 1rem;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+    }
+    .drag-zone.dragover {
+      border-color: var(--accent);
+      background: rgba(59, 130, 246, 0.1);
+    }
+    textarea {
+      width: 100%;
+      height: 140px;
+      background: #0f172a;
+      border: 1px solid var(--border);
+      color: #f8fafc;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      padding: 0.75rem;
+      border-radius: 6px;
+      box-sizing: border-box;
+      resize: vertical;
+    }
+    .button-group {
+      margin-top: 1rem;
+      display: flex;
+      gap: 0.75rem;
+    }
+    button {
+      background: var(--accent);
+      color: white;
+      border: none;
+      padding: 0.6rem 1.25rem;
+      border-radius: 6px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    button:hover { background: var(--accent-hover); }
+    button.secondary {
+      background: #334155;
+    }
+    button.secondary:hover {
+      background: #475569;
+    }
+    .error-box {
+      display: none;
+      background: var(--error-bg);
+      border: 1px solid var(--error-border);
+      color: var(--error-text);
+      padding: 1rem;
+      border-radius: 6px;
+      margin-bottom: 2rem;
+      white-space: pre-wrap;
+      font-family: monospace;
+    }
+    #output {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 2rem;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1rem 0;
+    }
+    th, td {
+      border: 1px solid var(--border);
+      padding: 0.5rem 0.75rem;
+      text-align: left;
+    }
+    th { background: #0f172a; }
+    code {
+      background: #0f172a;
+      padding: 0.2rem 0.4rem;
+      border-radius: 4px;
+      font-size: 0.9em;
+    }
+    .status-badge {
+      display: inline-block;
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      background: #1e3a8a;
+      color: #93c5fd;
+      margin-left: 0.5rem;
+    }
+
+    /* Modal Dialog & Tooltip Styling */
+    .field-clickable {
+      cursor: pointer;
+      color: #60a5fa;
+      border-bottom: 1px dotted #3b82f6;
+      transition: color 0.15s, border-color 0.15s;
+      display: inline-flex;
+      align-items: center;
+    }
+    .field-clickable:hover {
+      color: #93c5fd;
+      border-bottom: 1px solid #60a5fa;
+    }
+    .info-icon {
+      font-size: 0.85em;
+      margin-left: 0.35rem;
+      opacity: 0.75;
+    }
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(15, 23, 42, 0.75);
+      backdrop-filter: blur(4px);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-overlay.active {
+      display: flex;
+    }
+    .modal-card {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      padding: 1.75rem;
+      max-width: 560px;
+      width: 90%;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+      position: relative;
+    }
+    .modal-header {
+      margin-bottom: 1rem;
+    }
+    .modal-title {
+      font-size: 1.25rem;
+      font-weight: 600;
+      color: #3b82f6;
+      margin: 0 0 0.4rem 0;
+    }
+    .modal-badge {
+      display: inline-block;
+      padding: 0.25rem 0.6rem;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      background: #1e3a8a;
+      color: #93c5fd;
+      font-family: monospace;
+    }
+    .modal-body {
+      color: #cbd5e1;
+      font-size: 0.95rem;
+      line-height: 1.55;
+      margin-top: 1rem;
+      margin-bottom: 1.5rem;
+    }
+    .modal-footer {
+      display: flex;
+      justify-content: flex-end;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>DPE Certificate & CSR Visualizer <span class="status-badge">WebAssembly (Client-Side)</span></h1>
+      <p class="subtitle">Parse, inspect, and visualize DICE/DPE TCB context derivation trees directly in your browser with zero server latency.</p>
+    </header>
+
+    <div class="input-card">
+      <div class="drag-zone" id="dragZone">
+        📁 Drag & drop a <b>.pem</b> or <b>.der</b> (or raw DPE response packet / CMS SignedData) here, or <a href="#" id="fileSelectLink" style="color:var(--accent);">browse file</a>
+        <input type="file" id="fileInput" style="display:none;">
+      </div>
+
+      <textarea id="pemInput" placeholder="Paste PEM certificate, CSR, Base64, or Hex bytes here..."></textarea>
+      
+      <div class="button-group">
+        <button id="renderBtn">Visualize Certificate / CSR</button>
+        <button id="sampleBtn" class="secondary">Load Sample Cert</button>
+        <button id="clearBtn" class="secondary">Clear</button>
+      </div>
+    </div>
+
+    <div class="error-box" id="errorBox"></div>
+
+    <div id="output">
+      <p style="color:#94a3b8;">Select a file or paste a DPE certificate/CSR above and click <b>Visualize</b> to inspect the TCB context graph.</p>
+    </div>
+  </div>
+
+  <!-- Modal Dialog for Field Descriptions -->
+  <div class="modal-overlay" id="infoModal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 class="modal-title" id="modalTitle">Field Name</h3>
+        <span class="modal-badge" id="modalCategory">Category</span>
+      </div>
+      <div class="modal-body" id="modalBody">
+        Field description goes here...
+      </div>
+      <div class="modal-footer">
+        <button id="modalCloseBtn">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import init, { render_dpe_cert_markdown, get_default_sample_pem } from './pkg/caliptra_dpe_tools.js';
+
+    let wasmReady = false;
+    let currentFileBytes = null;
+
+    const FIELD_DESCRIPTIONS = {
+      "vendor": {
+        title: "Vendor",
+        category: "DICE TCB Info (2.23.133.5.4.1)",
+        description: "The silicon or platform vendor responsible for this TCB component (e.g., 'Google' or 'Caliptra')."
+      },
+      "model": {
+        title: "Model",
+        category: "DICE TCB Info (2.23.133.5.4.1)",
+        description: "The hardware or device model name/number associated with this TCB layer."
+      },
+      "version": {
+        title: "Version",
+        category: "DICE TCB Info (2.23.133.5.4.1)",
+        description: "Firmware or software release version string for this TCB layer."
+      },
+      "svn": {
+        title: "SVN (Security Version Number)",
+        category: "DICE TCB Info (2.23.133.5.4.1)",
+        description: "A monotonic integer counter representing the security patch level. Used by DPE and DICE to enforce anti-rollback policies during attestation."
+      },
+      "layer": {
+        title: "Layer",
+        category: "DICE TCB Info (2.23.133.5.4.1)",
+        description: "The zero-indexed position of this TCB context in the DICE derivation chain (0 = initial engine / RoT, 1 = FMC, 2 = Runtime FW)."
+      },
+      "index": {
+        title: "Index",
+        category: "DICE TCB Info (2.23.133.5.4.1)",
+        description: "The internal DPE context handle or slot index assigned to this derived TCB context."
+      },
+      "tci type": {
+        title: "TCI Type (Target Code Info Type)",
+        category: "DICE TCB Info (2.23.133.5.4.1)",
+        description: "A 32-bit integer or 4-byte ASCII tag specifying the measured component type (e.g., 0x31305746 = '10WF', 0x31425F42 = '1B_B')."
+      },
+      "tci_type": {
+        title: "TCI Type (Target Code Info Type)",
+        category: "DICE TCB Info (2.23.133.5.4.1)",
+        description: "A 32-bit integer or 4-byte ASCII tag specifying the measured component type (e.g., 0x31305746 = '10WF', 0x31425F42 = '1B_B')."
+      },
+      "vendor info": {
+        title: "Vendor Info",
+        category: "DICE TCB Info (2.23.133.5.4.1)",
+        description: "Vendor-defined supplementary binary data, such as SVN masks, platform configuration flags, or raw attestation metadata."
+      },
+      "operational flags mask": {
+        title: "Operational Flags Mask",
+        category: "DICE TCB Info (2.23.133.5.4.1)",
+        description: "Bitmask indicating operational or security conditions during context derivation (e.g., debug mode enabled, production mode, or fuse settings)."
+      },
+      "fwids / measurements": {
+        title: "FWIDs / Measurements",
+        category: "DICE TCB Info (2.23.133.5.4.1)",
+        description: "Cryptographic hash digests (e.g., SHA-256 or SHA-384) of the measured code image, configuration, or manifest for this TCB component."
+      },
+      "integrity registers": {
+        title: "Integrity Registers",
+        category: "DICE TCB Info (2.23.133.5.4.1)",
+        description: "Dedicated hardware or software measurement registers (such as PCRs or MRs) recording cumulative or stage-specific integrity state."
+      },
+      "subject": {
+        title: "Subject Distinguished Name",
+        category: "X.509 Certificate Header",
+        description: "The X.509 Subject field identifying the entity or key holding this certificate (e.g., CN=DPE Leaf / serialNumber)."
+      },
+      "issuer": {
+        title: "Issuer Distinguished Name",
+        category: "X.509 Certificate Header",
+        description: "The X.509 Issuer field identifying the parent DPE key or Certificate Authority (CA) that signed and issued this certificate."
+      },
+      "serial number": {
+        title: "Serial Number",
+        category: "X.509 Certificate Header",
+        description: "A unique positive integer identifier assigned to this certificate by the issuing CA/DPE key."
+      },
+      "signature algorithm": {
+        title: "Signature Algorithm",
+        category: "X.509 Certificate Header",
+        description: "The cryptographic signature scheme (e.g., ecdsa-with-SHA384 or ML-DSA-87) used by the issuer to sign this certificate."
+      },
+      "public key": {
+        title: "Public Key Algorithm & Key Info",
+        category: "X.509 Certificate Header",
+        description: "The asymmetric public key certified by this certificate (e.g., ECC P-256, ECC P-384, or ML-DSA-87)."
+      },
+      "inferred dpe profile": {
+        title: "Inferred DPE Profile",
+        category: "DPE Profile Specification",
+        description: "The DPE Profile (P256-SHA256, P384-SHA384, MLDSA-87) automatically inferred from the public key type, signature algorithm, and FWID OIDs."
+      },
+      "ueid": {
+        title: "UEID (Unique Entity Identifier)",
+        category: "TCG DICE UEID Extension (2.23.133.5.4.4)",
+        description: "A globally unique, hardware-bound identifier for the device (e.g., 256-bit hash of secret device key / silicon UID)."
+      },
+      "tcg-dice-multitcbinfo": {
+        title: "tcg-dice-MultiTcbInfo (OID 2.23.133.5.4.5)",
+        category: "TCG DICE Extension",
+        description: "A TCG DICE X.509 extension containing an ordered ASN.1 sequence of TcbInfo structures for all derived TCB layers leading to this certificate."
+      },
+      "tcg-dice-tcbinfo": {
+        title: "tcg-dice-TcbInfo (OID 2.23.133.5.4.1)",
+        category: "TCG DICE Extension",
+        description: "A TCG DICE X.509 extension containing TCB measurement metadata for a single DICE layer."
+      },
+      "tcg-dice-ueid": {
+        title: "tcg-dice-Ueid (OID 2.23.133.5.4.4)",
+        category: "TCG DICE Extension",
+        description: "A TCG DICE X.509 extension encoding the Unique Entity Identifier of the platform."
+      },
+      "basicconstraints": {
+        title: "Basic Constraints (OID 2.5.29.19)",
+        category: "Standard X.509 Extension",
+        description: "Indicates whether the certificate is a Certificate Authority (CA) allowed to sign child certificates or an end-entity (leaf)."
+      },
+      "keyusage": {
+        title: "Key Usage (OID 2.5.29.15)",
+        category: "Standard X.509 Extension",
+        description: "Specifies permitted cryptographic key operations (e.g., Digital Signature for attestation vs. Key Cert Sign for CAs)."
+      },
+      "extendedkeyusage": {
+        title: "Extended Key Usage (OID 2.5.29.37)",
+        category: "Standard X.509 Extension",
+        description: "Specifies specialized usage scenarios, such as tcg-dice-kp-attestLoc (DPE Attestation Key for Locality/DPE)."
+      },
+      "authoritykeyidentifier": {
+        title: "Authority Key Identifier (OID 2.5.29.35)",
+        category: "Standard X.509 Extension",
+        description: "The Key Identifier (SHA-1 / SHA-256 hash of public key) of the issuing parent key, establishing the certificate chain."
+      }
+    };
+
+    mermaid.initialize({ startOnLoad: false, theme: 'dark' });
+
+    async function loadWasm() {
+      try {
+        await init();
+        wasmReady = true;
+        console.log("DPE Visualizer WASM initialized successfully.");
+      } catch (err) {
+        showError("Failed to initialize WebAssembly module: " + err);
+      }
+    }
+
+    function showError(msg) {
+      const errBox = document.getElementById("errorBox");
+      errBox.textContent = msg;
+      errBox.style.display = "block";
+    }
+
+    function clearError() {
+      const errBox = document.getElementById("errorBox");
+      errBox.style.display = "none";
+      errBox.textContent = "";
+    }
+
+    function openModal(title, category, description) {
+      document.getElementById("modalTitle").textContent = title;
+      document.getElementById("modalCategory").textContent = category;
+      document.getElementById("modalBody").textContent = description;
+      document.getElementById("infoModal").classList.add("active");
+    }
+
+    function closeModal() {
+      document.getElementById("infoModal").classList.remove("active");
+    }
+
+    document.getElementById("modalCloseBtn").addEventListener("click", closeModal);
+    document.getElementById("infoModal").addEventListener("click", (e) => {
+      if (e.target === document.getElementById("infoModal")) {
+        closeModal();
+      }
+    });
+
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") closeModal();
+    });
+
+    function hexToBytes(hex) {
+      hex = hex.replace(/[^0-9a-fA-F]/g, '');
+      if (hex.length % 2 !== 0) return null;
+      const bytes = new Uint8Array(hex.length / 2);
+      for (let i = 0; i < hex.length; i += 2) {
+        bytes[i / 2] = parseInt(hex.substring(i, i + 2), 16);
+      }
+      return bytes;
+    }
+
+    function makeTablesInteractive() {
+      const outputDiv = document.getElementById("output");
+      const cells = outputDiv.querySelectorAll("table td:first-child, table th:first-child");
+      
+      cells.forEach(cell => {
+        const text = cell.textContent.trim().toLowerCase().replace(/[^a-z0-9 /_-]/g, '').trim();
+        const info = FIELD_DESCRIPTIONS[text];
+        
+        if (info) {
+          const originalContent = cell.innerHTML;
+          cell.innerHTML = `<span class="field-clickable" title="Click to view field description">${originalContent} <span class="info-icon">ℹ️</span></span>`;
+          cell.querySelector(".field-clickable").addEventListener("click", () => {
+            openModal(info.title, info.category, info.description);
+          });
+        }
+      });
+    }
+
+    async function processAndRender() {
+      clearError();
+      if (!wasmReady) {
+        showError("WASM module is still loading. Please try again in a moment.");
+        return;
+      }
+
+      let certBytes = null;
+      const textInput = document.getElementById("pemInput").value.trim();
+
+      if (currentFileBytes) {
+        certBytes = currentFileBytes;
+      } else if (textInput) {
+        if (textInput.startsWith("-----BEGIN")) {
+          certBytes = new TextEncoder().encode(textInput);
+        } else {
+          const hexBytes = hexToBytes(textInput);
+          if (hexBytes && hexBytes.length > 0) {
+            certBytes = hexBytes;
+          } else {
+            certBytes = new TextEncoder().encode(textInput);
+          }
+        }
+      } else {
+        showError("Please provide a PEM certificate, CSR, or select a file.");
+        return;
+      }
+
+      try {
+        const markdown = render_dpe_cert_markdown(certBytes);
+        const outputDiv = document.getElementById("output");
+        outputDiv.innerHTML = marked.parse(markdown);
+
+        // Make field labels interactive with tooltips/modals
+        makeTablesInteractive();
+
+        // Render Mermaid diagrams asynchronously
+        const mermaidNodes = outputDiv.querySelectorAll(".language-mermaid, pre code.language-mermaid");
+        for (let i = 0; i < mermaidNodes.length; i++) {
+          const node = mermaidNodes[i];
+          const code = node.textContent;
+          const container = document.createElement("div");
+          container.className = "mermaid";
+          container.textContent = code;
+          node.parentNode.replaceWith(container);
+        }
+
+        await mermaid.run();
+      } catch (err) {
+        showError("Rendering Error: " + err);
+      }
+    }
+
+    document.getElementById("renderBtn").addEventListener("click", () => {
+      processAndRender();
+    });
+
+    document.getElementById("sampleBtn").addEventListener("click", () => {
+      clearError();
+      if (!wasmReady) return;
+      currentFileBytes = null;
+      document.getElementById("fileInput").value = "";
+      const samplePem = get_default_sample_pem();
+      document.getElementById("pemInput").value = samplePem;
+      processAndRender();
+    });
+
+    document.getElementById("clearBtn").addEventListener("click", () => {
+      clearError();
+      currentFileBytes = null;
+      document.getElementById("fileInput").value = "";
+      document.getElementById("pemInput").value = "";
+      document.getElementById("output").innerHTML = '<p style="color:#94a3b8;">Select a file or paste a DPE certificate/CSR above and click <b>Visualize</b>.</p>';
+    });
+
+    // File Drag & Drop Setup
+    const dragZone = document.getElementById("dragZone");
+    const fileInput = document.getElementById("fileInput");
+
+    document.getElementById("fileSelectLink").addEventListener("click", (e) => {
+      e.preventDefault();
+      fileInput.click();
+    });
+
+    fileInput.addEventListener("change", (e) => {
+      if (e.target.files.length > 0) {
+        handleFile(e.target.files[0]);
+      }
+    });
+
+    dragZone.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      dragZone.classList.add("dragover");
+    });
+
+    dragZone.addEventListener("dragleave", () => {
+      dragZone.classList.remove("dragover");
+    });
+
+    dragZone.addEventListener("drop", (e) => {
+      e.preventDefault();
+      dragZone.classList.remove("dragover");
+      if (e.dataTransfer.files.length > 0) {
+        handleFile(e.dataTransfer.files[0]);
+      }
+    });
+
+    function handleFile(file) {
+      clearError();
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+        currentFileBytes = new Uint8Array(evt.target.result);
+        const text = new TextDecoder().decode(currentFileBytes.slice(0, 100));
+        if (text.startsWith("-----BEGIN")) {
+          document.getElementById("pemInput").value = new TextDecoder().encode(currentFileBytes);
+        } else {
+          document.getElementById("pemInput").value = `[Loaded binary file: ${file.name} (${currentFileBytes.length} bytes)]`;
+        }
+        processAndRender();
+      };
+      reader.readAsArrayBuffer(file);
+    }
+
+    loadWasm();
+  </script>
+</body>
+</html>
