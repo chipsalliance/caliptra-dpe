@@ -218,6 +218,14 @@ fn run_unit_tests() -> Result<()> {
         build_rust_targets(profile)?;
         test_rust_targets(profile)?;
     }
+    check_non_cfi_builds()?;
+    Ok(())
+}
+
+fn check_non_cfi_builds() -> Result<()> {
+    for profile in PROFILES {
+        cargo_build(&CargoOptions::with_features("dpe/Cargo.toml", profile))?;
+    }
     Ok(())
 }
 
