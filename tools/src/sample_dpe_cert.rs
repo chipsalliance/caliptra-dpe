@@ -15,7 +15,7 @@ use {
     zerocopy::IntoBytes,
 };
 
-#[cfg(feature = "p256")]
+#[cfg(all(feature = "p256", not(feature = "p384"), not(feature = "ml-dsa")))]
 mod profile {
     use super::*;
     pub use caliptra_dpe::commands::CertifyKeyP256Cmd as CertifyKeyCmd;
@@ -37,7 +37,7 @@ mod profile {
     }
 }
 
-#[cfg(feature = "ml-dsa")]
+#[cfg(all(feature = "ml-dsa", not(feature = "p384")))]
 mod profile {
     use super::*;
     pub use caliptra_dpe::commands::CertifyKeyMldsa87Cmd as CertifyKeyCmd;

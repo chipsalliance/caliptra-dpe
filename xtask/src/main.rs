@@ -5,9 +5,7 @@ use clap::{Parser, Subcommand};
 use std::path::Path;
 use std::process::Command;
 
-// Note: "hybrid" is linted via the cert-size binary check in run_ci() but doesn't need
-// separate test runs since individual profiles already validate each algorithm's behavior
-const PROFILES: &[&str] = &["ml-dsa", "p256", "p384"];
+const PROFILES: &[&str] = &["ml-dsa", "p256", "p384", "hybrid"];
 /// Pinned nightly toolchain version. Must match the version in flake.nix shellHook.
 const NIGHTLY: &str = "nightly-2025-07-08";
 const MANIFESTS: &[&str] = &[
@@ -299,10 +297,15 @@ fn run_cert_parser_test(profile: &str) -> Result<()> {
 }
 
 fn features_for(manifest: &str, profile: &str) -> Option<String> {
+    let base = if profile == "hybrid" {
+        "p384,ml-dsa"
+    } else {
+        profile
+    };
     match manifest {
-        "dpe/Cargo.toml" => Some(format!("{},cfi", profile)),
-        "simulator/Cargo.toml" => Some(format!("{},rustcrypto", profile)),
-        "tools/Cargo.toml" => Some(profile.to_string()),
+        "dpe/Cargo.toml" => Some(format!("{},cfi", base)),
+        "simulator/Cargo.toml" => Some(format!("{},rustcrypto", base)),
+        "tools/Cargo.toml" => Some(base.to_string()),
         _ => None,
     }
 }

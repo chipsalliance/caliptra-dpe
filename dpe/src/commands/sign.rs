@@ -608,7 +608,7 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "ml-dsa")]
+    #[cfg(all(feature = "ml-dsa", not(feature = "p384"), not(feature = "p256")))]
     #[test]
     fn test_deserialize_sign_raw_mode() {
         CfiCounter::reset_for_test();
@@ -639,7 +639,7 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "ml-dsa")]
+    #[cfg(all(feature = "ml-dsa", not(feature = "p384"), not(feature = "p256")))]
     #[test]
     fn test_deserialize_sign_raw_mode_invalid_buffer() {
         CfiCounter::reset_for_test();
@@ -658,7 +658,7 @@ mod tests {
         assert_eq!(cmd.unwrap_err(), DpeErrorCode::InvalidArgument);
     }
 
-    #[cfg(feature = "ml-dsa")]
+    #[cfg(all(feature = "ml-dsa", not(feature = "p384"), not(feature = "p256")))]
     #[test]
     fn test_deserialize_sign_non_raw_mode() {
         CfiCounter::reset_for_test();
@@ -680,7 +680,7 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "ml-dsa")]
+    #[cfg(all(feature = "ml-dsa", not(feature = "p384"), not(feature = "p256")))]
     #[test]
     #[allow(unreachable_patterns)]
     fn test_sign_raw_mode_signature_is_valid() {

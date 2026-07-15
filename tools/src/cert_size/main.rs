@@ -17,7 +17,7 @@ use clap::{Parser, ValueEnum};
 #[cfg(any(feature = "p256", feature = "p384"))]
 use self::ec::*;
 
-#[cfg(feature = "p256")]
+#[cfg(all(feature = "p256", not(feature = "p384")))]
 mod ec {
     pub use caliptra_dpe::commands::CertifyKeyP256Cmd as CertifyKeyCmd;
     pub fn new_crypto() -> caliptra_dpe_crypto::RustCryptoImpl {
