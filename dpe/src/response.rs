@@ -5,7 +5,7 @@ Abstract:
     DPE reponses and serialization.
 --*/
 use crate::{
-    commands::{CertifyKeyCommand, Command, DeriveContextCmd, SignCommand},
+    commands::{CertifyKeyCommand, Command, SignCommand},
     context::ContextHandle,
     error::{DpeErrorCode, InternalErrorCode},
     AlignedBuf, DpeProfile, CURRENT_PROFILE_MAJOR_VERSION, CURRENT_PROFILE_MINOR_VERSION,
@@ -110,7 +110,7 @@ impl Response {
                         .0,
                 ))
             }
-            Command::DeriveContext(DeriveContextCmd { flags, .. }) if flags.exports_cdi() => {
+            Command::DeriveContext(cmd) if cmd.flags().exports_cdi() => {
                 Response::DeriveContextExportedCdi(
                     DeriveContextExportedCdiResp::try_read_from_prefix(bytes)
                         .map_err(|_| DpeErrorCode::InvalidArgument)?
