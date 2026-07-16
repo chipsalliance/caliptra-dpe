@@ -16,7 +16,7 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
 use std::process;
 
-#[cfg(feature = "p256")]
+#[cfg(all(feature = "p256", not(feature = "p384"), not(feature = "ml-dsa")))]
 mod profile {
     use super::*;
     pub const DPE_PROFILE: caliptra_dpe::DpeProfile = caliptra_dpe::DpeProfile::P256Sha256;
@@ -36,7 +36,7 @@ mod profile {
     }
 }
 
-#[cfg(feature = "ml-dsa")]
+#[cfg(all(feature = "ml-dsa", not(feature = "p384")))]
 mod profile {
     use super::*;
     pub const DPE_PROFILE: caliptra_dpe::DpeProfile = caliptra_dpe::DpeProfile::Mldsa87;

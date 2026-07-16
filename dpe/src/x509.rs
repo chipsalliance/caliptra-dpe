@@ -3018,9 +3018,9 @@ pub(crate) mod tests {
     use crate::MAX_HANDLES;
     #[cfg(any(feature = "p384", feature = "p256"))]
     use caliptra_dpe_crypto::ecdsa::{EcdsaAlgorithm, EcdsaPub, EcdsaPubKey, EcdsaSig};
-    #[cfg(feature = "ml-dsa")]
+    #[cfg(all(feature = "ml-dsa", not(feature = "p384"), not(feature = "p256")))]
     use caliptra_dpe_crypto::ml_dsa::MldsaPublicKey;
-    #[cfg(feature = "ml-dsa")]
+    #[cfg(all(feature = "ml-dsa", not(feature = "p384"), not(feature = "p256")))]
     use caliptra_dpe_crypto::ml_dsa::{MldsaAlgorithm, MldsaSignature};
     use caliptra_dpe_crypto::{PubKey, Signature, SignatureAlgorithm};
     use caliptra_dpe_platform::{

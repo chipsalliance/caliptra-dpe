@@ -527,9 +527,9 @@ impl Default for DeriveContextCmd {
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
-    #[cfg(feature = "p256")]
+    #[cfg(all(feature = "p256", not(feature = "ml-dsa")))]
     use crate::commands::{sign::SignP256Cmd as SignCmd, CertifyKeyP256Cmd as CertifyKeyCmd};
-    #[cfg(feature = "p384")]
+    #[cfg(all(feature = "p384", not(feature = "ml-dsa")))]
     use crate::commands::{sign::SignP384Cmd as SignCmd, CertifyKeyP384Cmd as CertifyKeyCmd};
     use crate::{
         commands::{
