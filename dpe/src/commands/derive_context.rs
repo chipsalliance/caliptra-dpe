@@ -523,6 +523,109 @@ impl Default for DeriveContextCmd {
     }
 }
 
+#[repr(C, align(4))]
+#[derive(Debug, PartialEq, Eq, FromBytes, IntoBytes, Immutable, KnownLayout)]
+pub struct DeriveContextCmdV1 {
+    pub handle: ContextHandle,
+    pub data: TciMeasurement,
+    pub flags: DeriveContextFlags,
+    pub tci_type: u32,
+    pub target_locality: u32,
+}
+
+impl From<&DeriveContextCmdV1> for DeriveContextCmd {
+    fn from(cmd: &DeriveContextCmdV1) -> Self {
+        Self {
+            handle: cmd.handle,
+            data: cmd.data,
+            flags: cmd.flags,
+            tci_type: cmd.tci_type,
+            target_locality: cmd.target_locality,
+            svn: 0,
+        }
+    }
+}
+
+impl CommandExecution for DeriveContextCmdV1 {
+    #[cfg_attr(feature = "cfi", cfi_impl_fn)]
+    #[inline(never)]
+    fn execute_serialized(
+        &self,
+        dpe: &mut DpeInstance,
+        env: &mut dyn DpeEnv,
+        locality: u32,
+        out: &mut dyn ResponseBuffer,
+    ) -> Result<usize, DpeErrorCode> {
+        let cmd_v2 = DeriveContextCmd::from(self);
+        cmd_v2.execute_serialized(dpe, env, locality, out)
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum DeriveContextCommand<'a> {
+    V1(&'a DeriveContextCmdV1),
+    V2(&'a DeriveContextCmd),
+}
+
+impl<'a> DeriveContextCommand<'a> {
+    pub fn deserialize(bytes: &'a [u8]) -> Result<Self, DpeErrorCode> {
+        if bytes.len() >= size_of::<DeriveContextCmd>() {
+            let (cmd, _) = DeriveContextCmd::ref_from_prefix(bytes)
+                .map_err(|_| DpeErrorCode::InvalidArgument)?;
+            Ok(DeriveContextCommand::V2(cmd))
+        } else if bytes.len() >= size_of::<DeriveContextCmdV1>() {
+            let (cmd, _) = DeriveContextCmdV1::ref_from_prefix(bytes)
+                .map_err(|_| DpeErrorCode::InvalidArgument)?;
+            Ok(DeriveContextCommand::V1(cmd))
+        } else {
+            Err(DpeErrorCode::InvalidArgument)
+        }
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        match self {
+            DeriveContextCommand::V1(cmd) => cmd.as_bytes(),
+            DeriveContextCommand::V2(cmd) => cmd.as_bytes(),
+        }
+    }
+
+    pub fn flags(&self) -> DeriveContextFlags {
+        match self {
+            DeriveContextCommand::V1(cmd) => cmd.flags,
+            DeriveContextCommand::V2(cmd) => cmd.flags,
+        }
+    }
+}
+
+impl CommandExecution for DeriveContextCommand<'_> {
+    #[cfg_attr(feature = "cfi", cfi_impl_fn)]
+    #[inline(never)]
+    fn execute_serialized(
+        &self,
+        dpe: &mut DpeInstance,
+        env: &mut dyn DpeEnv,
+        locality: u32,
+        out: &mut dyn ResponseBuffer,
+    ) -> Result<usize, DpeErrorCode> {
+        match self {
+            DeriveContextCommand::V1(cmd) => cmd.execute_serialized(dpe, env, locality, out),
+            DeriveContextCommand::V2(cmd) => cmd.execute_serialized(dpe, env, locality, out),
+        }
+    }
+}
+
+impl<'a> From<&'a DeriveContextCmdV1> for DeriveContextCommand<'a> {
+    fn from(cmd: &'a DeriveContextCmdV1) -> Self {
+        DeriveContextCommand::V1(cmd)
+    }
+}
+
+impl<'a> From<&'a DeriveContextCmd> for DeriveContextCommand<'a> {
+    fn from(cmd: &'a DeriveContextCmd) -> Self {
+        DeriveContextCommand::V2(cmd)
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::panic)]
 mod tests {
@@ -568,6 +671,14 @@ mod tests {
         svn: 0,
     };
 
+    const TEST_DERIVE_CONTEXT_CMD_V1: DeriveContextCmdV1 = DeriveContextCmdV1 {
+        handle: SIMULATION_HANDLE,
+        data: TciMeasurement(TEST_DIGEST),
+        flags: DeriveContextFlags(0x1234_5678),
+        tci_type: 0x9876_5432,
+        target_locality: 0x10CA_1171,
+    };
+
     #[test]
     fn test_deserialize_derive_context() {
         CfiCounter::reset_for_test();
@@ -579,7 +690,29 @@ mod tests {
             command[..size_of::<CommandHdr>()].copy_from_slice(hdr.as_bytes());
             command[size_of::<CommandHdr>()..].copy_from_slice(TEST_DERIVE_CONTEXT_CMD.as_bytes());
             assert_eq!(
-                Ok(Command::DeriveContext(&TEST_DERIVE_CONTEXT_CMD)),
+                Ok(Command::DeriveContext(DeriveContextCommand::V2(
+                    &TEST_DERIVE_CONTEXT_CMD
+                ))),
+                Command::deserialize(p, command)
+            );
+        }
+    }
+
+    #[test]
+    fn test_deserialize_derive_context_v1() {
+        CfiCounter::reset_for_test();
+        for p in PROFILES {
+            let hdr = CommandHdr::new(p, Command::DERIVE_CONTEXT);
+            let mut buf =
+                AlignedBuf::<{ size_of::<CommandHdr>() + size_of::<DeriveContextCmdV1>() }>::new();
+            let command = buf.as_mut_bytes();
+            command[..size_of::<CommandHdr>()].copy_from_slice(hdr.as_bytes());
+            command[size_of::<CommandHdr>()..]
+                .copy_from_slice(TEST_DERIVE_CONTEXT_CMD_V1.as_bytes());
+            assert_eq!(
+                Ok(Command::DeriveContext(DeriveContextCommand::V1(
+                    &TEST_DERIVE_CONTEXT_CMD_V1
+                ))),
                 Command::deserialize(p, command)
             );
         }

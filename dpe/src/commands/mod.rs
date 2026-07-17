@@ -7,7 +7,9 @@ Abstract:
 pub use self::certify_key::{
     CertifyKeyCommand, CertifyKeyFlags, CertifyKeyP256Cmd, CertifyKeyP384Cmd,
 };
-pub use self::derive_context::{DeriveContextCmd, DeriveContextFlags};
+pub use self::derive_context::{
+    DeriveContextCmd, DeriveContextCmdV1, DeriveContextCommand, DeriveContextFlags,
+};
 pub use self::destroy_context::DestroyCtxCmd;
 pub use self::get_certificate_chain::GetCertificateChainCmd;
 pub use self::get_profile::GetProfileCmd;
@@ -60,7 +62,7 @@ mod update_context_measurement;
 pub enum Command<'a> {
     GetProfile(&'a GetProfileCmd),
     InitCtx(&'a InitCtxCmd),
-    DeriveContext(&'a DeriveContextCmd),
+    DeriveContext(DeriveContextCommand<'a>),
     CertifyKey(CertifyKeyCommand<'a>),
     Sign(SignCommand<'a>),
     #[cfg(not(feature = "disable_rotate_context"))]
@@ -98,7 +100,9 @@ impl Command<'_> {
         match header.cmd_id {
             Command::GET_PROFILE => Self::parse_command(Command::GetProfile, bytes),
             Command::INITIALIZE_CONTEXT => Self::parse_command(Command::InitCtx, bytes),
-            Command::DERIVE_CONTEXT => Self::parse_command(Command::DeriveContext, bytes),
+            Command::DERIVE_CONTEXT => Ok(Command::DeriveContext(
+                DeriveContextCommand::deserialize(bytes)?,
+            )),
             Command::CERTIFY_KEY => Ok(CertifyKeyCommand::deserialize(profile, bytes)?.into()),
             Command::SIGN => Ok(Command::Sign(SignCommand::deserialize(profile, bytes)?)),
             #[cfg(not(feature = "disable_rotate_context"))]
@@ -180,7 +184,28 @@ impl<'a> From<&'a InitCtxCmd> for Command<'a> {
 
 impl<'a> From<&'a DeriveContextCmd> for Command<'a> {
     fn from(cmd: &'a DeriveContextCmd) -> Command<'a> {
+        Command::DeriveContext(DeriveContextCommand::V2(cmd))
+    }
+}
+
+impl<'a> From<&'a DeriveContextCmdV1> for Command<'a> {
+    fn from(cmd: &'a DeriveContextCmdV1) -> Command<'a> {
+        Command::DeriveContext(DeriveContextCommand::V1(cmd))
+    }
+}
+
+impl<'a> From<DeriveContextCommand<'a>> for Command<'a> {
+    fn from(cmd: DeriveContextCommand<'a>) -> Self {
         Command::DeriveContext(cmd)
+    }
+}
+
+impl<'a> From<&'a DeriveContextCommand<'a>> for Command<'a> {
+    fn from(cmd: &'a DeriveContextCommand<'a>) -> Self {
+        match cmd {
+            DeriveContextCommand::V1(c) => Command::DeriveContext(DeriveContextCommand::V1(c)),
+            DeriveContextCommand::V2(c) => Command::DeriveContext(DeriveContextCommand::V2(c)),
+        }
     }
 }
 
@@ -360,7 +385,7 @@ pub trait CommandExecution {
         match Command::from(self) {
             Command::GetProfile(_) => exec!(GetProfileResp, Response::GetProfile),
             Command::InitCtx(_) => exec!(NewHandleResp, Response::InitCtx),
-            Command::DeriveContext(cmd) if cmd.flags.exports_cdi() => exec!(
+            Command::DeriveContext(cmd) if cmd.flags().exports_cdi() => exec!(
                 DeriveContextExportedCdiResp,
                 Response::DeriveContextExportedCdi
             ),
