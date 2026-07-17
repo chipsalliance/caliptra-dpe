@@ -1,0 +1,55 @@
+name: Deploy DPE Cert Visualizer to GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v7
+
+      - name: Install Nix
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nix-bin
+          sudo mkdir -p /nix
+          sudo chown -R $(whoami) /nix
+          mkdir -p ~/.config/nix
+          echo "experimental-features = nix-command flakes" > ~/.config/nix/nix.conf
+
+      - name: Build WASM App & JS Bindings
+        run: |
+          export NIX_REMOTE=local
+          nix develop --command cargo xtask cert-graph
+
+      - name: Prepare Pages Directory
+        run: |
+          mkdir -p dist/cert-printer
+          cp tools/index.html dist/cert-printer/
+          cp -r tools/pkg dist/cert-printer/
+
+      - name: Upload Pages Artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: './dist'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5

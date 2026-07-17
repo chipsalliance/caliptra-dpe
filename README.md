@@ -37,6 +37,10 @@ Available commands:
     * `cargo xtask precheckin headers`: Check license headers.
     * `cargo xtask precheckin format`: Check code formatting.
     * `cargo xtask precheckin lint`: Run linters.
+* `cargo xtask cert-graph`: Build the DPE certificate/CSR visualizer WebAssembly app and JS bindings.
+    * `cargo xtask cert-graph --serve`: Build and start the local HTTP server (http://localhost:8080).
+    * `cargo xtask cert-graph --serve --port 9090`: Host on a custom port.
 * `cargo xtask run-tool`: Run a tool from the `tools/` folder.
     * `cargo xtask run-tool sample-dpe-cert`: Run `sample_dpe_cert`.
     * `cargo xtask run-tool cert-size`: Run `cert-size`.
+

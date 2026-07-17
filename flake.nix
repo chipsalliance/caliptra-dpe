@@ -29,6 +29,7 @@
             pkg-config
             taplo
             cargo-nextest
+            wasm-bindgen-cli
           ];
           shellHook = ''
             # Ensure the toolchains are installed
@@ -37,6 +38,7 @@
             export DPE_FUZZ_TOOLCHAIN="nightly-2025-07-08"
             rustup toolchain install $DPE_FUZZ_TOOLCHAIN
             rustup target add riscv32imc-unknown-none-elf
+            rustup target add wasm32-unknown-unknown
 
             # Install fuzzer tools
             cargo +$DPE_FUZZ_TOOLCHAIN install cargo-fuzz --version 0.13.1 --locked
