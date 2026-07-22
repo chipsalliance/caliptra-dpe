@@ -7,7 +7,7 @@ Abstract:
 pub use self::certify_key::{
     CertifyKeyCommand, CertifyKeyFlags, CertifyKeyP256Cmd, CertifyKeyP384Cmd,
 };
-pub use self::derive_context::{DeriveContextCmd, DeriveContextFlags};
+pub use self::derive_context::{DeriveContextCmd, DeriveContextCmdV1, DeriveContextFlags};
 pub use self::destroy_context::DestroyCtxCmd;
 pub use self::get_certificate_chain::GetCertificateChainCmd;
 pub use self::get_profile::GetProfileCmd;
