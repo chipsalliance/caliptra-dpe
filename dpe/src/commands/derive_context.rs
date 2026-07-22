@@ -22,7 +22,9 @@ use core::mem::size_of;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 #[repr(C)]
-#[derive(Debug, PartialEq, Eq, Clone, Copy, FromBytes, IntoBytes, Immutable, KnownLayout)]
+#[derive(
+    Debug, Default, PartialEq, Eq, Clone, Copy, FromBytes, IntoBytes, Immutable, KnownLayout,
+)]
 pub struct DeriveContextFlags(pub u32);
 
 bitflags! {
@@ -91,7 +93,7 @@ impl DeriveContextFlags {
 }
 
 #[repr(C, align(4))]
-#[derive(Debug, PartialEq, Eq, FromBytes, IntoBytes, Immutable, KnownLayout)]
+#[derive(Debug, Default, PartialEq, Eq, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct DeriveContextCmd {
     pub handle: ContextHandle,
     pub data: TciMeasurement,
@@ -510,14 +512,24 @@ impl CommandExecution for DeriveContextCmd {
     }
 }
 
-impl Default for DeriveContextCmd {
-    fn default() -> Self {
+#[repr(C, align(4))]
+#[derive(Debug, Default, PartialEq, Eq, FromBytes, IntoBytes, Immutable, KnownLayout)]
+pub struct DeriveContextCmdV1 {
+    pub handle: ContextHandle,
+    pub data: TciMeasurement,
+    pub flags: DeriveContextFlags,
+    pub tci_type: u32,
+    pub target_locality: u32,
+}
+
+impl From<DeriveContextCmdV1> for DeriveContextCmd {
+    fn from(cmd: DeriveContextCmdV1) -> Self {
         Self {
-            handle: ContextHandle::default(),
-            data: TciMeasurement::default(),
-            flags: DeriveContextFlags(0),
-            tci_type: 0,
-            target_locality: 0,
+            handle: cmd.handle,
+            data: cmd.data,
+            flags: cmd.flags,
+            tci_type: cmd.tci_type,
+            target_locality: cmd.target_locality,
             svn: 0,
         }
     }
