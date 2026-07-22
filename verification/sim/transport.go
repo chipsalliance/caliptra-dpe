@@ -55,6 +55,7 @@ func (s *DpeSimulator) HasPowerControl() bool {
 
 // PowerOn starts the simulator.
 func (s *DpeSimulator) PowerOn() error {
+	_ = os.Remove(simulatorSocketPath)
 	args := []string{}
 	if s.supports.Simulation {
 		args = append(args, "--supports-simulation")
@@ -104,6 +105,7 @@ func (s *DpeSimulator) PowerOn() error {
 
 // PowerOff kills the simulator in a way that it can cleanup before closing.
 func (s *DpeSimulator) PowerOff() error {
+	defer func() { _ = os.Remove(simulatorSocketPath) }()
 	if s.cmd != nil {
 		err := s.cmd.Process.Signal(syscall.SIGTERM)
 		if err != nil {
