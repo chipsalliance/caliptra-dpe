@@ -410,26 +410,6 @@ impl CertWriter<'_> {
         Self::get_structure_size(bytes.len(), tagged)
     }
 
-    /// If `tagged`, include the tag and size fields
-    fn get_rdn_size(name: &Name, tagged: bool) -> usize {
-        let cn_seq_size = Self::get_structure_size(
-            Self::get_bytes_size(&Self::RDN_COMMON_NAME_OID, /*tagged=*/ true)
-                + Self::get_bytes_size(name.cn.bytes(), true),
-            /*tagged=*/ true,
-        );
-        let serialnumber_seq_size = Self::get_structure_size(
-            Self::get_bytes_size(&Self::RDN_COMMON_NAME_OID, /*tagged=*/ true)
-                + Self::get_bytes_size(name.serial.bytes(), /*tagged=*/ true),
-            /*tagged=*/ true,
-        );
-
-        let cn_set_size = Self::get_structure_size(cn_seq_size, /*tagged=*/ true);
-        let serialnumber_set_size =
-            Self::get_structure_size(serialnumber_seq_size, /*tagged=*/ true);
-
-        Self::get_structure_size(cn_set_size + serialnumber_set_size, tagged)
-    }
-
     fn sig_oid(&self) -> &'static [u8] {
         match self.profile {
             #[cfg(feature = "p256")]
@@ -501,22 +481,6 @@ impl CertWriter<'_> {
         Self::get_structure_size(seq_size, tagged)
     }
 
-    /// Calculate the number of bytes an ECC SubjectPublicKeyInfo will be
-    /// If `tagged`, include the tag and size fields
-    #[cfg(any(feature = "p256", feature = "p384"))]
-    fn get_ecdsa_subject_pubkey_info_size(
-        &self,
-        pubkey: &EcdsaPubKey,
-        curve_oid: &[u8],
-        tagged: bool,
-    ) -> usize {
-        let point_size = 1 + pubkey.curve_size() + pubkey.curve_size();
-        let bitstring_size = 1 + point_size;
-        let seq_size = Self::get_structure_size(bitstring_size, /*tagged=*/ true)
-            + Self::get_ec_pub_alg_id_size(curve_oid, /*tagged=*/ true);
-        Self::get_structure_size(seq_size, tagged)
-    }
-
     /// If `tagged`, include the tag and size fields
     #[cfg(not(feature = "disable_csr"))]
     fn get_signature_octet_string_size(&self, sig: &Signature, tagged: bool) -> usize {
@@ -551,16 +515,6 @@ impl CertWriter<'_> {
 
         // Wrapping structure size
         Self::get_structure_size(seq_size, tagged)
-    }
-
-    /// version is marked as EXPLICIT [0]
-    /// If `tagged`, include the explicit tag and size fields
-    #[cfg(not(feature = "disable_x509"))]
-    fn get_version_size(tagged: bool) -> usize {
-        let integer_size = Self::get_integer_size(Self::X509_V3, /*tagged=*/ true);
-
-        // If tagged, also add explicit wrapping
-        Self::get_structure_size(integer_size, tagged)
     }
 
     /// Get the size of a DICE FWID structure
@@ -840,111 +794,6 @@ impl CertWriter<'_> {
         size = Self::get_structure_size(size, /*tagged=*/ explicit);
 
         Ok(Self::get_structure_size(size, tagged))
-    }
-
-    /// Get the size of the ASN.1 TBSCertificate structure
-    /// If `tagged`, include the tag and size fields
-    #[allow(clippy::too_many_arguments)]
-    #[cfg(not(feature = "disable_x509"))]
-    fn get_tbs_size(
-        &self,
-        serial_number: &[u8],
-        issuer_der: &[u8],
-        subject_name: &Name,
-        pubkey: &PubKey,
-        measurements: &MeasurementData,
-        validity: &CertValidity,
-        tagged: bool,
-    ) -> Result<usize, DpeErrorCode> {
-        let pubkey_size = match pubkey {
-            #[cfg_attr(
-                all(not(feature = "p256"), not(feature = "p384")),
-                expect(unused_variables)
-            )]
-            PubKey::Ecdsa(ecdsa_key) => match self.profile {
-                #[cfg(feature = "p256")]
-                DpeProfile::P256Sha256 => {
-                    self.get_ecdsa_sig_alg_id_size(true)
-                        + self.get_ecdsa_subject_pubkey_info_size(
-                            ecdsa_key,
-                            profile_oids::CURVE_P256_OID,
-                            true,
-                        )
-                }
-                #[cfg(feature = "p384")]
-                DpeProfile::P384Sha384 => {
-                    self.get_ecdsa_sig_alg_id_size(true)
-                        + self.get_ecdsa_subject_pubkey_info_size(
-                            ecdsa_key,
-                            profile_oids::CURVE_P384_OID,
-                            true,
-                        )
-                }
-                #[cfg(feature = "ml-dsa")]
-                DpeProfile::Mldsa87 => return Err(DpeErrorCode::InvalidArgument),
-            },
-            #[cfg(feature = "ml-dsa")]
-            PubKey::Mldsa(mldsa_key) => {
-                self.get_mldsa_sig_alg_id_size(true)
-                    + self.get_mldsa_subject_pubkey_info_size(mldsa_key, true)
-            }
-        };
-        let tbs_size = Self::get_version_size(/*tagged=*/ true)
-            + Self::get_integer_bytes_size(serial_number, /*tagged=*/ true)
-            + pubkey_size
-            + issuer_der.len()
-            + Self::get_validity_size(validity, /*tagged=*/ true)
-            + Self::get_rdn_size(subject_name, /*tagged=*/ true)
-            + self.get_extensions_size(
-                measurements,
-                /*tagged=*/ true,
-                /*explicit=*/ true,
-                /*is_x509=*/ true,
-            )?;
-
-        Ok(Self::get_structure_size(tbs_size, tagged))
-    }
-
-    /// Get the size of the ASN.1 CertificationRequestInfo structure
-    /// If `tagged`, include the tag and size fields
-    #[cfg(not(feature = "disable_csr"))]
-    fn get_certification_request_info_size(
-        &self,
-        subject_name: &Name,
-        pubkey: &PubKey,
-        measurements: &MeasurementData,
-        tagged: bool,
-    ) -> Result<usize, DpeErrorCode> {
-        let pubkey_size = match pubkey {
-            #[cfg_attr(
-                all(not(feature = "p256"), not(feature = "p384")),
-                expect(unused_variables)
-            )]
-            PubKey::Ecdsa(ecdsa_key) => match self.profile {
-                #[cfg(feature = "p256")]
-                DpeProfile::P256Sha256 => self.get_ecdsa_subject_pubkey_info_size(
-                    ecdsa_key,
-                    profile_oids::CURVE_P256_OID,
-                    true,
-                ),
-                #[cfg(feature = "p384")]
-                DpeProfile::P384Sha384 => self.get_ecdsa_subject_pubkey_info_size(
-                    ecdsa_key,
-                    profile_oids::CURVE_P384_OID,
-                    true,
-                ),
-                #[cfg(feature = "ml-dsa")]
-                DpeProfile::Mldsa87 => return Err(DpeErrorCode::InvalidArgument),
-            },
-            #[cfg(feature = "ml-dsa")]
-            PubKey::Mldsa(pubkey) => self.get_mldsa_subject_pubkey_info_size(pubkey, true),
-        };
-        let cert_req_info_size = Self::get_integer_size(Self::CSR_V0, true)
-            + Self::get_rdn_size(subject_name, /*tagged=*/ true)
-            + self.get_attributes_size(measurements, /*tagged=*/ true)?
-            + pubkey_size;
-
-        Ok(Self::get_structure_size(cert_req_info_size, tagged))
     }
 
     /// Get the size of the CMS version which differs based on the SignerIdentifier
@@ -2247,22 +2096,12 @@ impl CertWriter<'_> {
         measurements: &MeasurementData,
         validity: &CertValidity,
     ) -> Result<usize, DpeErrorCode> {
-        let tbs_size = self.get_tbs_size(
-            serial_number,
-            issuer_name,
-            subject_name,
-            pubkey,
-            measurements,
-            validity,
-            /*tagged=*/ false,
-        )?;
-
-        // TBS sequence
-        let mut bytes_written = self.encode_tag_field(Self::SEQUENCE_TAG);
-        bytes_written += self.encode_size_field(tbs_size);
+        // TBSCertificate SEQUENCE tag + reserved size field, backfilled below.
+        let mut prefix_bytes_written = self.encode_tag_field(Self::SEQUENCE_TAG);
+        self.push_backtrack(SIZE_TAG_OFFSET)?;
 
         // version
-        bytes_written += self.encode_version();
+        let mut bytes_written = self.encode_version();
 
         // serialNumber
         bytes_written += self.encode_integer_bytes(serial_number, true);
@@ -2308,8 +2147,16 @@ impl CertWriter<'_> {
         // extensions
         bytes_written += self.encode_extensions(measurements, /*is_x509=*/ true)?;
 
+        // Backfill the SEQUENCE size field now that the content size is known.
+        {
+            self.start_backtrack()?;
+            self.pop_backtrack(Self::get_size_width(bytes_written))?;
+            prefix_bytes_written += self.encode_size_field(bytes_written);
+            self.end_backtrack()?;
+        }
+
         self.check_not_truncated()?;
-        Ok(bytes_written)
+        Ok(prefix_bytes_written + bytes_written)
     }
 
     /// Encode an ECDSA X.509 certificate
@@ -2440,25 +2287,18 @@ impl CertWriter<'_> {
     ///
     /// Returns number of bytes written to `certificate`
     #[cfg(not(feature = "disable_csr"))]
-    pub fn encode_certification_request_info(
+    fn encode_certification_request_info(
         &mut self,
         pub_key: &PubKey,
         subject_name: &Name,
         measurements: &MeasurementData,
     ) -> Result<usize, DpeErrorCode> {
-        let cert_req_info_size = self.get_certification_request_info_size(
-            subject_name,
-            pub_key,
-            measurements,
-            /*tagged=*/ false,
-        )?;
-
-        // CertificationRequestInfo Sequence
-        let mut bytes_written = self.encode_tag_field(Self::SEQUENCE_TAG);
-        bytes_written += self.encode_size_field(cert_req_info_size);
+        // CertificationRequestInfo SEQUENCE tag + reserved size field, backfilled below.
+        let mut prefix_bytes_written = self.encode_tag_field(Self::SEQUENCE_TAG);
+        self.push_backtrack(SIZE_TAG_OFFSET)?;
 
         // version
-        bytes_written += self.encode_integer(Self::CSR_V0, true);
+        let mut bytes_written = self.encode_integer(Self::CSR_V0, true);
 
         // subject
         bytes_written += self.encode_rdn(subject_name)?;
@@ -2488,8 +2328,16 @@ impl CertWriter<'_> {
         // attributes
         bytes_written += self.encode_attributes(measurements)?;
 
+        // Backfill the SEQUENCE size field now that the content size is known.
+        {
+            self.start_backtrack()?;
+            self.pop_backtrack(Self::get_size_width(bytes_written))?;
+            prefix_bytes_written += self.encode_size_field(bytes_written);
+            self.end_backtrack()?;
+        }
+
         self.check_not_truncated()?;
-        Ok(bytes_written)
+        Ok(prefix_bytes_written + bytes_written)
     }
 
     /// Encode an PKCS #10 CSR
@@ -3153,8 +3001,6 @@ pub(crate) mod tests {
         );
         let actual = name.to_string_with_registry(oid_registry()).unwrap();
         assert_eq!(expected, actual);
-
-        assert_eq!(CertWriter::get_rdn_size(&test_name, true), bytes_written);
     }
 
     /// Run `encode` over three buffers: exactly the required size (must succeed
@@ -3361,14 +3207,6 @@ pub(crate) mod tests {
         let bytes_written = w.encode_ecdsa_subject_pubkey_info(&test_key, curve_oid);
 
         SubjectPublicKeyInfo::from_der(&cert[..bytes_written]).unwrap();
-
-        let mut empty: [u8; 0] = [];
-        let mut ebuf = SliceResponseBuffer::new(&mut empty);
-        assert_eq!(
-            CertWriter::new(&mut ebuf, DPE_PROFILE, true)
-                .get_ecdsa_subject_pubkey_info_size(&test_key, curve_oid, true),
-            bytes_written
-        );
     }
 
     #[cfg(all(feature = "ml-dsa", not(feature = "p384"), not(feature = "p256")))]
@@ -4323,13 +4161,61 @@ pub(crate) mod tests {
         buf
     }
 
+    /// Build `n` active contexts linked into a single child->root chain: index 0
+    /// is the leaf, index `n - 1` is the root (`parent_idx[i] == i + 1`). Both
+    /// `parent_idx` and the parent's `children` bitmap are populated because the
+    /// root->leaf traversal used by `first_node()` walks the `children` links.
+    /// This makes `TciNodes::new(0, ..)` yield all `n` nodes, so the `max_size`
+    /// cases actually exercise a full MAX_HANDLES multiTcbInfo instead of
+    /// collapsing to a single node (every default context points at `ROOT_INDEX`).
     fn make_test_contexts(n: usize) -> Vec<Context> {
-        (0..n)
+        let mut contexts: Vec<Context> = (0..n)
             .map(|_| Context {
                 state: ContextState::Active,
                 ..Context::default()
             })
-            .collect()
+            .collect();
+        #[allow(clippy::needless_range_loop)]
+        for i in 0..n {
+            if i + 1 < n {
+                contexts[i].parent_idx = (i + 1) as u8;
+                contexts[i + 1].children.add_child(i).unwrap();
+            } else {
+                contexts[i].parent_idx = Context::ROOT_INDEX;
+            }
+        }
+        contexts
+    }
+
+    /// Assert that a freshly encoded top-level SEQUENCE (a TBSCertificate or a
+    /// CertificationRequestInfo) uses the 3-byte DER long-form length field —
+    /// i.e. its content length is in `256..=65535` (`get_size_width == 3`).
+    ///
+    /// This is a hard precondition of the size-field backtracking optimization:
+    /// `encode_tbs` / `encode_certification_request_info` reserve exactly
+    /// `SIZE_TAG_OFFSET` (3) bytes for the length before the content size is
+    /// known, then backfill it. If a real structure ever encoded to a shorter
+    /// (<256, width 1-2) or longer (>65535, width 4-5) length, the reserved
+    /// width would be wrong and `pop_backtrack` would reject it (or leave a gap
+    /// in the output). Checking the minimal and maximal structures the
+    /// implementation can emit guards that this never happens in practice.
+    fn assert_seq_len_width3(der: &[u8], what: &str) {
+        assert_eq!(
+            der[0],
+            CertWriter::SEQUENCE_TAG,
+            "{what}: expected SEQUENCE tag"
+        );
+        assert_eq!(
+            der[1], 0x82,
+            "{what}: outer length byte is {:#04x}, not the 3-byte form (0x82) the \
+             backtracking optimization reserves",
+            der[1],
+        );
+        let len = ((der[2] as usize) << 8) | der[3] as usize;
+        assert!(
+            (256..=65535).contains(&len),
+            "{what}: content length {len} is outside the backtrack bounds 256..=65535",
+        );
     }
 
     // Expected DER bytes of SEQUENCE { INTEGER(r), INTEGER(s) } for our ECDSA test sig.
@@ -4423,6 +4309,7 @@ pub(crate) mod tests {
                 &validity,
             )
             .unwrap();
+        assert_seq_len_width3(&buf[..n], "TBSCertificate");
 
         let (_, tbs) = TbsCertificate::from_der(&buf[..n])
             .unwrap_or_else(|e| panic!("TbsCertificate::from_der failed: {:?}", e));
@@ -4535,6 +4422,7 @@ pub(crate) mod tests {
                 &validity,
             )
             .unwrap();
+        assert_seq_len_width3(&buf[..n], "TBSCertificate");
 
         let (_, tbs) = TbsCertificate::from_der(&buf[..n])
             .unwrap_or_else(|e| panic!("TbsCertificate::from_der failed (mldsa): {:?}", e));
@@ -4640,6 +4528,7 @@ pub(crate) mod tests {
         let n = w
             .encode_certification_request_info(&pub_key, &TEST_SUBJECT_NAME, &measurements)
             .unwrap();
+        assert_seq_len_width3(&buf[..n], "CertificationRequestInfo");
 
         let cri = asn1::parse_single::<CertReqInfoParsed>(&buf[..n])
             .unwrap_or_else(|e| panic!("CertReqInfo parse failed (ecdsa): {:?}", e));
@@ -4735,6 +4624,7 @@ pub(crate) mod tests {
         let n = w
             .encode_certification_request_info(&pub_key, &TEST_SUBJECT_NAME, &measurements)
             .unwrap();
+        assert_seq_len_width3(&buf[..n], "CertificationRequestInfo");
 
         let cri = asn1::parse_single::<CertReqInfoParsed>(&buf[..n])
             .unwrap_or_else(|e| panic!("CertReqInfo parse failed (mldsa): {:?}", e));
