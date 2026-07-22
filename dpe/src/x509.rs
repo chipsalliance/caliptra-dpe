@@ -819,34 +819,6 @@ impl CertWriter<'_> {
         Self::get_structure_size(signer_info_size, tagged)
     }
 
-    /// Get the size of the ASN.1 SignedData structure
-    /// If `tagged`, include the tag and size fields
-    #[cfg(not(feature = "disable_csr"))]
-    fn get_signed_data_size(
-        &self,
-        csr_len: usize,
-        sig: &Signature,
-        sid: &SignerIdentifier,
-        tagged: bool,
-        explicit: bool,
-    ) -> usize {
-        let signed_data_size = Self::get_cms_version_size(sid)
-            + Self::get_structure_size(
-                self.get_hash_alg_id_size(/*tagged=*/ true),
-                /*tagged=*/ true,
-            )
-            + Self::get_encap_content_info_size(csr_len, /*tagged=*/ true)
-            + Self::get_structure_size(
-                self.get_signer_info_size(sig, sid, /*tagged=*/ true),
-                /*tagged=*/ true,
-            );
-
-        // Determine whether to include the explicit tag wrapping in the size calculation
-        let explicit_signed_data_size = Self::get_structure_size(signed_data_size, explicit);
-
-        Self::get_structure_size(explicit_signed_data_size, tagged)
-    }
-
     /// Get the size of the ASN.1 SignerIdentifier structure
     /// If `tagged`, include the tag and size fields
     #[cfg(not(feature = "disable_csr"))]
@@ -917,21 +889,6 @@ impl CertWriter<'_> {
         let explicit_bytes_size = Self::get_structure_size(bytes_size, explicit);
 
         Self::get_structure_size(explicit_bytes_size, tagged)
-    }
-
-    /// Get the size of the ASN.1 EncapsulatedContentInfo structure
-    /// If `tagged`, include the tag and size fields
-    #[cfg(not(feature = "disable_csr"))]
-    fn get_encap_content_info_size(csr_bytes_written: usize, tagged: bool) -> usize {
-        let encap_content_info_size =
-            Self::get_structure_size(Self::ID_DATA_OID.len(), /*tagged=*/ true)
-                + Self::get_econtent_size(
-                    csr_bytes_written,
-                    /*tagged=*/ true,
-                    /*explicit=*/ true,
-                );
-
-        Self::get_structure_size(encap_content_info_size, tagged)
     }
 
     /// Get the size of the ASN.1 Attribute structure
@@ -2386,10 +2343,14 @@ impl CertWriter<'_> {
         measurements: &MeasurementData,
         sid: &SignerIdentifier,
     ) -> Result<usize, DpeErrorCode> {
-        let mut size_bytes_written = self.encode_byte(Self::SEQUENCE_TAG);
-        let _ = self.push_backtrack(SIZE_TAG_OFFSET)?;
+        // ContentInfo SEQUENCE. This and the two nested SignedData layers reserve
+        // their length fields up front (always 3 bytes) and backfill them below.
+        // Each prefix is counted as tag + reserved length, so the layer sizes
+        // further down are just sums of the running byte counts.
+        let content_info_prefix = self.encode_byte(Self::SEQUENCE_TAG) + SIZE_TAG_OFFSET;
+        self.push_backtrack(SIZE_TAG_OFFSET)?;
 
-        let mut bytes_written = self.encode_oid(Self::ID_SIGNED_DATA_OID);
+        let mut content_info_body = self.encode_oid(Self::ID_SIGNED_DATA_OID);
 
         // Encode a SignedData
         //
@@ -2403,55 +2364,56 @@ impl CertWriter<'_> {
         // }
 
         // SignedData is EXPLICIT field number 0
-        bytes_written += self.encode_byte(Self::CONTEXT_SPECIFIC | Self::CONSTRUCTED | 0x0);
-        let _ = self.push_backtrack(SIZE_TAG_OFFSET)?;
+        content_info_body +=
+            self.encode_byte(Self::CONTEXT_SPECIFIC | Self::CONSTRUCTED | 0x0) + SIZE_TAG_OFFSET;
+        self.push_backtrack(SIZE_TAG_OFFSET)?;
 
         // SignedData sequence
-        bytes_written += self.encode_tag_field(Self::SEQUENCE_TAG);
-        let _ = self.push_backtrack(SIZE_TAG_OFFSET)?;
+        let signed_data_prefix = self.encode_tag_field(Self::SEQUENCE_TAG) + SIZE_TAG_OFFSET;
+        self.push_backtrack(SIZE_TAG_OFFSET)?;
 
         // CMS version
-        bytes_written += self.encode_cms_version(sid);
+        let mut signed_data_body = self.encode_cms_version(sid);
 
         // digestAlgorithms
-        bytes_written += self.encode_tag_field(Self::SET_OF_TAG);
-        bytes_written += self.encode_size_field(self.get_hash_alg_id_size(/*tagged=*/ true));
-        bytes_written += self.encode_hash_alg_id();
+        signed_data_body += self.encode_tag_field(Self::SET_OF_TAG);
+        signed_data_body += self.encode_size_field(self.get_hash_alg_id_size(/*tagged=*/ true));
+        signed_data_body += self.encode_hash_alg_id();
 
         // encapContentInfo
-        bytes_written +=
+        signed_data_body +=
             self.encode_encapsulated_content_info(sign_cb, pub_key, subject_name, measurements)?;
 
         let (csr_start, csr_end) = self.csr_range.ok_or(DpeErrorCode::X509CsrUnset)?;
-        let csr_len = csr_end - csr_start;
-
-        let sig = sign_cb(&*self.certificate, (csr_start)..(csr_end), false);
+        let sig = sign_cb(&*self.certificate, csr_start..csr_end, false);
         let sig = okref(&sig)?;
 
-        let signed_data_field_0 = self.get_signed_data_size(
-            csr_len, sig, sid, /*tagged=*/ true, /*explicit=*/ false,
-        );
-
-        let signed_data_field_1 = self.get_signed_data_size(
-            csr_len, sig, sid, /*tagged=*/ false, /*explicit=*/ false,
-        );
-
         // signerInfos
-        bytes_written += self.encode_tag_field(Self::SET_OF_TAG);
-        bytes_written +=
+        signed_data_body += self.encode_tag_field(Self::SET_OF_TAG);
+        signed_data_body +=
             self.encode_size_field(self.get_signer_info_size(sig, sid, /*tagged=*/ true));
-        bytes_written += self.encode_signer_info(sig, sid)?;
+        signed_data_body += self.encode_signer_info(sig, sid)?;
+
+        // Each layer's size is its prefix (tag + reserved length, counted above)
+        // plus its content — a plain sum, since the reserved length width is
+        // already folded into the prefixes. pop_backtrack re-verifies that each
+        // length really is a 3-byte field before it is written.
+        //   signed_data_field_1 = SignedData SEQUENCE content
+        //   signed_data_field_0 = content [0] EXPLICIT = SignedData (tag + len + content)
+        let signed_data_field_1 = signed_data_body;
+        let signed_data_field_0 = signed_data_prefix + signed_data_field_1;
+        let content_info_size = content_info_body + signed_data_field_0;
 
         {
             self.start_backtrack()?;
             self.pop_backtrack(Self::get_size_width(signed_data_field_1))?;
-            bytes_written += self.encode_size_field(signed_data_field_1);
+            self.encode_size_field(signed_data_field_1);
 
             self.pop_backtrack(Self::get_size_width(signed_data_field_0))?;
-            bytes_written += self.encode_size_field(signed_data_field_0);
+            self.encode_size_field(signed_data_field_0);
 
-            self.pop_backtrack(Self::get_size_width(bytes_written))?;
-            size_bytes_written += self.encode_size_field(bytes_written);
+            self.pop_backtrack(Self::get_size_width(content_info_size))?;
+            self.encode_size_field(content_info_size);
 
             self.end_backtrack()?;
         }
@@ -2461,7 +2423,7 @@ impl CertWriter<'_> {
         }
 
         self.check_not_truncated()?;
-        Ok(bytes_written + size_bytes_written)
+        Ok(content_info_prefix + content_info_size)
     }
 }
 
