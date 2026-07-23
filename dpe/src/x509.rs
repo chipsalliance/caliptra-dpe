@@ -5006,4 +5006,109 @@ pub(crate) mod tests {
         let ski_max = [0xFFu8; MAX_KEY_IDENTIFIER_SIZE];
         run_encode_signer_info_mldsa(&issuer_der_max, &serial_max, &ski_max);
     }
+
+    /// Golden X.509 / CSR regression smoke tests.
+    ///
+    /// A golden certificate and CSR are checked in as fixed, "known-good" DER
+    /// artifacts under `src/x509_testdata/`. These are treated as immutable
+    /// inputs: the tests only *parse* and *validate* them. They are never
+    /// regenerated from code; if a golden must ever change, it is produced by
+    /// hand with the OpenSSL CLI (see `src/x509_testdata/README.md`).
+    ///
+    /// The parsed certificate is self-signed with the subject's own key, so its
+    /// signature can be verified against the public key embedded in the
+    /// certificate itself.
+    #[cfg(not(feature = "disable_x509"))]
+    mod golden {
+        use super::*;
+
+        #[cfg(feature = "p256")]
+        const GOLDEN_CERT_DER: &[u8] = include_bytes!("x509_testdata/golden_cert_p256.der");
+        #[cfg(feature = "p384")]
+        const GOLDEN_CERT_DER: &[u8] = include_bytes!("x509_testdata/golden_cert_p384.der");
+        #[cfg(all(feature = "ml-dsa", not(feature = "p384"), not(feature = "p256")))]
+        const GOLDEN_CERT_DER: &[u8] = include_bytes!("x509_testdata/golden_cert_mldsa87.der");
+
+        #[cfg(feature = "p256")]
+        const GOLDEN_CSR_DER: &[u8] = include_bytes!("x509_testdata/golden_csr_p256.der");
+        #[cfg(feature = "p384")]
+        const GOLDEN_CSR_DER: &[u8] = include_bytes!("x509_testdata/golden_csr_p384.der");
+        #[cfg(all(feature = "ml-dsa", not(feature = "p384"), not(feature = "p256")))]
+        const GOLDEN_CSR_DER: &[u8] = include_bytes!("x509_testdata/golden_csr_mldsa87.der");
+
+        /// Parse the golden certificate, verify its self-signature, and assert
+        /// on its structure and DICE / TCI extensions.
+        #[test]
+        #[cfg_attr(miri, ignore)]
+        fn test_golden_cert() {
+            // Parses as a valid X.509v3 certificate.
+            let mut parser = X509CertificateParser::new().with_deep_parse_extensions(true);
+            let (_, cert) = parser
+                .parse(GOLDEN_CERT_DER)
+                .unwrap_or_else(|e| panic!("golden cert failed to parse: {e:?}"));
+            assert_eq!(cert.version(), X509Version::V3);
+
+            // Signature verifies against the certificate's own public key
+            // (the golden cert is self-signed).
+            let openssl_cert = openssl::x509::X509::from_der(GOLDEN_CERT_DER).unwrap();
+            let pkey = openssl_cert.public_key().unwrap();
+            assert!(
+                openssl_cert.verify(&pkey).unwrap(),
+                "golden certificate signature failed to verify",
+            );
+
+            // DICE UEID extension (tcg-dice-Ueid 2.23.133.5.4.4): critical, with
+            // the fixed all-zero label.
+            let ueid = cert
+                .get_extension_unique(&oid!(2.23.133 .5 .4 .4))
+                .unwrap()
+                .expect("missing DICE UEID extension");
+            assert!(ueid.critical);
+            let parsed_ueid = asn1::parse_single::<Ueid>(ueid.value).unwrap();
+            assert_eq!(parsed_ueid.ueid, &[0u8; DPE_PROFILE.hash_size()][..]);
+
+            // DICE MultiTcbInfo extension (tcg-dice-MultiTcbInfo 2.23.133.5.4.5):
+            // exactly one TcbInfo whose single FWID is the all-zero measurement.
+            let tcb = cert
+                .get_extension_unique(&oid!(2.23.133 .5 .4 .5))
+                .unwrap()
+                .expect("missing DICE MultiTcbInfo extension");
+            let tcb_infos = asn1::parse_single::<asn1::SequenceOf<TcbInfo>>(tcb.value).unwrap();
+            let mut count = 0usize;
+            for info in tcb_infos {
+                count += 1;
+                let fwids = info.fwids.expect("TcbInfo must carry FWIDs");
+                for fwid in fwids {
+                    assert_eq!(fwid.digest, &[0u8; DPE_PROFILE.hash_size()][..]);
+                }
+            }
+            assert_eq!(count, 1, "expected exactly one TcbInfo");
+        }
+
+        /// Parse the golden CSR and verify its self-signature.
+        #[test]
+        #[cfg_attr(miri, ignore)]
+        fn test_golden_csr() {
+            // Parses as a valid PKCS#10 certification request.
+            let (_, csr) = X509CertificationRequest::from_der(GOLDEN_CSR_DER)
+                .unwrap_or_else(|e| panic!("golden CSR failed to parse: {e:?}"));
+            assert_eq!(csr.certification_request_info.version.0, 0);
+
+            // Self-signature verifies against the CSR's own public key.
+            let openssl_csr = openssl::x509::X509Req::from_der(GOLDEN_CSR_DER).unwrap();
+            let pkey = openssl_csr.public_key().unwrap();
+            assert!(
+                openssl_csr.verify(&pkey).unwrap(),
+                "golden CSR signature failed to verify",
+            );
+
+            // The CSR carries requested extensions (DICE data).
+            assert!(
+                csr.requested_extensions()
+                    .map(|mut it| it.any(|_| true))
+                    .unwrap_or(false),
+                "golden CSR must have requested extensions",
+            );
+        }
+    }
 }
