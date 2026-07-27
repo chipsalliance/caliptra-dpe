@@ -353,6 +353,28 @@ impl CertWriter<'_> {
         Ok(())
     }
 
+    fn backtrack(
+        &mut self,
+        sizes: &[usize],
+        out_size: Option<&mut usize>,
+    ) -> Result<(), DpeErrorCode> {
+        self.start_backtrack()?;
+
+        let mut bytes_written = 0;
+        for size in sizes {
+            self.pop_backtrack(Self::get_size_width(*size))?;
+            bytes_written += self.encode_size_field(*size);
+        }
+
+        self.end_backtrack()?;
+
+        if let Some(out_size) = out_size {
+            *out_size += bytes_written;
+        }
+
+        Ok(())
+    }
+
     /// Calculate the number of bytes the ASN.1 size field will be
     fn get_size_width(size: usize) -> usize {
         // The ASN.1 field is 1 byte if less than 128, and for every size larger is 1 byte
@@ -2000,19 +2022,14 @@ impl CertWriter<'_> {
             /*explicit=*/ false,
         );
 
-        {
-            self.start_backtrack()?;
-            self.pop_backtrack(Self::get_size_width(econtent_1_size))?;
-            bytes_written += self.encode_size_field(econtent_1_size);
-
-            self.pop_backtrack(Self::get_size_width(econtent_0_size))?;
-            bytes_written += self.encode_size_field(econtent_0_size);
-
-            self.pop_backtrack(Self::get_size_width(bytes_written + csr_bytes_written))?;
-
-            size_bytes_written += self.encode_size_field(bytes_written + csr_bytes_written);
-            self.end_backtrack()?;
-        }
+        self.backtrack(
+            &[econtent_1_size, econtent_0_size],
+            Some(&mut bytes_written),
+        )?;
+        self.backtrack(
+            &[bytes_written + csr_bytes_written],
+            Some(&mut size_bytes_written),
+        )?;
 
         Ok(bytes_written + csr_bytes_written + size_bytes_written)
     }
@@ -2105,12 +2122,7 @@ impl CertWriter<'_> {
         bytes_written += self.encode_extensions(measurements, /*is_x509=*/ true)?;
 
         // Backfill the SEQUENCE size field now that the content size is known.
-        {
-            self.start_backtrack()?;
-            self.pop_backtrack(Self::get_size_width(bytes_written))?;
-            prefix_bytes_written += self.encode_size_field(bytes_written);
-            self.end_backtrack()?;
-        }
+        self.backtrack(&[bytes_written], Some(&mut prefix_bytes_written))?;
 
         self.check_not_truncated()?;
         Ok(prefix_bytes_written + bytes_written)
@@ -2213,14 +2225,7 @@ impl CertWriter<'_> {
 
         let body_size = payload_bytes_written + sig_bytes_written;
 
-        {
-            self.start_backtrack()?;
-            self.pop_backtrack(Self::get_size_width(body_size))?;
-
-            prefix_bytes_written += self.encode_size_field(body_size);
-
-            self.end_backtrack()?;
-        }
+        self.backtrack(&[body_size], Some(&mut prefix_bytes_written))?;
 
         let total_size = body_size + prefix_bytes_written;
 
@@ -2286,12 +2291,7 @@ impl CertWriter<'_> {
         bytes_written += self.encode_attributes(measurements)?;
 
         // Backfill the SEQUENCE size field now that the content size is known.
-        {
-            self.start_backtrack()?;
-            self.pop_backtrack(Self::get_size_width(bytes_written))?;
-            prefix_bytes_written += self.encode_size_field(bytes_written);
-            self.end_backtrack()?;
-        }
+        self.backtrack(&[bytes_written], Some(&mut prefix_bytes_written))?;
 
         self.check_not_truncated()?;
         Ok(prefix_bytes_written + bytes_written)
@@ -2404,19 +2404,10 @@ impl CertWriter<'_> {
         let signed_data_field_0 = signed_data_prefix + signed_data_field_1;
         let content_info_size = content_info_body + signed_data_field_0;
 
-        {
-            self.start_backtrack()?;
-            self.pop_backtrack(Self::get_size_width(signed_data_field_1))?;
-            self.encode_size_field(signed_data_field_1);
-
-            self.pop_backtrack(Self::get_size_width(signed_data_field_0))?;
-            self.encode_size_field(signed_data_field_0);
-
-            self.pop_backtrack(Self::get_size_width(content_info_size))?;
-            self.encode_size_field(content_info_size);
-
-            self.end_backtrack()?;
-        }
+        self.backtrack(
+            &[signed_data_field_1, signed_data_field_0, content_info_size],
+            None,
+        )?;
 
         if !self.backtracks.is_empty() {
             return Err(DpeErrorCode::X509InvalidState);
