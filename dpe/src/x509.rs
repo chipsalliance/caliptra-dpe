@@ -353,7 +353,7 @@ impl CertWriter<'_> {
         Ok(())
     }
 
-    fn backtrack(
+    fn backtrack_and_encode_size(
         &mut self,
         sizes: &[usize],
         out_size: Option<&mut usize>,
@@ -2022,11 +2022,11 @@ impl CertWriter<'_> {
             /*explicit=*/ false,
         );
 
-        self.backtrack(
+        self.backtrack_and_encode_size(
             &[econtent_1_size, econtent_0_size],
             Some(&mut bytes_written),
         )?;
-        self.backtrack(
+        self.backtrack_and_encode_size(
             &[bytes_written + csr_bytes_written],
             Some(&mut size_bytes_written),
         )?;
@@ -2121,7 +2121,7 @@ impl CertWriter<'_> {
         bytes_written += self.encode_extensions(measurements, /*is_x509=*/ true)?;
 
         // Backfill the SEQUENCE size field now that the content size is known.
-        self.backtrack(&[bytes_written], Some(&mut prefix_bytes_written))?;
+        self.backtrack_and_encode_size(&[bytes_written], Some(&mut prefix_bytes_written))?;
 
         self.check_not_truncated()?;
         Ok(prefix_bytes_written + bytes_written)
@@ -2224,7 +2224,7 @@ impl CertWriter<'_> {
 
         let body_size = payload_bytes_written + sig_bytes_written;
 
-        self.backtrack(&[body_size], Some(&mut prefix_bytes_written))?;
+        self.backtrack_and_encode_size(&[body_size], Some(&mut prefix_bytes_written))?;
 
         let total_size = body_size + prefix_bytes_written;
 
@@ -2271,7 +2271,7 @@ impl CertWriter<'_> {
         bytes_written += self.encode_attributes(measurements)?;
 
         // Backfill the SEQUENCE size field now that the content size is known.
-        self.backtrack(&[bytes_written], Some(&mut prefix_bytes_written))?;
+        self.backtrack_and_encode_size(&[bytes_written], Some(&mut prefix_bytes_written))?;
 
         self.check_not_truncated()?;
         Ok(prefix_bytes_written + bytes_written)
@@ -2384,7 +2384,7 @@ impl CertWriter<'_> {
         let signed_data_field_0 = signed_data_prefix + signed_data_field_1;
         let content_info_size = content_info_body + signed_data_field_0;
 
-        self.backtrack(
+        self.backtrack_and_encode_size(
             &[signed_data_field_1, signed_data_field_0, content_info_size],
             None,
         )?;
