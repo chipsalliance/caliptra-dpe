@@ -2034,6 +2034,24 @@ impl CertWriter<'_> {
         Ok(bytes_written + csr_bytes_written + size_bytes_written)
     }
 
+    fn encode_pub_key_info(&mut self, pub_key: &PubKey) -> Result<usize, DpeErrorCode> {
+        #[allow(unreachable_patterns)]
+        let size = match pub_key {
+            #[cfg(feature = "p256")]
+            PubKey::Ecdsa(pub_key @ EcdsaPubKey::Ecdsa256(_)) => {
+                self.encode_ecdsa_subject_pubkey_info(pub_key, profile_oids::CURVE_P256_OID)
+            }
+            #[cfg(feature = "p384")]
+            PubKey::Ecdsa(pub_key @ EcdsaPubKey::Ecdsa384(_)) => {
+                self.encode_ecdsa_subject_pubkey_info(pub_key, profile_oids::CURVE_P384_OID)
+            }
+            #[cfg(feature = "ml-dsa")]
+            PubKey::Mldsa(pub_key) => self.encode_mldsa_subject_pubkey_info(pub_key),
+            _ => return Err(DpeErrorCode::Crypto(CryptoError::MismatchedAlgorithm)),
+        };
+        Ok(size)
+    }
+
     /// Encodes a TBS Certificate with the following ASN.1 encoding:
     ///
     /// TBSCertificate  ::=  SEQUENCE  {
@@ -2097,26 +2115,7 @@ impl CertWriter<'_> {
         bytes_written += self.encode_rdn(subject_name)?;
 
         // subjectPublicKeyInfo
-        bytes_written += match pubkey {
-            #[cfg_attr(
-                all(not(feature = "p256"), not(feature = "p384")),
-                expect(unused_variables)
-            )]
-            PubKey::Ecdsa(pub_key) => match self.profile {
-                #[cfg(feature = "p256")]
-                DpeProfile::P256Sha256 => {
-                    self.encode_ecdsa_subject_pubkey_info(pub_key, profile_oids::CURVE_P256_OID)
-                }
-                #[cfg(feature = "p384")]
-                DpeProfile::P384Sha384 => {
-                    self.encode_ecdsa_subject_pubkey_info(pub_key, profile_oids::CURVE_P384_OID)
-                }
-                #[cfg(feature = "ml-dsa")]
-                DpeProfile::Mldsa87 => return Err(DpeErrorCode::InvalidArgument),
-            },
-            #[cfg(feature = "ml-dsa")]
-            PubKey::Mldsa(pub_key) => self.encode_mldsa_subject_pubkey_info(pub_key),
-        };
+        bytes_written += self.encode_pub_key_info(pubkey)?;
 
         // extensions
         bytes_written += self.encode_extensions(measurements, /*is_x509=*/ true)?;
@@ -2266,26 +2265,7 @@ impl CertWriter<'_> {
         bytes_written += self.encode_rdn(subject_name)?;
 
         // subjectPublicKeyInfo
-        bytes_written += match pub_key {
-            #[cfg_attr(
-                all(not(feature = "p256"), not(feature = "p384")),
-                expect(unused_variables)
-            )]
-            PubKey::Ecdsa(pub_key) => match self.profile {
-                #[cfg(feature = "p256")]
-                DpeProfile::P256Sha256 => {
-                    self.encode_ecdsa_subject_pubkey_info(pub_key, profile_oids::CURVE_P256_OID)
-                }
-                #[cfg(feature = "p384")]
-                DpeProfile::P384Sha384 => {
-                    self.encode_ecdsa_subject_pubkey_info(pub_key, profile_oids::CURVE_P384_OID)
-                }
-                #[cfg(feature = "ml-dsa")]
-                DpeProfile::Mldsa87 => return Err(DpeErrorCode::InvalidArgument),
-            },
-            #[cfg(feature = "ml-dsa")]
-            PubKey::Mldsa(pub_key) => self.encode_mldsa_subject_pubkey_info(pub_key),
-        };
+        bytes_written += self.encode_pub_key_info(pub_key)?;
 
         // attributes
         bytes_written += self.encode_attributes(measurements)?;
