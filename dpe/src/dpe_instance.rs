@@ -8,7 +8,7 @@ Abstract:
 use crate::INTERNAL_INPUT_INFO_SIZE;
 use crate::{
     commands::{Command, CommandExecution, CommandHdr, InitCtxCmd},
-    context::{ChildToRootIter, Context, ContextHandle, ContextState},
+    context::{Context, ContextHandle, ContextState, RootToChildIter},
     error::{DpeErrorCode, InternalErrorCode},
     response::{GetProfileResp, NewHandleResp, Response, ResponseHdr},
     support::Support,
@@ -341,7 +341,7 @@ impl DpeInstance {
         let mut uses_internal_input_dice = false;
 
         // Hash each node.
-        for status in ChildToRootIter::new(start_idx, &state.contexts)? {
+        for status in RootToChildIter::new(start_idx, &state.contexts)? {
             let context = status?;
 
             hasher.update(context.tci.as_bytes())?;
@@ -637,7 +637,7 @@ pub mod tests {
         let (crypto, _platform, state) = env.get();
         let digest = crypto
             .with_hasher(&|hasher| {
-                for result in ChildToRootIter::new(leaf_idx, &state.contexts).unwrap() {
+                for result in RootToChildIter::new(leaf_idx, &state.contexts).unwrap() {
                     let context = result.unwrap();
                     hasher.update(context.tci.as_bytes()).unwrap();
                     hasher
@@ -704,10 +704,10 @@ pub mod tests {
         let digest = env
             .crypto
             .hash_all(&[
-                &child_context.tci.as_bytes(),
-                /*allow_x509=*/ &false.as_bytes(),
                 &parent_context.tci.as_bytes(),
                 /*allow_x509=*/ &true.as_bytes(),
+                &child_context.tci.as_bytes(),
+                /*allow_x509=*/ &false.as_bytes(),
                 &&internal_input_info[..INTERNAL_INPUT_INFO_SIZE],
             ])
             .unwrap();
@@ -760,10 +760,10 @@ pub mod tests {
         let digest = env
             .crypto
             .hash_all(&[
-                &child_context.tci.as_bytes(),
-                /*allow_x509=*/ &false.as_bytes(),
                 &parent_context.tci.as_bytes(),
                 /*allow_x509=*/ &true.as_bytes(),
+                &child_context.tci.as_bytes(),
+                /*allow_x509=*/ &false.as_bytes(),
                 &cert_chain,
             ])
             .unwrap();

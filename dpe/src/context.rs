@@ -13,6 +13,7 @@ use caliptra_cfi_lib::cfi_launder;
 #[cfg(not(miri))]
 use constant_time_eq::constant_time_eq_16;
 
+use arrayvec::ArrayVec;
 use zerocopy::{little_endian::U64, FromBytes, FromZeros, Immutable, IntoBytes, KnownLayout};
 use zeroize::Zeroize;
 
@@ -344,51 +345,58 @@ pub struct ActiveContextArgs<'a> {
     pub allow_recursive: bool,
 }
 
-pub(crate) struct ChildToRootIter<'a> {
-    front_idx: usize,
-    back_idx: usize,
-    path_len: usize,
+/// An iterator that traverses the context nodes along a root-to-leaf path.
+pub(crate) struct RootToChildIter<'a> {
+    /// The context tree on which this iterator is based.
     contexts: &'a [Context],
+    /// The current index into `path` during the iteration.
+    path_idx: usize,
+    /// Stores the node indices from a leaf node to the root. The leaf node index is provided
+    /// when creating this iterator. The path is generated from leaf to root. We scan the path in
+    /// reverse order when running this iterator.
+    path: ArrayVec<u8, MAX_HANDLES>,
+    /// If this iterator has produced all the items.
     done: bool,
-    count: usize,
 }
 
-impl<'a> ChildToRootIter<'a> {
-    /// Create a new iterator that will start at the leaf and go to the root node.
+impl<'a> RootToChildIter<'a> {
     pub fn new(leaf_idx: usize, contexts: &'a [Context]) -> Result<Self, DpeErrorCode> {
+        let path: ArrayVec<u8, MAX_HANDLES> = ArrayVec::new();
         let mut iter = Self {
-            front_idx: leaf_idx,
-            back_idx: 0,
-            path_len: 0,
             contexts,
+            path_idx: 0,
+            path,
             done: false,
-            count: 0,
         };
 
-        // Calculate the length of the path from the current front node to the root.
         let mut curr_idx = leaf_idx;
         loop {
             let context = iter.get_context(curr_idx)?;
-            iter.path_len += 1;
-            if iter.path_len > MAX_HANDLES {
-                return Err(InternalErrorCode::TciNodeCountExceeded.into());
-            }
+            iter.path
+                .try_push(curr_idx as u8)
+                .map_err(|_| InternalErrorCode::TciNodeCountExceeded)?;
             if context.parent_idx == Context::ROOT_INDEX {
-                iter.back_idx = curr_idx;
                 break;
             }
             curr_idx = context.parent_idx as usize;
         }
+        iter.path_idx = iter.path.len().wrapping_sub(1);
 
         Ok(iter)
     }
 
     pub fn num_nodes(&self) -> usize {
-        self.path_len
+        self.path.len()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.path_len == 0
+        self.path.is_empty()
+    }
+
+    pub fn first_node(&mut self) -> Result<&'a Context, DpeErrorCode> {
+        self.contexts
+            .first()
+            .ok_or(InternalErrorCode::ContextIndexOob.into())
     }
 
     /// Attempt to get the context at index `idx` and validate it.
@@ -408,100 +416,34 @@ impl<'a> ChildToRootIter<'a> {
 
         Ok(context)
     }
-
-    /// Check if node `target_idx` is on the path from node `start_idx` to the root.
-    fn is_node_on_path(
-        &mut self,
-        start_idx: usize,
-        target_idx: usize,
-    ) -> Result<bool, DpeErrorCode> {
-        let mut curr_idx = start_idx;
-        loop {
-            if curr_idx == target_idx {
-                return Ok(true);
-            }
-            let context = self.get_context(curr_idx)?;
-            if context.parent_idx == Context::ROOT_INDEX {
-                break;
-            }
-            curr_idx = context.parent_idx as usize;
-        }
-        Ok(false)
-    }
 }
 
-impl<'a> Iterator for ChildToRootIter<'a> {
+impl<'a> Iterator for RootToChildIter<'a> {
     type Item = Result<&'a Context, DpeErrorCode>;
 
     fn next(&mut self) -> Option<Result<&'a Context, DpeErrorCode>> {
         if self.done {
             return None;
         }
-        if self.count >= self.path_len {
-            self.done = true;
-            return None;
-        }
-        if self.count >= MAX_HANDLES {
-            self.done = true;
-            return Some(Err(DpeErrorCode::MaxTcis));
-        }
 
-        let context = match self.get_context(self.front_idx) {
+        let idx = match self.path.get(self.path_idx) {
+            None => {
+                self.done = true;
+                return Some(Err(InternalErrorCode::ChildIndexOob.into()));
+            }
+            Some(idx) => *idx,
+        };
+        let context = match self.get_context(idx as usize) {
             Ok(context) => context,
             Err(e) => return Some(Err(e)),
         };
 
-        if context.parent_idx == Context::ROOT_INDEX {
-            self.done = true;
-        }
-        self.front_idx = context.parent_idx as usize;
-        self.count += 1;
-        Some(Ok(context))
-    }
-}
-
-impl DoubleEndedIterator for ChildToRootIter<'_> {
-    fn next_back(&mut self) -> Option<Self::Item> {
-        if self.done {
-            return None;
-        }
-        if self.count >= self.path_len {
-            self.done = true;
-            return None;
-        }
-        if self.count >= MAX_HANDLES {
-            self.done = true;
-            return Some(Err(DpeErrorCode::MaxTcis));
-        }
-
-        let context = match self.get_context(self.back_idx) {
-            Ok(context) => context,
-            Err(e) => return Some(Err(e)),
-        };
-
-        // Update the back index to point to the child that is on the path from the
-        // front node to the root.
-        if self.front_idx == self.back_idx {
+        if self.path_idx == 0 {
             self.done = true;
         } else {
-            let mut found_child_idx = None;
-            for child_idx in context.children.iter() {
-                match self.is_node_on_path(self.front_idx, child_idx) {
-                    Ok(true) => {
-                        found_child_idx = Some(child_idx);
-                        break;
-                    }
-                    Ok(false) => (),
-                    Err(e) => return Some(Err(e)),
-                }
-            }
-            match found_child_idx {
-                Some(child_idx) => self.back_idx = child_idx,
-                None => return Some(Err(InternalErrorCode::ParentChainIndexOob.into())),
-            }
+            self.path_idx = self.path_idx.wrapping_sub(1);
         }
 
-        self.count += 1;
         Some(Ok(context))
     }
 }
@@ -527,7 +469,7 @@ mod tests {
     const CONTEXT_INITIALIZER: Context = Context::new();
 
     #[test]
-    fn test_child_to_root_iter() {
+    fn test_root_to_child_iter() {
         let mut contexts = [CONTEXT_INITIALIZER; MAX_HANDLES];
         let chain_indices = get_chain_indices();
         let root_index = chain_indices[0];
@@ -551,8 +493,7 @@ mod tests {
 
         for (answer, status) in chain_indices
             .iter()
-            .rev()
-            .zip(ChildToRootIter::new(leaf_index, &contexts).unwrap())
+            .zip(RootToChildIter::new(leaf_index, &contexts).unwrap())
         {
             assert_eq!(
                 [*answer as u8; ContextHandle::SIZE],
@@ -575,7 +516,7 @@ mod tests {
         contexts[1].parent_idx = 0;
         contexts[1].state = ContextState::Active;
 
-        let iter = ChildToRootIter::new(0, &contexts);
+        let iter = RootToChildIter::new(0, &contexts);
         assert!(matches!(iter, Err(DpeErrorCode::InternalError(_))));
     }
 
@@ -595,36 +536,36 @@ mod tests {
         contexts[0].parent_idx = MAX_HANDLES as u8;
 
         // Above upper bound of handles.
-        let iter = ChildToRootIter::new(0, &contexts);
+        let iter = RootToChildIter::new(0, &contexts);
         assert!(matches!(iter, Err(DpeErrorCode::InvalidHandle)));
 
         // Inactive.
         contexts[0].state = ContextState::Inactive;
         contexts[0].parent_idx = 0;
-        let iter = ChildToRootIter::new(0, &contexts);
+        let iter = RootToChildIter::new(0, &contexts);
         assert!(matches!(iter, Err(DpeErrorCode::InvalidHandle)));
 
         // Retired.
         contexts[0].state = ContextState::Retired;
-        let iter = ChildToRootIter::new(0, &contexts);
+        let iter = RootToChildIter::new(0, &contexts);
         assert!(matches!(iter, Err(DpeErrorCode::InternalError(_))));
 
         // Active and upper bound of handles.
         contexts[0].state = ContextState::Active;
         contexts[0].parent_idx = (MAX_HANDLES - 1) as u8;
-        let iter = ChildToRootIter::new(0, &contexts);
+        let iter = RootToChildIter::new(0, &contexts);
         assert!(matches!(iter, Err(DpeErrorCode::InvalidHandle)));
 
         // Root index.
         contexts[0].parent_idx = Context::ROOT_INDEX;
-        let mut iter = ChildToRootIter::new(0, &contexts).unwrap();
+        let mut iter = RootToChildIter::new(0, &contexts).unwrap();
         assert!(iter.next().unwrap().is_ok());
     }
 
     #[test]
     fn test_child_to_root_iter_infinite_loop() {
         let contexts = [CONTEXT_INITIALIZER; MAX_HANDLES];
-        let iter = ChildToRootIter::new(30, &contexts);
+        let iter = RootToChildIter::new(30, &contexts);
         assert!(matches!(iter, Err(DpeErrorCode::InvalidHandle)));
     }
 
@@ -647,68 +588,19 @@ mod tests {
             }
         }
 
-        let mut iter = ChildToRootIter::new(leaf_idx, &contexts).unwrap();
-        let context = iter.next_back().unwrap().unwrap();
+        let mut iter = RootToChildIter::new(leaf_idx, &contexts).unwrap();
+        let context = iter.next().unwrap().unwrap();
         assert_eq!(context.parent_idx, Context::ROOT_INDEX);
         let context = iter.next().unwrap().unwrap();
-        assert_eq!(context.parent_idx, 3);
-        let context = iter.next_back().unwrap().unwrap();
         assert_eq!(context.parent_idx, 0);
         let context = iter.next().unwrap().unwrap();
-        assert_eq!(context.parent_idx, 2);
-        let context = iter.next_back().unwrap().unwrap();
         assert_eq!(context.parent_idx, 1);
+        let context = iter.next().unwrap().unwrap();
+        assert_eq!(context.parent_idx, 2);
+        let context = iter.next().unwrap().unwrap();
+        assert_eq!(context.parent_idx, 3);
         let context = iter.next();
         assert!(context.is_none());
-    }
-
-    #[test]
-    fn test_child_to_root_iter_multiple_children() {
-        // This creats the following hierarchy of nodes:
-        //
-        //     ROOT
-        //      +-- 0
-        //      +-- 1
-        //          +-- 2
-        //              +-- 3
-        //                  +-- 6
-        //          +-- 4
-        //          +-- 5
-        let mut contexts = [CONTEXT_INITIALIZER; MAX_HANDLES];
-        let parent_map: &[(usize, usize)] = &[
-            (0, Context::ROOT_INDEX.into()),
-            (1, Context::ROOT_INDEX.into()),
-            (2, 1),
-            (3, 2),
-            (4, 1),
-            (5, 1),
-            (6, 3),
-        ];
-        for context in contexts.iter_mut().take(7) {
-            context.state = ContextState::Active;
-        }
-        for (node_idx, parent_idx) in parent_map.iter() {
-            contexts[*node_idx].parent_idx = *parent_idx as u8;
-            if *parent_idx != Context::ROOT_INDEX.into() {
-                contexts[*parent_idx].children.add_child(*node_idx).unwrap();
-            }
-        }
-
-        let ptr = contexts.as_mut_ptr();
-        let mut iter = ChildToRootIter::new(3, &contexts).unwrap();
-        assert_eq!(iter.num_nodes(), 3);
-
-        // Modify the tree such that no child of node 1 is on the path any more.
-        unsafe {
-            (*ptr.add(2)).parent_idx = Context::ROOT_INDEX;
-            let mut children = Children::empty();
-            children.add_child(2).unwrap();
-            (*ptr.add(1)).children.remove_children(children);
-        }
-        // Consume the iterator once. This should fail because now we can't find any child of node
-        // 1 on the path from node 6 to the root.
-        let context = iter.next_back();
-        assert!(matches!(context, Some(Err(DpeErrorCode::InternalError(_)))));
     }
 
     /// This is intended for testing a list of parent to children relationships. These are indices of contexts within a DPE instance.
