@@ -107,6 +107,7 @@ dependencies = [
 name = "caliptra-dpe"
 version = "0.1.0"
 dependencies = [
+ "arrayvec",
  "asn1",
  "bitflags",
  "caliptra-cfi-derive",

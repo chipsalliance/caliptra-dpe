@@ -6,7 +6,7 @@
 //! this functionality for a no_std environment.
 
 use crate::{
-    context::{ChildToRootIter, Context, ContextHandle},
+    context::{Context, ContextHandle, RootToChildIter},
     dpe_instance::DpeEnv,
     error::{DpeErrorCode, InternalErrorCode},
     okref,
@@ -126,8 +126,8 @@ impl<'a> TciNodes<'a> {
         }
     }
 
-    fn iter(&self) -> Result<ChildToRootIter<'_>, DpeErrorCode> {
-        ChildToRootIter::new(self.start_idx, self.contexts)
+    fn iter(&self) -> Result<RootToChildIter<'_>, DpeErrorCode> {
+        RootToChildIter::new(self.start_idx, self.contexts)
     }
 
     pub fn is_empty(&self) -> Result<bool, DpeErrorCode> {
@@ -138,11 +138,8 @@ impl<'a> TciNodes<'a> {
         Ok(self.iter()?.num_nodes())
     }
 
-    pub fn first_node(&self) -> Result<Option<&TciNodeData>, DpeErrorCode> {
-        self.iter()?
-            .next_back()
-            .transpose()
-            .map(|opt| opt.map(|context| &context.tci))
+    pub fn first_node(&self) -> Result<&TciNodeData, DpeErrorCode> {
+        self.iter()?.first_node().map(|context| &context.tci)
     }
 }
 
@@ -632,10 +629,7 @@ impl CertWriter<'_> {
         // Size of concatenated tcb infos
         let tcb_infos_size = measurements.tci_nodes.num_nodes()?
             * self.get_tcb_info_size(
-                measurements
-                    .tci_nodes
-                    .first_node()?
-                    .ok_or(DpeErrorCode::from(InternalErrorCode::EmptyTciNodes))?,
+                measurements.tci_nodes.first_node()?,
                 measurements.supports_recursive,
                 /*tagged=*/ true,
             );
@@ -1498,10 +1492,7 @@ impl CertWriter<'_> {
     ) -> Result<usize, DpeErrorCode> {
         let tcb_infos_size = if !measurements.tci_nodes.is_empty()? {
             self.get_tcb_info_size(
-                measurements
-                    .tci_nodes
-                    .first_node()?
-                    .ok_or(DpeErrorCode::from(InternalErrorCode::EmptyTciNodes))?,
+                measurements.tci_nodes.first_node()?,
                 measurements.supports_recursive,
                 /*tagged=*/ true,
             ) * measurements.tci_nodes.num_nodes()?
@@ -1518,7 +1509,7 @@ impl CertWriter<'_> {
         bytes_written += self.encode_size_field(tcb_infos_size);
 
         // Encode multiple tcg-dice-TcbInfos
-        for node in measurements.tci_nodes.iter()?.rev() {
+        for node in measurements.tci_nodes.iter()? {
             bytes_written += self.encode_tcb_info(
                 node.map(|context| &context.tci)?,
                 measurements.supports_recursive,

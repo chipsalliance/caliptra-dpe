@@ -228,6 +228,7 @@ source = "git+https://github.com/chipsalliance/caliptra-cfi.git?rev=72c75dc70cde
 name = "caliptra-dpe"
 version = "0.1.0"
 dependencies = [
+ "arrayvec",
  "asn1",
  "bitflags",
  "caliptra-cfi-derive",
