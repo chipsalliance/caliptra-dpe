@@ -74,8 +74,13 @@ impl Crypto for DummyCrypto {
         Err(CryptoError::NotImplemented)
     }
 
-    fn sign_with_alias(&mut self, data: &SignData) -> Result<crypto::Signature, CryptoError> {
+    fn sign_with_alias(
+        &mut self,
+        data: &SignData,
+        out: &mut crypto::Signature,
+    ) -> Result<(), CryptoError> {
         let _ = data;
+        let _ = out;
         Err(CryptoError::NotImplemented)
     }
 }
@@ -135,8 +140,9 @@ impl CdiManager for DummyCdiManager {
 pub struct DummySigner;
 
 impl Signer for DummySigner {
-    fn sign(&mut self, data: &SignData) -> Result<crypto::Signature, CryptoError> {
+    fn sign(&mut self, data: &SignData, out: &mut crypto::Signature) -> Result<(), CryptoError> {
         let _ = data;
+        let _ = out;
         Err(CryptoError::NotImplemented)
     }
 

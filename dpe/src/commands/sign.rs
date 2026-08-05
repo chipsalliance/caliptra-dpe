@@ -275,6 +275,7 @@ fn sign(
     label: &[u8],
     data: &SignData,
 ) -> Result<Signature, DpeErrorCode> {
+    let mut sig = Signature::zeroed(env.crypto().signature_algorithm());
     let cdi_digest = dpe.compute_measurement_hash(env, idx)?;
     let cdi = env.crypto().derive_cdi(&cdi_digest, b"DPE")?;
     let profile = dpe.profile;
@@ -291,7 +292,8 @@ fn sign(
         cfi_assert!(key_pair.is_err());
     }
     let signer = key_pair?;
-    Ok(signer.sign(data)?)
+    signer.sign(data, &mut sig)?;
+    Ok(sig)
 }
 
 #[repr(C, align(4))]
