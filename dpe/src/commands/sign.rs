@@ -202,10 +202,9 @@ impl CommandExecution for SignCommand<'_> {
         // Rotate the handle if it isn't the default context.
         let mut ctx = env.state().contexts[idx];
         dpe.roll_onetime_use_handle(env, &mut ctx)?;
-        env.state().contexts[idx] = ctx;
 
         #[allow(unreachable_patterns)]
-        match sig_ref {
+        let result = match sig_ref {
             #[cfg(feature = "p256")]
             Signature::Ecdsa(EcdsaSignature::Ecdsa256(sig)) => {
                 let (&sig_r, &sig_s) = sig.as_slice();
@@ -246,7 +245,12 @@ impl CommandExecution for SignCommand<'_> {
                 out,
             ),
             _ => Err(DpeErrorCode::InvalidArgument),
+        };
+
+        if result.is_ok() {
+            env.state().contexts[idx] = ctx;
         }
+        result
     }
 }
 
