@@ -20,6 +20,13 @@ use cfg_if::cfg_if;
 use core::mem::size_of;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
+#[cfg(feature = "ml-dsa")]
+use crate::response::SignMlDsaResp;
+#[cfg(feature = "p256")]
+use crate::response::SignP256Resp;
+#[cfg(feature = "p384")]
+use crate::response::SignP384Resp;
+
 #[repr(C, align(4))]
 #[derive(Debug, PartialEq, Eq, IntoBytes, FromBytes, Immutable, KnownLayout)]
 pub struct SignFlags(pub u32);
@@ -190,67 +197,63 @@ impl CommandExecution for SignCommand<'_> {
         }
 
         let sig = sign(dpe, env, idx, label, &data);
+        let sig_ref = okref(&sig)?;
+
+        // Rotate the handle if it isn't the default context.
+        let mut ctx = env.state().contexts[idx];
+        dpe.roll_onetime_use_handle(env, &mut ctx)?;
+        env.state().contexts[idx] = ctx;
+
         #[allow(unreachable_patterns)]
-        match okref(&sig)? {
+        match sig_ref {
             #[cfg(feature = "p256")]
             Signature::Ecdsa(EcdsaSignature::Ecdsa256(sig)) => {
-                use crate::response::SignP256Resp;
-                // Rotate the handle if it isn't the default context.
-                let mut ctx = env.state().contexts[idx];
-                dpe.roll_onetime_use_handle(env, &mut ctx)?;
-                env.state().contexts[idx] = ctx;
                 let (&sig_r, &sig_s) = sig.as_slice();
-                let resp = SignP256Resp {
-                    new_context_handle: ctx.handle,
-                    sig_r,
-                    sig_s,
-                    resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
-                };
-                let bytes = resp.as_bytes();
-                out.write_at(0, bytes)
-                    .map_err(|_| DpeErrorCode::InvalidResponseBuf)?;
-                Ok(bytes.len())
+                write_response(
+                    SignP256Resp {
+                        new_context_handle: ctx.handle,
+                        sig_r,
+                        sig_s,
+                        resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
+                    }
+                    .as_bytes(),
+                    out,
+                )
             }
             #[cfg(feature = "p384")]
             Signature::Ecdsa(EcdsaSignature::Ecdsa384(sig)) => {
-                use crate::response::SignP384Resp;
-                // Rotate the handle if it isn't the default context.
-                let mut ctx = env.state().contexts[idx];
-                dpe.roll_onetime_use_handle(env, &mut ctx)?;
-                env.state().contexts[idx] = ctx;
                 let (&sig_r, &sig_s) = sig.as_slice();
-                let resp = SignP384Resp {
-                    new_context_handle: ctx.handle,
-                    sig_r,
-                    sig_s,
-                    resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
-                };
-                let bytes = resp.as_bytes();
-                out.write_at(0, bytes)
-                    .map_err(|_| DpeErrorCode::InvalidResponseBuf)?;
-                Ok(bytes.len())
+                write_response(
+                    SignP384Resp {
+                        new_context_handle: ctx.handle,
+                        sig_r,
+                        sig_s,
+                        resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
+                    }
+                    .as_bytes(),
+                    out,
+                )
             }
             #[cfg(feature = "ml-dsa")]
-            Signature::Mldsa(caliptra_dpe_crypto::ml_dsa::MldsaSignature(sig)) => {
-                use crate::response::SignMlDsaResp;
-                // Rotate the handle if it isn't the default context.
-                let mut ctx = env.state().contexts[idx];
-                dpe.roll_onetime_use_handle(env, &mut ctx)?;
-                env.state().contexts[idx] = ctx;
-                let resp = SignMlDsaResp {
+            Signature::Mldsa(caliptra_dpe_crypto::ml_dsa::MldsaSignature(sig)) => write_response(
+                SignMlDsaResp {
                     new_context_handle: ctx.handle,
                     sig: *sig,
                     _padding: [0; 1],
                     resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
-                };
-                let bytes = resp.as_bytes();
-                out.write_at(0, bytes)
-                    .map_err(|_| DpeErrorCode::InvalidResponseBuf)?;
-                Ok(bytes.len())
-            }
-            _ => Err(DpeErrorCode::InvalidArgument)?,
+                }
+                .as_bytes(),
+                out,
+            ),
+            _ => Err(DpeErrorCode::InvalidArgument),
         }
     }
+}
+
+fn write_response(bytes: &[u8], out: &mut dyn ResponseBuffer) -> Result<usize, DpeErrorCode> {
+    out.write_at(0, bytes)
+        .map_err(|_| DpeErrorCode::InvalidResponseBuf)?;
+    Ok(bytes.len())
 }
 
 /// Signs `digest` using ECDSA
