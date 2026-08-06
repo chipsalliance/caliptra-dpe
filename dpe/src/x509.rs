@@ -2704,30 +2704,26 @@ fn create_dpe_cert_or_csr(
         subject_alt_name,
     };
 
-    let mut sign_cb = |buf: &dyn ResponseBuffer,
-                       range: core::ops::Range<usize>,
-                       use_derived: bool| {
-        if use_derived {
-            match cert_type {
-                CertificateType::Exported => {
-                    let exported_handle =
-                        exported_cdi_handle.ok_or(CryptoError::CryptoLibError(0))?;
+    let mut sign_cb =
+        |buf: &dyn ResponseBuffer, range: core::ops::Range<usize>, use_derived: bool| {
+            if use_derived {
+                if let Some(exported_handle) = exported_cdi_handle {
                     crypto
                         .derive_key_pair_exported(&exported_handle, args.key_label, args.context)?
                         .sign(&SignData::ResponseBuffer(buf, range))
+                } else {
+                    crypto.sign_with_derived(
+                        &digest,
+                        args.cdi_label,
+                        args.key_label,
+                        args.context,
+                        &SignData::ResponseBuffer(buf, range),
+                    )
                 }
-                CertificateType::Leaf => crypto.sign_with_derived(
-                    &digest,
-                    args.cdi_label,
-                    args.key_label,
-                    args.context,
-                    &SignData::ResponseBuffer(buf, range),
-                ),
+            } else {
+                crypto.sign_with_alias(&SignData::ResponseBuffer(buf, range))
             }
-        } else {
-            crypto.sign_with_alias(&SignData::ResponseBuffer(buf, range))
-        }
-    };
+        };
 
     let mut issuer_name = [0u8; MAX_ISSUER_NAME_SIZE];
     let cert_validity = platform.get_cert_validity()?;
@@ -2762,18 +2758,10 @@ fn create_dpe_cert_or_csr(
         output_cert_or_csr,
     )?;
 
-    let exported_cdi_handle = match cert_type {
-        // If the `CertificateType::Exported` is set then we should have a valid exported_cdi_handle at this point.
-        CertificateType::Exported => exported_cdi_handle.ok_or(DpeErrorCode::from(
-            InternalErrorCode::MissingExportedCdiHandle,
-        ))?,
-        _ => [0; MAX_EXPORTED_CDI_SIZE],
-    };
-
     Ok(CreateDpeCertResult {
         cert_size,
         pub_key: pub_key.clone(),
-        exported_cdi_handle,
+        exported_cdi_handle: exported_cdi_handle.unwrap_or([0u8; MAX_EXPORTED_CDI_SIZE]),
     })
 }
 
