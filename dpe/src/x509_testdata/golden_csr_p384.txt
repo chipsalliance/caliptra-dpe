@@ -1,0 +1,45 @@
+Certificate Request:
+    Data:
+        Version: 1 (0x0)
+        Subject: CN=DPE Leaf, serialNumber=0000
+        Subject Public Key Info:
+            Public Key Algorithm: id-ecPublicKey
+                Public-Key: (384 bit)
+                pub:
+                    04:38:6e:76:7e:a5:cb:71:6c:9c:d6:20:ff:73:42:
+                    12:9c:89:2a:6f:cc:ef:e6:12:14:0c:80:bf:f5:9e:
+                    94:34:68:01:9d:da:16:e5:07:9b:0c:1d:90:01:d2:
+                    3a:62:4b:6d:d0:88:d0:c3:82:63:94:19:47:87:40:
+                    3e:8a:7d:07:e5:e2:2f:7e:9c:0b:8e:80:fa:1f:af:
+                    f5:d2:8b:4b:b5:97:b2:67:f0:b8:70:23:ca:61:fc:
+                    84:54:bd:de:fd:2e:0e
+                ASN1 OID: secp384r1
+                NIST CURVE: P-384
+        Attributes:
+            Requested Extensions:
+                X509v3 Basic Constraints: critical
+                    CA:FALSE
+                2.23.133.5.4.4: critical
+                    02.0................................................
+                2.23.133.5.4.5: 
+                    0C0A.?0=..`.H.e.....0................................................
+    Signature Algorithm: ecdsa-with-SHA384
+    Signature Value:
+        30:66:02:31:00:f6:ec:9e:c9:a2:0f:9a:70:bc:df:54:53:67:
+        b1:79:44:32:c2:c1:7a:32:a7:38:02:64:8b:ad:fe:79:c4:46:
+        2a:b3:79:57:cc:1b:83:b8:86:c6:56:00:0f:59:6e:16:72:02:
+        31:00:d0:b7:f5:60:13:16:6c:bb:4d:69:da:5d:b4:c2:64:ea:
+        a2:e8:5c:0c:76:23:24:22:a5:d4:59:29:60:1b:a4:a1:59:8d:
+        b1:7d:59:54:56:47:bf:c0:10:4b:48:46:f5:da
+-----BEGIN CERTIFICATE REQUEST-----
+MIIB0zCCAVgCAQAwIjERMA8GA1UEAwwIRFBFIExlYWYxDTALBgNVBAUTBDAwMDAw
+djAQBgcqhkjOPQIBBgUrgQQAIgNiAAQ4bnZ+pctxbJzWIP9zQhKciSpvzO/mEhQM
+gL/1npQ0aAGd2hblB5sMHZAB0jpiS23QiNDDgmOUGUeHQD6KfQfl4i9+nAuOgPof
+r/XSi0u1l7Jn8LhwI8ph/IRUvd79Lg6ggbYwgbMGCSqGSIb3DQEJDjGBpTCBojAM
+BgNVHRMBAf8EAjAAMEEGBmeBBQUEBAEB/wQ0MDIEMAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADBPBgZngQUFBAUERTBDMEGm
+PzA9BglghkgBZQMEAgIEMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAADAKBggqhkjOPQQDAwNpADBmAjEA9uyeyaIPmnC831RT
+Z7F5RDLCwXoypzgCZIut/nnERiqzeVfMG4O4hsZWAA9ZbhZyAjEA0Lf1YBMWbLtN
+adpdtMJk6qLoXAx2IyQipdRZKWAbpKFZjbF9WVRWR7/AEEtIRvXa
+-----END CERTIFICATE REQUEST-----

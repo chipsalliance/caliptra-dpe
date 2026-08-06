@@ -1,0 +1,59 @@
+Certificate:
+    Data:
+        Version: 3 (0x2)
+        Serial Number: 0 (0x0)
+        Signature Algorithm: ecdsa-with-SHA384
+        Issuer: CN=DPE Leaf
+        Validity
+            Not Before: Feb 27 00:00:00 2023 GMT
+            Not After : Dec 31 23:59:59 9999 GMT
+        Subject: CN=DPE Leaf
+        Subject Public Key Info:
+            Public Key Algorithm: id-ecPublicKey
+                Public-Key: (384 bit)
+                pub:
+                    04:38:6e:76:7e:a5:cb:71:6c:9c:d6:20:ff:73:42:
+                    12:9c:89:2a:6f:cc:ef:e6:12:14:0c:80:bf:f5:9e:
+                    94:34:68:01:9d:da:16:e5:07:9b:0c:1d:90:01:d2:
+                    3a:62:4b:6d:d0:88:d0:c3:82:63:94:19:47:87:40:
+                    3e:8a:7d:07:e5:e2:2f:7e:9c:0b:8e:80:fa:1f:af:
+                    f5:d2:8b:4b:b5:97:b2:67:f0:b8:70:23:ca:61:fc:
+                    84:54:bd:de:fd:2e:0e
+                ASN1 OID: secp384r1
+                NIST CURVE: P-384
+        X509v3 extensions:
+            X509v3 Authority Key Identifier: 
+                BA:01:A0:AA:CC:C5:AC:6F:8E:48:E8:8B:23:26:41:3A:B8:7B:9D:25
+            X509v3 Subject Key Identifier: 
+                BA:01:A0:AA:CC:C5:AC:6F:8E:48:E8:8B:23:26:41:3A:B8:7B:9D:25
+            X509v3 Basic Constraints: critical
+                CA:FALSE
+            X509v3 Key Usage: critical
+                Digital Signature
+            2.23.133.5.4.4: critical
+                02.0................................................
+            2.23.133.5.4.5: 
+                0C0A.?0=..`.H.e.....0................................................
+    Signature Algorithm: ecdsa-with-SHA384
+    Signature Value:
+        30:65:02:31:00:ed:35:7c:ef:8b:f7:41:0f:eb:da:28:55:7a:
+        a5:f0:73:44:70:33:68:0e:b8:f4:67:2e:1d:ec:41:a8:50:c1:
+        bd:4f:b2:c8:15:fa:72:35:f1:31:79:09:c7:82:19:73:ec:02:
+        30:32:84:74:70:27:0b:dc:98:9d:c7:b1:3a:23:20:8c:f6:e7:
+        42:4b:2b:c7:0e:20:e5:91:db:96:78:ec:d2:1b:66:1a:c6:f4:
+        54:a8:e3:a0:35:b4:e5:af:09:91:2b:11:56
+-----BEGIN CERTIFICATE-----
+MIICSjCCAdCgAwIBAgIBADAKBggqhkjOPQQDAzATMREwDwYDVQQDDAhEUEUgTGVh
+ZjAgFw0yMzAyMjcwMDAwMDBaGA85OTk5MTIzMTIzNTk1OVowEzERMA8GA1UEAwwI
+RFBFIExlYWYwdjAQBgcqhkjOPQIBBgUrgQQAIgNiAAQ4bnZ+pctxbJzWIP9zQhKc
+iSpvzO/mEhQMgL/1npQ0aAGd2hblB5sMHZAB0jpiS23QiNDDgmOUGUeHQD6KfQfl
+4i9+nAuOgPofr/XSi0u1l7Jn8LhwI8ph/IRUvd79Lg6jgfUwgfIwHwYDVR0jBBgw
+FoAUugGgqszFrG+OSOiLIyZBOrh7nSUwHQYDVR0OBBYEFLoBoKrMxaxvjkjoiyMm
+QTq4e50lMAwGA1UdEwEB/wQCMAAwDgYDVR0PAQH/BAQDAgeAMEEGBmeBBQUEBAEB
+/wQ0MDIEMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAADBPBgZngQUFBAUERTBDMEGmPzA9BglghkgBZQMEAgIEMAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAKBggqhkjO
+PQQDAwNoADBlAjEA7TV874v3QQ/r2ihVeqXwc0RwM2gOuPRnLh3sQahQwb1PssgV
++nI18TF5CceCGXPsAjAyhHRwJwvcmJ3HsTojIIz250JLK8cOIOWR25Z47NIbZhrG
+9FSo46A1tOWvCZErEVY=
+-----END CERTIFICATE-----

@@ -1,0 +1,39 @@
+Certificate Request:
+    Data:
+        Version: 1 (0x0)
+        Subject: CN=DPE Leaf, serialNumber=0000
+        Subject Public Key Info:
+            Public Key Algorithm: id-ecPublicKey
+                Public-Key: (256 bit)
+                pub:
+                    04:02:17:e6:17:f0:b6:44:39:28:27:8f:96:99:9e:
+                    69:a2:3a:4f:2c:15:2b:df:6d:6c:df:66:e5:b8:02:
+                    82:d4:ed:19:4a:7d:eb:cb:97:71:2d:2d:da:3c:a8:
+                    5a:a8:76:5a:56:f4:5f:c7:58:59:96:52:f2:89:7c:
+                    65:30:6e:57:94
+                ASN1 OID: prime256v1
+                NIST CURVE: P-256
+        Attributes:
+            Requested Extensions:
+                X509v3 Basic Constraints: critical
+                    CA:FALSE
+                2.23.133.5.4.4: critical
+                    0". ................................
+                2.23.133.5.4.5: 
+                    0301./0-..`.H.e..... ................................
+    Signature Algorithm: ecdsa-with-SHA256
+    Signature Value:
+        30:44:02:20:47:30:8d:15:f9:ca:c2:61:cf:d4:00:34:8d:8b:
+        7c:99:2e:5e:cf:ba:64:3f:3e:59:c4:02:2e:3d:dd:59:72:f1:
+        02:20:29:df:52:88:47:97:e7:9a:14:28:6e:c5:0b:f8:db:3e:
+        9e:5b:0e:30:fb:31:00:81:1e:a2:3b:8b:d8:2a:71:2d
+-----BEGIN CERTIFICATE REQUEST-----
+MIIBdDCCARsCAQAwIjERMA8GA1UEAwwIRFBFIExlYWYxDTALBgNVBAUTBDAwMDAw
+WTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAAQCF+YX8LZEOSgnj5aZnmmiOk8sFSvf
+bWzfZuW4AoLU7RlKfevLl3EtLdo8qFqodlpW9F/HWFmWUvKJfGUwbleUoIGWMIGT
+BgkqhkiG9w0BCQ4xgYUwgYIwDAYDVR0TAQH/BAIwADAxBgZngQUFBAQBAf8EJDAi
+BCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADA/BgZngQUFBAUENTAz
+MDGmLzAtBglghkgBZQMEAgEEIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAMAoGCCqGSM49BAMCA0cAMEQCIEcwjRX5ysJhz9QANI2LfJkuXs+6ZD8+WcQC
+Lj3dWXLxAiAp31KIR5fnmhQobsUL+Ns+nlsOMPsxAIEeojuL2CpxLQ==
+-----END CERTIFICATE REQUEST-----
