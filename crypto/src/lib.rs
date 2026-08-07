@@ -11,6 +11,7 @@ use ecdsa::EcdsaSignature;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 use caliptra_dpe_response_buffer::ResponseBuffer;
+use zeroize::Zeroize;
 
 #[cfg(feature = "rustcrypto")]
 pub use crate::rustcrypto::*;
@@ -364,6 +365,20 @@ pub enum PubKey {
     Mldsa(ml_dsa::MldsaPublicKey),
 }
 
+impl Default for PubKey {
+    /// A zeroed placeholder key. Used only to pre-initialize a caller-provided
+    /// `CreateDpeCertResult` slot that the cert/CSR path overwrites before use;
+    /// the always-compiled ECDSA-384 variant keeps this independent of `ml-dsa`.
+    fn default() -> Self {
+        PubKey::Ecdsa(ecdsa::EcdsaPubKey::Ecdsa384(
+            ecdsa::curve_384::EcdsaPub384 {
+                x: [0u8; ecdsa::curve_384::CURVE_SIZE],
+                y: [0u8; ecdsa::curve_384::CURVE_SIZE],
+            },
+        ))
+    }
+}
+
 impl From<ecdsa::EcdsaPubKey> for PubKey {
     fn from(pub_key: ecdsa::EcdsaPubKey) -> Self {
         PubKey::Ecdsa(pub_key)
@@ -389,7 +404,7 @@ impl From<ml_dsa::MldsaPublicKey> for PubKey {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Zeroize)]
 #[allow(clippy::large_enum_variant)]
 pub enum Signature {
     Ecdsa(EcdsaSignature),
@@ -419,6 +434,20 @@ impl From<ecdsa::curve_384::EcdsaSignature384> for Signature {
 impl From<ml_dsa::MldsaSignature> for Signature {
     fn from(sig: ml_dsa::MldsaSignature) -> Self {
         Signature::Mldsa(sig)
+    }
+}
+
+impl Signature {
+    /// Zero-initialized signature of the given algorithm, used as a
+    /// caller-provided output buffer for the sign-in-place APIs so the (large)
+    /// signature lives in exactly one stack slot instead of being returned by
+    /// value and copied.
+    pub fn zeroed(alg: SignatureAlgorithm) -> Self {
+        match alg {
+            SignatureAlgorithm::Ecdsa(alg) => Signature::Ecdsa(EcdsaSignature::zeroed(alg)),
+            #[cfg(feature = "ml-dsa")]
+            SignatureAlgorithm::Mldsa(_) => Signature::Mldsa(ml_dsa::MldsaSignature([0u8; 4627])),
+        }
     }
 }
 
@@ -460,8 +489,9 @@ pub trait CryptoSuite: Crypto + SignatureType + DigestType {
 }
 
 pub trait Signer {
-    /// Sign `data` with the derived private key
-    fn sign(&mut self, data: &SignData) -> Result<Signature, CryptoError>;
+    /// Sign `data` with the derived private key, writing the signature into the
+    /// caller-provided `out` (whose variant must match this signer's algorithm).
+    fn sign(&mut self, data: &SignData, out: &mut Signature) -> Result<(), CryptoError>;
 
     /// Get the public key associated with the derived key-pair
     fn public_key(&mut self) -> Result<PubKey, CryptoError>;
@@ -503,8 +533,9 @@ pub trait CdiManager {
         label: &[u8],
         info: &[u8],
         data: &SignData,
-    ) -> Result<Signature, CryptoError> {
-        self.derive_key_pair(label, info)?.sign(data)
+        out: &mut Signature,
+    ) -> Result<(), CryptoError> {
+        self.derive_key_pair(label, info)?.sign(data, out)
     }
 
     /// Get the public key of a derived key-pair from the CDI
@@ -652,7 +683,8 @@ pub trait Crypto {
     /// # Arguments
     ///
     /// * `data` - Data to be signed.
-    fn sign_with_alias(&mut self, data: &SignData) -> Result<Signature, CryptoError>;
+    /// * `out` - A buffer to place the completed signature into.
+    fn sign_with_alias(&mut self, data: &SignData, out: &mut Signature) -> Result<(), CryptoError>;
 
     /// Sign `data` with a key derived from the current CDI and measurements.
     ///
@@ -663,6 +695,7 @@ pub trait Crypto {
     /// * `label` - Caller-supplied label to use in key derivation.
     /// * `derived_info` - Caller-supplied info string to use in key derivation.
     /// * `data` - Data to be signed.
+    /// * `out` - A buffer to place the completed signature into.
     fn sign_with_derived(
         &mut self,
         measurement: &Digest,
@@ -670,9 +703,10 @@ pub trait Crypto {
         label: &[u8],
         derived_info: &[u8],
         data: &SignData,
-    ) -> Result<Signature, CryptoError> {
+        out: &mut Signature,
+    ) -> Result<(), CryptoError> {
         self.derive_cdi(measurement, info)?
-            .sign_with_derived(label, derived_info, data)
+            .sign_with_derived(label, derived_info, data, out)
     }
 
     /// Derive the public key for a key derived from the current CDI and measurements.

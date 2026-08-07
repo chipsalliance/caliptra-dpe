@@ -3,6 +3,7 @@
 use crate::{SignatureAlgorithm, SignatureType};
 
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
+use zeroize::Zeroize;
 
 #[derive(Debug, Clone, Copy)]
 pub enum MldsaAlgorithm {
@@ -67,7 +68,7 @@ impl MldsaPublicKey {
     }
 }
 
-#[derive(Clone, FromBytes, IntoBytes, KnownLayout, Immutable)]
+#[derive(Clone, FromBytes, IntoBytes, KnownLayout, Immutable, Zeroize)]
 #[repr(C)]
 pub struct MldsaSignature(pub [u8; MldsaAlgorithm::Mldsa87.signature_size()]);
 

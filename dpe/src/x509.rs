@@ -9,7 +9,6 @@ use crate::{
     context::{Context, ContextHandle, RootToChildIter},
     dpe_instance::DpeEnv,
     error::{DpeErrorCode, InternalErrorCode},
-    okref,
     tci::{TciMeasurement, TciNodeData},
     DpeInstance, DpeProfile, MAX_HANDLES,
 };
@@ -32,6 +31,7 @@ use caliptra_dpe_platform::{
 };
 use caliptra_dpe_response_buffer::ResponseBuffer;
 use zerocopy::IntoBytes;
+use zeroize::Zeroize;
 
 #[cfg(feature = "ml-dsa")]
 use caliptra_dpe_crypto::ml_dsa::{MldsaPublicKey, MldsaSignature};
@@ -40,14 +40,21 @@ use caliptra_dpe_crypto::ml_dsa::{MldsaPublicKey, MldsaSignature};
 ///
 /// Arguments: `(buf, range, use_derived)` where `range` is the byte span of
 /// the payload to sign within `buf`, and `use_derived` selects the derived key
-/// (`true`) or the alias key (`false`).
+/// (`true`) or the alias key (`false`).  The `Signature` is the out buffer
+/// where the signature is placed.  The caller is responsible for ensuring it
+/// is cleared between any sequential calls.
 pub trait SignCallback:
-    FnMut(&dyn ResponseBuffer, core::ops::Range<usize>, bool) -> Result<Signature, CryptoError>
+    FnMut(&dyn ResponseBuffer, core::ops::Range<usize>, bool, &mut Signature) -> Result<(), CryptoError>
 {
 }
 
 impl<F> SignCallback for F where
-    F: FnMut(&dyn ResponseBuffer, core::ops::Range<usize>, bool) -> Result<Signature, CryptoError>
+    F: FnMut(
+        &dyn ResponseBuffer,
+        core::ops::Range<usize>,
+        bool,
+        &mut Signature,
+    ) -> Result<(), CryptoError>
 {
 }
 
@@ -1983,6 +1990,7 @@ impl CertWriter<'_> {
         pub_key: &PubKey,
         subject_name: &Name,
         measurements: &MeasurementData,
+        sig: &mut Signature,
     ) -> Result<usize, DpeErrorCode> {
         let mut size_bytes_written = self.encode_byte(Self::SEQUENCE_TAG);
         self.push_backtrack(SIZE_TAG_OFFSET)?;
@@ -1998,7 +2006,8 @@ impl CertWriter<'_> {
         bytes_written += self.encode_byte(Self::OCTET_STRING_TAG);
         let offset = self.push_backtrack(SIZE_TAG_OFFSET)?;
 
-        let csr_bytes_written = self.encode_csr(sign_cb, pub_key, subject_name, measurements)?;
+        let csr_bytes_written =
+            self.encode_csr(sign_cb, pub_key, subject_name, measurements, sig)?;
         self.csr_range = Some((offset, offset + csr_bytes_written));
 
         let econtent_1_size = Self::get_econtent_size(
@@ -2137,6 +2146,7 @@ impl CertWriter<'_> {
         pubkey: &PubKey,
         measurements: &MeasurementData,
         validity: &CertValidity,
+        sig: &mut Signature,
     ) -> Result<usize, DpeErrorCode> {
         let bytes_written = self.encode_signed_payload(
             sign_cb,
@@ -2148,6 +2158,7 @@ impl CertWriter<'_> {
                 measurements,
                 validity,
             },
+            sig,
         )?;
 
         self.check_not_truncated()?;
@@ -2169,6 +2180,7 @@ impl CertWriter<'_> {
         &mut self,
         sign_cb: &mut dyn SignCallback,
         payload: SignedPayload,
+        sig: &mut Signature,
     ) -> Result<usize, DpeErrorCode> {
         let mut prefix_bytes_written = self.encode_tag_field(Self::SEQUENCE_TAG);
         let offset = self.push_backtrack(SIZE_TAG_OFFSET)?;
@@ -2204,14 +2216,12 @@ impl CertWriter<'_> {
             ),
         };
 
-        let sig = {
-            let abs_start = offset;
-            let abs_end = offset + payload_bytes_written;
-            sign_cb(&*self.certificate, abs_start..abs_end, is_csr)
-        };
-        let sig = okref(&sig)?;
+        let abs_start = offset;
+        let abs_end = offset + payload_bytes_written;
+        sign_cb(&*self.certificate, abs_start..abs_end, is_csr, sig)?;
 
         let sig_bytes_written = self.encode_signature_bit_string(sig);
+        sig.zeroize();
 
         let body_size = payload_bytes_written + sig_bytes_written;
 
@@ -2284,6 +2294,7 @@ impl CertWriter<'_> {
         pub_key: &PubKey,
         subject_name: &Name,
         measurements: &MeasurementData,
+        sig: &mut Signature,
     ) -> Result<usize, DpeErrorCode> {
         let bytes_written = self.encode_signed_payload(
             sign_cb,
@@ -2292,6 +2303,7 @@ impl CertWriter<'_> {
                 subject_name,
                 measurements,
             },
+            sig,
         )?;
 
         self.check_not_truncated()?;
@@ -2313,6 +2325,7 @@ impl CertWriter<'_> {
         subject_name: &Name,
         measurements: &MeasurementData,
         sid: &SignerIdentifier,
+        sig: &mut Signature,
     ) -> Result<usize, DpeErrorCode> {
         // ContentInfo SEQUENCE. This and the two nested SignedData layers reserve
         // their length fields up front (always 3 bytes) and backfill them below.
@@ -2352,18 +2365,23 @@ impl CertWriter<'_> {
         signed_data_body += self.encode_hash_alg_id();
 
         // encapContentInfo
-        signed_data_body +=
-            self.encode_encapsulated_content_info(sign_cb, pub_key, subject_name, measurements)?;
+        signed_data_body += self.encode_encapsulated_content_info(
+            sign_cb,
+            pub_key,
+            subject_name,
+            measurements,
+            sig,
+        )?;
 
         let (csr_start, csr_end) = self.csr_range.ok_or(DpeErrorCode::X509CsrUnset)?;
-        let sig = sign_cb(&*self.certificate, csr_start..csr_end, false);
-        let sig = okref(&sig)?;
+        sign_cb(&*self.certificate, csr_start..csr_end, false, sig)?;
 
         // signerInfos
         signed_data_body += self.encode_tag_field(Self::SET_OF_TAG);
         signed_data_body +=
             self.encode_size_field(self.get_signer_info_size(sig, sid, /*tagged=*/ true));
         signed_data_body += self.encode_signer_info(sig, sid)?;
+        sig.zeroize();
 
         // Each layer's size is its prefix (tag + reserved length, counted above)
         // plus its content — a plain sum, since the reserved length width is
@@ -2419,6 +2437,7 @@ pub(crate) struct CreateDpeCertArgs<'a> {
 }
 
 /// Results for DPE cert or CSR creation.
+#[derive(Default)]
 pub(crate) struct CreateDpeCertResult {
     /// Size of certificate or CSR in bytes.
     pub cert_size: u32,
@@ -2490,7 +2509,8 @@ pub(crate) fn create_exported_dpe_cert(
     dpe: &mut DpeInstance,
     env: &mut dyn DpeEnv,
     cert: &mut dyn ResponseBuffer,
-) -> Result<CreateDpeCertResult, DpeErrorCode> {
+    out_result: &mut CreateDpeCertResult,
+) -> Result<(), DpeErrorCode> {
     create_dpe_cert_or_csr(
         args,
         dpe,
@@ -2498,6 +2518,7 @@ pub(crate) fn create_exported_dpe_cert(
         CertificateFormat::X509,
         CertificateType::Exported,
         cert,
+        out_result,
     )
 }
 
@@ -2506,7 +2527,8 @@ pub(crate) fn create_dpe_cert(
     dpe: &mut DpeInstance,
     env: &mut dyn DpeEnv,
     cert: &mut dyn ResponseBuffer,
-) -> Result<CreateDpeCertResult, DpeErrorCode> {
+    out_result: &mut CreateDpeCertResult,
+) -> Result<(), DpeErrorCode> {
     create_dpe_cert_or_csr(
         args,
         dpe,
@@ -2514,6 +2536,7 @@ pub(crate) fn create_dpe_cert(
         CertificateFormat::X509,
         CertificateType::Leaf,
         cert,
+        out_result,
     )
 }
 
@@ -2523,7 +2546,8 @@ pub(crate) fn create_dpe_csr(
     dpe: &mut DpeInstance,
     env: &mut dyn DpeEnv,
     csr: &mut dyn ResponseBuffer,
-) -> Result<CreateDpeCertResult, DpeErrorCode> {
+    out_result: &mut CreateDpeCertResult,
+) -> Result<(), DpeErrorCode> {
     create_dpe_cert_or_csr(
         args,
         dpe,
@@ -2531,6 +2555,7 @@ pub(crate) fn create_dpe_csr(
         CertificateFormat::Csr,
         CertificateType::Leaf,
         csr,
+        out_result,
     )
 }
 
@@ -2578,6 +2603,7 @@ fn generate_cert_or_csr(
     measurements: &MeasurementData,
     sign_cb: &mut dyn SignCallback,
     output_cert_or_csr: &mut dyn ResponseBuffer,
+    sig: &mut Signature,
 ) -> Result<u32, DpeErrorCode> {
     match format_specific_args {
         CertOrCsrArgs::Cert {
@@ -2605,6 +2631,7 @@ fn generate_cert_or_csr(
                     pub_key,
                     measurements,
                     cert_validity,
+                    sig,
                 )?;
                 u32::try_from(bytes_written)
                     .map_err(|_| DpeErrorCode::from(InternalErrorCode::CertSizeOverflow))
@@ -2623,6 +2650,7 @@ fn generate_cert_or_csr(
                 subject_name,
                 measurements,
                 signer_identifier,
+                sig,
             )?;
             u32::try_from(bytes_written)
                 .map_err(|_| DpeErrorCode::from(InternalErrorCode::CsrSizeOverflow))
@@ -2637,13 +2665,14 @@ fn create_dpe_cert_or_csr(
     cert_format: CertificateFormat,
     cert_type: CertificateType,
     output_cert_or_csr: &mut dyn ResponseBuffer,
-) -> Result<CreateDpeCertResult, DpeErrorCode> {
+    out_result: &mut CreateDpeCertResult,
+) -> Result<(), DpeErrorCode> {
     let digest = get_dpe_measurement_digest(dpe, env, args.handle, args.locality)?;
     let (crypto, platform, state) = env.get();
 
     let mut exported_cdi_handle = None;
 
-    let pub_key = match cert_type {
+    let pub_key_res = match cert_type {
         CertificateType::Exported => {
             let exported_handle = crypto.derive_exported_cdi(&digest, args.cdi_label)?;
             exported_cdi_handle = Some(exported_handle);
@@ -2655,17 +2684,18 @@ fn create_dpe_cert_or_csr(
             crypto.derive_pub_key(&digest, args.cdi_label, args.key_label, args.context)
         }
     };
-    let pub_key_ok = pub_key.is_ok();
+    let pub_key_ok = pub_key_res.is_ok();
     #[cfg(feature = "cfi")]
     let pub_key_ok = cfi_launder(pub_key_ok);
     if pub_key_ok {
         #[cfg(feature = "cfi")]
-        cfi_assert!(pub_key.is_ok());
+        cfi_assert!(pub_key_res.is_ok());
     } else {
         #[cfg(feature = "cfi")]
-        cfi_assert!(pub_key.is_err());
+        cfi_assert!(pub_key_res.is_err());
     }
-    let pub_key = okref(&pub_key)?;
+    out_result.pub_key = pub_key_res?;
+    let pub_key = &out_result.pub_key;
     let mut subj_serial = [0u8; MAX_HASH_SIZE * 2];
     let subject_name = get_subject_name(crypto, &cert_type, pub_key, &mut subj_serial)?;
 
@@ -2704,26 +2734,33 @@ fn create_dpe_cert_or_csr(
         subject_alt_name,
     };
 
-    let mut sign_cb =
-        |buf: &dyn ResponseBuffer, range: core::ops::Range<usize>, use_derived: bool| {
-            if use_derived {
-                if let Some(exported_handle) = exported_cdi_handle {
-                    crypto
-                        .derive_key_pair_exported(&exported_handle, args.key_label, args.context)?
-                        .sign(&SignData::ResponseBuffer(buf, range))
-                } else {
-                    crypto.sign_with_derived(
-                        &digest,
-                        args.cdi_label,
-                        args.key_label,
-                        args.context,
-                        &SignData::ResponseBuffer(buf, range),
-                    )
-                }
+    // Single signature buffer, filled in place by the sign callback and reused
+    // for each signature on the path (X509 cert, or inner CSR + outer CMS).
+    let mut sig = Signature::zeroed(crypto.signature_algorithm());
+
+    let mut sign_cb = |buf: &dyn ResponseBuffer,
+                       range: core::ops::Range<usize>,
+                       use_derived: bool,
+                       out: &mut Signature| {
+        if use_derived {
+            if let Some(exported_handle) = exported_cdi_handle {
+                crypto
+                    .derive_key_pair_exported(&exported_handle, args.key_label, args.context)?
+                    .sign(&SignData::ResponseBuffer(buf, range), out)
             } else {
-                crypto.sign_with_alias(&SignData::ResponseBuffer(buf, range))
+                crypto.sign_with_derived(
+                    &digest,
+                    args.cdi_label,
+                    args.key_label,
+                    args.context,
+                    &SignData::ResponseBuffer(buf, range),
+                    out,
+                )
             }
-        };
+        } else {
+            crypto.sign_with_alias(&SignData::ResponseBuffer(buf, range), out)
+        }
+    };
 
     let mut issuer_name = [0u8; MAX_ISSUER_NAME_SIZE];
     let cert_validity = platform.get_cert_validity()?;
@@ -2756,13 +2793,14 @@ fn create_dpe_cert_or_csr(
         &measurements,
         &mut sign_cb,
         output_cert_or_csr,
+        &mut sig,
     )?;
 
-    Ok(CreateDpeCertResult {
-        cert_size,
-        pub_key: pub_key.clone(),
-        exported_cdi_handle: exported_cdi_handle.unwrap_or([0u8; MAX_EXPORTED_CDI_SIZE]),
-    })
+    // `out_result.pub_key` was already populated in place at derivation time.
+    out_result.cert_size = cert_size;
+    out_result.exported_cdi_handle = exported_cdi_handle.unwrap_or([0u8; MAX_EXPORTED_CDI_SIZE]);
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -3051,7 +3089,12 @@ pub(crate) mod tests {
 
         let mut sign_cb = |_buf: &dyn ResponseBuffer,
                            _range: core::ops::Range<usize>,
-                           _use_derived: bool| Ok(test_sig.clone());
+                           _use_derived: bool,
+                           out: &mut Signature| {
+            *out = test_sig.clone();
+            Ok(())
+        };
+        let mut sig = test_sig.clone();
 
         // SubjectKeyIdentifier keeps the SignerIdentifier setup simple.
         let mut ski = ArrayVec::new();
@@ -3083,10 +3126,17 @@ pub(crate) mod tests {
                 &pub_key,
                 &measurements,
                 &validity,
+                &mut sig,
             )
         });
         assert_overflow_detected(|w| {
-            w.encode_csr(&mut sign_cb, &pub_key, &TEST_SUBJECT_NAME, &measurements)
+            w.encode_csr(
+                &mut sign_cb,
+                &pub_key,
+                &TEST_SUBJECT_NAME,
+                &measurements,
+                &mut sig,
+            )
         });
         assert_overflow_detected(|w| {
             w.encode_cms(
@@ -3095,6 +3145,7 @@ pub(crate) mod tests {
                 &TEST_SUBJECT_NAME,
                 &measurements,
                 &sid,
+                &mut sig,
             )
         });
     }
@@ -3338,7 +3389,12 @@ pub(crate) mod tests {
 
         let mut sign_cb = |_buf: &dyn ResponseBuffer,
                            _range: core::ops::Range<usize>,
-                           _use_derived: bool| Ok(test_sig.clone());
+                           _use_derived: bool,
+                           out: &mut Signature| {
+            *out = test_sig.clone();
+            Ok(())
+        };
+        let mut sig = test_sig.clone();
 
         let mut cbuf = SliceResponseBuffer::new(cert_buf);
         let mut w = CertWriter::new(&mut cbuf, DPE_PROFILE, true);
@@ -3351,6 +3407,7 @@ pub(crate) mod tests {
                 &pub_key,
                 &measurements,
                 &validity,
+                &mut sig,
             )
             .unwrap();
 
@@ -3446,7 +3503,12 @@ pub(crate) mod tests {
 
         let mut sign_cb = |_buf: &dyn ResponseBuffer,
                            _range: core::ops::Range<usize>,
-                           _use_derived: bool| Ok(test_sig.clone());
+                           _use_derived: bool,
+                           out: &mut Signature| {
+            *out = test_sig.clone();
+            Ok(())
+        };
+        let mut sig = test_sig.clone();
 
         let mut cbuf = SliceResponseBuffer::new(cert_buf);
         let mut w = CertWriter::new(&mut cbuf, DPE_PROFILE, true);
@@ -3459,6 +3521,7 @@ pub(crate) mod tests {
                 &pub_key,
                 &measurements,
                 &validity,
+                &mut sig,
             )
             .unwrap();
 
@@ -3999,7 +4062,12 @@ pub(crate) mod tests {
         };
         let mut sign_cb = |_buf: &dyn ResponseBuffer,
                            _range: core::ops::Range<usize>,
-                           _use_derived: bool| Ok(test_sig.clone());
+                           _use_derived: bool,
+                           out: &mut Signature| {
+            *out = test_sig.clone();
+            Ok(())
+        };
+        let mut sig = test_sig.clone();
 
         let context = Context {
             state: ContextState::Active,
@@ -4028,7 +4096,8 @@ pub(crate) mod tests {
                 &pub_key,
                 &TEST_SUBJECT_NAME,
                 &measurements,
-                &sid
+                &sid,
+                &mut sig,
             ),
             Err(DpeErrorCode::X509InvalidState),
         );
@@ -4593,7 +4662,12 @@ pub(crate) mod tests {
         };
         let mut sign_cb = |_buf: &dyn ResponseBuffer,
                            _range: core::ops::Range<usize>,
-                           _use_derived: bool| Ok(test_sig.clone());
+                           _use_derived: bool,
+                           out: &mut Signature| {
+            *out = test_sig.clone();
+            Ok(())
+        };
+        let mut sig = test_sig.clone();
 
         let label_bytes: Vec<u8> = if max_size {
             vec![0xAB; MAX_UEID_SIZE]
@@ -4629,7 +4703,13 @@ pub(crate) mod tests {
         let mut sbuf = SliceResponseBuffer::new(&mut buf);
         let mut w = CertWriter::new(&mut sbuf, DPE_PROFILE, true);
         let n = w
-            .encode_csr(&mut sign_cb, &pub_key, &TEST_SUBJECT_NAME, &measurements)
+            .encode_csr(
+                &mut sign_cb,
+                &pub_key,
+                &TEST_SUBJECT_NAME,
+                &measurements,
+                &mut sig,
+            )
             .unwrap();
 
         let (_, csr) = X509CertificationRequest::from_der(&buf[..n])
@@ -4695,7 +4775,12 @@ pub(crate) mod tests {
         let test_sig = Signature::Mldsa(MldsaSignature([0xBBu8; ALGORITHM.signature_size()]));
         let mut sign_cb = |_buf: &dyn ResponseBuffer,
                            _range: core::ops::Range<usize>,
-                           _use_derived: bool| Ok(test_sig.clone());
+                           _use_derived: bool,
+                           out: &mut Signature| {
+            *out = test_sig.clone();
+            Ok(())
+        };
+        let mut sig = test_sig.clone();
 
         let label_bytes: Vec<u8> = if max_size {
             vec![0xAB; MAX_UEID_SIZE]
@@ -4731,7 +4816,13 @@ pub(crate) mod tests {
         let mut sbuf = SliceResponseBuffer::new(&mut buf);
         let mut w = CertWriter::new(&mut sbuf, DPE_PROFILE, true);
         let n = w
-            .encode_csr(&mut sign_cb, &pub_key, &TEST_SUBJECT_NAME, &measurements)
+            .encode_csr(
+                &mut sign_cb,
+                &pub_key,
+                &TEST_SUBJECT_NAME,
+                &measurements,
+                &mut sig,
+            )
             .unwrap();
 
         let (_, csr) = X509CertificationRequest::from_der(&buf[..n])

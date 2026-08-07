@@ -6,7 +6,7 @@ Abstract:
 
 use crate::{DigestAlgorithm, DigestType, SignatureAlgorithm, SignatureType};
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
-use zeroize::ZeroizeOnDrop;
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 #[derive(Clone, FromBytes, IntoBytes, KnownLayout, Immutable, ZeroizeOnDrop)]
 #[repr(C)]
@@ -44,7 +44,7 @@ impl<const K: usize> Default for EcdsaPub<K> {
     }
 }
 
-#[derive(Clone, FromBytes, IntoBytes, KnownLayout, Immutable, ZeroizeOnDrop)]
+#[derive(Clone, FromBytes, IntoBytes, KnownLayout, Immutable, ZeroizeOnDrop, Zeroize)]
 #[repr(C)]
 pub struct EcdsaSig<const K: usize> {
     pub r: [u8; K],
@@ -181,7 +181,7 @@ impl EcdsaPubKey {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Zeroize)]
 pub enum EcdsaSignature {
     Ecdsa256(curve_256::EcdsaSignature256),
     Ecdsa384(curve_384::EcdsaSignature384),
@@ -205,6 +205,15 @@ impl EcdsaSignature {
         match self {
             Self::Ecdsa256(key) => key.curve_size(),
             Self::Ecdsa384(key) => key.curve_size(),
+        }
+    }
+
+    /// Zero-initialized signature of the given ECDSA curve. Used as a
+    /// caller-provided output buffer for sign-in-place APIs.
+    pub fn zeroed(alg: EcdsaAlgorithm) -> Self {
+        match alg {
+            EcdsaAlgorithm::Bit256 => Self::Ecdsa256(curve_256::EcdsaSignature256::default()),
+            EcdsaAlgorithm::Bit384 => Self::Ecdsa384(curve_384::EcdsaSignature384::default()),
         }
     }
 }
