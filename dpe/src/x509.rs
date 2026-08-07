@@ -9,7 +9,6 @@ use crate::{
     context::{Context, ContextHandle, RootToChildIter},
     dpe_instance::DpeEnv,
     error::{DpeErrorCode, InternalErrorCode},
-    okref,
     tci::{TciMeasurement, TciNodeData},
     DpeInstance, DpeProfile, MAX_HANDLES,
 };
@@ -2438,6 +2437,7 @@ pub(crate) struct CreateDpeCertArgs<'a> {
 }
 
 /// Results for DPE cert or CSR creation.
+#[derive(Default)]
 pub(crate) struct CreateDpeCertResult {
     /// Size of certificate or CSR in bytes.
     pub cert_size: u32,
@@ -2509,7 +2509,8 @@ pub(crate) fn create_exported_dpe_cert(
     dpe: &mut DpeInstance,
     env: &mut dyn DpeEnv,
     cert: &mut dyn ResponseBuffer,
-) -> Result<CreateDpeCertResult, DpeErrorCode> {
+    out_result: &mut CreateDpeCertResult,
+) -> Result<(), DpeErrorCode> {
     create_dpe_cert_or_csr(
         args,
         dpe,
@@ -2517,6 +2518,7 @@ pub(crate) fn create_exported_dpe_cert(
         CertificateFormat::X509,
         CertificateType::Exported,
         cert,
+        out_result,
     )
 }
 
@@ -2525,7 +2527,8 @@ pub(crate) fn create_dpe_cert(
     dpe: &mut DpeInstance,
     env: &mut dyn DpeEnv,
     cert: &mut dyn ResponseBuffer,
-) -> Result<CreateDpeCertResult, DpeErrorCode> {
+    out_result: &mut CreateDpeCertResult,
+) -> Result<(), DpeErrorCode> {
     create_dpe_cert_or_csr(
         args,
         dpe,
@@ -2533,6 +2536,7 @@ pub(crate) fn create_dpe_cert(
         CertificateFormat::X509,
         CertificateType::Leaf,
         cert,
+        out_result,
     )
 }
 
@@ -2542,7 +2546,8 @@ pub(crate) fn create_dpe_csr(
     dpe: &mut DpeInstance,
     env: &mut dyn DpeEnv,
     csr: &mut dyn ResponseBuffer,
-) -> Result<CreateDpeCertResult, DpeErrorCode> {
+    out_result: &mut CreateDpeCertResult,
+) -> Result<(), DpeErrorCode> {
     create_dpe_cert_or_csr(
         args,
         dpe,
@@ -2550,6 +2555,7 @@ pub(crate) fn create_dpe_csr(
         CertificateFormat::Csr,
         CertificateType::Leaf,
         csr,
+        out_result,
     )
 }
 
@@ -2659,13 +2665,14 @@ fn create_dpe_cert_or_csr(
     cert_format: CertificateFormat,
     cert_type: CertificateType,
     output_cert_or_csr: &mut dyn ResponseBuffer,
-) -> Result<CreateDpeCertResult, DpeErrorCode> {
+    out_result: &mut CreateDpeCertResult,
+) -> Result<(), DpeErrorCode> {
     let digest = get_dpe_measurement_digest(dpe, env, args.handle, args.locality)?;
     let (crypto, platform, state) = env.get();
 
     let mut exported_cdi_handle = None;
 
-    let pub_key = match cert_type {
+    let pub_key_res = match cert_type {
         CertificateType::Exported => {
             let exported_handle = crypto.derive_exported_cdi(&digest, args.cdi_label)?;
             exported_cdi_handle = Some(exported_handle);
@@ -2677,17 +2684,18 @@ fn create_dpe_cert_or_csr(
             crypto.derive_pub_key(&digest, args.cdi_label, args.key_label, args.context)
         }
     };
-    let pub_key_ok = pub_key.is_ok();
+    let pub_key_ok = pub_key_res.is_ok();
     #[cfg(feature = "cfi")]
     let pub_key_ok = cfi_launder(pub_key_ok);
     if pub_key_ok {
         #[cfg(feature = "cfi")]
-        cfi_assert!(pub_key.is_ok());
+        cfi_assert!(pub_key_res.is_ok());
     } else {
         #[cfg(feature = "cfi")]
-        cfi_assert!(pub_key.is_err());
+        cfi_assert!(pub_key_res.is_err());
     }
-    let pub_key = okref(&pub_key)?;
+    out_result.pub_key = pub_key_res?;
+    let pub_key = &out_result.pub_key;
     let mut subj_serial = [0u8; MAX_HASH_SIZE * 2];
     let subject_name = get_subject_name(crypto, &cert_type, pub_key, &mut subj_serial)?;
 
@@ -2788,11 +2796,11 @@ fn create_dpe_cert_or_csr(
         &mut sig,
     )?;
 
-    Ok(CreateDpeCertResult {
-        cert_size,
-        pub_key: pub_key.clone(),
-        exported_cdi_handle: exported_cdi_handle.unwrap_or([0u8; MAX_EXPORTED_CDI_SIZE]),
-    })
+    // `out_result.pub_key` was already populated in place at derivation time.
+    out_result.cert_size = cert_size;
+    out_result.exported_cdi_handle = exported_cdi_handle.unwrap_or([0u8; MAX_EXPORTED_CDI_SIZE]);
+
+    Ok(())
 }
 
 #[cfg(test)]

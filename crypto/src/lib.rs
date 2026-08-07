@@ -365,6 +365,20 @@ pub enum PubKey {
     Mldsa(ml_dsa::MldsaPublicKey),
 }
 
+impl Default for PubKey {
+    /// A zeroed placeholder key. Used only to pre-initialize a caller-provided
+    /// `CreateDpeCertResult` slot that the cert/CSR path overwrites before use;
+    /// the always-compiled ECDSA-384 variant keeps this independent of `ml-dsa`.
+    fn default() -> Self {
+        PubKey::Ecdsa(ecdsa::EcdsaPubKey::Ecdsa384(
+            ecdsa::curve_384::EcdsaPub384 {
+                x: [0u8; ecdsa::curve_384::CURVE_SIZE],
+                y: [0u8; ecdsa::curve_384::CURVE_SIZE],
+            },
+        ))
+    }
+}
+
 impl From<ecdsa::EcdsaPubKey> for PubKey {
     fn from(pub_key: ecdsa::EcdsaPubKey) -> Self {
         PubKey::Ecdsa(pub_key)

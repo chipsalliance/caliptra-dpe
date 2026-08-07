@@ -5,7 +5,7 @@ use crate::{
     context::{ActiveContextArgs, Context, ContextHandle, ContextState, ContextType},
     dpe_instance::{DpeEnv, DpeInstance},
     error::{DpeErrorCode, InternalErrorCode},
-    mutresp, okref,
+    mutresp,
     response::{DeriveContextExportedCdiRespHdr, DeriveContextResp},
     tci::TciMeasurement,
     x509::{create_exported_dpe_cert, CreateDpeCertArgs, CreateDpeCertResult},
@@ -393,13 +393,9 @@ impl CommandExecution for DeriveContextCmd {
                         ueid,
                         dice_extensions_are_critical: env.state().flags.contains(DpeFlags::MARK_DICE_EXTENSIONS_CRITICAL),
                     };
-                    let result = create_exported_dpe_cert(
-                        &args,
-                        dpe,
-                        env,
-                        &mut cert_view,
-                    );
-                    let CreateDpeCertResult { cert_size, exported_cdi_handle, .. } = okref(&result)?;
+                    let mut result = CreateDpeCertResult::default();
+                    create_exported_dpe_cert(&args, dpe, env, &mut cert_view, &mut result)?;
+                    let CreateDpeCertResult { cert_size, exported_cdi_handle, .. } = &result;
 
                     if !flags.retains_parent() && !env.state().contexts.get(parent_idx).ok_or(DpeErrorCode::from(InternalErrorCode::ContextIndexOob))?.has_children() {
                         // When the parent is not retained and there are no other children,

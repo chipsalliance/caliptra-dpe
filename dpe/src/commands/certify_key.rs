@@ -193,7 +193,10 @@ impl CommandExecution for CertifyKeyCommand<'_> {
         let response_header = self.response_header();
         let hdr_size = response_header.hdr_size();
         let mut cert_view = OffsetResponseBuffer::new(out, hdr_size);
-        let result = Self::run_cert_format(format, &args, dpe, env, &mut cert_view)?;
+        // Single result slot, filled in place by the cert/CSR path, so only one
+        // `CreateDpeCertResult` — and thus one `PubKey` — occupies this frame.
+        let mut result = CreateDpeCertResult::default();
+        Self::run_cert_format(format, &args, dpe, env, &mut cert_view, &mut result)?;
 
         #[allow(clippy::indexing_slicing)]
         let new_handle = {
@@ -214,14 +217,15 @@ impl CertifyKeyCommand<'_> {
         dpe: &mut DpeInstance,
         env: &mut dyn DpeEnv,
         out: &mut dyn ResponseBuffer,
-    ) -> Result<CreateDpeCertResult, DpeErrorCode> {
+        out_result: &mut CreateDpeCertResult,
+    ) -> Result<(), DpeErrorCode> {
         match format {
             Self::FORMAT_X509 => {
                 cfg_if! {
                     if #[cfg(not(feature = "disable_x509"))] {
                         #[cfg(feature = "cfi")]
                         cfi_assert_eq(format, Self::FORMAT_X509);
-                        create_dpe_cert(args, dpe, env, out)
+                        create_dpe_cert(args, dpe, env, out, out_result)
                     } else {
                         Err(DpeErrorCode::ArgumentNotSupported)
                     }
@@ -232,7 +236,7 @@ impl CertifyKeyCommand<'_> {
                     if #[cfg(not(feature = "disable_csr"))] {
                         #[cfg(feature = "cfi")]
                         cfi_assert_eq(format, Self::FORMAT_CSR);
-                        crate::x509::create_dpe_csr(args, dpe, env, out)
+                        crate::x509::create_dpe_csr(args, dpe, env, out, out_result)
                     } else {
                         Err(DpeErrorCode::ArgumentNotSupported)
                     }
@@ -395,14 +399,29 @@ impl CertifyKeyResponseHeader {
             }
             #[cfg(feature = "ml-dsa")]
             (Self::Mldsa87, PubKey::Mldsa(caliptra_dpe_crypto::ml_dsa::MldsaPublicKey(pubkey))) => {
+                // The stack space of the MLDSA operations are constrained, especially on the 1.x
+                // Core implementation.  As such, utilize a hand-written serialization of the
+                // RespHdr to avoid allocating the full struct on the stack, including an expensive
+                // MLDSA Public Key.
                 use crate::response::CertifyKeyMldsa87RespHdr;
-                let hdr = CertifyKeyMldsa87RespHdr {
-                    resp_hdr: dpe.response_hdr(DpeErrorCode::NoError),
-                    new_context_handle: new_handle,
-                    pubkey: *pubkey,
-                    cert_size,
-                };
-                out.write_at(0, hdr.as_bytes())
+                use crate::ResponseHdr;
+
+                const HANDLE_OFFSET: usize = core::mem::size_of::<ResponseHdr>();
+                const PUB_OFFSET: usize = HANDLE_OFFSET + core::mem::size_of::<ContextHandle>();
+                const CERT_SIZE_OFFSET: usize =
+                    PUB_OFFSET + size_of::<caliptra_dpe_crypto::ml_dsa::MldsaPublicKey>();
+
+                const _: () = assert!(
+                    CERT_SIZE_OFFSET + size_of::<u32>() == size_of::<CertifyKeyMldsa87RespHdr>()
+                );
+
+                out.write_at(0, dpe.response_hdr(DpeErrorCode::NoError).as_bytes())
+                    .map_err(|_| DpeErrorCode::InvalidResponseBuf)?;
+                out.write_at(HANDLE_OFFSET, new_handle.as_bytes())
+                    .map_err(|_| DpeErrorCode::InvalidResponseBuf)?;
+                out.write_at(PUB_OFFSET, pubkey)
+                    .map_err(|_| DpeErrorCode::InvalidResponseBuf)?;
+                out.write_at(CERT_SIZE_OFFSET, &cert_size.to_le_bytes())
                     .map_err(|_| DpeErrorCode::InvalidResponseBuf)
             }
             _ => Err(DpeErrorCode::InvalidArgument),
