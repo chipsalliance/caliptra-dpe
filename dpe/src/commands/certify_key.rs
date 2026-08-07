@@ -404,19 +404,23 @@ impl CertifyKeyResponseHeader {
                 // RespHdr to avoid allocating the full struct on the stack, including an expensive
                 // MLDSA Public Key.
                 use crate::response::CertifyKeyMldsa87RespHdr;
-                use crate::ResponseHdr;
+                use core::mem::offset_of;
 
-                const HANDLE_OFFSET: usize = core::mem::size_of::<ResponseHdr>();
-                const PUB_OFFSET: usize = HANDLE_OFFSET + core::mem::size_of::<ContextHandle>();
-                const CERT_SIZE_OFFSET: usize =
-                    PUB_OFFSET + size_of::<caliptra_dpe_crypto::ml_dsa::MldsaPublicKey>();
+                const RESP_HDR_OFFSET: usize = offset_of!(CertifyKeyMldsa87RespHdr, resp_hdr);
+                const HANDLE_OFFSET: usize =
+                    offset_of!(CertifyKeyMldsa87RespHdr, new_context_handle);
+                const PUB_OFFSET: usize = offset_of!(CertifyKeyMldsa87RespHdr, pubkey);
+                const CERT_SIZE_OFFSET: usize = offset_of!(CertifyKeyMldsa87RespHdr, cert_size);
 
                 const _: () = assert!(
                     CERT_SIZE_OFFSET + size_of::<u32>() == size_of::<CertifyKeyMldsa87RespHdr>()
                 );
 
-                out.write_at(0, dpe.response_hdr(DpeErrorCode::NoError).as_bytes())
-                    .map_err(|_| DpeErrorCode::InvalidResponseBuf)?;
+                out.write_at(
+                    RESP_HDR_OFFSET,
+                    dpe.response_hdr(DpeErrorCode::NoError).as_bytes(),
+                )
+                .map_err(|_| DpeErrorCode::InvalidResponseBuf)?;
                 out.write_at(HANDLE_OFFSET, new_handle.as_bytes())
                     .map_err(|_| DpeErrorCode::InvalidResponseBuf)?;
                 out.write_at(PUB_OFFSET, pubkey)

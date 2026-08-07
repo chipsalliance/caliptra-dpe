@@ -41,7 +41,7 @@ use caliptra_dpe_crypto::ml_dsa::{MldsaPublicKey, MldsaSignature};
 /// Arguments: `(buf, range, use_derived)` where `range` is the byte span of
 /// the payload to sign within `buf`, and `use_derived` selects the derived key
 /// (`true`) or the alias key (`false`).  The `Signature` is the out buffer
-/// is where the signature is placed.  The callee is responsible for ensuring it
+/// where the signature is placed.  The caller is responsible for ensuring it
 /// is cleared between any sequential calls.
 pub trait SignCallback:
     FnMut(&dyn ResponseBuffer, core::ops::Range<usize>, bool, &mut Signature) -> Result<(), CryptoError>
