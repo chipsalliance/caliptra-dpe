@@ -281,6 +281,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "caliptra-dpe-dice-asn1"
+version = "0.1.0"
+dependencies = [
+ "asn1",
+]
+
+[[package]]
 name = "caliptra-dpe-platform"
 version = "0.1.0"
 dependencies = [
@@ -320,6 +327,7 @@ dependencies = [
  "asn1",
  "caliptra-dpe",
  "caliptra-dpe-crypto",
+ "caliptra-dpe-dice-asn1",
  "caliptra-dpe-platform",
  "clap",
  "cms",
@@ -1824,6 +1832,8 @@ name = "xtask"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "asn1",
+ "caliptra-dpe-dice-asn1",
  "clap",
  "num_cpus",
 ]

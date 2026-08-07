@@ -4,13 +4,9 @@
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
-name = "xtask"
+name = "caliptra-dpe-dice-asn1"
 publish.workspace = true
 version.workspace = true
 
 [dependencies]
-anyhow.workspace = true
-asn1 = { workspace = true, features = ["std"] }
-caliptra-dpe-dice-asn1 = { path = "../dice-asn1" }
-clap.workspace = true
-num_cpus = "1.17.0"
+asn1.workspace = true
