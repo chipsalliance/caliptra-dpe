@@ -2,8 +2,9 @@
 
 use crate::{
     ecdsa::{
-        curve_256::EcdsaSignature256, curve_384::EcdsaSignature384, EcdsaAlgorithm, EcdsaPub,
-        EcdsaSig,
+        curve_256::{EcdsaPub256, EcdsaSignature256},
+        curve_384::{EcdsaPub384, EcdsaSignature384},
+        EcdsaAlgorithm, EcdsaPubKey, EcdsaSig,
     },
     hkdf::*,
     CdiManager, Crypto, CryptoError, CryptoSuite, Digest, DigestAlgorithm, DigestType,
@@ -178,31 +179,33 @@ impl crate::Signer for RustCryptoSigner {
         Ok(())
     }
 
-    fn public_key(&mut self) -> Result<PubKey, CryptoError> {
+    fn public_key(&mut self, out: &mut PubKey) -> Result<(), CryptoError> {
         match self.signature_alg {
             SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit256) => {
                 let signing = p256::ecdsa::SigningKey::from_slice(self.priv_key.as_slice())?;
                 let verifying = p256::ecdsa::VerifyingKey::from(&signing);
                 let point = verifying.to_encoded_point(false);
 
-                let mut x = [0; EcdsaAlgorithm::Bit256.curve_size()];
-                let mut y = [0; EcdsaAlgorithm::Bit256.curve_size()];
+                let PubKey::Ecdsa(EcdsaPubKey::Ecdsa256(EcdsaPub256 { x, y })) = out else {
+                    return Err(CryptoError::MismatchedAlgorithm);
+                };
                 x.clone_from_slice(point.x().ok_or(RUSTCRYPTO_ECDSA_ERROR)?.as_ref());
                 y.clone_from_slice(point.y().ok_or(RUSTCRYPTO_ECDSA_ERROR)?.as_ref());
 
-                Ok(EcdsaPub::from_slice(&x, &y).into())
+                Ok(())
             }
             SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384) => {
                 let signing = p384::ecdsa::SigningKey::from_slice(self.priv_key.as_slice())?;
                 let verifying = p384::ecdsa::VerifyingKey::from(&signing);
                 let point = verifying.to_encoded_point(false);
 
-                let mut x = [0; EcdsaAlgorithm::Bit384.curve_size()];
-                let mut y = [0; EcdsaAlgorithm::Bit384.curve_size()];
+                let PubKey::Ecdsa(EcdsaPubKey::Ecdsa384(EcdsaPub384 { x, y })) = out else {
+                    return Err(CryptoError::MismatchedAlgorithm);
+                };
                 x.clone_from_slice(point.x().ok_or(RUSTCRYPTO_ECDSA_ERROR)?.as_ref());
                 y.clone_from_slice(point.y().ok_or(RUSTCRYPTO_ECDSA_ERROR)?.as_ref());
 
-                Ok(EcdsaPub::from_slice(&x, &y).into())
+                Ok(())
             }
             #[cfg(feature = "ml-dsa")]
             SignatureAlgorithm::Mldsa(MldsaAlgorithm::Mldsa87) => {
@@ -214,10 +217,13 @@ impl crate::Signer for RustCryptoSigner {
                 );
                 let verifying = kp.verifying_key();
                 let encoded_key = verifying.encode();
-                Ok(PubKey::Mldsa(
-                    MldsaPublicKey::read_from_bytes(encoded_key.as_bytes())
-                        .map_err(|_| RUSTCRYPTO_ML_DSA_ERROR)?,
-                ))
+
+                let PubKey::Mldsa(MldsaPublicKey(pk)) = out else {
+                    return Err(CryptoError::MismatchedAlgorithm);
+                };
+                pk.copy_from_slice(encoded_key.as_bytes());
+
+                Ok(())
             }
         }
     }

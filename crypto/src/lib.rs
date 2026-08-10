@@ -365,20 +365,6 @@ pub enum PubKey {
     Mldsa(ml_dsa::MldsaPublicKey),
 }
 
-impl Default for PubKey {
-    /// A zeroed placeholder key. Used only to pre-initialize a caller-provided
-    /// `CreateDpeCertResult` slot that the cert/CSR path overwrites before use;
-    /// the always-compiled ECDSA-384 variant keeps this independent of `ml-dsa`.
-    fn default() -> Self {
-        PubKey::Ecdsa(ecdsa::EcdsaPubKey::Ecdsa384(
-            ecdsa::curve_384::EcdsaPub384 {
-                x: [0u8; ecdsa::curve_384::CURVE_SIZE],
-                y: [0u8; ecdsa::curve_384::CURVE_SIZE],
-            },
-        ))
-    }
-}
-
 impl From<ecdsa::EcdsaPubKey> for PubKey {
     fn from(pub_key: ecdsa::EcdsaPubKey) -> Self {
         PubKey::Ecdsa(pub_key)
@@ -494,7 +480,7 @@ pub trait Signer {
     fn sign(&mut self, data: &SignData, out: &mut Signature) -> Result<(), CryptoError>;
 
     /// Get the public key associated with the derived key-pair
-    fn public_key(&mut self) -> Result<PubKey, CryptoError>;
+    fn public_key(&mut self, out: &mut PubKey) -> Result<(), CryptoError>;
 }
 
 pub trait CdiManager {
@@ -544,8 +530,13 @@ pub trait CdiManager {
     ///
     /// * `label` - Caller-supplied label to use in asymmetric key derivation
     /// * `info` - Caller-supplied info string to use in asymmetric key derivation
-    fn derive_pub_key(&mut self, label: &[u8], info: &[u8]) -> Result<PubKey, CryptoError> {
-        self.derive_key_pair(label, info)?.public_key()
+    fn derive_pub_key(
+        &mut self,
+        label: &[u8],
+        info: &[u8],
+        out: &mut PubKey,
+    ) -> Result<(), CryptoError> {
+        self.derive_key_pair(label, info)?.public_key(out)
     }
 
     /// This should only be used in testing
@@ -723,8 +714,9 @@ pub trait Crypto {
         info: &[u8],
         label: &[u8],
         derived_info: &[u8],
-    ) -> Result<PubKey, CryptoError> {
+        out: &mut PubKey,
+    ) -> Result<(), CryptoError> {
         self.derive_cdi(measurement, info)?
-            .derive_pub_key(label, derived_info)
+            .derive_pub_key(label, derived_info, out)
     }
 }

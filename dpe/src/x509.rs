@@ -15,6 +15,10 @@ use crate::{
 use bitflags::bitflags;
 #[cfg(feature = "cfi")]
 use caliptra_cfi_lib::{cfi_assert, cfi_assert_bool, cfi_launder};
+#[cfg(feature = "p256")]
+use caliptra_dpe_crypto::ecdsa::curve_256::{self, EcdsaPub256};
+#[cfg(feature = "p384")]
+use caliptra_dpe_crypto::ecdsa::curve_384::{self, EcdsaPub384};
 #[cfg(any(feature = "p256", feature = "p384"))]
 use caliptra_dpe_crypto::ecdsa::EcdsaPubKey;
 use caliptra_dpe_crypto::{
@@ -34,7 +38,7 @@ use zerocopy::IntoBytes;
 use zeroize::Zeroize;
 
 #[cfg(feature = "ml-dsa")]
-use caliptra_dpe_crypto::ml_dsa::{MldsaPublicKey, MldsaSignature};
+use caliptra_dpe_crypto::ml_dsa::{MldsaAlgorithm, MldsaPublicKey, MldsaSignature};
 
 /// Signing callback passed to cert and CSR encoding functions.
 ///
@@ -2437,7 +2441,6 @@ pub(crate) struct CreateDpeCertArgs<'a> {
 }
 
 /// Results for DPE cert or CSR creation.
-#[derive(Default)]
 pub(crate) struct CreateDpeCertResult {
     /// Size of certificate or CSR in bytes.
     pub cert_size: u32,
@@ -2446,6 +2449,32 @@ pub(crate) struct CreateDpeCertResult {
     /// If the cert_type is `CertificateType::Exported` the CDI is exchanged for a handle, and
     /// returned via `exported_cdi_handle`.
     pub exported_cdi_handle: [u8; MAX_EXPORTED_CDI_SIZE],
+}
+
+impl CreateDpeCertResult {
+    pub fn zeroed(profile: DpeProfile) -> Self {
+        let pub_key = match profile {
+            #[cfg(feature = "p256")]
+            DpeProfile::P256Sha256 => PubKey::Ecdsa(EcdsaPubKey::Ecdsa256(EcdsaPub256 {
+                x: [0u8; curve_256::CURVE_SIZE],
+                y: [0u8; curve_256::CURVE_SIZE],
+            })),
+            #[cfg(feature = "p384")]
+            DpeProfile::P384Sha384 => PubKey::Ecdsa(EcdsaPubKey::Ecdsa384(EcdsaPub384 {
+                x: [0u8; curve_384::CURVE_SIZE],
+                y: [0u8; curve_384::CURVE_SIZE],
+            })),
+            #[cfg(feature = "ml-dsa")]
+            DpeProfile::Mldsa87 => PubKey::Mldsa(MldsaPublicKey(
+                [0u8; MldsaAlgorithm::Mldsa87.public_key_size()],
+            )),
+        };
+        Self {
+            cert_size: 0,
+            pub_key,
+            exported_cdi_handle: [0u8; MAX_EXPORTED_CDI_SIZE],
+        }
+    }
 }
 
 fn get_dpe_measurement_digest(
@@ -2678,11 +2707,15 @@ fn create_dpe_cert_or_csr(
             exported_cdi_handle = Some(exported_handle);
             crypto
                 .derive_key_pair_exported(&exported_handle, args.key_label, args.context)?
-                .public_key()
+                .public_key(&mut out_result.pub_key)
         }
-        CertificateType::Leaf => {
-            crypto.derive_pub_key(&digest, args.cdi_label, args.key_label, args.context)
-        }
+        CertificateType::Leaf => crypto.derive_pub_key(
+            &digest,
+            args.cdi_label,
+            args.key_label,
+            args.context,
+            &mut out_result.pub_key,
+        ),
     };
     let pub_key_ok = pub_key_res.is_ok();
     #[cfg(feature = "cfi")]
@@ -2694,7 +2727,7 @@ fn create_dpe_cert_or_csr(
         #[cfg(feature = "cfi")]
         cfi_assert!(pub_key_res.is_err());
     }
-    out_result.pub_key = pub_key_res?;
+    pub_key_res?;
     let pub_key = &out_result.pub_key;
     let mut subj_serial = [0u8; MAX_HASH_SIZE * 2];
     let subject_name = get_subject_name(crypto, &cert_type, pub_key, &mut subj_serial)?;

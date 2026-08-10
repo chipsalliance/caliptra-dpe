@@ -393,7 +393,7 @@ impl CommandExecution for DeriveContextCmd {
                         ueid,
                         dice_extensions_are_critical: env.state().flags.contains(DpeFlags::MARK_DICE_EXTENSIONS_CRITICAL),
                     };
-                    let mut result = CreateDpeCertResult::default();
+                    let mut result = CreateDpeCertResult::zeroed(dpe.profile);
                     create_exported_dpe_cert(&args, dpe, env, &mut cert_view, &mut result)?;
                     let CreateDpeCertResult { cert_size, exported_cdi_handle, .. } = &result;
 

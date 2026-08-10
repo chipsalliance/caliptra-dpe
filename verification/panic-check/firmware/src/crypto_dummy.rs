@@ -146,7 +146,7 @@ impl Signer for DummySigner {
         Err(CryptoError::NotImplemented)
     }
 
-    fn public_key(&mut self) -> Result<PubKey, CryptoError> {
+    fn public_key(&mut self, _out: &mut PubKey) -> Result<(), CryptoError> {
         Err(CryptoError::NotImplemented)
     }
 }
