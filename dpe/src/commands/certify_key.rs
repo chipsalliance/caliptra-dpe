@@ -195,7 +195,7 @@ impl CommandExecution for CertifyKeyCommand<'_> {
         let mut cert_view = OffsetResponseBuffer::new(out, hdr_size);
         // Single result slot, filled in place by the cert/CSR path, so only one
         // `CreateDpeCertResult` — and thus one `PubKey` — occupies this frame.
-        let mut result = CreateDpeCertResult::default();
+        let mut result = CreateDpeCertResult::zeroed(dpe.profile);
         Self::run_cert_format(format, &args, dpe, env, &mut cert_view, &mut result)?;
 
         #[allow(clippy::indexing_slicing)]
