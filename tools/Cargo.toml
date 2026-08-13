@@ -26,6 +26,7 @@ path = "src/lib.rs"
 [dependencies]
 anyhow.workspace = true
 asn1 = "0.13.0"
+caliptra-dpe-dice-asn1 = { path = "../dice-asn1" }
 clap.workspace = true
 cms = "0.2"
 der = "0.7"

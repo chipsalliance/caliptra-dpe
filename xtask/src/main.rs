@@ -5,6 +5,8 @@ use clap::{Parser, Subcommand};
 use std::path::Path;
 use std::process::Command;
 
+mod x509_testdata;
+
 const PROFILES: &[&str] = &["ml-dsa", "p256", "p384", "hybrid"];
 /// Pinned nightly toolchain version. Must match the version in flake.nix shellHook.
 const NIGHTLY: &str = "nightly-2025-07-08";
@@ -35,6 +37,8 @@ enum Commands {
     RunTool(RunToolArgs),
     /// Build and host the DPE Certificate Visualizer WASM web app
     CertGraph(CertGraphArgs),
+    /// Regenerate the golden X.509 certificates and CSRs
+    RegenX509Testdata(x509_testdata::Args),
 }
 
 #[derive(Parser)]
@@ -134,6 +138,7 @@ fn main() -> Result<()> {
         Commands::Precheckin(args) => run_precheckin_command(args)?,
         Commands::RunTool(args) => run_tool_command(args)?,
         Commands::CertGraph(args) => run_cert_graph(args)?,
+        Commands::RegenX509Testdata(args) => x509_testdata::run(args)?,
     }
 
     Ok(())

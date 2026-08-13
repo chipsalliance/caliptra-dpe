@@ -1,0 +1,12 @@
+# Licensed under the Apache-2.0 license
+
+[package]
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+name = "caliptra-dpe-dice-asn1"
+publish.workspace = true
+version.workspace = true
+
+[dependencies]
+asn1.workspace = true
