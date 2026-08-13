@@ -30,6 +30,7 @@ caliptra-dpe-dice-asn1 = { path = "../dice-asn1" }
 clap.workspace = true
 cms = "0.2"
 der = "0.7"
+hex = "0.4.3"
 pem = "2"
 x509-parser = "0.15.1"
 zerocopy.workspace = true

@@ -333,6 +333,7 @@ dependencies = [
  "cms",
  "der 0.7.10",
  "getrandom",
+ "hex",
  "pem",
  "wasm-bindgen",
  "x509-parser",
