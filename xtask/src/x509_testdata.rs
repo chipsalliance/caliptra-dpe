@@ -3,6 +3,8 @@
 use anyhow::{anyhow, bail, Context, Result};
 use caliptra_dpe_dice_asn1::{FwidWriter, TcbInfoWriter, Ueid};
 use clap::{Parser, ValueEnum};
+use hex;
+
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -234,8 +236,14 @@ fn generate_req(
     } else {
         args.extend(["-addext", "basicConstraints=critical,CA:FALSE"]);
     }
-    let ueid = format!("2.23.133.5.4.4=critical,DER:{}", hex(&extensions.ueid));
-    let tcb = format!("2.23.133.5.4.5=DER:{}", hex(&extensions.multi_tcb_info));
+    let ueid = format!(
+        "2.23.133.5.4.4=critical,DER:{}",
+        hex::encode(&extensions.ueid)
+    );
+    let tcb = format!(
+        "2.23.133.5.4.5=DER:{}",
+        hex::encode(&extensions.multi_tcb_info)
+    );
     args.extend(["-addext", &ueid, "-addext", &tcb]);
     run_openssl(&args, Some(key))
 }
@@ -281,7 +289,9 @@ fn run_openssl(args: &[&str], input: Option<&[u8]>) -> Result<Vec<u8>> {
 }
 
 fn check_openssl() -> Result<()> {
-    run_openssl(&["version"], None).map(|_| ())
+    run_openssl(&["version"], None)
+        .context("OpenSSL is required but could not be found. Please ensure it is installed and in your PATH.")
+        .map(|_| ())
 }
 
 fn install_or_check(dir: &Path, artifacts: &GeneratedArtifacts, check: bool) -> Result<()> {
@@ -316,15 +326,6 @@ fn repository_root() -> PathBuf {
         .parent()
         .expect("xtask must be directly below the repository root")
         .to_path_buf()
-}
-
-fn hex(bytes: &[u8]) -> String {
-    use std::fmt::Write as _;
-    let mut result = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
-        write!(result, "{byte:02x}").expect("writing to a String cannot fail");
-    }
-    result
 }
 
 #[cfg(test)]

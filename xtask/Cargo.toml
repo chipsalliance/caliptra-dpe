@@ -13,4 +13,5 @@ anyhow.workspace = true
 asn1 = { workspace = true, features = ["std"] }
 caliptra-dpe-dice-asn1 = { path = "../dice-asn1" }
 clap.workspace = true
+hex = "0.4.3"
 num_cpus = "1.17.0"
