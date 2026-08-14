@@ -24,6 +24,11 @@ pub const MULTI_TCB_INFO_OID: Oid = Oid {
     der_content: &[0x67, 0x81, 0x05, 0x05, 0x04, 0x05],
 };
 
+pub const ATTEST_LOC_OID: Oid = Oid {
+    dotted: "2.23.133.5.4.100.9",
+    der_content: &[0x67, 0x81, 0x05, 0x05, 0x04, 0x64, 0x09],
+};
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum GoldenProfile {
     P256,
@@ -81,6 +86,9 @@ pub struct GoldenDefinitions {
     pub key_usage_critical: bool,
     pub digital_signature: bool,
     pub key_cert_sign: bool,
+    pub extended_key_usage: ExtensionDefinition,
+    pub include_subject_key_identifier: bool,
+    pub include_authority_key_identifier: bool,
 
     pub ueid: ExtensionDefinition,
     pub ueid_fill: u8,
@@ -88,6 +96,10 @@ pub struct GoldenDefinitions {
     pub tcb_info_count: usize,
     pub fwids_per_tcb_info: usize,
     pub fwid_digest_fill: u8,
+    pub svn: u32,
+    pub locality: u32,
+    pub tci_type: u32,
+    pub supports_recursive: bool,
 }
 
 impl GoldenDefinitions {
@@ -146,13 +158,20 @@ impl GoldenDefinitions {
             subject_common_name: "DPE Leaf",
             csr_subject_serial: "0000",
             certificate_serial: "0",
-            not_before: "20230227000000Z",
+            // Use GeneralizedTime on both the OpenSSL and custom encoder paths.
+            not_before: "20500227000000Z",
             not_after: "99991231235959Z",
             is_ca: false,
             basic_constraints_critical: true,
             key_usage_critical: true,
             digital_signature: true,
             key_cert_sign: false,
+            extended_key_usage: ExtensionDefinition {
+                oid: ATTEST_LOC_OID,
+                critical: true,
+            },
+            include_subject_key_identifier: false,
+            include_authority_key_identifier: true,
             ueid: ExtensionDefinition {
                 oid: UEID_OID,
                 critical: true,
@@ -160,11 +179,15 @@ impl GoldenDefinitions {
             ueid_fill: 0,
             multi_tcb_info: ExtensionDefinition {
                 oid: MULTI_TCB_INFO_OID,
-                critical: false,
+                critical: true,
             },
             tcb_info_count: 1,
             fwids_per_tcb_info: 1,
             fwid_digest_fill: 0,
+            svn: 0,
+            locality: 0,
+            tci_type: 0,
+            supports_recursive: false,
         }
     }
 }
@@ -228,8 +251,14 @@ pub struct TcbInfo<'a> {
 /// Minimal TcbInfo representation used to independently generate golden data.
 #[derive(asn1::Asn1Write)]
 pub struct TcbInfoWriter<'a> {
+    #[implicit(3)]
+    pub svn: Option<u64>,
     #[implicit(6)]
     pub fwids: Option<asn1::SequenceOfWriter<'a, FwidWriter<'a>>>,
+    #[implicit(8)]
+    pub vendor_info: Option<&'a [u8]>,
+    #[implicit(9)]
+    pub tci_type: Option<&'a [u8]>,
 }
 
 #[derive(asn1::Asn1Read, asn1::Asn1Write)]
@@ -243,7 +272,7 @@ mod tests {
 
     #[test]
     fn oid_representations_match() {
-        for oid in [UEID_OID, MULTI_TCB_INFO_OID] {
+        for oid in [UEID_OID, MULTI_TCB_INFO_OID, ATTEST_LOC_OID] {
             let parsed = asn1::ObjectIdentifier::from_string(oid.dotted).unwrap();
             let der = asn1::write_single(&parsed).unwrap();
             assert_eq!(der[0], 0x06);

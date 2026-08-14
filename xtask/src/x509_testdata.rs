@@ -9,7 +9,7 @@ use clap::Parser;
 
 use std::fs;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Command, Stdio};
 
 #[derive(Parser)]
@@ -98,9 +98,14 @@ fn build_extensions(config: &GoldenDefinitions) -> Result<ExtensionValues> {
             digest: &fwid_digest,
         })
         .collect::<Vec<_>>();
+    let vendor_info = config.locality.to_be_bytes();
+    let tci_type = config.tci_type.to_be_bytes();
     let tcb_infos = (0..config.tcb_info_count)
         .map(|_| TcbInfoWriter {
+            svn: Some(config.svn.into()),
             fwids: Some(asn1::SequenceOfWriter::new(fwids.as_slice())),
+            vendor_info: Some(&vendor_info),
+            tci_type: Some(&tci_type),
         })
         .collect::<Vec<_>>();
     let multi_tcb_info = asn1::write_single(&asn1::SequenceOfWriter::new(tcb_infos.as_slice()))
@@ -189,12 +194,11 @@ fn generate_req(
         GoldenKeyAlgorithm::Mldsa87 { .. } => "deterministic:1",
     };
     args.extend(["-sigopt", signature_option]);
-    let subject = format!("/CN={}", config.subject_common_name);
-    let csr_subject = format!(
+    let subject = format!(
         "/CN={}/serialNumber={}",
         config.subject_common_name, config.csr_subject_serial
     );
-    args.extend(["-subj", if certificate { &subject } else { &csr_subject }]);
+    args.extend(["-subj", &subject]);
     let basic_constraints = format!(
         "basicConstraints={}CA:{}",
         critical_prefix(config.basic_constraints_critical),
@@ -214,6 +218,14 @@ fn generate_req(
             ""
         }
     );
+    let ueid = openssl_der_extension(config.ueid, &extensions.ueid);
+    let tcb = openssl_der_extension(config.multi_tcb_info, &extensions.multi_tcb_info);
+    let extended_key_usage = format!(
+        "extendedKeyUsage={}{}",
+        critical_prefix(config.extended_key_usage.critical),
+        config.extended_key_usage.oid.dotted
+    );
+    args.extend(["-addext", &tcb, "-addext", &ueid]);
     if certificate {
         args.extend([
             "-set_serial",
@@ -223,18 +235,28 @@ fn generate_req(
             "-not_after",
             config.not_after,
             "-addext",
-            "subjectKeyIdentifier=hash",
+            &basic_constraints,
+            "-addext",
+            &key_usage,
+            "-addext",
+            &extended_key_usage,
+        ]);
+        if !config.include_subject_key_identifier {
+            args.extend(["-addext", "subjectKeyIdentifier=none"]);
+        }
+        if config.include_authority_key_identifier {
+            args.extend(["-addext", "authorityKeyIdentifier=keyid:always"]);
+        }
+    } else {
+        args.extend([
             "-addext",
             &basic_constraints,
             "-addext",
             &key_usage,
+            "-addext",
+            &extended_key_usage,
         ]);
-    } else {
-        args.extend(["-addext", &basic_constraints]);
     }
-    let ueid = openssl_der_extension(config.ueid, &extensions.ueid);
-    let tcb = openssl_der_extension(config.multi_tcb_info, &extensions.multi_tcb_info);
-    args.extend(["-addext", &ueid, "-addext", &tcb]);
     run_openssl(&args, Some(key))
 }
 
@@ -314,21 +336,32 @@ fn install_or_check(dir: &Path, artifacts: &GeneratedArtifacts, check: bool) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use caliptra_dpe_dice_asn1::TcbInfo;
 
     #[test]
     fn extension_der_matches_expected_shape() {
         let definitions: GoldenDefinitions = GoldenProfile::P256.into();
         let extensions = build_extensions(&definitions).unwrap();
         assert_eq!(&extensions.ueid[..4], &[0x30, 0x22, 0x04, 0x20]);
-        assert_eq!(
-            &extensions.multi_tcb_info[..6],
-            &[0x30, 0x33, 0x30, 0x31, 0xa6, 0x2f]
-        );
         let parsed = asn1::parse_single::<Ueid<'_>>(&extensions.ueid).unwrap();
         assert_eq!(parsed.ueid.len(), definitions.hash_size);
         assert!(parsed
             .ueid
             .iter()
             .all(|byte| *byte == definitions.ueid_fill));
+
+        let mut tcb_infos =
+            asn1::parse_single::<asn1::SequenceOf<TcbInfo>>(&extensions.multi_tcb_info).unwrap();
+        let tcb_info = tcb_infos.next().unwrap();
+        assert!(tcb_infos.next().is_none());
+        assert_eq!(tcb_info.svn, Some(definitions.svn.into()));
+        assert_eq!(
+            tcb_info.vendor_info,
+            Some(definitions.locality.to_be_bytes().as_slice())
+        );
+        assert_eq!(
+            tcb_info.tci_type,
+            Some(definitions.tci_type.to_be_bytes().as_slice())
+        );
     }
 }
