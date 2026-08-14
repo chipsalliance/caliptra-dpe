@@ -29,6 +29,26 @@ pub const ATTEST_LOC_OID: Oid = Oid {
     der_content: &[0x67, 0x81, 0x05, 0x05, 0x04, 0x64, 0x09],
 };
 
+pub const SHA256_OID: Oid = Oid {
+    dotted: "2.16.840.1.101.3.4.2.1",
+    der_content: &[0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01],
+};
+
+pub const SHA384_OID: Oid = Oid {
+    dotted: "2.16.840.1.101.3.4.2.2",
+    der_content: &[0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x02],
+};
+
+pub const PRIME256V1_OID: Oid = Oid {
+    dotted: "1.2.840.10045.3.1.7",
+    der_content: &[0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07],
+};
+
+pub const SECP384R1_OID: Oid = Oid {
+    dotted: "1.3.132.0.34",
+    der_content: &[0x2b, 0x81, 0x04, 0x00, 0x22],
+};
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum GoldenProfile {
     P256,
@@ -108,40 +128,25 @@ impl GoldenDefinitions {
             GoldenProfile::P256 => (
                 "p256",
                 32,
-                Oid {
-                    dotted: "2.16.840.1.101.3.4.2.1",
-                    der_content: &[0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01],
-                },
+                SHA256_OID,
                 GoldenKeyAlgorithm::Ecdsa {
-                    curve_oid: Oid {
-                        dotted: "1.2.840.10045.3.1.7",
-                        der_content: &[0x2a, 0x86, 0x48, 0xce, 0x3d, 0x03, 0x01, 0x07],
-                    },
+                    curve_oid: PRIME256V1_OID,
                     scalar_size: 32,
                 },
             ),
             GoldenProfile::P384 => (
                 "p384",
                 48,
-                Oid {
-                    dotted: "2.16.840.1.101.3.4.2.2",
-                    der_content: &[0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x02],
-                },
+                SHA384_OID,
                 GoldenKeyAlgorithm::Ecdsa {
-                    curve_oid: Oid {
-                        dotted: "1.3.132.0.34",
-                        der_content: &[0x2b, 0x81, 0x04, 0x00, 0x22],
-                    },
+                    curve_oid: SECP384R1_OID,
                     scalar_size: 48,
                 },
             ),
             GoldenProfile::Mldsa87 => (
                 "mldsa87",
                 48,
-                Oid {
-                    dotted: "2.16.840.1.101.3.4.2.2",
-                    der_content: &[0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x02],
-                },
+                SHA384_OID,
                 GoldenKeyAlgorithm::Mldsa87 { seed_size: 32 },
             ),
         };
@@ -158,8 +163,7 @@ impl GoldenDefinitions {
             subject_common_name: "DPE Leaf",
             csr_subject_serial: "0000",
             certificate_serial: "0",
-            // Use GeneralizedTime on both the OpenSSL and custom encoder paths.
-            not_before: "20500227000000Z",
+            not_before: "20230227000000Z",
             not_after: "99991231235959Z",
             is_ca: false,
             basic_constraints_critical: true,
@@ -272,7 +276,15 @@ mod tests {
 
     #[test]
     fn oid_representations_match() {
-        for oid in [UEID_OID, MULTI_TCB_INFO_OID, ATTEST_LOC_OID] {
+        for oid in [
+            UEID_OID,
+            MULTI_TCB_INFO_OID,
+            ATTEST_LOC_OID,
+            SHA256_OID,
+            SHA384_OID,
+            PRIME256V1_OID,
+            SECP384R1_OID,
+        ] {
             let parsed = asn1::ObjectIdentifier::from_string(oid.dotted).unwrap();
             let der = asn1::write_single(&parsed).unwrap();
             assert_eq!(der[0], 0x06);
