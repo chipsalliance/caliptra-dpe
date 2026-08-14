@@ -17,29 +17,21 @@ Certificate Request:
                 NIST CURVE: P-384
         Attributes:
             Requested Extensions:
-                X509v3 Basic Constraints: critical
-                    CA:FALSE
+                2.23.133.5.4.5: critical
+                    0R0P....?0=..`.H.e.....0............................................................
                 2.23.133.5.4.4: critical
                     02.0................................................
-                2.23.133.5.4.5: 
-                    0C0A.?0=..`.H.e.....0................................................
+                X509v3 Basic Constraints: critical
+                    CA:FALSE
+                X509v3 Key Usage: critical
+                    Digital Signature
+                X509v3 Extended Key Usage: critical
+                    2.23.133.5.4.100.9
     Signature Algorithm: ecdsa-with-SHA384
     Signature Value:
-        30:66:02:31:00:f6:ec:9e:c9:a2:0f:9a:70:bc:df:54:53:67:
-        b1:79:44:32:c2:c1:7a:32:a7:38:02:64:8b:ad:fe:79:c4:46:
-        2a:b3:79:57:cc:1b:83:b8:86:c6:56:00:0f:59:6e:16:72:02:
-        31:00:d0:b7:f5:60:13:16:6c:bb:4d:69:da:5d:b4:c2:64:ea:
-        a2:e8:5c:0c:76:23:24:22:a5:d4:59:29:60:1b:a4:a1:59:8d:
-        b1:7d:59:54:56:47:bf:c0:10:4b:48:46:f5:da
------BEGIN CERTIFICATE REQUEST-----
-MIIB0zCCAVgCAQAwIjERMA8GA1UEAwwIRFBFIExlYWYxDTALBgNVBAUTBDAwMDAw
-djAQBgcqhkjOPQIBBgUrgQQAIgNiAAQ4bnZ+pctxbJzWIP9zQhKciSpvzO/mEhQM
-gL/1npQ0aAGd2hblB5sMHZAB0jpiS23QiNDDgmOUGUeHQD6KfQfl4i9+nAuOgPof
-r/XSi0u1l7Jn8LhwI8ph/IRUvd79Lg6ggbYwgbMGCSqGSIb3DQEJDjGBpTCBojAM
-BgNVHRMBAf8EAjAAMEEGBmeBBQUEBAEB/wQ0MDIEMAAAAAAAAAAAAAAAAAAAAAAA
-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADBPBgZngQUFBAUERTBDMEGm
-PzA9BglghkgBZQMEAgIEMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-AAAAAAAAAAAAAAAAAAAAADAKBggqhkjOPQQDAwNpADBmAjEA9uyeyaIPmnC831RT
-Z7F5RDLCwXoypzgCZIut/nnERiqzeVfMG4O4hsZWAA9ZbhZyAjEA0Lf1YBMWbLtN
-adpdtMJk6qLoXAx2IyQipdRZKWAbpKFZjbF9WVRWR7/AEEtIRvXa
------END CERTIFICATE REQUEST-----
+        30:65:02:31:00:fd:ab:f2:fd:53:a7:7f:02:d1:36:f0:e1:8f:
+        f3:fd:10:e6:4e:01:3a:aa:cb:20:c2:de:52:19:5a:40:78:4a:
+        cc:06:df:e9:58:72:85:bb:4d:0d:ad:9f:1c:0c:9c:c9:77:02:
+        30:3d:28:1f:e5:5d:86:f2:3d:7b:7a:1d:ee:79:e7:16:cb:a3:
+        f5:cb:ec:b0:6f:8b:51:bc:03:5f:dc:92:42:02:c2:e5:16:4f:
+        cf:3f:1a:2f:5b:27:e4:ae:d1:cb:14:2d:88

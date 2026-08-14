@@ -5163,6 +5163,7 @@ pub(crate) mod tests {
             profile.into()
         }
 
+        #[cfg(any(feature = "p256", feature = "p384"))]
         const X509_UNCOMPRESSED_HEADER: u8 = 0x04;
 
         fn golden_pubkey(cert: &X509Certificate) -> PubKey {
