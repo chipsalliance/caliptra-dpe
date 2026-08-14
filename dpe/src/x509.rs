@@ -5133,6 +5133,11 @@ pub(crate) mod tests {
     #[cfg(not(feature = "disable_x509"))]
     mod golden {
         use super::*;
+        use caliptra_dpe_dice_asn1::{
+            GoldenDefinitions, GoldenProfile, TcbInfo as DiceTcbInfo, Ueid as DiceUeid,
+        };
+        use std::str::FromStr;
+        use x509_parser::oid_registry::asn1_rs::Oid;
 
         #[cfg(feature = "p256")]
         const GOLDEN_CERT_DER: &[u8] = include_bytes!("x509_testdata/golden_cert_p256.der");
@@ -5148,17 +5153,28 @@ pub(crate) mod tests {
         #[cfg(all(feature = "ml-dsa", not(feature = "p384"), not(feature = "p256")))]
         const GOLDEN_CSR_DER: &[u8] = include_bytes!("x509_testdata/golden_csr_mldsa87.der");
 
+        fn golden_definitions() -> GoldenDefinitions {
+            #[cfg(feature = "p256")]
+            let profile = GoldenProfile::P256;
+            #[cfg(feature = "p384")]
+            let profile = GoldenProfile::P384;
+            #[cfg(all(feature = "ml-dsa", not(feature = "p384"), not(feature = "p256")))]
+            let profile = GoldenProfile::Mldsa87;
+            profile.into()
+        }
+
         /// Parse the golden certificate, verify its self-signature, and assert
         /// on its structure and DICE / TCI extensions.
         #[test]
         #[cfg_attr(miri, ignore)]
         fn test_golden_cert() {
+            let definitions = golden_definitions();
             // Parses as a valid X.509v3 certificate.
             let mut parser = X509CertificateParser::new().with_deep_parse_extensions(true);
             let (_, cert) = parser
                 .parse(GOLDEN_CERT_DER)
                 .unwrap_or_else(|e| panic!("golden cert failed to parse: {e:?}"));
-            assert_eq!(cert.version(), X509Version::V3);
+            assert_eq!(cert.version().0, definitions.certificate_version as u32);
 
             // Signature verifies against the certificate's own public key
             // (the golden cert is self-signed).
@@ -5171,40 +5187,61 @@ pub(crate) mod tests {
 
             // DICE UEID extension (tcg-dice-Ueid 2.23.133.5.4.4): critical, with
             // the fixed all-zero label.
+            let ueid_oid = Oid::from_str(definitions.ueid.oid.dotted).unwrap();
             let ueid = cert
-                .get_extension_unique(&oid!(2.23.133 .5 .4 .4))
+                .get_extension_unique(&ueid_oid)
                 .unwrap()
                 .expect("missing DICE UEID extension");
-            assert!(ueid.critical);
-            let parsed_ueid = asn1::parse_single::<Ueid>(ueid.value).unwrap();
-            assert_eq!(parsed_ueid.ueid, &[0u8; DPE_PROFILE.hash_size()][..]);
+            assert_eq!(ueid.critical, definitions.ueid.critical);
+            let parsed_ueid = asn1::parse_single::<DiceUeid>(ueid.value).unwrap();
+            assert_eq!(parsed_ueid.ueid.len(), definitions.hash_size);
+            assert!(parsed_ueid
+                .ueid
+                .iter()
+                .all(|byte| *byte == definitions.ueid_fill));
 
             // DICE MultiTcbInfo extension (tcg-dice-MultiTcbInfo 2.23.133.5.4.5):
             // exactly one TcbInfo whose single FWID is the all-zero measurement.
+            let tcb_oid = Oid::from_str(definitions.multi_tcb_info.oid.dotted).unwrap();
             let tcb = cert
-                .get_extension_unique(&oid!(2.23.133 .5 .4 .5))
+                .get_extension_unique(&tcb_oid)
                 .unwrap()
                 .expect("missing DICE MultiTcbInfo extension");
-            let tcb_infos = asn1::parse_single::<asn1::SequenceOf<TcbInfo>>(tcb.value).unwrap();
+            assert_eq!(tcb.critical, definitions.multi_tcb_info.critical);
+            let tcb_infos = asn1::parse_single::<asn1::SequenceOf<DiceTcbInfo>>(tcb.value).unwrap();
+            let expected_hash_oid =
+                asn1::ObjectIdentifier::from_string(definitions.hash_oid.dotted).unwrap();
             let mut count = 0usize;
             for info in tcb_infos {
                 count += 1;
                 let fwids = info.fwids.expect("TcbInfo must carry FWIDs");
+                let mut fwid_count = 0usize;
                 for fwid in fwids {
-                    assert_eq!(fwid.digest, &[0u8; DPE_PROFILE.hash_size()][..]);
+                    fwid_count += 1;
+                    assert_eq!(fwid.hash_alg, expected_hash_oid);
+                    assert_eq!(fwid.digest.len(), definitions.hash_size);
+                    assert!(fwid
+                        .digest
+                        .iter()
+                        .all(|byte| *byte == definitions.fwid_digest_fill));
                 }
+                assert_eq!(fwid_count, definitions.fwids_per_tcb_info);
             }
-            assert_eq!(count, 1, "expected exactly one TcbInfo");
+            assert_eq!(count, definitions.tcb_info_count);
         }
 
         /// Parse the golden CSR and verify its self-signature.
         #[test]
         #[cfg_attr(miri, ignore)]
         fn test_golden_csr() {
+            let definitions = golden_definitions();
             // Parses as a valid PKCS#10 certification request.
             let (_, csr) = X509CertificationRequest::from_der(GOLDEN_CSR_DER)
                 .unwrap_or_else(|e| panic!("golden CSR failed to parse: {e:?}"));
-            assert_eq!(csr.certification_request_info.version.0, 0);
+            assert_eq!(
+                csr.certification_request_info.version.0,
+                definitions.csr_version as u32
+            );
 
             // Self-signature verifies against the CSR's own public key.
             let openssl_csr = openssl::x509::X509Req::from_der(GOLDEN_CSR_DER).unwrap();
