@@ -3,7 +3,7 @@
 
 use anyhow::{anyhow, Context, Result};
 pub use caliptra_dpe_dice_asn1::{Fwid, IntegrityRegister, TcbInfo, Ueid};
-use std::fmt::Write as FmtWrite;
+use std::fmt::Write;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 use x509_parser::certificate::X509Certificate;
@@ -73,16 +73,8 @@ pub struct ParsedCert {
     pub extensions: Vec<ParsedExtension>,
 }
 
-fn hex_encode(bytes: &[u8]) -> String {
-    let mut s = String::with_capacity(bytes.len() * 2);
-    for b in bytes {
-        let _ = write!(s, "{:02X}", b);
-    }
-    s
-}
-
 fn format_tci_type(bytes: &[u8]) -> String {
-    let hex = hex_encode(bytes);
+    let hex = hex::encode(bytes);
     if !bytes.is_empty() && bytes.iter().all(|&b| (0x20..=0x7E).contains(&b)) {
         if let Ok(s) = std::str::from_utf8(bytes) {
             return format!("0x{} ('{}')", hex, s);
@@ -92,7 +84,7 @@ fn format_tci_type(bytes: &[u8]) -> String {
 }
 
 fn format_bytes_brief(bytes: &[u8], max_len: usize) -> String {
-    let hex = hex_encode(bytes);
+    let hex = hex::encode(bytes);
     if hex.len() > max_len {
         format!("{}...", &hex[..max_len])
     } else {
@@ -318,9 +310,9 @@ fn parse_extensions<'a>(
         } else if oid_str == TCG_DICE_UEID_OID {
             if let Ok(u) = asn1::parse_single::<Ueid>(ext.value) {
                 ueid = Some(u.ueid.to_vec());
-                details = format!("UEID: {}", hex_encode(u.ueid));
+                details = format!("UEID: {}", hex::encode(u.ueid));
             } else {
-                details = format!("Raw bytes: {}", hex_encode(ext.value));
+                details = format!("Raw bytes: {}", hex::encode(ext.value));
             }
         } else {
             details = match ext.parsed_extension() {
@@ -343,12 +335,12 @@ fn parse_extensions<'a>(
                     format!("EKU OIDs: {}", oids.join(", "))
                 }
                 X509ParsedExtension::SubjectKeyIdentifier(ski) => {
-                    format!("SKI: {}", hex_encode(ski.0))
+                    format!("SKI: {}", hex::encode(ski.0))
                 }
                 X509ParsedExtension::AuthorityKeyIdentifier(aki) => {
                     let mut s = String::new();
                     if let Some(key_id) = &aki.key_identifier {
-                        write!(s, "KeyID: {}", hex_encode(key_id.0)).unwrap();
+                        write!(s, "KeyID: {}", hex::encode(key_id.0)).unwrap();
                     }
                     s
                 }
@@ -399,7 +391,7 @@ fn parse_x509_cert(cert: &X509Certificate) -> Result<ParsedCert> {
 
     let subject = tbs.subject.to_string();
     let issuer = tbs.issuer.to_string();
-    let serial = hex_encode(&tbs.serial.to_bytes_be());
+    let serial = hex::encode(tbs.serial.to_bytes_be());
     let sig_alg_oid = cert.signature_algorithm.algorithm.to_id_string();
     let pk_oid = tbs.subject_pki.algorithm.algorithm.to_id_string();
 
@@ -669,7 +661,7 @@ pub fn generate_markdown(cert: &ParsedCert) -> String {
     writeln!(out, "| **Inferred DPE Profile** | `{}` |", cert.profile).unwrap();
 
     if let Some(ueid_bytes) = &cert.ueid {
-        writeln!(out, "| **UEID** | `{}` |", hex_encode(ueid_bytes)).unwrap();
+        writeln!(out, "| **UEID** | `{}` |", hex::encode(ueid_bytes)).unwrap();
     }
     writeln!(out).unwrap();
 
@@ -734,7 +726,7 @@ pub fn generate_markdown(cert: &ParsedCert) -> String {
             )
             .unwrap();
             if let Some(vi) = &tcb.vendor_info {
-                writeln!(out, "| **Vendor Info** | `{}` |", hex_encode(vi)).unwrap();
+                writeln!(out, "| **Vendor Info** | `{}` |", hex::encode(vi)).unwrap();
             }
             if let Some(flags) = &tcb.flags {
                 writeln!(out, "| **Flags** | `{}` |", flags).unwrap();
@@ -750,7 +742,7 @@ pub fn generate_markdown(cert: &ParsedCert) -> String {
                 for fwid in &tcb.fwids {
                     let alg_name = oid_friendly_name(&fwid.hash_alg);
                     writeln!(out, "- **Algorithm**: {}", alg_name).unwrap();
-                    writeln!(out, "  - **Digest**: `{}`", hex_encode(&fwid.digest)).unwrap();
+                    writeln!(out, "  - **Digest**: `{}`", hex::encode(&fwid.digest)).unwrap();
                 }
                 writeln!(out).unwrap();
             }
@@ -773,7 +765,7 @@ pub fn generate_markdown(cert: &ParsedCert) -> String {
                             out,
                             "  - **Digest ({})**: `{}`",
                             oid_friendly_name(&fwid.hash_alg),
-                            hex_encode(&fwid.digest)
+                            hex::encode(&fwid.digest)
                         )
                         .unwrap();
                     }
