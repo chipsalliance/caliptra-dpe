@@ -9,3 +9,7 @@ tools/pkg/
 
 **/__pycache__
 *.egg-info/
+
+# Mjolnir
+tools/mjolnir/results/
+tools/mjolnir/workspace/

@@ -8,18 +8,20 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     flake-utils.url = "github:numtide/flake-utils";
+    mjolnir = {
+      url = "github:chipsalliance/mjolnir/d53222604da502e82a41944c4b3229ce7ca69ad6";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, nixpkgs, rust-overlay, flake-utils, ... }:
+  outputs = { self, nixpkgs, rust-overlay, flake-utils, mjolnir, ... }:
     flake-utils.lib.eachDefaultSystem (system:
       let
         overlays = [ (import rust-overlay) ];
         pkgs = import nixpkgs {
           inherit system overlays;
         };
-      in
-      {
-        devShells.default = pkgs.mkShell {
+        devShell = pkgs.mkShell {
           nativeBuildInputs = with pkgs; [
             rustup
             go
@@ -44,6 +46,18 @@
             cargo +$DPE_FUZZ_TOOLCHAIN install cargo-fuzz --version 0.13.1 --locked
             cargo +$DPE_FUZZ_TOOLCHAIN install cargo-afl --version 0.17.0 --locked
           '';
+        };
+      in
+      {
+        devShells.default = devShell;
+
+        packages = mjolnir.lib.discoverProjectJobs {
+          inherit pkgs devShell;
+          mjolnirApp = mjolnir.packages.${system}.mjolnir-app;
+          projectDir = ./tools/mjolnir;
+          deployPackages = {
+            inherit (mjolnir.packages.${system}) deploy-gcs-runs;
+          };
         };
       }
     );
