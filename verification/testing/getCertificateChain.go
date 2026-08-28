@@ -3,6 +3,7 @@
 package verification
 
 import (
+	"crypto/mldsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/asn1"
@@ -11,7 +12,6 @@ import (
 	"testing"
 
 	"github.com/chipsalliance/caliptra-dpe/verification/client"
-	"github.com/cloudflare/circl/sign/mldsa/mldsa87"
 	zx509 "github.com/zmap/zcrypto/x509"
 	zlint "github.com/zmap/zlint/v3"
 	"github.com/zmap/zlint/v3/lint"
@@ -155,14 +155,14 @@ func validateCertChain(t *testing.T, certChain []*x509.Certificate) {
 				continue
 			}
 
-			var pk mldsa87.PublicKey
-			if err := pk.UnmarshalBinary(spki.SubjectPublicKey.Bytes); err != nil {
+			pk, err := mldsa.NewPublicKey(mldsa.MLDSA87(), spki.SubjectPublicKey.Bytes)
+			if err != nil {
 				t.Errorf("[ERROR]: Failed to parse issuer ML-DSA public key for Cert[%d]: %v", i, err)
 				continue
 			}
 
-			if !mldsa87.Verify(&pk, cert.RawTBSCertificate, nil, cert.Signature) {
-				t.Errorf("[ERROR]: ML-DSA Certificate Signature Verification failed for Cert[%d]", i)
+			if err := mldsa.Verify(pk, cert.RawTBSCertificate, cert.Signature, nil); err != nil {
+				t.Errorf("[ERROR]: ML-DSA Certificate Signature Verification failed for Cert[%d]: %v", i, err)
 			}
 			continue
 		}

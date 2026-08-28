@@ -4,10 +4,10 @@ package verification
 
 import (
 	"bytes"
+	"crypto/mldsa"
 	"testing"
 
 	"github.com/chipsalliance/caliptra-dpe/verification/client"
-	"github.com/cloudflare/circl/sign/mldsa/mldsa87"
 )
 
 // TestSignRawMode validates the new raw sign functionality for ML-DSA
@@ -51,18 +51,18 @@ func TestSignRawMode(d client.TestDPEInstance, c client.DPEClient, t *testing.T)
 	}
 
 	// Verify signature
-	if len(signResp.Signature) != mldsa87.SignatureSize {
-		t.Errorf("Incorrect signature length for ML-DSA-87: got %d, want %d", len(signResp.Signature), mldsa87.SignatureSize)
+	if len(signResp.Signature) != mldsa.MLDSA87SignatureSize {
+		t.Errorf("Incorrect signature length for ML-DSA-87: got %d, want %d", len(signResp.Signature), mldsa.MLDSA87SignatureSize)
 	}
 
-	var pk mldsa87.PublicKey
-	if err := pk.UnmarshalBinary(certifiedKey.Pub.X); err != nil {
+	pk, err := mldsa.NewPublicKey(mldsa.MLDSA87(), certifiedKey.Pub.X)
+	if err != nil {
 		t.Fatalf("Failed to parse ML-DSA public key: %v", err)
 	}
 
 	// Verify using the original message
-	if !mldsa87.Verify(&pk, testMessage, nil, signResp.Signature) {
-		t.Error("ML-DSA Signature Verification failed for raw signing")
+	if err := mldsa.Verify(pk, testMessage, signResp.Signature, nil); err != nil {
+		t.Errorf("ML-DSA Signature Verification failed for raw signing: %v", err)
 	}
 }
 
@@ -115,17 +115,17 @@ func TestSignRawConsistencyWithNormalMu(d client.TestDPEInstance, c client.DPECl
 	}
 
 	// Both signatures should match and verify against the same public key and message
-	var pk mldsa87.PublicKey
-	if err := pk.UnmarshalBinary(certifiedKey.Pub.X); err != nil {
+	pk, err := mldsa.NewPublicKey(mldsa.MLDSA87(), certifiedKey.Pub.X)
+	if err != nil {
 		t.Fatalf("Failed to parse ML-DSA public key: %v", err)
 	}
 
-	if !mldsa87.Verify(&pk, testMessage, nil, rawSignResp.Signature) {
-		t.Error("ML-DSA Signature Verification failed for SignRaw")
+	if err := mldsa.Verify(pk, testMessage, rawSignResp.Signature, nil); err != nil {
+		t.Errorf("ML-DSA Signature Verification failed for SignRaw: %v", err)
 	}
 
-	if !mldsa87.Verify(&pk, testMessage, nil, normalSignResp.Signature) {
-		t.Error("ML-DSA Signature Verification failed for Sign")
+	if err := mldsa.Verify(pk, testMessage, normalSignResp.Signature, nil); err != nil {
+		t.Errorf("ML-DSA Signature Verification failed for Sign with external mu: %v", err)
 	}
 
 	if !bytes.Equal(rawSignResp.Signature, normalSignResp.Signature) {
