@@ -5,13 +5,13 @@ package verification
 import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
+	"crypto/mldsa"
 	"crypto/x509"
 	"errors"
 	"math/big"
 	"testing"
 
 	"github.com/chipsalliance/caliptra-dpe/verification/client"
-	"github.com/cloudflare/circl/sign/mldsa/mldsa87"
 )
 
 // TestAsymmetricSigning obtains and validates signature of asymmetric signing.
@@ -60,17 +60,17 @@ func TestAsymmetricSigning(d client.TestDPEInstance, c client.DPEClient, t *test
 	}
 
 	if profile == client.ProfileMldsa87 {
-		if len(signResp.Signature) != mldsa87.SignatureSize {
-			t.Errorf("Incorrect signature length for ML-DSA-87: got %d, want %d", len(signResp.Signature), mldsa87.SignatureSize)
+		if len(signResp.Signature) != mldsa.MLDSA87SignatureSize {
+			t.Errorf("Incorrect signature length for ML-DSA-87: got %d, want %d", len(signResp.Signature), mldsa.MLDSA87SignatureSize)
 		}
 
-		var pk mldsa87.PublicKey
-		if err := pk.UnmarshalBinary(certifiedKey.Pub.X); err != nil {
+		pk, err := mldsa.NewPublicKey(mldsa.MLDSA87(), certifiedKey.Pub.X)
+		if err != nil {
 			t.Fatalf("Failed to parse ML-DSA public key: %v", err)
 		}
 
-		if !mldsa87.Verify(&pk, msg, nil, signResp.Signature) {
-			t.Error("ML-DSA Signature Verification failed")
+		if err := mldsa.Verify(pk, msg, signResp.Signature, nil); err != nil {
+			t.Errorf("ML-DSA Signature Verification failed: %v", err)
 		}
 		return
 	}

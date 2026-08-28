@@ -5,6 +5,7 @@ package verification
 import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
+	"crypto/mldsa"
 	"crypto/sha256"
 	"crypto/sha512"
 	"crypto/x509"
@@ -21,7 +22,6 @@ import (
 	cms "github.com/github/smimesign/ietf-cms"
 
 	"github.com/chipsalliance/caliptra-dpe/verification/client"
-	"github.com/cloudflare/circl/sign/mldsa/mldsa87"
 	zx509 "github.com/zmap/zcrypto/x509"
 	zlint "github.com/zmap/zlint/v3"
 	"github.com/zmap/zlint/v3/lint"
@@ -233,13 +233,13 @@ func TestCertifyKeyCsr(d client.TestDPEInstance, c client.DPEClient, t *testing.
 	err = csr.CheckSignature()
 	if err != nil {
 		if profile == client.ProfileMldsa87 {
-			var pk mldsa87.PublicKey
 			// certifyKeyResp.Pub.X contains the raw public key bytes for ML-DSA
-			if err := pk.UnmarshalBinary(certifyKeyResp.Pub.X); err != nil {
+			pk, err := mldsa.NewPublicKey(mldsa.MLDSA87(), certifyKeyResp.Pub.X)
+			if err != nil {
 				t.Errorf("Failed to parse ML-DSA public key from response: %v", err)
 			} else {
-				if !mldsa87.Verify(&pk, csr.RawTBSCertificateRequest, nil, csr.Signature) {
-					t.Errorf("ML-DSA CSR Signature Verification failed")
+				if err := mldsa.Verify(pk, csr.RawTBSCertificateRequest, csr.Signature, nil); err != nil {
+					t.Errorf("ML-DSA CSR Signature Verification failed: %v", err)
 				} else {
 					t.Log("ML-DSA CSR Signature Verified manually")
 				}
@@ -684,14 +684,14 @@ func validateLeafCertChain(t *testing.T, certChain []*x509.Certificate, leafCert
 			return
 		}
 
-		var pk mldsa87.PublicKey
-		if err := pk.UnmarshalBinary(spki.SubjectPublicKey.Bytes); err != nil {
+		pk, err := mldsa.NewPublicKey(mldsa.MLDSA87(), spki.SubjectPublicKey.Bytes)
+		if err != nil {
 			t.Errorf("[ERROR]: Failed to parse issuer ML-DSA public key: %v", err)
 			return
 		}
 
-		if !mldsa87.Verify(&pk, leafCert.RawTBSCertificate, nil, leafCert.Signature) {
-			t.Error("[ERROR]: ML-DSA Leaf Certificate Signature Verification failed")
+		if err := mldsa.Verify(pk, leafCert.RawTBSCertificate, leafCert.Signature, nil); err != nil {
+			t.Errorf("[ERROR]: ML-DSA Leaf Certificate Signature Verification failed: %v", err)
 		} else {
 			t.Log("ML-DSA Leaf Certificate Signature Verified manually")
 		}

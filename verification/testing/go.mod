@@ -1,8 +1,6 @@
 module github.com/chipsalliance/caliptra-dpe/verification/testing
 
-go 1.24.0
-
-toolchain go1.24.13
+go 1.27.0
 
 replace github.com/chipsalliance/caliptra-dpe/verification/client => ../client
 
@@ -11,7 +9,6 @@ replace github.com/chipsalliance/caliptra-dpe/verification/sim => ../sim
 require (
 	github.com/chipsalliance/caliptra-dpe/verification/client v0.0.0-20240305022518-f4e3dd792a5c
 	github.com/chipsalliance/caliptra-dpe/verification/sim v0.0.0-20240305022518-f4e3dd792a5c
-	github.com/cloudflare/circl v1.6.1
 	github.com/github/smimesign v0.2.0
 	github.com/google/go-tpm v0.9.0
 	github.com/google/go-tpm-tools v0.4.3
