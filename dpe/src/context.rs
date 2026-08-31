@@ -150,6 +150,7 @@ impl Context {
         self.children = Children::empty();
         self.handle = ContextHandle::new_invalid();
         self.allow_recursive = false.into();
+        self.allow_export_cdi = false.into();
     }
 
     /// Return the list of children of the context with idx added.
