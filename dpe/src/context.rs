@@ -393,12 +393,6 @@ impl<'a> RootToChildIter<'a> {
         self.path.is_empty()
     }
 
-    pub fn first_node(&mut self) -> Result<&'a Context, DpeErrorCode> {
-        self.contexts
-            .first()
-            .ok_or(InternalErrorCode::ContextIndexOob.into())
-    }
-
     /// Attempt to get the context at index `idx` and validate it.
     fn get_context(&mut self, idx: usize) -> Result<&'a Context, DpeErrorCode> {
         let Some(context) = self.contexts.get(idx) else {

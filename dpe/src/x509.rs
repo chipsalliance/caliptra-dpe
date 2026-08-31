@@ -150,7 +150,10 @@ impl<'a> TciNodes<'a> {
     }
 
     pub fn first_node(&self) -> Result<&TciNodeData, DpeErrorCode> {
-        self.iter()?.first_node().map(|context| &context.tci)
+        self.iter()?
+            .next()
+            .ok_or(InternalErrorCode::ContextIndexOob)?
+            .map(|context| &context.tci)
     }
 }
 
