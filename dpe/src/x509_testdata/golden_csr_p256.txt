@@ -15,25 +15,19 @@ Certificate Request:
                 NIST CURVE: P-256
         Attributes:
             Requested Extensions:
-                X509v3 Basic Constraints: critical
-                    CA:FALSE
+                2.23.133.5.4.5: critical
+                    0B0@..../0-..`.H.e..... ............................................
                 2.23.133.5.4.4: critical
                     0". ................................
-                2.23.133.5.4.5: 
-                    0301./0-..`.H.e..... ................................
+                X509v3 Basic Constraints: critical
+                    CA:FALSE
+                X509v3 Key Usage: critical
+                    Digital Signature
+                X509v3 Extended Key Usage: critical
+                    2.23.133.5.4.100.9
     Signature Algorithm: ecdsa-with-SHA256
     Signature Value:
-        30:44:02:20:47:30:8d:15:f9:ca:c2:61:cf:d4:00:34:8d:8b:
-        7c:99:2e:5e:cf:ba:64:3f:3e:59:c4:02:2e:3d:dd:59:72:f1:
-        02:20:29:df:52:88:47:97:e7:9a:14:28:6e:c5:0b:f8:db:3e:
-        9e:5b:0e:30:fb:31:00:81:1e:a2:3b:8b:d8:2a:71:2d
------BEGIN CERTIFICATE REQUEST-----
-MIIBdDCCARsCAQAwIjERMA8GA1UEAwwIRFBFIExlYWYxDTALBgNVBAUTBDAwMDAw
-WTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAAQCF+YX8LZEOSgnj5aZnmmiOk8sFSvf
-bWzfZuW4AoLU7RlKfevLl3EtLdo8qFqodlpW9F/HWFmWUvKJfGUwbleUoIGWMIGT
-BgkqhkiG9w0BCQ4xgYUwgYIwDAYDVR0TAQH/BAIwADAxBgZngQUFBAQBAf8EJDAi
-BCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADA/BgZngQUFBAUENTAz
-MDGmLzAtBglghkgBZQMEAgEEIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-AAAAMAoGCCqGSM49BAMCA0cAMEQCIEcwjRX5ysJhz9QANI2LfJkuXs+6ZD8+WcQC
-Lj3dWXLxAiAp31KIR5fnmhQobsUL+Ns+nlsOMPsxAIEeojuL2CpxLQ==
------END CERTIFICATE REQUEST-----
+        30:45:02:21:00:cc:0f:91:9a:83:a5:97:4c:9e:8b:57:c2:68:
+        5f:15:bd:5d:be:55:a8:f6:b9:24:3c:ae:65:06:23:b7:fc:f1:
+        83:02:20:21:e2:4c:f1:6a:91:aa:7f:fa:eb:67:a3:82:7b:c3:
+        27:f0:c3:1f:3b:c6:33:db:21:4b:af:e8:3c:7f:2c:9e:45
