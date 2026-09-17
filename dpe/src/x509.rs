@@ -144,17 +144,6 @@ impl<'a> TciNodes<'a> {
     pub fn is_empty(&self) -> Result<bool, DpeErrorCode> {
         Ok(self.iter()?.is_empty())
     }
-
-    pub fn num_nodes(&self) -> Result<usize, DpeErrorCode> {
-        Ok(self.iter()?.num_nodes())
-    }
-
-    pub fn first_node(&self) -> Result<&TciNodeData, DpeErrorCode> {
-        self.iter()?
-            .next()
-            .ok_or(InternalErrorCode::ContextIndexOob)?
-            .map(|context| &context.tci)
-    }
 }
 
 pub struct MeasurementData<'a> {
@@ -588,6 +577,24 @@ impl CertWriter<'_> {
         Self::get_structure_size(size, tagged)
     }
 
+    /// Sum the encoded size of every TcbInfo in `measurements`.
+    /// Each node is measured individually because SVN is a DER INTEGER whose
+    /// byte length depends on its value.
+    fn get_tcb_infos_size(&self, measurements: &MeasurementData) -> Result<usize, DpeErrorCode> {
+        measurements
+            .tci_nodes
+            .iter()?
+            .try_fold(0usize, |acc, node| {
+                Ok::<usize, DpeErrorCode>(
+                    acc + self.get_tcb_info_size(
+                        &node?.tci,
+                        measurements.supports_recursive,
+                        /*tagged=*/ true,
+                    ),
+                )
+            })
+    }
+
     /// Get the size of an X.509 extension wrapper: SEQUENCE { OID, [BOOLEAN], OCTET STRING { content } }.
     /// `critical`: if true, includes the critical BOOLEAN field in the size.
     fn get_extension_size(oid: &[u8], critical: bool, content_size: usize, tagged: bool) -> usize {
@@ -640,13 +647,7 @@ impl CertWriter<'_> {
             return Err(InternalErrorCode::EmptyTciNodes.into());
         }
 
-        // Size of concatenated tcb infos
-        let tcb_infos_size = measurements.tci_nodes.num_nodes()?
-            * self.get_tcb_info_size(
-                measurements.tci_nodes.first_node()?,
-                measurements.supports_recursive,
-                /*tagged=*/ true,
-            );
+        let tcb_infos_size = self.get_tcb_infos_size(measurements)?;
 
         // Size of tcb infos including SEQUENCE OF tag/size
         let multi_tcb_info_size = Self::get_structure_size(tcb_infos_size, /*tagged=*/ true);
@@ -1504,15 +1505,7 @@ impl CertWriter<'_> {
         &mut self,
         measurements: &MeasurementData,
     ) -> Result<usize, DpeErrorCode> {
-        let tcb_infos_size = if !measurements.tci_nodes.is_empty()? {
-            self.get_tcb_info_size(
-                measurements.tci_nodes.first_node()?,
-                measurements.supports_recursive,
-                /*tagged=*/ true,
-            ) * measurements.tci_nodes.num_nodes()?
-        } else {
-            0
-        };
+        let tcb_infos_size = self.get_tcb_infos_size(measurements)?;
         let multi_tcb_info_size = Self::get_structure_size(tcb_infos_size, /*tagged=*/ true);
         let critical = if self.crit_dice { Some(0xFF) } else { None };
         let mut bytes_written =
@@ -3897,6 +3890,71 @@ pub(crate) mod tests {
             ],
         };
         assert_eq!(&buf[..n], expected);
+    }
+
+    #[test]
+    fn test_multi_tcb_info_size_varies_with_svn() {
+        use crate::tci::TciMeasurement;
+
+        // Node 0 (root): SVN=0 → DER INTEGER 1 byte content → 3 bytes with [3] tag+len
+        let mut ctx0 = Context::new();
+        ctx0.tci.tci_type = 0x01020304;
+        ctx0.tci.tci_current = TciMeasurement([0xAA; DPE_PROFILE.tci_size()]);
+        ctx0.tci.tci_cumulative = TciMeasurement([0xBB; DPE_PROFILE.tci_size()]);
+        ctx0.tci.locality = 0x05060708;
+        ctx0.tci.svn = 0; // 1-byte DER content
+        ctx0.parent_idx = Context::ROOT_INDEX;
+        ctx0.state = ContextState::Active;
+
+        // Node 1 (child): SVN=128 → DER INTEGER needs 0x00 prefix → 2-byte content → 4 bytes
+        // This node's TCB info will be 1 byte larger than node 0's.
+        let mut ctx1 = Context::new();
+        ctx1.tci.tci_type = 0x01020304;
+        ctx1.tci.tci_current = TciMeasurement([0xAA; DPE_PROFILE.tci_size()]);
+        ctx1.tci.tci_cumulative = TciMeasurement([0xBB; DPE_PROFILE.tci_size()]);
+        ctx1.tci.locality = 0x05060708;
+        ctx1.tci.svn = 128; // 2-byte DER content (needs leading 0x00)
+        ctx1.parent_idx = 0; // child of ctx0
+        ctx1.state = ContextState::Active;
+
+        let contexts = [ctx0, ctx1];
+        // Leaf is index 1; iterator walks root→child (idx 0 then idx 1).
+        let measurements = MeasurementData {
+            label: &[0xAA; 4],
+            tci_nodes: TciNodes::new(1, &contexts).unwrap(),
+            is_ca: false,
+            supports_recursive: true,
+            subject_key_identifier: [0xBB; MAX_KEY_IDENTIFIER_SIZE],
+            authority_key_identifier: [0xCC; MAX_KEY_IDENTIFIER_SIZE],
+            subject_alt_name: None,
+        };
+
+        // Encode the extension and measure actual bytes written.
+        let mut buf = [0u8; 1024];
+        let mut sbuf = SliceResponseBuffer::new(&mut buf);
+        let mut w = CertWriter::new(&mut sbuf, DPE_PROFILE, true);
+        let n = w.encode_multi_tcb_info(&measurements).unwrap();
+
+        // Size calculation must match actual encoding.
+        let mut empty: [u8; 0] = [];
+        let mut ebuf = SliceResponseBuffer::new(&mut empty);
+        let checker = CertWriter::new(&mut ebuf, DPE_PROFILE, true);
+        let computed_size = checker
+            .get_multi_tcb_info_size(&measurements, /*tagged=*/ true)
+            .unwrap();
+        assert_eq!(
+            n, computed_size,
+            "size calculation must match encoded length"
+        );
+
+        // Confirm the two nodes have different individual TCB info sizes (the case we are trying to cover with this test)
+        let node0_size = checker.get_tcb_info_size(&contexts[0].tci, true, true);
+        let node1_size = checker.get_tcb_info_size(&contexts[1].tci, true, true);
+        assert_ne!(
+            node0_size, node1_size,
+            "test requires nodes with different tcb_info sizes to be meaningful"
+        );
+        assert_ne!(node0_size * 2, node0_size + node1_size);
     }
 
     #[test]
