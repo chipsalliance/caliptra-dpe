@@ -385,10 +385,6 @@ impl<'a> RootToChildIter<'a> {
         Ok(iter)
     }
 
-    pub fn num_nodes(&self) -> usize {
-        self.path.len()
-    }
-
     pub fn is_empty(&self) -> bool {
         self.path.is_empty()
     }
