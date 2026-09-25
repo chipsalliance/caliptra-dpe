@@ -1,54 +1,25 @@
 // Licensed under the Apache-2.0 license
 
 use anyhow::{anyhow, bail, Context, Result};
-use caliptra_dpe_dice_asn1::{FwidWriter, TcbInfoWriter, Ueid};
-use clap::{Parser, ValueEnum};
-use hex;
+use caliptra_dpe_dice_asn1::{
+    ExtensionDefinition, FwidWriter, GoldenDefinitions, GoldenKeyAlgorithm, GoldenProfile,
+    TcbInfoWriter, Ueid,
+};
+use clap::Parser;
 
 use std::fs;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Command, Stdio};
-
-const SUBJECT: &str = "/CN=DPE Leaf";
-const CSR_SUBJECT: &str = "/CN=DPE Leaf/serialNumber=0000";
-const NOT_BEFORE: &str = "20230227000000Z";
-const NOT_AFTER: &str = "99991231235959Z";
 
 #[derive(Parser)]
 pub struct Args {
     /// Profiles to regenerate; all profiles when omitted
-    #[arg(value_enum)]
-    profiles: Vec<Profile>,
+    profiles: Vec<GoldenProfile>,
 
     /// Compare generated artifacts with the checked-in files without writing
     #[arg(long)]
     check: bool,
-}
-
-#[derive(Clone, Copy, Debug, ValueEnum)]
-enum Profile {
-    P256,
-    P384,
-    Mldsa87,
-}
-
-#[derive(Clone, Copy)]
-enum KeyConfig {
-    Ecdsa {
-        curve_oid: &'static str,
-        scalar_size: usize,
-        digest_arg: &'static str,
-    },
-    MlDsa87,
-}
-
-struct ProfileConfig {
-    suffix: &'static str,
-    hash_size: usize,
-    hash_oid: &'static str,
-    key: KeyConfig,
-    signature_option: &'static str,
 }
 
 struct ExtensionValues {
@@ -71,64 +42,35 @@ struct EcPrivateKey<'a> {
 }
 
 pub fn run(args: &Args) -> Result<()> {
-    let profiles = if args.profiles.is_empty() {
-        vec![Profile::P256, Profile::P384, Profile::Mldsa87]
+    let profiles: &[GoldenProfile] = if args.profiles.is_empty() {
+        &GoldenProfile::ALL
     } else {
-        args.profiles.clone()
+        args.profiles.as_slice()
     };
 
     check_openssl()?;
 
     // Complete every OpenSSL operation before touching a checked-in artifact.
     let artifacts = profiles
-        .into_iter()
+        .iter()
+        .copied()
         .map(generate_profile)
         .collect::<Result<Vec<_>>>()?;
 
-    let output_dir = repository_root().join("dpe/src/x509_testdata");
+    let output_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("xtask must be directly below the repository root")
+        .to_path_buf()
+        .join("dpe/src/x509_testdata");
     for artifact in artifacts {
         install_or_check(&output_dir, &artifact, args.check)?;
     }
     Ok(())
 }
 
-fn config(profile: Profile) -> ProfileConfig {
-    match profile {
-        Profile::P256 => ProfileConfig {
-            suffix: "p256",
-            hash_size: 32,
-            hash_oid: "2.16.840.1.101.3.4.2.1",
-            key: KeyConfig::Ecdsa {
-                curve_oid: "1.2.840.10045.3.1.7",
-                scalar_size: 32,
-                digest_arg: "-sha256",
-            },
-            signature_option: "nonce-type:1",
-        },
-        Profile::P384 => ProfileConfig {
-            suffix: "p384",
-            hash_size: 48,
-            hash_oid: "2.16.840.1.101.3.4.2.2",
-            key: KeyConfig::Ecdsa {
-                curve_oid: "1.3.132.0.34",
-                scalar_size: 48,
-                digest_arg: "-sha384",
-            },
-            signature_option: "nonce-type:1",
-        },
-        Profile::Mldsa87 => ProfileConfig {
-            suffix: "mldsa87",
-            hash_size: 48,
-            hash_oid: "2.16.840.1.101.3.4.2.2",
-            key: KeyConfig::MlDsa87,
-            signature_option: "deterministic:1",
-        },
-    }
-}
-
-fn generate_profile(profile: Profile) -> Result<GeneratedArtifacts> {
-    let config = config(profile);
-    println!("Generating {} goldens", config.suffix);
+fn generate_profile(profile: GoldenProfile) -> Result<GeneratedArtifacts> {
+    let config: GoldenDefinitions = profile.into();
+    println!("Generating {} goldens", config.artifact_suffix);
     let extensions = build_extensions(&config)?;
     let key = build_key(&config)?;
     let certificate_der = generate_req(&config, &key, &extensions, true)?;
@@ -137,26 +79,36 @@ fn generate_profile(profile: Profile) -> Result<GeneratedArtifacts> {
     validate_der("req", &csr_der)?;
 
     Ok(GeneratedArtifacts {
-        profile: config.suffix,
+        profile: config.artifact_suffix,
         certificate_der,
         csr_der,
     })
 }
 
-fn build_extensions(config: &ProfileConfig) -> Result<ExtensionValues> {
-    let zeros = vec![0; config.hash_size];
-    let ueid =
-        asn1::write_single(&Ueid { ueid: &zeros }).map_err(|e| anyhow!("encoding UEID: {e:?}"))?;
-    let hash_alg = asn1::ObjectIdentifier::from_string(config.hash_oid)
-        .ok_or_else(|| anyhow!("invalid hash OID {}", config.hash_oid))?;
-    let fwids = [FwidWriter {
-        hash_alg,
-        digest: &zeros,
-    }];
-    let tcb_infos = [TcbInfoWriter {
-        fwids: Some(asn1::SequenceOfWriter::new(&fwids)),
-    }];
-    let multi_tcb_info = asn1::write_single(&asn1::SequenceOfWriter::new(&tcb_infos[..]))
+fn build_extensions(config: &GoldenDefinitions) -> Result<ExtensionValues> {
+    let ueid_value = vec![config.ueid_fill; config.hash_size];
+    let ueid = asn1::write_single(&Ueid { ueid: &ueid_value })
+        .map_err(|e| anyhow!("encoding UEID: {e:?}"))?;
+    let fwid_digest = vec![config.fwid_digest_fill; config.hash_size];
+    let hash_alg = asn1::ObjectIdentifier::from_string(config.hash_oid.dotted)
+        .ok_or_else(|| anyhow!("invalid hash OID {}", config.hash_oid.dotted))?;
+    let fwids = (0..config.fwids_per_tcb_info)
+        .map(|_| FwidWriter {
+            hash_alg: hash_alg.clone(),
+            digest: &fwid_digest,
+        })
+        .collect::<Vec<_>>();
+    let vendor_info = config.locality.to_be_bytes();
+    let tci_type = config.tci_type.to_be_bytes();
+    let tcb_infos = (0..config.tcb_info_count)
+        .map(|_| TcbInfoWriter {
+            svn: Some(config.svn.into()),
+            fwids: Some(asn1::SequenceOfWriter::new(fwids.as_slice())),
+            vendor_info: Some(&vendor_info),
+            tci_type: Some(&tci_type),
+        })
+        .collect::<Vec<_>>();
+    let multi_tcb_info = asn1::write_single(&asn1::SequenceOfWriter::new(tcb_infos.as_slice()))
         .map_err(|e| anyhow!("encoding MultiTcbInfo: {e:?}"))?;
     Ok(ExtensionValues {
         ueid,
@@ -164,16 +116,15 @@ fn build_extensions(config: &ProfileConfig) -> Result<ExtensionValues> {
     })
 }
 
-fn build_key(config: &ProfileConfig) -> Result<Vec<u8>> {
-    match config.key {
-        KeyConfig::Ecdsa {
+fn build_key(config: &GoldenDefinitions) -> Result<Vec<u8>> {
+    match config.key_algorithm {
+        GoldenKeyAlgorithm::Ecdsa {
             curve_oid,
             scalar_size,
-            ..
         } => {
-            let scalar = vec![0x11; scalar_size];
-            let parameters = asn1::ObjectIdentifier::from_string(curve_oid)
-                .ok_or_else(|| anyhow!("invalid curve OID {curve_oid}"))?;
+            let scalar = vec![config.deterministic_key_fill; scalar_size];
+            let parameters = asn1::ObjectIdentifier::from_string(curve_oid.dotted)
+                .ok_or_else(|| anyhow!("invalid curve OID {}", curve_oid.dotted))?;
             asn1::write_single(&EcPrivateKey {
                 version: 1,
                 private_key: &scalar,
@@ -181,7 +132,7 @@ fn build_key(config: &ProfileConfig) -> Result<Vec<u8>> {
             })
             .map_err(|e| anyhow!("encoding deterministic EC private key: {e:?}"))
         }
-        KeyConfig::MlDsa87 => run_openssl(
+        GoldenKeyAlgorithm::Mldsa87 { seed_size } => run_openssl(
             &[
                 "genpkey",
                 "-algorithm",
@@ -189,15 +140,35 @@ fn build_key(config: &ProfileConfig) -> Result<Vec<u8>> {
                 "-provider",
                 "default",
                 "-pkeyopt",
-                &format!("hexseed:{}", "11".repeat(32)),
+                &format!(
+                    "hexseed:{}",
+                    format!("{:02x}", config.deterministic_key_fill).repeat(seed_size)
+                ),
             ],
             None,
         ),
     }
 }
 
+fn critical_prefix(critical: bool) -> &'static str {
+    if critical {
+        "critical,"
+    } else {
+        ""
+    }
+}
+
+fn openssl_der_extension(definition: ExtensionDefinition, value: &[u8]) -> String {
+    format!(
+        "{}={}DER:{}",
+        definition.oid.dotted,
+        critical_prefix(definition.critical),
+        hex::encode(value)
+    )
+}
+
 fn generate_req(
-    config: &ProfileConfig,
+    config: &GoldenDefinitions,
     key: &[u8],
     extensions: &ExtensionValues,
     certificate: bool,
@@ -210,41 +181,82 @@ fn generate_req(
     // other input options. The xtask is supported on the repository's Unix/Nix
     // development environments, where /dev/stdin avoids an intermediate file.
     args.extend(["-key", "/dev/stdin", "-outform", "DER"]);
-    if matches!(config.key, KeyConfig::Ecdsa { .. }) {
+    if let GoldenKeyAlgorithm::Ecdsa { .. } = config.key_algorithm {
         args.extend(["-keyform", "DER"]);
+        args.push(match config.profile {
+            GoldenProfile::P256 => "-sha256",
+            GoldenProfile::P384 => "-sha384",
+            GoldenProfile::Mldsa87 => unreachable!("ML-DSA has no ECDSA digest argument"),
+        });
     }
-    if let KeyConfig::Ecdsa { digest_arg, .. } = config.key {
-        args.push(digest_arg);
-    }
-    args.extend(["-sigopt", config.signature_option]);
-    args.extend(["-subj", if certificate { SUBJECT } else { CSR_SUBJECT }]);
+    let signature_option = match config.key_algorithm {
+        GoldenKeyAlgorithm::Ecdsa { .. } => "nonce-type:1",
+        GoldenKeyAlgorithm::Mldsa87 { .. } => "deterministic:1",
+    };
+    args.extend(["-sigopt", signature_option]);
+    let subject = format!(
+        "/CN={}/serialNumber={}",
+        config.subject_common_name, config.csr_subject_serial
+    );
+    args.extend(["-subj", &subject]);
+    let basic_constraints = format!(
+        "basicConstraints={}CA:{}",
+        critical_prefix(config.basic_constraints_critical),
+        if config.is_ca { "TRUE" } else { "FALSE" }
+    );
+    let key_usage = format!(
+        "keyUsage={}{}{}",
+        critical_prefix(config.key_usage_critical),
+        if config.digital_signature {
+            "digitalSignature"
+        } else {
+            ""
+        },
+        if config.key_cert_sign {
+            ",keyCertSign"
+        } else {
+            ""
+        }
+    );
+    let ueid = openssl_der_extension(config.ueid, &extensions.ueid);
+    let tcb = openssl_der_extension(config.multi_tcb_info, &extensions.multi_tcb_info);
+    let extended_key_usage = format!(
+        "extendedKeyUsage={}{}",
+        critical_prefix(config.extended_key_usage.critical),
+        config.extended_key_usage.oid.dotted
+    );
+    args.extend(["-addext", &tcb, "-addext", &ueid]);
     if certificate {
         args.extend([
             "-set_serial",
-            "0",
+            config.certificate_serial,
             "-not_before",
-            NOT_BEFORE,
+            config.not_before,
             "-not_after",
-            NOT_AFTER,
+            config.not_after,
             "-addext",
-            "subjectKeyIdentifier=hash",
+            &basic_constraints,
             "-addext",
-            "basicConstraints=critical,CA:FALSE",
+            &key_usage,
             "-addext",
-            "keyUsage=critical,digitalSignature",
+            &extended_key_usage,
         ]);
+        if !config.include_subject_key_identifier {
+            args.extend(["-addext", "subjectKeyIdentifier=none"]);
+        }
+        if config.include_authority_key_identifier {
+            args.extend(["-addext", "authorityKeyIdentifier=keyid:always"]);
+        }
     } else {
-        args.extend(["-addext", "basicConstraints=critical,CA:FALSE"]);
+        args.extend([
+            "-addext",
+            &basic_constraints,
+            "-addext",
+            &key_usage,
+            "-addext",
+            &extended_key_usage,
+        ]);
     }
-    let ueid = format!(
-        "2.23.133.5.4.4=critical,DER:{}",
-        hex::encode(&extensions.ueid)
-    );
-    let tcb = format!(
-        "2.23.133.5.4.5=DER:{}",
-        hex::encode(&extensions.multi_tcb_info)
-    );
-    args.extend(["-addext", &ueid, "-addext", &tcb]);
     run_openssl(&args, Some(key))
 }
 
@@ -321,26 +333,35 @@ fn install_or_check(dir: &Path, artifacts: &GeneratedArtifacts, check: bool) -> 
     Ok(())
 }
 
-fn repository_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("xtask must be directly below the repository root")
-        .to_path_buf()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use caliptra_dpe_dice_asn1::TcbInfo;
 
     #[test]
     fn extension_der_matches_expected_shape() {
-        let extensions = build_extensions(&config(Profile::P256)).unwrap();
+        let definitions: GoldenDefinitions = GoldenProfile::P256.into();
+        let extensions = build_extensions(&definitions).unwrap();
         assert_eq!(&extensions.ueid[..4], &[0x30, 0x22, 0x04, 0x20]);
-        assert_eq!(
-            &extensions.multi_tcb_info[..6],
-            &[0x30, 0x33, 0x30, 0x31, 0xa6, 0x2f]
-        );
         let parsed = asn1::parse_single::<Ueid<'_>>(&extensions.ueid).unwrap();
-        assert_eq!(parsed.ueid, &[0; 32]);
+        assert_eq!(parsed.ueid.len(), definitions.hash_size);
+        assert!(parsed
+            .ueid
+            .iter()
+            .all(|byte| *byte == definitions.ueid_fill));
+
+        let mut tcb_infos =
+            asn1::parse_single::<asn1::SequenceOf<TcbInfo>>(&extensions.multi_tcb_info).unwrap();
+        let tcb_info = tcb_infos.next().unwrap();
+        assert!(tcb_infos.next().is_none());
+        assert_eq!(tcb_info.svn, Some(definitions.svn.into()));
+        assert_eq!(
+            tcb_info.vendor_info,
+            Some(definitions.locality.to_be_bytes().as_slice())
+        );
+        assert_eq!(
+            tcb_info.tci_type,
+            Some(definitions.tci_type.to_be_bytes().as_slice())
+        );
     }
 }
