@@ -33,7 +33,24 @@ pub struct SignFlags(pub u32);
 
 bitflags! {
     impl SignFlags: u32 {
+        /// Selects `SignMldsa87RawCmd`, where `raw_data[..size]` supplies the
+        /// ML-DSA message.
         const IS_RAW = 1 << 0;
+        /// Supplies a FIPS 204 context with a raw ML-DSA message.
+        ///
+        /// FIPS 204, Algorithm 2, requires `|ctx| <= 255` and encodes the
+        /// context length as `IntegerToBytes(|ctx|, 1)` when constructing `M'`.
+        ///
+        /// This flag is interpreted only when `IS_RAW` is set. The first `size`
+        /// bytes of `raw_data` are encoded as
+        /// `context_len: u8 || context[context_len] ||
+        /// message[size - 1 - context_len]`.
+        ///
+        /// The context is `raw_data[1..1 + context_len]`, and the message is
+        /// `raw_data[1 + context_len..size]`. The encoding is invalid when
+        /// `1 + context_len > size`. Without this flag, `raw_data[..size]` is
+        /// the message and the ML-DSA context is empty.
+        const HAS_CONTEXT = 1 << 1;
     }
 }
 
@@ -169,15 +186,28 @@ impl CommandExecution for SignCommand<'_> {
                 SignData::Mu(cmd.digest.into()),
             ),
             #[cfg(feature = "ml-dsa")]
-            SignCommand::Mldsa87Raw(cmd) => (
-                &cmd.handle,
-                cmd.label.as_slice(),
-                SignData::Raw(
-                    cmd.raw_data
-                        .get(..cmd.size as usize)
-                        .ok_or(DpeErrorCode::InvalidArgument)?,
-                ),
-            ),
+            SignCommand::Mldsa87Raw(cmd) => {
+                let raw_data = cmd
+                    .raw_data
+                    .get(..cmd.size as usize)
+                    .ok_or(DpeErrorCode::InvalidArgument)?;
+                let data = if cmd.flags.contains(SignFlags::HAS_CONTEXT) {
+                    let (&context_len, payload) = raw_data
+                        .split_first()
+                        .ok_or(DpeErrorCode::InvalidArgument)?;
+                    let context_len = context_len as usize;
+                    let context = payload
+                        .get(..context_len)
+                        .ok_or(DpeErrorCode::InvalidArgument)?;
+                    let message = payload
+                        .get(context_len..)
+                        .ok_or(DpeErrorCode::InvalidArgument)?;
+                    SignData::RawWithContext { context, message }
+                } else {
+                    SignData::Raw(raw_data)
+                };
+                (&cmd.handle, cmd.label.as_slice(), data)
+            }
         };
         let idx = env.state().get_active_context_pos(handle, locality)?;
         let context = env
@@ -670,6 +700,30 @@ mod tests {
 
     #[cfg(all(feature = "ml-dsa", not(feature = "p384"), not(feature = "p256")))]
     #[test]
+    fn test_sign_raw_mode_rejects_invalid_context_encoding() {
+        CfiCounter::reset_for_test();
+        let mut state = test_state();
+        test_env!(env, &mut state);
+        let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
+
+        let response = SignMldsa87RawCmd {
+            handle: ContextHandle::default(),
+            label: TEST_LABEL,
+            flags: SignFlags::IS_RAW | SignFlags::HAS_CONTEXT,
+            size: 1,
+            raw_data: {
+                let mut raw_data = [0u8; MLDSA87_RAW_MAX_SIZE];
+                raw_data[0] = 1;
+                raw_data
+            },
+        }
+        .execute(&mut dpe, &mut env, TEST_LOCALITIES[0]);
+
+        assert_eq!(response, Err(DpeErrorCode::InvalidArgument));
+    }
+
+    #[cfg(all(feature = "ml-dsa", not(feature = "p384"), not(feature = "p256")))]
+    #[test]
     fn test_deserialize_sign_non_raw_mode() {
         CfiCounter::reset_for_test();
         // Test that non-raw mode still works (backward compatibility)
@@ -753,5 +807,70 @@ mod tests {
         let vk = VerifyingKey::<ml_dsa::MlDsa87>::decode(&encoded_vk);
 
         assert!(vk.verify(raw_data, &sig).is_ok());
+    }
+
+    #[cfg(all(feature = "ml-dsa", not(feature = "p384"), not(feature = "p256")))]
+    #[test]
+    #[allow(unreachable_patterns)]
+    fn test_sign_raw_mode_with_context_signature_is_valid() {
+        CfiCounter::reset_for_test();
+        let mut state = test_state();
+        test_env!(env, &mut state);
+        let mut dpe = DpeInstance::new(&mut env, DPE_PROFILE).unwrap();
+
+        let context = b"responder-challenge_auth signing";
+        let message = b"test raw signing message";
+        let mut raw_data = [0u8; MLDSA87_RAW_MAX_SIZE];
+        raw_data[0] = context.len() as u8;
+        raw_data[1..1 + context.len()].copy_from_slice(context);
+        raw_data[1 + context.len()..1 + context.len() + message.len()].copy_from_slice(message);
+
+        let response = SignMldsa87RawCmd {
+            handle: ContextHandle::default(),
+            label: TEST_LABEL,
+            flags: SignFlags::IS_RAW | SignFlags::HAS_CONTEXT,
+            size: (1 + context.len() + message.len()) as u32,
+            raw_data,
+        }
+        .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
+        .unwrap();
+
+        let sign_resp = match response {
+            Response::Sign(SignResp::Mldsa87(resp)) => resp,
+            _ => panic!("Incorrect response type"),
+        };
+
+        let certify_resp = {
+            let cmd = CertifyKeyCmd {
+                handle: ContextHandle::default(),
+                flags: CertifyKeyFlags::empty(),
+                label: TEST_LABEL,
+                format: CertifyKeyCommand::FORMAT_X509,
+            };
+            match CertifyKeyCommand::from(&cmd)
+                .execute(&mut dpe, &mut env, TEST_LOCALITIES[0])
+                .unwrap()
+            {
+                Response::CertifyKey(resp) => resp,
+                _ => panic!("Incorrect response type"),
+            }
+        };
+
+        use crate::response::CertifyKeyResp;
+        use ml_dsa::{EncodedSignature, EncodedVerifyingKey, VerifyingKey};
+
+        let encoded_sig = EncodedSignature::<ml_dsa::MlDsa87>::try_from(sign_resp.sig.as_slice())
+            .expect("Invalid signature length");
+        let sig = ml_dsa::Signature::decode(&encoded_sig).expect("Error decoding signature");
+        let key_bytes = match certify_resp {
+            CertifyKeyResp::Mldsa87(resp) => resp.header.pubkey,
+            _ => panic!("Expected Mldsa87 CertifyKeyResp"),
+        };
+        let encoded_vk =
+            EncodedVerifyingKey::<ml_dsa::MlDsa87>::try_from(key_bytes.as_slice()).unwrap();
+        let vk = VerifyingKey::<ml_dsa::MlDsa87>::decode(&encoded_vk);
+
+        assert!(vk.verify_with_context(message, context, &sig));
+        assert!(!vk.verify_with_context(message, b"wrong context", &sig));
     }
 }
