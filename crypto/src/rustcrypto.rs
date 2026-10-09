@@ -392,6 +392,7 @@ impl RustCryptoImpl {
                 let digest_bytes = digest(raw)?;
                 Ok(key.sign_prehash(&digest_bytes)?)
             }
+            SignData::RawWithContext { .. } => Err(CryptoError::MismatchedAlgorithm),
             _ => Err(CryptoError::MismatchedAlgorithm),
         }
     }
@@ -413,6 +414,10 @@ impl RustCryptoImpl {
                 key.sign(raw.as_slice())
             }
             SignData::Raw(raw) => key.sign(raw),
+            SignData::RawWithContext { context, message } => key
+                .signing_key()
+                .sign_deterministic(message, context)
+                .map_err(|_| RUSTCRYPTO_ML_DSA_ERROR)?,
             SignData::Digest(_) => return Err(CryptoError::MismatchedAlgorithm),
         };
         let sig = sig.encode();
