@@ -10,7 +10,7 @@ use crate::{
     dpe_instance::DpeEnv,
     error::{DpeErrorCode, InternalErrorCode},
     tci::{TciMeasurement, TciNodeData},
-    DpeInstance, DpeProfile, MAX_HANDLES,
+    DpeInstance, DpeProfile, MAX_CERT_SIZE, MAX_HANDLES,
 };
 use bitflags::bitflags;
 #[cfg(feature = "cfi")]
@@ -30,8 +30,7 @@ use caliptra_dpe_platform::CertValidity;
 #[cfg(not(feature = "disable_csr"))]
 use caliptra_dpe_platform::SignerIdentifier;
 use caliptra_dpe_platform::{
-    ArrayVec, OtherName, PlatformError, SubjectAltName, MAX_ISSUER_NAME_SIZE,
-    MAX_KEY_IDENTIFIER_SIZE,
+    OtherName, PlatformError, SubjectAltName, MAX_ISSUER_NAME_SIZE, MAX_KEY_IDENTIFIER_SIZE,
 };
 use caliptra_dpe_response_buffer::ResponseBuffer;
 use zerocopy::IntoBytes;
@@ -62,14 +61,24 @@ impl<F> SignCallback for F where
 {
 }
 
-/// Max amount of backtracks during encoding.
-/// Currently the deepest backtrack path is 7.
-const MAX_BACKTRACKS: usize = 10;
-
-/// We save 3 bytes to record the size.
-/// Currently all size skips are always 255 < size < 65535 since we only skip signatures
-/// and large objects, e.g. CSR or TBS.
+/// Width reserved for every deferred length field: the DER long form `0x82 hi lo`,
+/// which is the mandatory (minimal) encoding for content lengths in `256..=65535`.
+///
+/// Every structure encoded with a deferred length contains either a TBSCertificate or a
+/// CertificationRequestInfo, so the smallest deferred content is one of those two. On the
+/// smallest profile (P-256) they are ~450 and ~340 bytes even with degenerate inputs
+/// (see `test_deferred_length_width_floor`), comfortably above 256. The largest deferred
+/// content is a whole certificate or CMS message, which is bounded by `MAX_CERT_SIZE`
+/// (asserted below to fit the 3-byte form). Should either bound ever be violated,
+/// `CertWriter::backfill_size` fails with `X509InvalidWidth` instead of emitting
+/// malformed DER.
 const SIZE_TAG_OFFSET: usize = 3;
+
+const _: () = assert!(
+    MAX_CERT_SIZE < 1 << (8 * (SIZE_TAG_OFFSET - 1)),
+    "deferred length fields are fixed at SIZE_TAG_OFFSET (3) bytes, which cannot encode a \
+     structure longer than 65535 bytes; MAX_HANDLES or MAX_CERT_SIZE grew past that bound"
+);
 
 /// This is the maximum size of a digest. The only profiles supported use SHA256 and SHA384.
 /// This is the size of a SHA384 digest.
@@ -161,9 +170,6 @@ pub struct CertWriter<'a> {
     profile: DpeProfile,
     offset: usize,
     crit_dice: bool,
-    csr_range: Option<(usize, usize)>,
-    backtracks: ArrayVec<(usize, usize), MAX_BACKTRACKS>,
-    saved_offset: Option<usize>,
 }
 
 pub struct KeyUsageFlags(u8);
@@ -284,94 +290,55 @@ impl CertWriter<'_> {
             profile,
             offset: 0,
             crit_dice,
-            csr_range: None,
-            backtracks: ArrayVec::new(),
-            saved_offset: None,
         }
     }
 
-    /// Moves certificate offset forward by `skip` bytes.
+    /// DER-encode a constructed TLV whose content length is only known once
+    /// the content has been written.
     ///
-    /// Pushes current offset and the skipped offset to a stack. This is useful when a size
-    /// field needs to be written but the size is not yet known. The writer can skip ahead, write
-    /// the content, and then pop the offsets to go back and write the size.
+    /// Writes `tag`, reserves [`SIZE_TAG_OFFSET`] bytes for the length field,
+    /// runs `content` to write the value, then backfills the length field with
+    /// the number of content bytes `content` reports. Returns the total number
+    /// of bytes written (tag + length + content).
     ///
-    /// # Arguments
+    /// Reserving and backfilling both happen inside this one function, so it
+    /// is not possible to reserve a length field and forget to fill it, fill it
+    /// twice, or fill it out of order: the nesting of deferred length fields is
+    /// fixed by the lexical nesting of the `content` closures, and each level's
+    /// size is derived from what the level below actually wrote. The only
+    /// check that remains at run time is that the content length fits the
+    /// reserved width, which depends on the data being encoded.
     ///
-    /// * `skip` - The number of bytes to skip ahead.
-    ///
-    /// # Returns
-    ///
-    /// The new offset.
-    fn push_backtrack(&mut self, skip: usize) -> Result<usize, DpeErrorCode> {
-        self.backtracks
-            .try_push((self.offset, self.offset + skip))
-            .map_err(|_| DpeErrorCode::X509SkipsExhausted)?;
-        self.offset += skip;
-        Ok(self.offset)
+    /// This is generic over the closure type on purpose and is always inlined:
+    /// each call site compiles down to the same straight-line code one would
+    /// write by hand (no extra stack frame, no indirect call), while the
+    /// non-trivial backfill logic lives in the shared, non-generic
+    /// [`Self::backfill_size`].
+    #[inline(always)]
+    fn encode_deferred_tlv(
+        &mut self,
+        tag: u8,
+        content: impl FnOnce(&mut Self) -> Result<usize, DpeErrorCode>,
+    ) -> Result<usize, DpeErrorCode> {
+        let prefix_bytes_written = self.encode_tag_field(tag);
+        let size_offset = self.offset;
+        self.offset += SIZE_TAG_OFFSET;
+        let content_bytes_written = content(self)?;
+        self.backfill_size(size_offset, content_bytes_written)?;
+        Ok(prefix_bytes_written + SIZE_TAG_OFFSET + content_bytes_written)
     }
 
-    /// Pops the last offset pushed by `push_backtrack`.
-    ///
-    /// NOTE: `start_backtrack` MUST be called before `pop_backtrack`.
-    ///
-    /// # Arguments
-    ///
-    /// * `expected_width` - The expected number of bytes reserved by the backtrack.
-    fn pop_backtrack(&mut self, expected_width: usize) -> Result<(), DpeErrorCode> {
-        if self.saved_offset.is_none() {
-            return Err(DpeErrorCode::X509InvalidState);
-        }
-        let Some(range) = self.backtracks.pop() else {
-            return Err(DpeErrorCode::X509InvalidState);
-        };
-        if (range.1 - range.0) != expected_width {
+    /// Write `size` into the [`SIZE_TAG_OFFSET`]-byte length field reserved at
+    /// `size_offset` by [`Self::encode_deferred_tlv`], leaving `self.offset`
+    /// where it was.
+    fn backfill_size(&mut self, size_offset: usize, size: usize) -> Result<(), DpeErrorCode> {
+        if Self::get_size_width(size) != SIZE_TAG_OFFSET {
             return Err(DpeErrorCode::X509InvalidWidth);
         }
-        self.offset = range.0;
-        Ok(())
-    }
-
-    /// Saves the current offset to begin a backtrack sequence.
-    ///
-    /// NOTE: `start_backtrack` MUST be called before `pop_backtrack`.
-    fn start_backtrack(&mut self) -> Result<(), DpeErrorCode> {
-        if self.saved_offset.is_some() {
-            return Err(DpeErrorCode::X509InvalidState);
-        }
-        self.saved_offset = Some(self.offset);
-        Ok(())
-    }
-
-    /// Restores the offset to where it was before the pop sequence began.
-    fn end_backtrack(&mut self) -> Result<(), DpeErrorCode> {
-        let Some(offset) = self.saved_offset else {
-            Err(DpeErrorCode::X509InvalidState)?
-        };
-        self.offset = offset;
-        self.saved_offset = None;
-        Ok(())
-    }
-
-    fn backtrack_and_encode_size(
-        &mut self,
-        sizes: &[usize],
-        out_size: Option<&mut usize>,
-    ) -> Result<(), DpeErrorCode> {
-        self.start_backtrack()?;
-
-        let mut bytes_written = 0;
-        for size in sizes {
-            self.pop_backtrack(Self::get_size_width(*size))?;
-            bytes_written += self.encode_size_field(*size);
-        }
-
-        self.end_backtrack()?;
-
-        if let Some(out_size) = out_size {
-            *out_size += bytes_written;
-        }
-
+        let end = self.offset;
+        self.offset = size_offset;
+        self.encode_size_field(size);
+        self.offset = end;
         Ok(())
     }
 
@@ -910,14 +877,6 @@ impl CertWriter<'_> {
 
         // Determine whether to include the explicit tag wrapping in the size calculation
         let explicit_bytes_size = Self::get_structure_size(key_identifier_size, explicit);
-
-        Self::get_structure_size(explicit_bytes_size, tagged)
-    }
-
-    #[cfg(not(feature = "disable_csr"))]
-    fn get_econtent_size(bytes_size: usize, tagged: bool, explicit: bool) -> usize {
-        // Determine whether to include the explicit tag wrapping in the size calculation
-        let explicit_bytes_size = Self::get_structure_size(bytes_size, explicit);
 
         Self::get_structure_size(explicit_bytes_size, tagged)
     }
@@ -1982,6 +1941,9 @@ impl CertWriter<'_> {
     ///    eContentType ContentType,
     ///    eContent [0] EXPLICIT OCTET STRING OPTIONAL
     /// }
+    ///
+    /// Returns the number of bytes written and the byte range of the embedded
+    /// CSR within the certificate buffer (the range the CMS signer must sign).
     #[cfg(not(feature = "disable_csr"))]
     #[allow(clippy::identity_op)]
     fn encode_encapsulated_content_info(
@@ -1991,47 +1953,28 @@ impl CertWriter<'_> {
         subject_name: &Name,
         measurements: &MeasurementData,
         sig: &mut Signature,
-    ) -> Result<usize, DpeErrorCode> {
-        let mut size_bytes_written = self.encode_byte(Self::SEQUENCE_TAG);
-        self.push_backtrack(SIZE_TAG_OFFSET)?;
+    ) -> Result<(usize, core::ops::Range<usize>), DpeErrorCode> {
+        let mut csr_range = 0..0;
+        let bytes_written = self.encode_deferred_tlv(Self::SEQUENCE_TAG, |w| {
+            let mut bytes_written = w.encode_oid(Self::ID_DATA_OID);
 
-        // EncapsulatedContentInfo Sequence
-        let mut bytes_written = self.encode_oid(Self::ID_DATA_OID);
+            // eContent is EXPLICIT field number 0
+            bytes_written +=
+                w.encode_deferred_tlv(Self::CONTEXT_SPECIFIC | Self::CONSTRUCTED | 0x0, |w| {
+                    // eContent OCTET STRING
+                    w.encode_deferred_tlv(Self::OCTET_STRING_TAG, |w| {
+                        let csr_start = w.offset;
+                        let csr_bytes_written =
+                            w.encode_csr(sign_cb, pub_key, subject_name, measurements, sig)?;
+                        csr_range = csr_start..csr_start + csr_bytes_written;
+                        Ok(csr_bytes_written)
+                    })
+                })?;
 
-        // eContent is EXPLICIT field number 0
-        bytes_written += self.encode_byte(Self::CONTEXT_SPECIFIC | Self::CONSTRUCTED | 0x0);
-        self.push_backtrack(SIZE_TAG_OFFSET)?;
+            Ok(bytes_written)
+        })?;
 
-        // eContent OCTET STRING
-        bytes_written += self.encode_byte(Self::OCTET_STRING_TAG);
-        let offset = self.push_backtrack(SIZE_TAG_OFFSET)?;
-
-        let csr_bytes_written =
-            self.encode_csr(sign_cb, pub_key, subject_name, measurements, sig)?;
-        self.csr_range = Some((offset, offset + csr_bytes_written));
-
-        let econtent_1_size = Self::get_econtent_size(
-            csr_bytes_written,
-            /*tagged=*/ false,
-            /*explicit=*/ false,
-        );
-
-        let econtent_0_size = Self::get_econtent_size(
-            csr_bytes_written,
-            /*tagged=*/ true,
-            /*explicit=*/ false,
-        );
-
-        self.backtrack_and_encode_size(
-            &[econtent_1_size, econtent_0_size],
-            Some(&mut bytes_written),
-        )?;
-        self.backtrack_and_encode_size(
-            &[bytes_written + csr_bytes_written],
-            Some(&mut size_bytes_written),
-        )?;
-
-        Ok(bytes_written + csr_bytes_written + size_bytes_written)
+        Ok((bytes_written, csr_range))
     }
 
     fn encode_pub_key_info(&mut self, pub_key: &PubKey) -> Result<usize, DpeErrorCode> {
@@ -2088,43 +2031,42 @@ impl CertWriter<'_> {
         measurements: &MeasurementData,
         validity: &CertValidity,
     ) -> Result<usize, DpeErrorCode> {
-        // TBSCertificate SEQUENCE tag + reserved size field, backfilled below.
-        let mut prefix_bytes_written = self.encode_tag_field(Self::SEQUENCE_TAG);
-        self.push_backtrack(SIZE_TAG_OFFSET)?;
+        // TBSCertificate SEQUENCE; the length field is backfilled once the
+        // content size is known.
+        let bytes_written = self.encode_deferred_tlv(Self::SEQUENCE_TAG, |w| {
+            // version
+            let mut bytes_written = w.encode_version();
 
-        // version
-        let mut bytes_written = self.encode_version();
+            // serialNumber
+            bytes_written += w.encode_integer_bytes(serial_number, true);
 
-        // serialNumber
-        bytes_written += self.encode_integer_bytes(serial_number, true);
+            // signature
+            bytes_written += match pubkey {
+                PubKey::Ecdsa(_) => w.encode_ecdsa_sig_alg_id(),
+                #[cfg(feature = "ml-dsa")]
+                PubKey::Mldsa(_) => w.encode_mldsa_sig_alg_id(),
+            };
 
-        // signature
-        bytes_written += match pubkey {
-            PubKey::Ecdsa(_) => self.encode_ecdsa_sig_alg_id(),
-            #[cfg(feature = "ml-dsa")]
-            PubKey::Mldsa(_) => self.encode_mldsa_sig_alg_id(),
-        };
+            // issuer
+            bytes_written += w.encode_bytes(issuer_name);
 
-        // issuer
-        bytes_written += self.encode_bytes(issuer_name);
+            // validity
+            bytes_written += w.encode_validity(validity);
 
-        // validity
-        bytes_written += self.encode_validity(validity);
+            // subject
+            bytes_written += w.encode_rdn(subject_name)?;
 
-        // subject
-        bytes_written += self.encode_rdn(subject_name)?;
+            // subjectPublicKeyInfo
+            bytes_written += w.encode_pub_key_info(pubkey)?;
 
-        // subjectPublicKeyInfo
-        bytes_written += self.encode_pub_key_info(pubkey)?;
+            // extensions
+            bytes_written += w.encode_extensions(measurements, /*is_x509=*/ true)?;
 
-        // extensions
-        bytes_written += self.encode_extensions(measurements, /*is_x509=*/ true)?;
-
-        // Backfill the SEQUENCE size field now that the content size is known.
-        self.backtrack_and_encode_size(&[bytes_written], Some(&mut prefix_bytes_written))?;
+            Ok(bytes_written)
+        })?;
 
         self.check_not_truncated()?;
-        Ok(prefix_bytes_written + bytes_written)
+        Ok(bytes_written)
     }
 
     /// Encode an ECDSA X.509 certificate
@@ -2182,54 +2124,52 @@ impl CertWriter<'_> {
         payload: SignedPayload,
         sig: &mut Signature,
     ) -> Result<usize, DpeErrorCode> {
-        let mut prefix_bytes_written = self.encode_tag_field(Self::SEQUENCE_TAG);
-        let offset = self.push_backtrack(SIZE_TAG_OFFSET)?;
+        self.encode_deferred_tlv(Self::SEQUENCE_TAG, |w| {
+            let payload_start = w.offset;
 
-        let (payload_bytes_written, is_csr) = match payload {
-            #[cfg(not(feature = "disable_x509"))]
-            SignedPayload::Tbs {
-                serial_number,
-                issuer_name,
-                subject_name,
-                pubkey,
-                measurements,
-                validity,
-            } => (
-                self.encode_tbs(
+            let (payload_bytes_written, is_csr) = match payload {
+                #[cfg(not(feature = "disable_x509"))]
+                SignedPayload::Tbs {
                     serial_number,
                     issuer_name,
                     subject_name,
                     pubkey,
                     measurements,
                     validity,
-                )?,
-                false,
-            ),
-            #[cfg(not(feature = "disable_csr"))]
-            SignedPayload::CertReqInfo {
-                pub_key,
-                subject_name,
-                measurements,
-            } => (
-                self.encode_certification_request_info(pub_key, subject_name, measurements)?,
-                true,
-            ),
-        };
+                } => (
+                    w.encode_tbs(
+                        serial_number,
+                        issuer_name,
+                        subject_name,
+                        pubkey,
+                        measurements,
+                        validity,
+                    )?,
+                    false,
+                ),
+                #[cfg(not(feature = "disable_csr"))]
+                SignedPayload::CertReqInfo {
+                    pub_key,
+                    subject_name,
+                    measurements,
+                } => (
+                    w.encode_certification_request_info(pub_key, subject_name, measurements)?,
+                    true,
+                ),
+            };
 
-        let abs_start = offset;
-        let abs_end = offset + payload_bytes_written;
-        sign_cb(&*self.certificate, abs_start..abs_end, is_csr, sig)?;
+            sign_cb(
+                &*w.certificate,
+                payload_start..payload_start + payload_bytes_written,
+                is_csr,
+                sig,
+            )?;
 
-        let sig_bytes_written = self.encode_signature_bit_string(sig);
-        sig.zeroize();
+            let sig_bytes_written = w.encode_signature_bit_string(sig);
+            sig.zeroize();
 
-        let body_size = payload_bytes_written + sig_bytes_written;
-
-        self.backtrack_and_encode_size(&[body_size], Some(&mut prefix_bytes_written))?;
-
-        let total_size = body_size + prefix_bytes_written;
-
-        Ok(total_size)
+            Ok(payload_bytes_written + sig_bytes_written)
+        })
     }
 
     /// Encode a certification request info
@@ -2255,27 +2195,26 @@ impl CertWriter<'_> {
         subject_name: &Name,
         measurements: &MeasurementData,
     ) -> Result<usize, DpeErrorCode> {
-        // CertificationRequestInfo SEQUENCE tag + reserved size field, backfilled below.
-        let mut prefix_bytes_written = self.encode_tag_field(Self::SEQUENCE_TAG);
-        self.push_backtrack(SIZE_TAG_OFFSET)?;
+        // CertificationRequestInfo SEQUENCE; the length field is backfilled
+        // once the content size is known.
+        let bytes_written = self.encode_deferred_tlv(Self::SEQUENCE_TAG, |w| {
+            // version
+            let mut bytes_written = w.encode_integer(Self::CSR_V0, true);
 
-        // version
-        let mut bytes_written = self.encode_integer(Self::CSR_V0, true);
+            // subject
+            bytes_written += w.encode_rdn(subject_name)?;
 
-        // subject
-        bytes_written += self.encode_rdn(subject_name)?;
+            // subjectPublicKeyInfo
+            bytes_written += w.encode_pub_key_info(pub_key)?;
 
-        // subjectPublicKeyInfo
-        bytes_written += self.encode_pub_key_info(pub_key)?;
+            // attributes
+            bytes_written += w.encode_attributes(measurements)?;
 
-        // attributes
-        bytes_written += self.encode_attributes(measurements)?;
-
-        // Backfill the SEQUENCE size field now that the content size is known.
-        self.backtrack_and_encode_size(&[bytes_written], Some(&mut prefix_bytes_written))?;
+            Ok(bytes_written)
+        })?;
 
         self.check_not_truncated()?;
-        Ok(prefix_bytes_written + bytes_written)
+        Ok(bytes_written)
     }
 
     /// Encode an PKCS #10 CSR
@@ -2327,83 +2266,65 @@ impl CertWriter<'_> {
         sid: &SignerIdentifier,
         sig: &mut Signature,
     ) -> Result<usize, DpeErrorCode> {
-        // ContentInfo SEQUENCE. This and the two nested SignedData layers reserve
-        // their length fields up front (always 3 bytes) and backfill them below.
-        // Each prefix is counted as tag + reserved length, so the layer sizes
-        // further down are just sums of the running byte counts.
-        let content_info_prefix = self.encode_byte(Self::SEQUENCE_TAG) + SIZE_TAG_OFFSET;
-        self.push_backtrack(SIZE_TAG_OFFSET)?;
+        // ContentInfo SEQUENCE. This and the two nested SignedData layers defer
+        // their length fields; each layer's length is simply whatever the layer
+        // below reports having written.
+        let bytes_written = self.encode_deferred_tlv(Self::SEQUENCE_TAG, |w| {
+            let mut content_info_body = w.encode_oid(Self::ID_SIGNED_DATA_OID);
 
-        let mut content_info_body = self.encode_oid(Self::ID_SIGNED_DATA_OID);
+            // Encode a SignedData
+            //
+            // SignedData  ::=  SEQUENCE  {
+            //    version CMSVersion,
+            //    digestAlgorithms DigestAlgorithmIdentifiers,
+            //    encapContentInfo EncapsulatedContentInfo,
+            //    certificates [0] IMPLICIT CertificateSet OPTIONAL,
+            //    crls [1] IMPLICIT RevocationInfoChoices OPTIONAL,
+            //    signerInfos SignerInfos
+            // }
 
-        // Encode a SignedData
-        //
-        // SignedData  ::=  SEQUENCE  {
-        //    version CMSVersion,
-        //    digestAlgorithms DigestAlgorithmIdentifiers,
-        //    encapContentInfo EncapsulatedContentInfo,
-        //    certificates [0] IMPLICIT CertificateSet OPTIONAL,
-        //    crls [1] IMPLICIT RevocationInfoChoices OPTIONAL,
-        //    signerInfos SignerInfos
-        // }
+            // SignedData is EXPLICIT field number 0
+            content_info_body +=
+                w.encode_deferred_tlv(Self::CONTEXT_SPECIFIC | Self::CONSTRUCTED | 0x0, |w| {
+                    // SignedData sequence
+                    w.encode_deferred_tlv(Self::SEQUENCE_TAG, |w| {
+                        // CMS version
+                        let mut signed_data_body = w.encode_cms_version(sid);
 
-        // SignedData is EXPLICIT field number 0
-        content_info_body +=
-            self.encode_byte(Self::CONTEXT_SPECIFIC | Self::CONSTRUCTED | 0x0) + SIZE_TAG_OFFSET;
-        self.push_backtrack(SIZE_TAG_OFFSET)?;
+                        // digestAlgorithms
+                        signed_data_body += w.encode_tag_field(Self::SET_OF_TAG);
+                        signed_data_body +=
+                            w.encode_size_field(w.get_hash_alg_id_size(/*tagged=*/ true));
+                        signed_data_body += w.encode_hash_alg_id();
 
-        // SignedData sequence
-        let signed_data_prefix = self.encode_tag_field(Self::SEQUENCE_TAG) + SIZE_TAG_OFFSET;
-        self.push_backtrack(SIZE_TAG_OFFSET)?;
+                        // encapContentInfo
+                        let (encap_bytes_written, csr_range) = w.encode_encapsulated_content_info(
+                            sign_cb,
+                            pub_key,
+                            subject_name,
+                            measurements,
+                            sig,
+                        )?;
+                        signed_data_body += encap_bytes_written;
 
-        // CMS version
-        let mut signed_data_body = self.encode_cms_version(sid);
+                        sign_cb(&*w.certificate, csr_range, false, sig)?;
 
-        // digestAlgorithms
-        signed_data_body += self.encode_tag_field(Self::SET_OF_TAG);
-        signed_data_body += self.encode_size_field(self.get_hash_alg_id_size(/*tagged=*/ true));
-        signed_data_body += self.encode_hash_alg_id();
+                        // signerInfos
+                        signed_data_body += w.encode_tag_field(Self::SET_OF_TAG);
+                        signed_data_body +=
+                            w.encode_size_field(w.get_signer_info_size(sig, sid, /*tagged=*/ true));
+                        signed_data_body += w.encode_signer_info(sig, sid)?;
+                        sig.zeroize();
 
-        // encapContentInfo
-        signed_data_body += self.encode_encapsulated_content_info(
-            sign_cb,
-            pub_key,
-            subject_name,
-            measurements,
-            sig,
-        )?;
+                        Ok(signed_data_body)
+                    })
+                })?;
 
-        let (csr_start, csr_end) = self.csr_range.ok_or(DpeErrorCode::X509CsrUnset)?;
-        sign_cb(&*self.certificate, csr_start..csr_end, false, sig)?;
-
-        // signerInfos
-        signed_data_body += self.encode_tag_field(Self::SET_OF_TAG);
-        signed_data_body +=
-            self.encode_size_field(self.get_signer_info_size(sig, sid, /*tagged=*/ true));
-        signed_data_body += self.encode_signer_info(sig, sid)?;
-        sig.zeroize();
-
-        // Each layer's size is its prefix (tag + reserved length, counted above)
-        // plus its content — a plain sum, since the reserved length width is
-        // already folded into the prefixes. pop_backtrack re-verifies that each
-        // length really is a 3-byte field before it is written.
-        //   signed_data_field_1 = SignedData SEQUENCE content
-        //   signed_data_field_0 = content [0] EXPLICIT = SignedData (tag + len + content)
-        let signed_data_field_1 = signed_data_body;
-        let signed_data_field_0 = signed_data_prefix + signed_data_field_1;
-        let content_info_size = content_info_body + signed_data_field_0;
-
-        self.backtrack_and_encode_size(
-            &[signed_data_field_1, signed_data_field_0, content_info_size],
-            None,
-        )?;
-
-        if !self.backtracks.is_empty() {
-            return Err(DpeErrorCode::X509InvalidState);
-        }
+            Ok(content_info_body)
+        })?;
 
         self.check_not_truncated()?;
-        Ok(content_info_prefix + content_info_size)
+        Ok(bytes_written)
     }
 }
 
@@ -4118,85 +4039,6 @@ pub(crate) mod tests {
         assert_eq!(&buf[..n], expected);
     }
 
-    #[test]
-    #[cfg(any(feature = "p384", feature = "p256"))]
-    fn test_encode_cms_rejects_unresolved_backtrack() {
-        let mut buf = [0u8; 4096];
-        let mut sbuf = SliceResponseBuffer::new(&mut buf);
-        let mut w = CertWriter::new(&mut sbuf, DPE_PROFILE, true);
-
-        // Pre-push one extra backtrack to simulate a push/pop imbalance.
-        // encode_cms pushes 3 and pops 3; this extra entry survives those
-        // pops and triggers the X509InvalidState guard at the end of encode_cms.
-        w.push_backtrack(super::SIZE_TAG_OFFSET).unwrap();
-
-        const ECC_INT_SIZE: usize = DPE_PROFILE.ecc_int_size();
-        let test_pub = EcdsaPub::from_slice(&[0xAA; ECC_INT_SIZE], &[0xBB; ECC_INT_SIZE]);
-        let pub_key = match DPE_PROFILE.alg() {
-            #[cfg(feature = "p256")]
-            SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit256) => {
-                PubKey::Ecdsa(EcdsaPubKey::Ecdsa256(test_pub))
-            }
-            #[cfg(feature = "p384")]
-            SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384) => {
-                PubKey::Ecdsa(EcdsaPubKey::Ecdsa384(test_pub))
-            }
-            _ => panic!("unsupported algorithm"),
-        };
-        let test_sig: Signature = match DPE_PROFILE.alg() {
-            #[cfg(feature = "p256")]
-            SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit256) => Signature::Ecdsa(
-                EcdsaSig::from_slice(&[0xCC; ECC_INT_SIZE], &[0xDD; ECC_INT_SIZE]).into(),
-            ),
-            #[cfg(feature = "p384")]
-            SignatureAlgorithm::Ecdsa(EcdsaAlgorithm::Bit384) => Signature::Ecdsa(
-                EcdsaSig::from_slice(&[0xCC; ECC_INT_SIZE], &[0xDD; ECC_INT_SIZE]).into(),
-            ),
-            _ => panic!("unsupported algorithm"),
-        };
-        let mut sign_cb = |_buf: &dyn ResponseBuffer,
-                           _range: core::ops::Range<usize>,
-                           _use_derived: bool,
-                           out: &mut Signature| {
-            *out = test_sig.clone();
-            Ok(())
-        };
-        let mut sig = test_sig.clone();
-
-        let context = Context {
-            state: ContextState::Active,
-            ..Context::default()
-        };
-        let contexts = [context];
-        let subject_key_identifier = [0xBB; MAX_KEY_IDENTIFIER_SIZE];
-        let measurements = MeasurementData {
-            label: &[0; DPE_PROFILE.hash_size()],
-            tci_nodes: TciNodes::new(0, &contexts).unwrap(),
-            is_ca: false,
-            supports_recursive: false,
-            subject_key_identifier,
-            authority_key_identifier: subject_key_identifier,
-            subject_alt_name: None,
-        };
-
-        let mut ski = ArrayVec::new();
-        ski.try_extend_from_slice(&[0xBB; MAX_KEY_IDENTIFIER_SIZE])
-            .unwrap();
-        let sid = SignerIdentifier::SubjectKeyIdentifier(ski);
-
-        assert_eq!(
-            w.encode_cms(
-                &mut sign_cb,
-                &pub_key,
-                &TEST_SUBJECT_NAME,
-                &measurements,
-                &sid,
-                &mut sig,
-            ),
-            Err(DpeErrorCode::X509InvalidState),
-        );
-    }
-
     // ===== Correctness tests for encode_tbs / encode_certification_request_info /
     //       encode_csr / encode_signer_info =====
 
@@ -4266,12 +4108,12 @@ pub(crate) mod tests {
     /// CertificationRequestInfo) uses the 3-byte DER long-form length field —
     /// i.e. its content length is in `256..=65535` (`get_size_width == 3`).
     ///
-    /// This is a hard precondition of the size-field backtracking optimization:
+    /// This is a hard precondition of the deferred-length optimization:
     /// `encode_tbs` / `encode_certification_request_info` reserve exactly
     /// `SIZE_TAG_OFFSET` (3) bytes for the length before the content size is
     /// known, then backfill it. If a real structure ever encoded to a shorter
     /// (<256, width 1-2) or longer (>65535, width 4-5) length, the reserved
-    /// width would be wrong and `pop_backtrack` would reject it (or leave a gap
+    /// width would be wrong and `backfill_size` would reject it (or leave a gap
     /// in the output). Checking the minimal and maximal structures the
     /// implementation can emit guards that this never happens in practice.
     fn assert_seq_len_width3(der: &[u8], what: &str) {
@@ -4283,14 +4125,82 @@ pub(crate) mod tests {
         assert_eq!(
             der[1], 0x82,
             "{what}: outer length byte is {:#04x}, not the 3-byte form (0x82) the \
-             backtracking optimization reserves",
+             deferred-length optimization reserves",
             der[1],
         );
         let len = ((der[2] as usize) << 8) | der[3] as usize;
         assert!(
             (256..=65535).contains(&len),
-            "{what}: content length {len} is outside the backtrack bounds 256..=65535",
+            "{what}: content length {len} is outside the deferred-length bounds 256..=65535",
         );
+    }
+
+    /// The floor of the 3-byte deferred-length assumption.
+    ///
+    /// Every deferred-length structure contains a TBSCertificate or a
+    /// CertificationRequestInfo, so those two are the smallest things the
+    /// encoder can emit. Encode both with the most degenerate inputs the API
+    /// accepts (1-character issuer CN/serial, 1-character subject serial, no
+    /// SAN, not a CA, no recursive support, a single TCI node) and check they
+    /// still need the 3-byte length form. Real inputs are strictly larger
+    /// (the subject serial alone is `2 * hash_size` hex characters).
+    #[test]
+    fn test_deferred_length_width_floor() {
+        let issuer_der = encode_issuer_der(1, 1);
+        let label_bytes = vec![0u8; DPE_PROFILE.hash_size()];
+        let contexts = make_test_contexts(1);
+        let ski = [0xBBu8; MAX_KEY_IDENTIFIER_SIZE];
+        let measurements = MeasurementData {
+            label: &label_bytes,
+            tci_nodes: TciNodes::new(0, contexts.as_slice()).unwrap(),
+            is_ca: false,
+            supports_recursive: false,
+            subject_key_identifier: ski,
+            authority_key_identifier: ski,
+            subject_alt_name: None,
+        };
+        #[allow(unreachable_patterns)]
+        let pub_key =
+            match DPE_PROFILE {
+                #[cfg(feature = "p256")]
+                DpeProfile::P256Sha256 => PubKey::Ecdsa(EcdsaPubKey::Ecdsa256(
+                    EcdsaPub::from_slice(&[0xAA; ECC_INT_SIZE], &[0xBB; ECC_INT_SIZE]),
+                )),
+                #[cfg(feature = "p384")]
+                DpeProfile::P384Sha384 => PubKey::Ecdsa(EcdsaPubKey::Ecdsa384(
+                    EcdsaPub::from_slice(&[0xAA; ECC_INT_SIZE], &[0xBB; ECC_INT_SIZE]),
+                )),
+                #[cfg(feature = "ml-dsa")]
+                DpeProfile::Mldsa87 => PubKey::Mldsa(caliptra_dpe_crypto::ml_dsa::MldsaPublicKey(
+                    [0xAA; caliptra_dpe_crypto::ml_dsa::MldsaAlgorithm::Mldsa87.public_key_size()],
+                )),
+                _ => panic!("unsupported profile"),
+            };
+        let subject = Name {
+            cn: DirectoryString::PrintableString(b"DPE Leaf"),
+            serial: DirectoryString::PrintableString(b"0"),
+        };
+
+        let mut buf = vec![0u8; 65536];
+        let mut sbuf = SliceResponseBuffer::new(&mut buf);
+        let n = CertWriter::new(&mut sbuf, DPE_PROFILE, true)
+            .encode_tbs(
+                TEST_SERIAL,
+                &issuer_der,
+                &subject,
+                &pub_key,
+                &measurements,
+                &make_validity(false),
+            )
+            .unwrap();
+        assert_seq_len_width3(&buf[..n], "minimal TBSCertificate");
+
+        let mut buf = vec![0u8; 65536];
+        let mut sbuf = SliceResponseBuffer::new(&mut buf);
+        let n = CertWriter::new(&mut sbuf, DPE_PROFILE, true)
+            .encode_certification_request_info(&pub_key, &subject, &measurements)
+            .unwrap();
+        assert_seq_len_width3(&buf[..n], "minimal CertificationRequestInfo");
     }
 
     // Expected DER bytes of SEQUENCE { INTEGER(r), INTEGER(s) } for our ECDSA test sig.

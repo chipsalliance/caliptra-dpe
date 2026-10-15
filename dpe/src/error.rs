@@ -177,6 +177,9 @@ pub enum DpeErrorCode {
     AlreadyInitialized = 0x84,
     InvalidParentLocality = 0x85,
     // The following errors, are neither defined in the OCP Security spec, nor the TCG spec.
+    // X509CsrUnset, X509InvalidState and X509SkipsExhausted are no longer produced: they guarded
+    // encoder bookkeeping mistakes that the deferred-length API now rules out at compile time.
+    // The variants are retained so the numeric error-code ABI stays stable.
     X509CsrUnset = 0x86,
     X509InvalidState = 0x87,
     X509SkipsExhausted = 0x88,
