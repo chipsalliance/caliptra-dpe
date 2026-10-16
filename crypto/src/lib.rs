@@ -323,6 +323,10 @@ pub enum SignData<'a> {
     Mu(Mu),
     ResponseBuffer(&'a dyn ResponseBuffer, Range<usize>),
     Raw(&'a [u8]),
+    RawWithContext {
+        context: &'a [u8],
+        message: &'a [u8],
+    },
 }
 
 impl SignData<'_> {
@@ -332,6 +336,7 @@ impl SignData<'_> {
             Self::Mu(mu) => mu.0.len(),
             Self::ResponseBuffer(_, range) => range.len(),
             Self::Raw(raw) => raw.len(),
+            Self::RawWithContext { message, .. } => message.len(),
         }
     }
 }
