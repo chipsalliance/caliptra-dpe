@@ -97,6 +97,21 @@ var SignAsymmetricTestCase = TestCase{
 	"Sign", TestAsymmetricSigning, []string{"AutoInit", "X509"},
 }
 
+// SignRawTestCase tests Sign in raw mode
+var SignRawTestCase = TestCase{
+	"SignRaw", TestSignRawMode, []string{"AutoInit", "X509"},
+}
+
+// SignRawConsistencyWithNormalMuTestCase tests Sign in raw mode vs external mu
+var SignRawConsistencyWithNormalMuTestCase = TestCase{
+	"SignRawConsistencyWithNormalMu", TestSignRawConsistencyWithNormalMu, []string{"AutoInit", "X509"},
+}
+
+// SignRawWithContextTestCase tests Sign in raw mode with FIPS 204 context
+var SignRawWithContextTestCase = TestCase{
+	"SignRawWithContext", TestSignRawWithContext, []string{"AutoInit", "X509"},
+}
+
 // SignSimulationTestCase tests Sign with Simulation contexts
 var SignSimulationTestCase = TestCase{
 	"SignSimulation", TestSignSimulation, []string{"Simulation"},
@@ -187,6 +202,9 @@ var AllTestCases = []TestCase{
 	RotateContextTestCase,
 	RotateContextSimulationTestCase,
 	SignAsymmetricTestCase,
+	SignRawTestCase,
+	SignRawConsistencyWithNormalMuTestCase,
+	SignRawWithContextTestCase,
 	SignSimulationTestCase,
 	GetProfileTestCase,
 	InitializeContextTestCase,
