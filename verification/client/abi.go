@@ -20,7 +20,7 @@ const (
 	RespMagic uint32 = 0x44504552
 
 	CurrentProfileMajorVersion uint16 = 0
-	CurrentProfileMinorVersion uint16 = 13
+	CurrentProfileMinorVersion uint16 = 14
 
 	// Max size for raw sign data (matches DPE fixed-size command layout).
 	SignRawMaxSize = 1024
@@ -285,7 +285,8 @@ type UpdateContextMeasurementResp struct {
 type SignFlags uint32
 
 const (
-	SignFlagIsRaw SignFlags = 1 << 0
+	SignFlagIsRaw      SignFlags = 1 << 0
+	SignFlagHasContext SignFlags = 1 << 1
 )
 
 // SignReq is the input request to Sign
@@ -865,6 +866,22 @@ func (c *DPEABI[_, Digest, _, SignData, Signature]) Sign(handle *ContextHandle, 
 
 // SignRaw calls DPE Sign command with raw data
 func (c *DPEABI[_, Digest, _, _, Signature]) SignRaw(handle *ContextHandle, label []byte, rawData []byte) (*DPESignedHash, error) {
+	return c.signRaw(handle, label, SignFlagIsRaw, rawData)
+}
+
+// SignRawWithContext calls DPE Sign command with raw data and a FIPS 204 context string.
+func (c *DPEABI[_, Digest, _, _, Signature]) SignRawWithContext(handle *ContextHandle, label []byte, context []byte, message []byte) (*DPESignedHash, error) {
+	if len(context) > 255 {
+		return nil, fmt.Errorf("context length %d exceeds maximum of 255 bytes", len(context))
+	}
+	rawData := make([]byte, 1+len(context)+len(message))
+	rawData[0] = byte(len(context))
+	copy(rawData[1:1+len(context)], context)
+	copy(rawData[1+len(context):], message)
+	return c.signRaw(handle, label, SignFlagIsRaw|SignFlagHasContext, rawData)
+}
+
+func (c *DPEABI[_, Digest, _, _, Signature]) signRaw(handle *ContextHandle, label []byte, flags SignFlags, rawData []byte) (*DPESignedHash, error) {
 	// Only ML-DSA supports raw signing.
 	if c.Profile != ProfileMldsa87 {
 		return nil, fmt.Errorf("SignRaw not implemented for this profile")
@@ -890,7 +907,7 @@ func (c *DPEABI[_, Digest, _, _, Signature]) SignRaw(handle *ContextHandle, labe
 	cmd := &SignRawCmd[Digest]{
 		ContextHandle: *handle,
 		Label:         l,
-		Flags:         SignFlagIsRaw,
+		Flags:         flags,
 		Size:          uint32(len(rawData)),
 		RawData:       rawBuf,
 	}

@@ -132,3 +132,68 @@ func TestSignRawConsistencyWithNormalMu(d client.TestDPEInstance, c client.DPECl
 		t.Error("Raw and normal signatures do not match")
 	}
 }
+
+// TestSignRawWithContext validates the context-aware raw sign functionality for ML-DSA
+func TestSignRawWithContext(d client.TestDPEInstance, c client.DPEClient, t *testing.T) {
+	// Get profile
+	profile, err := client.GetTransportProfile(d)
+	if err != nil {
+		t.Fatalf("Could not get profile: %v", err)
+	}
+
+	// Skip test if not ML-DSA profile
+	if profile != client.ProfileMldsa87 {
+		t.Skip("SignRawWithContext is only applicable to ML-DSA profile")
+	}
+
+	useSimulation := false
+	handle := getInitialContextHandle(d, c, t, useSimulation)
+
+	digestLen := profile.GetDigestSize()
+
+	// Create label
+	seqLabel := make([]byte, digestLen)
+	for i := range seqLabel {
+		seqLabel[i] = byte(i)
+	}
+
+	// Get signing key certificate using CertifyKey command
+	certifiedKey, err := c.CertifyKey(handle, seqLabel, client.CertifyKeyX509, client.CertifyKeyFlags(0))
+	if err != nil {
+		t.Fatalf("[FATAL]: Could not CertifyKey: %v", err)
+	}
+	handle = &certifiedKey.Handle
+
+	context := []byte("responder-challenge_auth signing")
+	testMessage := []byte("This is a test message for ML-DSA raw signing with context")
+
+	signResp, err := c.SignRawWithContext(handle, seqLabel, context, testMessage)
+	if err != nil {
+		t.Fatalf("[FATAL]: Error while signing with context: %v", err)
+	}
+	handle = &signResp.Handle
+
+	if len(signResp.Signature) != mldsa.MLDSA87SignatureSize {
+		t.Errorf("Incorrect signature length for ML-DSA-87: got %d, want %d", len(signResp.Signature), mldsa.MLDSA87SignatureSize)
+	}
+
+	pk, err := mldsa.NewPublicKey(mldsa.MLDSA87(), certifiedKey.Pub.X)
+	if err != nil {
+		t.Fatalf("Failed to parse ML-DSA public key: %v", err)
+	}
+
+	// Verify using the original message and matching context
+	if err := mldsa.Verify(pk, testMessage, signResp.Signature, &mldsa.Options{Context: string(context)}); err != nil {
+		t.Errorf("ML-DSA Signature Verification failed for raw signing with context: %v", err)
+	}
+
+	// Verify fails with wrong context
+	if err := mldsa.Verify(pk, testMessage, signResp.Signature, &mldsa.Options{Context: "wrong context"}); err == nil {
+		t.Error("ML-DSA Signature Verification succeeded with wrong context, expected failure")
+	}
+
+	// Verify fails with empty context
+	if err := mldsa.Verify(pk, testMessage, signResp.Signature, nil); err == nil {
+		t.Error("ML-DSA Signature Verification succeeded with empty context, expected failure")
+	}
+}
