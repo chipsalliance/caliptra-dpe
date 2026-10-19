@@ -53,7 +53,7 @@ include!(concat!(env!("OUT_DIR"), "/max_cert_size.rs"));
 include!(concat!(env!("OUT_DIR"), "/max_handles.rs"));
 
 const CURRENT_PROFILE_MAJOR_VERSION: u16 = 0;
-const CURRENT_PROFILE_MINOR_VERSION: u16 = 13;
+const CURRENT_PROFILE_MINOR_VERSION: u16 = 14;
 
 #[cfg(not(feature = "disable_internal_info"))]
 const INTERNAL_INPUT_INFO_SIZE: usize = size_of::<GetProfileResp>() + size_of::<u32>();
