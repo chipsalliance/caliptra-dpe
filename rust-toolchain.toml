@@ -1,6 +1,6 @@
 # Licensed under the Apache-2.0 license
 
 [toolchain]
-channel = "1.85"
+channel = "1.96"
 components = ["rustfmt", "clippy"]
 targets = ["riscv32imc-unknown-none-elf"]
