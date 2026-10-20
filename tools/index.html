@@ -216,14 +216,14 @@
 
     <div class="input-card">
       <div class="drag-zone" id="dragZone">
-        📁 Drag & drop a <b>.pem</b> or <b>.der</b> (or raw DPE response packet / CMS SignedData) here, or <a href="#" id="fileSelectLink" style="color:var(--accent);">browse file</a>
+        📁 Drag & drop a <b>.pem</b> or <b>.der</b> certificate / certificate chain (or raw DPE response packet / CMS SignedData) here, or <a href="#" id="fileSelectLink" style="color:var(--accent);">browse file</a>
         <input type="file" id="fileInput" style="display:none;">
       </div>
 
-      <textarea id="pemInput" placeholder="Paste PEM certificate, CSR, Base64, or Hex bytes here..."></textarea>
+      <textarea id="pemInput" placeholder="Paste PEM certificate, full PEM certificate chain, CSR, or Hex bytes here..."></textarea>
       
       <div class="button-group">
-        <button id="renderBtn">Visualize Certificate / CSR</button>
+        <button id="renderBtn">Visualize Certificate / Chain / CSR</button>
         <button id="sampleBtn" class="secondary">Load Sample Cert</button>
         <button id="clearBtn" class="secondary">Clear</button>
       </div>
@@ -304,10 +304,15 @@
         category: "DICE TCB Info (2.23.133.5.4.1)",
         description: "Vendor-defined supplementary binary data, such as SVN masks, platform configuration flags, or raw attestation metadata."
       },
+      "flags": {
+        title: "Operational Flags",
+        category: "DICE TCB Info (2.23.133.5.4.1)",
+        description: "TCG DICE OperationalFlags BIT STRING indicating device security state during derivation (e.g., notConfigured, notSecure, recovery, debug, fixedWidth)."
+      },
       "operational flags mask": {
         title: "Operational Flags Mask",
         category: "DICE TCB Info (2.23.133.5.4.1)",
-        description: "Bitmask indicating operational or security conditions during context derivation (e.g., debug mode enabled, production mode, or fuse settings)."
+        description: "Bitmask indicating which operational or security flags in the Flags field are valid and active during context derivation."
       },
       "fwids / measurements": {
         title: "FWIDs / Measurements",
@@ -384,10 +389,20 @@
         category: "Standard X.509 Extension",
         description: "Specifies specialized usage scenarios, such as tcg-dice-kp-attestLoc (DPE Attestation Key for Locality/DPE)."
       },
+      "subjectkeyidentifier": {
+        title: "Subject Key Identifier (OID 2.5.29.14)",
+        category: "Standard X.509 Extension",
+        description: "The Key Identifier (SHA-1 / SHA-256 hash of this certificate's public key), referenced by child certificates' Authority Key Identifier."
+      },
       "authoritykeyidentifier": {
         title: "Authority Key Identifier (OID 2.5.29.35)",
         category: "Standard X.509 Extension",
         description: "The Key Identifier (SHA-1 / SHA-256 hash of public key) of the issuing parent key, establishing the certificate chain."
+      },
+      "validity": {
+        title: "Validity Period",
+        category: "X.509 Certificate Header",
+        description: "The NotBefore and NotAfter timestamps bounding the certificate's validity window."
       }
     };
 
@@ -478,7 +493,7 @@
       if (currentFileBytes) {
         certBytes = currentFileBytes;
       } else if (textInput) {
-        if (textInput.startsWith("-----BEGIN")) {
+        if (textInput.includes("-----BEGIN")) {
           certBytes = new TextEncoder().encode(textInput);
         } else {
           const hexBytes = hexToBytes(textInput);
@@ -489,7 +504,7 @@
           }
         }
       } else {
-        showError("Please provide a PEM certificate, CSR, or select a file.");
+        showError("Please provide a PEM certificate, certificate chain, CSR, or select a file.");
         return;
       }
 
@@ -518,6 +533,11 @@
       }
     }
 
+    document.getElementById("pemInput").addEventListener("input", () => {
+      currentFileBytes = null;
+      document.getElementById("fileInput").value = "";
+    });
+
     document.getElementById("renderBtn").addEventListener("click", () => {
       processAndRender();
     });
@@ -537,7 +557,7 @@
       currentFileBytes = null;
       document.getElementById("fileInput").value = "";
       document.getElementById("pemInput").value = "";
-      document.getElementById("output").innerHTML = '<p style="color:#94a3b8;">Select a file or paste a DPE certificate/CSR above and click <b>Visualize</b>.</p>';
+      document.getElementById("output").innerHTML = '<p style="color:#94a3b8;">Select a file or paste a DPE certificate/chain/CSR above and click <b>Visualize</b>.</p>';
     });
 
     // File Drag & Drop Setup
@@ -577,8 +597,8 @@
       const reader = new FileReader();
       reader.onload = (evt) => {
         currentFileBytes = new Uint8Array(evt.target.result);
-        const text = new TextDecoder().decode(currentFileBytes.slice(0, 100));
-        if (text.startsWith("-----BEGIN")) {
+        const text = new TextDecoder().decode(currentFileBytes.slice(0, 512));
+        if (text.includes("-----BEGIN")) {
           document.getElementById("pemInput").value = new TextDecoder().encode(currentFileBytes);
         } else {
           document.getElementById("pemInput").value = `[Loaded binary file: ${file.name} (${currentFileBytes.length} bytes)]`;
