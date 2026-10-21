@@ -521,7 +521,6 @@ fn test_rust_targets(profile: &str) -> Result<()> {
                 let opts = CargoOptions::with_features(manifest, &format!("{},cfi", profile));
                 cargo_test(&opts, &["--test-threads=1"])?;
             }
-            "tools/Cargo.toml" => {} // tools has no tests
             m => {
                 let opts =
                     CargoOptions::with_features(m, &features_for(m, profile).unwrap_or_default());
