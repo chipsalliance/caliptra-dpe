@@ -1239,7 +1239,7 @@ impl CertWriter<'_> {
     }
 
     /// Encode Signature into BIT STRING
-    #[cfg(not(feature = "disable_csr"))]
+    #[cfg(any(not(feature = "disable_x509"), not(feature = "disable_csr")))]
     fn encode_signature_bit_string(&mut self, sig: &Signature) -> usize {
         match sig {
             Signature::Ecdsa(sig) => {
@@ -2530,6 +2530,7 @@ enum CertOrCsrArgs<'a> {
         issuer_name: &'a [u8],
         cert_validity: &'a CertValidity,
     },
+    #[cfg(not(feature = "disable_csr"))]
     Csr {
         signer_identifier: &'a SignerIdentifier,
     },
@@ -2714,6 +2715,7 @@ fn create_dpe_cert_or_csr(
 
     let mut issuer_name = [0u8; MAX_ISSUER_NAME_SIZE];
     let cert_validity = platform.get_cert_validity()?;
+    #[cfg(not(feature = "disable_csr"))]
     let signer_identifier = platform.get_signer_identifier()?;
     let format_specific_args = match cert_format {
         CertificateFormat::X509 => {
@@ -2729,6 +2731,7 @@ fn create_dpe_cert_or_csr(
                 cert_validity: &cert_validity,
             }
         }
+        #[cfg(not(feature = "disable_csr"))]
         CertificateFormat::Csr => CertOrCsrArgs::Csr {
             signer_identifier: &signer_identifier,
         },
