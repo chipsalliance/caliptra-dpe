@@ -53,6 +53,10 @@ pub struct ParsedTcbInfo {
     pub operational_flags_mask: Option<String>,
     pub operational_flags_mask_bytes: Option<Vec<u8>>,
     pub integrity_registers: Vec<ParsedIntegrityRegister>,
+    /// Non-empty when the ASN.1 encoding of this `DiceTcbInfo` violates the
+    /// TCG DICE specification (e.g. EXPLICIT context tags instead of IMPLICIT)
+    /// and was recovered only via a lenient fallback parser.
+    pub encoding_warnings: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -194,59 +198,115 @@ fn oid_friendly_name(oid_str: &str) -> String {
     }
 }
 
-fn parse_single_tcb_info(tcb: &TcbInfo) -> ParsedTcbInfo {
-    let mut parsed_fwids = Vec::new();
-    if let Some(fwids_seq) = &tcb.fwids {
-        for fwid in fwids_seq.clone() {
-            parsed_fwids.push(ParsedFwid {
-                hash_alg: fwid.hash_alg.to_string(),
-                digest: fwid.digest.to_vec(),
-            });
-        }
-    }
+/// Converts any of the `TcbInfo`-shaped structs (`TcbInfo`, `ExplicitTcbInfo`,
+/// `LegacyTcbInfo`) into a `ParsedTcbInfo`. The structs share field names but
+/// are distinct types, so a macro is used instead of a trait to avoid
+/// duplicating this conversion three times.
+macro_rules! convert_tcb_info {
+    ($tcb:expr, $mask:expr) => {{
+        let tcb = $tcb;
+        let mask: Option<&asn1::BitString> = $mask;
 
-    let mut parsed_irs = Vec::new();
-    if let Some(irs_seq) = &tcb.integrity_registers {
-        for ir in irs_seq.clone() {
-            let mut ir_digests = Vec::new();
-            if let Some(ir_fwids) = ir.register_digests {
-                for fwid in ir_fwids {
-                    ir_digests.push(ParsedFwid {
-                        hash_alg: fwid.hash_alg.to_string(),
-                        digest: fwid.digest.to_vec(),
-                    });
-                }
+        let mut parsed_fwids = Vec::new();
+        if let Some(fwids_seq) = &tcb.fwids {
+            for fwid in fwids_seq.clone() {
+                parsed_fwids.push(ParsedFwid {
+                    hash_alg: fwid.hash_alg.to_string(),
+                    digest: fwid.digest.to_vec(),
+                });
             }
-            parsed_irs.push(ParsedIntegrityRegister {
-                name: ir.register_name.map(|s| s.as_str().to_string()),
-                num: ir.register_num,
-                digests: ir_digests,
-            });
         }
-    }
 
-    ParsedTcbInfo {
-        vendor: tcb.vendor.clone().map(|s| s.as_str().to_string()),
-        model: tcb.model.clone().map(|s| s.as_str().to_string()),
-        version: tcb.version.clone().map(|s| s.as_str().to_string()),
-        svn: tcb.svn,
-        layer: tcb.layer,
-        index: tcb.index,
-        fwids: parsed_fwids,
-        flags: tcb.flags.as_ref().map(format_operational_flags),
-        flags_bytes: tcb.flags.as_ref().map(|b| b.as_bytes().to_vec()),
-        vendor_info: tcb.vendor_info.map(|v| v.to_vec()),
-        tci_type: tcb.tci_type.map(|t| t.to_vec()),
-        operational_flags_mask: tcb
-            .operational_flags_mask
-            .as_ref()
-            .map(format_operational_flags),
-        operational_flags_mask_bytes: tcb
-            .operational_flags_mask
-            .as_ref()
-            .map(|b| b.as_bytes().to_vec()),
-        integrity_registers: parsed_irs,
-    }
+        let mut parsed_irs = Vec::new();
+        if let Some(irs_seq) = &tcb.integrity_registers {
+            for ir in irs_seq.clone() {
+                let mut ir_digests = Vec::new();
+                if let Some(ir_fwids) = ir.register_digests {
+                    for fwid in ir_fwids {
+                        ir_digests.push(ParsedFwid {
+                            hash_alg: fwid.hash_alg.to_string(),
+                            digest: fwid.digest.to_vec(),
+                        });
+                    }
+                }
+                parsed_irs.push(ParsedIntegrityRegister {
+                    name: ir.register_name.map(|s| s.as_str().to_string()),
+                    num: ir.register_num,
+                    digests: ir_digests,
+                });
+            }
+        }
+
+        ParsedTcbInfo {
+            vendor: tcb.vendor.clone().map(|s| s.as_str().to_string()),
+            model: tcb.model.clone().map(|s| s.as_str().to_string()),
+            version: tcb.version.clone().map(|s| s.as_str().to_string()),
+            svn: tcb.svn,
+            layer: tcb.layer,
+            index: tcb.index,
+            fwids: parsed_fwids,
+            flags: tcb.flags.as_ref().map(format_operational_flags),
+            flags_bytes: tcb.flags.as_ref().map(|b| b.as_bytes().to_vec()),
+            vendor_info: tcb.vendor_info.map(|v| v.to_vec()),
+            tci_type: tcb.tci_type.map(|t| t.to_vec()),
+            operational_flags_mask: mask.map(format_operational_flags),
+            operational_flags_mask_bytes: mask.map(|b| b.as_bytes().to_vec()),
+            integrity_registers: parsed_irs,
+            encoding_warnings: Vec::new(),
+        }
+    }};
+}
+
+fn parse_single_tcb_info(tcb: &TcbInfo) -> ParsedTcbInfo {
+    convert_tcb_info!(tcb, tcb.operational_flags_mask.as_ref())
+}
+
+const EXPLICIT_TAGGING_WARNING: &str =
+    "DiceTcbInfo fields are encoded with EXPLICIT ASN.1 context tags (constructed [n] wrappers) \
+     instead of the IMPLICIT tags required by the TCG DICE Attestation Architecture. \
+     Strict verifiers will reject this extension; values below were recovered with a lenient parser.";
+
+/// `DiceTcbInfo` with EXPLICIT context tags.
+///
+/// The TCG DICE Attestation Architecture specifies IMPLICIT tagging for
+/// `DiceTcbInfo`, but some implementations emit EXPLICIT tags (a constructed
+/// `[n]` wrapper around the universal-tagged inner value). This struct accepts
+/// that encoding so such certificates are still displayed with their TCB
+/// fields instead of failing to parse.
+#[derive(asn1::Asn1Read)]
+pub struct ExplicitTcbInfo<'a> {
+    #[explicit(0)]
+    pub vendor: Option<asn1::Utf8String<'a>>,
+    #[explicit(1)]
+    pub model: Option<asn1::Utf8String<'a>>,
+    #[explicit(2)]
+    pub version: Option<asn1::Utf8String<'a>>,
+    #[explicit(3)]
+    pub svn: Option<u64>,
+    #[explicit(4)]
+    pub layer: Option<u64>,
+    #[explicit(5)]
+    pub index: Option<u64>,
+    #[explicit(6)]
+    pub fwids: Option<asn1::SequenceOf<'a, Fwid<'a>>>,
+    #[explicit(7)]
+    pub flags: Option<asn1::BitString<'a>>,
+    #[explicit(8)]
+    pub vendor_info: Option<&'a [u8]>,
+    #[explicit(9)]
+    pub tci_type: Option<&'a [u8]>,
+    #[explicit(10)]
+    pub operational_flags_mask: Option<asn1::BitString<'a>>,
+    #[explicit(11)]
+    pub integrity_registers: Option<asn1::SequenceOf<'a, IntegrityRegister<'a>>>,
+}
+
+fn parse_explicit_tcb_info(tcb: &ExplicitTcbInfo) -> ParsedTcbInfo {
+    let mut parsed = convert_tcb_info!(tcb, tcb.operational_flags_mask.as_ref());
+    parsed
+        .encoding_warnings
+        .push(EXPLICIT_TAGGING_WARNING.to_string());
+    parsed
 }
 
 #[derive(asn1::Asn1Read)]
@@ -276,52 +336,7 @@ pub struct LegacyTcbInfo<'a> {
 }
 
 fn parse_legacy_tcb_info(tcb: &LegacyTcbInfo) -> ParsedTcbInfo {
-    let mut parsed_fwids = Vec::new();
-    if let Some(fwids_seq) = &tcb.fwids {
-        for fwid in fwids_seq.clone() {
-            parsed_fwids.push(ParsedFwid {
-                hash_alg: fwid.hash_alg.to_string(),
-                digest: fwid.digest.to_vec(),
-            });
-        }
-    }
-
-    let mut parsed_irs = Vec::new();
-    if let Some(irs_seq) = &tcb.integrity_registers {
-        for ir in irs_seq.clone() {
-            let mut ir_digests = Vec::new();
-            if let Some(ir_fwids) = ir.register_digests {
-                for fwid in ir_fwids {
-                    ir_digests.push(ParsedFwid {
-                        hash_alg: fwid.hash_alg.to_string(),
-                        digest: fwid.digest.to_vec(),
-                    });
-                }
-            }
-            parsed_irs.push(ParsedIntegrityRegister {
-                name: ir.register_name.map(|s| s.as_str().to_string()),
-                num: ir.register_num,
-                digests: ir_digests,
-            });
-        }
-    }
-
-    ParsedTcbInfo {
-        vendor: tcb.vendor.clone().map(|s| s.as_str().to_string()),
-        model: tcb.model.clone().map(|s| s.as_str().to_string()),
-        version: tcb.version.clone().map(|s| s.as_str().to_string()),
-        svn: tcb.svn,
-        layer: tcb.layer,
-        index: tcb.index,
-        fwids: parsed_fwids,
-        flags: tcb.flags.as_ref().map(format_operational_flags),
-        flags_bytes: tcb.flags.as_ref().map(|b| b.as_bytes().to_vec()),
-        vendor_info: tcb.vendor_info.map(|v| v.to_vec()),
-        tci_type: tcb.tci_type.map(|t| t.to_vec()),
-        operational_flags_mask: None,
-        operational_flags_mask_bytes: None,
-        integrity_registers: parsed_irs,
-    }
+    convert_tcb_info!(tcb, None)
 }
 
 struct ExtractedExtensions {
@@ -358,6 +373,11 @@ fn parse_extensions<'a>(
             } else if let Ok(tcb) = asn1::parse_single::<LegacyTcbInfo>(ext.value) {
                 tcb_infos.push(parse_legacy_tcb_info(&tcb));
                 details = "Single TCB Context (Legacy)".to_string();
+            } else if let Ok(tcb) = asn1::parse_single::<ExplicitTcbInfo>(ext.value) {
+                tcb_infos.push(parse_explicit_tcb_info(&tcb));
+                details = "⚠️ Single TCB Context — NON-CONFORMING ASN.1: EXPLICIT context tags \
+                           (spec requires IMPLICIT)"
+                    .to_string();
             } else {
                 details = "Failed to parse TcbInfo".to_string();
             }
@@ -392,13 +412,29 @@ fn parse_extensions<'a>(
                                 .map(|t| parse_legacy_tcb_info(&t))
                                 .collect::<Vec<_>>()
                         })
+                })
+                .or_else(|_| {
+                    asn1::parse_single::<asn1::SequenceOf<ExplicitTcbInfo>>(ext.value).map(|seq| {
+                        seq.into_iter()
+                            .map(|t| parse_explicit_tcb_info(&t))
+                            .collect::<Vec<_>>()
+                    })
                 });
 
             match parsed_seq {
                 Ok(items) => {
                     let count = items.len();
+                    let has_warnings = items.iter().any(|t| !t.encoding_warnings.is_empty());
                     tcb_infos.extend(items);
-                    details = format!("Contains {} TCB Context(s)", count);
+                    if has_warnings {
+                        details = format!(
+                            "⚠️ Contains {} TCB Context(s) — NON-CONFORMING ASN.1: EXPLICIT \
+                             context tags (spec requires IMPLICIT)",
+                            count
+                        );
+                    } else {
+                        details = format!("Contains {} TCB Context(s)", count);
+                    }
                 }
                 Err(e) => {
                     details = format!("Failed to parse SequenceOf<TcbInfo>: {:?}", e);
@@ -846,6 +882,11 @@ pub fn generate_mermaid_graph(cert: &ParsedCert) -> String {
         "    classDef certStyle fill:#14532d,stroke:#22c55e,stroke-width:2px,color:#f8fafc;"
     )
     .unwrap();
+    writeln!(
+        out,
+        "    classDef warnStyle fill:#451a03,stroke:#f59e0b,stroke-width:2px,color:#fde68a;"
+    )
+    .unwrap();
     writeln!(out).unwrap();
     writeln!(
         out,
@@ -858,10 +899,12 @@ pub fn generate_mermaid_graph(cert: &ParsedCert) -> String {
 
     for (i, tcb) in cert.tcb_infos.iter().enumerate() {
         let is_root = i == 0;
+        let has_warn = !tcb.encoding_warnings.is_empty();
+        let warn_prefix = if has_warn { "⚠️ " } else { "" };
         let title = if is_root {
-            format!("TCB Context {} (Root/Initial)", i)
+            format!("{}TCB Context {} (Root/Initial)", warn_prefix, i)
         } else {
-            format!("TCB Context {}", i)
+            format!("{}TCB Context {}", warn_prefix, i)
         };
 
         let tci_type = tcb
@@ -880,20 +923,29 @@ pub fn generate_mermaid_graph(cert: &ParsedCert) -> String {
             "N/A".to_string()
         };
 
-        let class = if is_root {
+        let class = if has_warn {
+            ":::warnStyle"
+        } else if is_root {
             ":::rootStyle"
         } else {
             ":::derivedStyle"
         };
 
+        let warn_line = if has_warn {
+            "<br/>⚠️ Non-conforming ASN.1"
+        } else {
+            ""
+        };
+
         writeln!(
             out,
-            "        NODE{}[\"<b>{}</b><br/>Type: <code>{}</code><br/>SVN: {}<br/>Digest: <code>{}</code>\"]{}",
+            "        NODE{}[\"<b>{}</b><br/>Type: <code>{}</code><br/>SVN: {}<br/>Digest: <code>{}</code>{}\"]{}",
             i,
             title,
             tci_type.replace('"', "'"),
             svn.replace('"', "'"),
             digest.replace('"', "'"),
+            warn_line,
             class
         )
         .unwrap();
@@ -985,6 +1037,11 @@ pub fn generate_chain_mermaid_graph(certs: &[ParsedCert]) -> String {
         "    classDef certStyle fill:#14532d,stroke:#22c55e,stroke-width:2px,color:#f8fafc;"
     )
     .unwrap();
+    writeln!(
+        out,
+        "    classDef warnStyle fill:#451a03,stroke:#f59e0b,stroke-width:2px,color:#fde68a;"
+    )
+    .unwrap();
     writeln!(out).unwrap();
 
     for (c_idx, cert) in certs.iter().enumerate() {
@@ -1000,7 +1057,12 @@ pub fn generate_chain_mermaid_graph(certs: &[ParsedCert]) -> String {
         let num_tcbs = cert.tcb_infos.len();
         for (t_idx, tcb) in cert.tcb_infos.iter().enumerate() {
             let is_root = c_idx == 0 && t_idx == 0;
-            let title = format!("TCB Context {}", t_idx);
+            let has_warn = !tcb.encoding_warnings.is_empty();
+            let title = if has_warn {
+                format!("⚠️ TCB Context {}", t_idx)
+            } else {
+                format!("TCB Context {}", t_idx)
+            };
 
             let tci_type = tcb
                 .tci_type
@@ -1018,21 +1080,30 @@ pub fn generate_chain_mermaid_graph(certs: &[ParsedCert]) -> String {
                 "N/A".to_string()
             };
 
-            let class = if is_root {
+            let class = if has_warn {
+                ":::warnStyle"
+            } else if is_root {
                 ":::rootStyle"
             } else {
                 ":::derivedStyle"
             };
 
+            let warn_line = if has_warn {
+                "<br/>⚠️ Non-conforming ASN.1"
+            } else {
+                ""
+            };
+
             writeln!(
                 out,
-                "        C{}_TCB{}[\"<b>{}</b><br/>Type: <code>{}</code><br/>SVN: {}<br/>Digest: <code>{}</code>\"]{}",
+                "        C{}_TCB{}[\"<b>{}</b><br/>Type: <code>{}</code><br/>SVN: {}<br/>Digest: <code>{}</code>{}\"]{}",
                 c_idx,
                 t_idx,
                 title,
                 tci_type.replace('"', "'"),
                 svn.replace('"', "'"),
                 digest.replace('"', "'"),
+                warn_line,
                 class
             )
             .unwrap();
@@ -1165,6 +1236,9 @@ fn write_cert_details(
                 format!("{}# TCB Context {}\n", heading_prefix, i)
             };
             writeln!(out, "{}", title).unwrap();
+            for warning in &tcb.encoding_warnings {
+                writeln!(out, "> ⚠️ **ASN.1 Encoding Warning:** {}\n", warning).unwrap();
+            }
             writeln!(out, "| Field | Value |").unwrap();
             writeln!(out, "| :--- | :--- |").unwrap();
             writeln!(
@@ -1701,9 +1775,45 @@ pub fn generate_markdown(cert: &ParsedCert) -> String {
     };
 
     writeln!(out, "{}\n", doc_title).unwrap();
+    write_chain_encoding_warnings(&mut out, std::slice::from_ref(cert));
     write_cert_details(&mut out, cert, "##", true);
 
     out
+}
+
+fn write_chain_encoding_warnings(out: &mut String, certs: &[ParsedCert]) {
+    let mut warned_stages = Vec::new();
+    for (idx, cert) in certs.iter().enumerate() {
+        let mut msgs = Vec::new();
+        for tcb in &cert.tcb_infos {
+            for w in &tcb.encoding_warnings {
+                if !msgs.contains(&w.as_str()) {
+                    msgs.push(w.as_str());
+                }
+            }
+        }
+        if !msgs.is_empty() {
+            warned_stages.push((idx, extract_cn(&cert.subject), msgs));
+        }
+    }
+    if warned_stages.is_empty() {
+        return;
+    }
+
+    writeln!(
+        out,
+        "> ⚠️ **Non-Conforming ASN.1 Encoding Detected** — {} certificate(s) contain \
+         `DiceTcbInfo` extensions that violate the TCG DICE specification. The visualizer \
+         recovered the fields below for inspection, but strict verifiers will reject them:",
+        warned_stages.len()
+    )
+    .unwrap();
+    for (idx, cn, msgs) in warned_stages {
+        for msg in msgs {
+            writeln!(out, "> - **Stage {} (`{}`):** {}", idx, cn, msg).unwrap();
+        }
+    }
+    writeln!(out).unwrap();
 }
 
 pub fn generate_chain_markdown(certs: &[ParsedCert]) -> String {
@@ -1719,6 +1829,8 @@ pub fn generate_chain_markdown(certs: &[ParsedCert]) -> String {
     )
     .unwrap();
 
+    write_chain_encoding_warnings(&mut out, certs);
+
     writeln!(out, "## Certificate Chain Summary\n").unwrap();
     writeln!(
         out,
@@ -1731,6 +1843,10 @@ pub fn generate_chain_markdown(certs: &[ParsedCert]) -> String {
         let tcb_summary = if cert.tcb_infos.is_empty() {
             "0".to_string()
         } else {
+            let has_warn = cert
+                .tcb_infos
+                .iter()
+                .any(|t| !t.encoding_warnings.is_empty());
             let types: Vec<String> = cert
                 .tcb_infos
                 .iter()
@@ -1742,7 +1858,12 @@ pub fn generate_chain_markdown(certs: &[ParsedCert]) -> String {
                         .unwrap_or_else(|| "TCB".to_string())
                 })
                 .collect();
-            format!("{} ({})", cert.tcb_infos.len(), types.join(", "))
+            let suffix = if has_warn {
+                " ⚠️ *non-conforming ASN.1*"
+            } else {
+                ""
+            };
+            format!("{} ({}){}", cert.tcb_infos.len(), types.join(", "), suffix)
         };
         writeln!(
             out,
@@ -1914,6 +2035,149 @@ MIICnjCCAiSgAwIBAgIUTxSScDqnxA7dGYrS21FcpyOYlLEwCgYIKoZIzj0EAwMwaTEcMBoGA1UEAwwT
             "Caliptra 1.0 LDevID"
         );
         assert_eq!(extract_cn(&certs_from_resp[3].subject), "DPE Leaf");
+    }
+
+    #[test]
+    fn test_parse_explicit_tagged_tcb_info() {
+        // Construct a synthetic certificate whose `tcg-dice-TcbInfo` extension
+        // encodes `DiceTcbInfo` with EXPLICIT context tags (constructed `[n]`
+        // wrappers around universal-tagged inner values) instead of the
+        // IMPLICIT tags mandated by the TCG DICE specification.
+        #[derive(asn1::Asn1Write)]
+        struct ExplicitTcbInfoWriter<'a> {
+            #[explicit(0)]
+            vendor: Option<asn1::Utf8String<'a>>,
+            #[explicit(1)]
+            model: Option<asn1::Utf8String<'a>>,
+            #[explicit(4)]
+            layer: Option<u64>,
+            #[explicit(5)]
+            index: Option<u64>,
+            #[explicit(6)]
+            fwids: Option<asn1::SequenceOfWriter<'a, caliptra_dpe_dice_asn1::FwidWriter<'a>>>,
+            #[explicit(7)]
+            flags: Option<asn1::BitString<'a>>,
+            #[explicit(9)]
+            tci_type: Option<&'a [u8]>,
+        }
+
+        let sha384_oid = asn1::ObjectIdentifier::from_string("2.16.840.1.101.3.4.2.2").unwrap();
+        let digest = [0x42u8; 48];
+        let fwid_items = [caliptra_dpe_dice_asn1::FwidWriter {
+            hash_alg: sha384_oid,
+            digest: &digest,
+        }];
+        let tcb_der = asn1::write_single(&ExplicitTcbInfoWriter {
+            vendor: Some(asn1::Utf8String::new("ExampleVendor")),
+            model: Some(asn1::Utf8String::new("ModelX")),
+            layer: Some(0),
+            index: Some(0),
+            fwids: Some(asn1::SequenceOfWriter::new(&fwid_items)),
+            flags: asn1::BitString::new(&[0x01], 0),
+            tci_type: Some(b"TEST"),
+        })
+        .unwrap();
+
+        // Wrap `tcb_der` into a `tcg-dice-TcbInfo` (2.23.133.5.4.1) extension
+        // inside a Caliptra-style TBS template.
+        let mut tcb_ext: Vec<u8> = vec![
+            0x30,
+            0x81,
+            (13 + tcb_der.len()) as u8,
+            0x06,
+            6,
+            0x67,
+            0x81,
+            0x05,
+            0x05,
+            0x04,
+            0x01,
+            0x01,
+            1,
+            0xff,
+            0x04,
+            tcb_der.len() as u8,
+        ];
+        tcb_ext.extend_from_slice(&tcb_der);
+
+        let exts_seq_len = tcb_ext.len();
+        let mut exts_wrapper: Vec<u8> = vec![
+            0xa3,
+            0x81,
+            (3 + exts_seq_len) as u8,
+            0x30,
+            0x81,
+            exts_seq_len as u8,
+        ];
+        exts_wrapper.extend_from_slice(&tcb_ext);
+
+        let mut tbs_body: Vec<u8> = vec![
+            160, 3, 2, 1, 2, 2, 20, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 48,
+            10, 6, 8, 42, 134, 72, 206, 61, 4, 3, 3, // issuer: CN=Test Issuer
+            48, 22, 49, 20, 48, 18, 6, 3, 85, 4, 3, 12, 11,
+        ];
+        tbs_body.extend_from_slice(b"Test Issuer");
+        tbs_body.extend_from_slice(&[48, 34, 24, 15]);
+        tbs_body.extend_from_slice(b"20230101000000Z");
+        tbs_body.extend_from_slice(&[24, 15]);
+        tbs_body.extend_from_slice(b"99991231235959Z");
+        // subject: CN=Test Leaf
+        tbs_body.extend_from_slice(&[48, 20, 49, 18, 48, 16, 6, 3, 85, 4, 3, 12, 9]);
+        tbs_body.extend_from_slice(b"Test Leaf");
+        // subjectPublicKeyInfo: P-384
+        tbs_body.extend_from_slice(&[
+            48, 118, 48, 16, 6, 7, 42, 134, 72, 206, 61, 2, 1, 6, 5, 43, 129, 4, 0, 34, 3, 98, 0,
+        ]);
+        tbs_body.extend_from_slice(&[0x04; 97]);
+        tbs_body.extend_from_slice(&exts_wrapper);
+
+        let mut tbs: Vec<u8> = vec![
+            0x30,
+            0x82,
+            (tbs_body.len() >> 8) as u8,
+            (tbs_body.len() & 0xff) as u8,
+        ];
+        tbs.extend_from_slice(&tbs_body);
+
+        let cert_der = wrap_tbs_as_x509_der(&tbs);
+        let certs = parse_cert_chain_bytes(&cert_der).unwrap();
+        assert_eq!(certs.len(), 1);
+
+        let cert = &certs[0];
+        assert_eq!(extract_cn(&cert.subject), "Test Leaf");
+        assert_eq!(cert.tcb_infos.len(), 1);
+
+        let ext = cert
+            .extensions
+            .iter()
+            .find(|e| e.oid == TCG_DICE_TCB_INFO_OID)
+            .unwrap();
+        assert_eq!(
+            ext.details,
+            "⚠️ Single TCB Context — NON-CONFORMING ASN.1: EXPLICIT context tags \
+             (spec requires IMPLICIT)"
+        );
+
+        let tcb = &cert.tcb_infos[0];
+        assert_eq!(tcb.encoding_warnings, vec![EXPLICIT_TAGGING_WARNING]);
+        assert_eq!(tcb.vendor.as_deref(), Some("ExampleVendor"));
+        assert_eq!(tcb.model.as_deref(), Some("ModelX"));
+        assert_eq!(tcb.layer, Some(0));
+        assert_eq!(tcb.index, Some(0));
+        assert_eq!(tcb.flags.as_deref(), Some("0x01"));
+        assert_eq!(tcb.tci_type.as_deref(), Some(b"TEST".as_slice()));
+        assert_eq!(tcb.fwids.len(), 1);
+        assert_eq!(tcb.fwids[0].hash_alg, "2.16.840.1.101.3.4.2.2");
+        assert_eq!(tcb.fwids[0].digest, vec![0x42; 48]);
+
+        // Rendered markdown surfaces the warning at the top, on the Mermaid
+        // graph node, and in the TCB context breakdown.
+        let md = generate_chain_markdown(&certs);
+        assert!(md.contains("⚠️ **Non-Conforming ASN.1 Encoding Detected**"));
+        assert!(md.contains("1 certificate(s) contain `DiceTcbInfo` extensions"));
+        assert!(md.contains(":::warnStyle"));
+        assert!(md.contains("⚠️ Non-conforming ASN.1"));
+        assert!(md.contains("> ⚠️ **ASN.1 Encoding Warning:**"));
     }
 
     /// Wraps a TBS DER slice into a syntactically valid X.509 Certificate DER with ECDSA-SHA384 OID
