@@ -17,6 +17,9 @@
       --error-bg: #450a0a;
       --error-border: #991b1b;
       --error-text: #fca5a5;
+      --warn-bg: #451a03;
+      --warn-border: #d97706;
+      --warn-text: #fde68a;
     }
     body {
       font-family: system-ui, -apple-system, sans-serif;
@@ -107,6 +110,22 @@
       border: 1px solid var(--border);
       border-radius: 8px;
       padding: 2rem;
+    }
+    #output blockquote {
+      background: var(--warn-bg);
+      border: 1px solid var(--warn-border);
+      border-left: 4px solid #f59e0b;
+      color: var(--warn-text);
+      padding: 0.75rem 1rem;
+      border-radius: 6px;
+      margin: 1rem 0;
+    }
+    #output blockquote p {
+      margin: 0.25rem 0;
+    }
+    #output blockquote ul {
+      margin: 0.5rem 0 0.25rem 1.25rem;
+      padding: 0;
     }
     table {
       width: 100%;
