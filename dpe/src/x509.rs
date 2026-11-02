@@ -33,6 +33,10 @@ use caliptra_dpe_platform::{
     OtherName, PlatformError, SubjectAltName, MAX_ISSUER_NAME_SIZE, MAX_KEY_IDENTIFIER_SIZE,
 };
 use caliptra_dpe_response_buffer::ResponseBuffer;
+// `IntoBytes::as_bytes` is only used by the ML-DSA signature encoder below, which
+// is itself gated on `ml-dsa` (and not `disable_csr`). Gate the import to match so
+// it is not flagged as unused in profiles that compile that function out.
+#[cfg(all(not(feature = "disable_csr"), feature = "ml-dsa"))]
 use zerocopy::IntoBytes;
 use zeroize::Zeroize;
 
@@ -2014,7 +2018,6 @@ pub(crate) mod tests {
     use x509_parser::nom::Parser;
     use x509_parser::oid_registry::asn1_rs::oid;
     use x509_parser::prelude::*;
-    use zerocopy::IntoBytes;
 
     #[derive(asn1::Asn1Read)]
     pub struct Fwid<'a> {
@@ -2382,7 +2385,10 @@ pub(crate) mod tests {
         let expected_current = fwid_itr.next().unwrap().digest;
         assert_eq!(expected_current, node.tci_current.0);
 
-        assert_eq!(parsed_tcb_info.tci_type.unwrap(), node.tci_type.as_bytes());
+        assert_eq!(
+            parsed_tcb_info.tci_type.unwrap(),
+            node.tci_type.to_be_bytes()
+        );
         assert_eq!(
             parsed_tcb_info.vendor_info.unwrap(),
             node.locality.to_be_bytes()
@@ -2922,7 +2928,7 @@ pub(crate) mod tests {
                 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, //
                 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, //
                 0x88, 0x04, 0x05, 0x06, 0x07, 0x08, // [8] vendorInfo (locality)
-                0x89, 0x04, 0x04, 0x03, 0x02, 0x01, // [9] tci_type
+                0x89, 0x04, 0x01, 0x02, 0x03, 0x04, // [9] tci_type
                 0xab, 0x36, // [11] integrityRegisters
                 0x30, 0x34, // IntegrityRegister SEQUENCE
                 0x81, 0x01, 0x00, // [1] registerNum
@@ -2957,7 +2963,7 @@ pub(crate) mod tests {
                 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, //
                 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, //
                 0x88, 0x04, 0x05, 0x06, 0x07, 0x08, // [8] vendorInfo (locality)
-                0x89, 0x04, 0x04, 0x03, 0x02, 0x01, // [9] tci_type
+                0x89, 0x04, 0x01, 0x02, 0x03, 0x04, // [9] tci_type
                 0xab, 0x46, // [11] integrityRegisters
                 0x30, 0x44, // IntegrityRegister SEQUENCE
                 0x81, 0x01, 0x00, // [1] registerNum
@@ -2994,7 +3000,7 @@ pub(crate) mod tests {
                 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, //
                 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, //
                 0x88, 0x04, 0x05, 0x06, 0x07, 0x08, // [8] vendorInfo (locality)
-                0x89, 0x04, 0x04, 0x03, 0x02, 0x01, // [9] tci_type
+                0x89, 0x04, 0x01, 0x02, 0x03, 0x04, // [9] tci_type
                 0xab, 0x46, // [11] integrityRegisters
                 0x30, 0x44, // IntegrityRegister SEQUENCE
                 0x81, 0x01, 0x00, // [1] registerNum
