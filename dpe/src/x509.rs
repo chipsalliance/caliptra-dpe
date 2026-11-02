@@ -334,6 +334,8 @@ impl CertWriter<'_> {
     const UTF8_STRING_TAG: u8 = 0xC;
     const PRINTABLE_STRING_TAG: u8 = 0x13;
     #[cfg(not(feature = "disable_x509"))]
+    const UTC_TIME_TAG: u8 = 0x17;
+    #[cfg(not(feature = "disable_x509"))]
     const GENERALIZE_TIME_TAG: u8 = 0x18;
     const SEQUENCE_TAG: u8 = 0x30;
     const SEQUENCE_OF_TAG: u8 = 0x30;
@@ -487,6 +489,20 @@ impl CertWriter<'_> {
             #[cfg(feature = "ml-dsa")]
             DpeProfile::Mldsa87 => Self::HASH_SHA384_OID,
         }
+    }
+
+    /// RFC 5280 requires dates from 1950 through 2049 to use UTCTime. The
+    /// platform supplies four-digit years, so omit the century when encoding
+    /// dates in that range.
+    #[cfg(not(feature = "disable_x509"))]
+    fn x509_time(time: &[u8]) -> (u8, &[u8]) {
+        if time.len() == 15 && time[14] == b'Z' {
+            let year = &time[..4];
+            if year >= &b"1950"[..] && year <= &b"2049"[..] {
+                return (Self::UTC_TIME_TAG, &time[2..]);
+            }
+        }
+        (Self::GENERALIZE_TIME_TAG, time)
     }
 
     /// Write all of `bytes` to the certificate buffer.
@@ -651,9 +667,11 @@ impl CertWriter<'_> {
     // Encode ASN.1 Validity according to Platform
     #[cfg(not(feature = "disable_x509"))]
     fn encode_validity(&mut self, validity: &CertValidity) -> usize {
+        let (not_before_tag, not_before) = Self::x509_time(validity.not_before.as_slice());
+        let (not_after_tag, not_after) = Self::x509_time(validity.not_after.as_slice());
         self.encode_constructed(Self::SEQUENCE_TAG, |w| {
-            w.encode_tlv(Self::GENERALIZE_TIME_TAG, validity.not_before.as_slice());
-            w.encode_tlv(Self::GENERALIZE_TIME_TAG, validity.not_after.as_slice());
+            w.encode_tlv(not_before_tag, not_before);
+            w.encode_tlv(not_after_tag, not_after);
         })
     }
 
@@ -3226,9 +3244,8 @@ pub(crate) mod tests {
     }
 
     fn make_validity(_max_size: bool) -> CertValidity {
-        // GeneralizedTime must be "YYYYMMDDHHmmssZ" (15 bytes); use the same
-        // strings for both typical and max cases since validity length is not
-        // what exercises the multi-byte length paths.
+        // Use the same strings for both typical and max cases since validity
+        // length is not what exercises the multi-byte length paths.
         let mut not_before = ArrayVec::new();
         not_before
             .try_extend_from_slice(b"20230227000000Z")
