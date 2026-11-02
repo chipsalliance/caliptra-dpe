@@ -821,7 +821,10 @@ impl CertWriter<'_> {
 
             // type OCTET STRING
             // IMPLICIT[9] Primitive
-            w.encode_tlv(Self::CONTEXT_SPECIFIC | 0x09, node.tci_type.as_bytes());
+            // Encode big-endian to match vendorInfo (locality) above and the
+            // network/DER convention for multi-byte integer fields.
+            let tci_type = &node.tci_type.to_be_bytes();
+            w.encode_tlv(Self::CONTEXT_SPECIFIC | 0x09, tci_type);
 
             // Omit integrityRegisters from tcb_info if the profile does not support recursive
             if supports_recursive {

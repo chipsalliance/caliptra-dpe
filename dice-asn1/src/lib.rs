@@ -188,9 +188,9 @@ impl GoldenDefinitions {
             tcb_info_count: 1,
             fwids_per_tcb_info: 1,
             fwid_digest_fill: 0,
-            svn: 0,
-            locality: 0,
-            tci_type: 0,
+            svn: 5,
+            locality: 0x0A0B0C0D,
+            tci_type: 0x01020304,
             supports_recursive: false,
         }
     }
