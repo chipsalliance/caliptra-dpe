@@ -341,9 +341,7 @@ impl DpeInstance {
         let mut uses_internal_input_dice = false;
 
         // Hash each node.
-        for status in RootToChildIter::new(start_idx, &state.contexts)? {
-            let context = status?;
-
+        for context in RootToChildIter::new(start_idx, &state.contexts)? {
             hasher.update(context.tci.as_bytes())?;
 
             // Check if any context uses internal inputs
@@ -637,8 +635,7 @@ pub mod tests {
         let (crypto, _platform, state) = env.get();
         let digest = crypto
             .with_hasher(&|hasher| {
-                for result in RootToChildIter::new(leaf_idx, &state.contexts).unwrap() {
-                    let context = result.unwrap();
+                for context in RootToChildIter::new(leaf_idx, &state.contexts).unwrap() {
                     hasher.update(context.tci.as_bytes()).unwrap();
                     hasher
                         .update(/*allow_x509=*/ context.allow_x509().as_bytes())
