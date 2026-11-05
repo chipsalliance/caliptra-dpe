@@ -350,50 +350,33 @@ pub struct ActiveContextArgs<'a> {
 pub(crate) struct RootToChildIter<'a> {
     /// The context tree on which this iterator is based.
     contexts: &'a [Context],
-    /// The current index into `path` during the iteration.
-    path_idx: usize,
     /// Stores the node indices from a leaf node to the root. The leaf node index is provided
-    /// when creating this iterator. The path is generated from leaf to root. We scan the path in
-    /// reverse order when running this iterator.
+    /// when creating this iterator. The path is generated from leaf to root and popped from the
+    /// end during iteration so nodes are visited in root-to-leaf order.
     path: ArrayVec<u8, MAX_HANDLES>,
-    /// If this iterator has produced all the items.
-    done: bool,
 }
 
 impl<'a> RootToChildIter<'a> {
     pub fn new(leaf_idx: usize, contexts: &'a [Context]) -> Result<Self, DpeErrorCode> {
-        let path: ArrayVec<u8, MAX_HANDLES> = ArrayVec::new();
-        let mut iter = Self {
-            contexts,
-            path_idx: 0,
-            path,
-            done: false,
-        };
+        let mut path: ArrayVec<u8, MAX_HANDLES> = ArrayVec::new();
 
         let mut curr_idx = leaf_idx;
         loop {
-            let context = iter.get_context(curr_idx)?;
-            iter.path
-                .try_push(curr_idx as u8)
+            let context = Self::get_context(contexts, curr_idx)?;
+            path.try_push(curr_idx as u8)
                 .map_err(|_| InternalErrorCode::TciNodeCountExceeded)?;
             if context.parent_idx == Context::ROOT_INDEX {
                 break;
             }
             curr_idx = context.parent_idx as usize;
         }
-        iter.path_idx = iter.path.len().wrapping_sub(1);
 
-        Ok(iter)
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.path.is_empty()
+        Ok(Self { contexts, path })
     }
 
     /// Attempt to get the context at index `idx` and validate it.
-    fn get_context(&mut self, idx: usize) -> Result<&'a Context, DpeErrorCode> {
-        let Some(context) = self.contexts.get(idx) else {
-            self.done = true;
+    fn get_context(contexts: &'a [Context], idx: usize) -> Result<&'a Context, DpeErrorCode> {
+        let Some(context) = contexts.get(idx) else {
             return Err(InternalErrorCode::ContextIndexOob.into());
         };
 
@@ -401,7 +384,6 @@ impl<'a> RootToChildIter<'a> {
         const MAX_IDX: u8 = (MAX_HANDLES - 1) as u8;
         let valid_parent_idx = matches!(context.parent_idx, 0..=MAX_IDX | Context::ROOT_INDEX);
         if !valid_parent_idx || context.state == ContextState::Inactive {
-            self.done = true;
             return Err(DpeErrorCode::InvalidHandle);
         }
 
@@ -410,32 +392,11 @@ impl<'a> RootToChildIter<'a> {
 }
 
 impl<'a> Iterator for RootToChildIter<'a> {
-    type Item = Result<&'a Context, DpeErrorCode>;
+    type Item = &'a Context;
 
-    fn next(&mut self) -> Option<Result<&'a Context, DpeErrorCode>> {
-        if self.done {
-            return None;
-        }
-
-        let idx = match self.path.get(self.path_idx) {
-            None => {
-                self.done = true;
-                return Some(Err(InternalErrorCode::ChildIndexOob.into()));
-            }
-            Some(idx) => *idx,
-        };
-        let context = match self.get_context(idx as usize) {
-            Ok(context) => context,
-            Err(e) => return Some(Err(e)),
-        };
-
-        if self.path_idx == 0 {
-            self.done = true;
-        } else {
-            self.path_idx = self.path_idx.wrapping_sub(1);
-        }
-
-        Some(Ok(context))
+    fn next(&mut self) -> Option<&'a Context> {
+        let idx = self.path.pop()?;
+        self.contexts.get(idx as usize)
     }
 }
 
@@ -482,14 +443,11 @@ mod tests {
         let mut count = 0;
         let leaf_index = chain_indices[chain_indices.len() - 1];
 
-        for (answer, status) in chain_indices
+        for (answer, context) in chain_indices
             .iter()
             .zip(RootToChildIter::new(leaf_index, &contexts).unwrap())
         {
-            assert_eq!(
-                [*answer as u8; ContextHandle::SIZE],
-                status.unwrap().handle.0
-            );
+            assert_eq!([*answer as u8; ContextHandle::SIZE], context.handle.0);
             count += 1;
         }
 
@@ -550,7 +508,7 @@ mod tests {
         // Root index.
         contexts[0].parent_idx = Context::ROOT_INDEX;
         let mut iter = RootToChildIter::new(0, &contexts).unwrap();
-        assert!(iter.next().unwrap().is_ok());
+        assert!(iter.next().is_some());
     }
 
     #[test]
@@ -580,15 +538,15 @@ mod tests {
         }
 
         let mut iter = RootToChildIter::new(leaf_idx, &contexts).unwrap();
-        let context = iter.next().unwrap().unwrap();
+        let context = iter.next().unwrap();
         assert_eq!(context.parent_idx, Context::ROOT_INDEX);
-        let context = iter.next().unwrap().unwrap();
+        let context = iter.next().unwrap();
         assert_eq!(context.parent_idx, 0);
-        let context = iter.next().unwrap().unwrap();
+        let context = iter.next().unwrap();
         assert_eq!(context.parent_idx, 1);
-        let context = iter.next().unwrap().unwrap();
+        let context = iter.next().unwrap();
         assert_eq!(context.parent_idx, 2);
-        let context = iter.next().unwrap().unwrap();
+        let context = iter.next().unwrap();
         assert_eq!(context.parent_idx, 3);
         let context = iter.next();
         assert!(context.is_none());
