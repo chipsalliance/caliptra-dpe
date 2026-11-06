@@ -57,6 +57,7 @@ caliptra-dpe-crypto = { workspace = true, features = [
   "deterministic_rand",
   "rustcrypto",
 ] }
+caliptra-dpe-dice-asn1 = { path = "../dice-asn1" }
 caliptra-dpe-platform = { workspace = true, default-features = false, features = [
   "rustcrypto",
 ] }

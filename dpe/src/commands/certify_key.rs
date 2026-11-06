@@ -914,7 +914,9 @@ mod tests {
         let second = parsed_tcb_infos.next().unwrap();
 
         assert_eq!(first.tci_type.unwrap(), &[0, 0, 0, 0]);
-        assert_eq!(second.tci_type.unwrap(), &[1, 0, 0, 0]);
+        // tci_type is encoded big-endian, so tci_type == 1 serializes as
+        // 0x00000001.
+        assert_eq!(second.tci_type.unwrap(), &[0, 0, 0, 1]);
         assert!(parsed_tcb_infos.next().is_none());
     }
 
@@ -961,7 +963,7 @@ mod tests {
         // Verify we have MAX_HANDLES TCB infos
         for _ in 0..MAX_HANDLES {
             let tcb_info = parsed_tcb_infos.next().unwrap();
-            assert_eq!(tcb_info.tci_type.unwrap(), &0_u32.to_le_bytes());
+            assert_eq!(tcb_info.tci_type.unwrap(), &0_u32.to_be_bytes());
         }
         assert!(parsed_tcb_infos.next().is_none());
     }

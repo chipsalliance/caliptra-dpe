@@ -33,6 +33,10 @@ use caliptra_dpe_platform::{
     OtherName, PlatformError, SubjectAltName, MAX_ISSUER_NAME_SIZE, MAX_KEY_IDENTIFIER_SIZE,
 };
 use caliptra_dpe_response_buffer::ResponseBuffer;
+// `IntoBytes::as_bytes` is only used by the ML-DSA signature encoder below, which
+// is itself gated on `ml-dsa` (and not `disable_csr`). Gate the import to match so
+// it is not flagged as unused in profiles that compile that function out.
+#[cfg(all(not(feature = "disable_csr"), feature = "ml-dsa"))]
 use zerocopy::IntoBytes;
 use zeroize::Zeroize;
 
@@ -334,6 +338,8 @@ impl CertWriter<'_> {
     const UTF8_STRING_TAG: u8 = 0xC;
     const PRINTABLE_STRING_TAG: u8 = 0x13;
     #[cfg(not(feature = "disable_x509"))]
+    const UTC_TIME_TAG: u8 = 0x17;
+    #[cfg(not(feature = "disable_x509"))]
     const GENERALIZE_TIME_TAG: u8 = 0x18;
     const SEQUENCE_TAG: u8 = 0x30;
     const SEQUENCE_OF_TAG: u8 = 0x30;
@@ -487,6 +493,20 @@ impl CertWriter<'_> {
             #[cfg(feature = "ml-dsa")]
             DpeProfile::Mldsa87 => Self::HASH_SHA384_OID,
         }
+    }
+
+    /// RFC 5280 requires dates from 1950 through 2049 to use UTCTime. The
+    /// platform supplies four-digit years, so omit the century when encoding
+    /// dates in that range.
+    #[cfg(not(feature = "disable_x509"))]
+    fn x509_time(time: &[u8]) -> (u8, &[u8]) {
+        if time.len() == 15 && time[14] == b'Z' {
+            let year = &time[..4];
+            if year >= &b"1950"[..] && year <= &b"2049"[..] {
+                return (Self::UTC_TIME_TAG, &time[2..]);
+            }
+        }
+        (Self::GENERALIZE_TIME_TAG, time)
     }
 
     /// Write all of `bytes` to the certificate buffer.
@@ -651,9 +671,11 @@ impl CertWriter<'_> {
     // Encode ASN.1 Validity according to Platform
     #[cfg(not(feature = "disable_x509"))]
     fn encode_validity(&mut self, validity: &CertValidity) -> usize {
+        let (not_before_tag, not_before) = Self::x509_time(validity.not_before.as_slice());
+        let (not_after_tag, not_after) = Self::x509_time(validity.not_after.as_slice());
         self.encode_constructed(Self::SEQUENCE_TAG, |w| {
-            w.encode_tlv(Self::GENERALIZE_TIME_TAG, validity.not_before.as_slice());
-            w.encode_tlv(Self::GENERALIZE_TIME_TAG, validity.not_after.as_slice());
+            w.encode_tlv(not_before_tag, not_before);
+            w.encode_tlv(not_after_tag, not_after);
         })
     }
 
@@ -803,7 +825,10 @@ impl CertWriter<'_> {
 
             // type OCTET STRING
             // IMPLICIT[9] Primitive
-            w.encode_tlv(Self::CONTEXT_SPECIFIC | 0x09, node.tci_type.as_bytes());
+            // Encode big-endian to match vendorInfo (locality) above and the
+            // network/DER convention for multi-byte integer fields.
+            let tci_type = &node.tci_type.to_be_bytes();
+            w.encode_tlv(Self::CONTEXT_SPECIFIC | 0x09, tci_type);
 
             // Omit integrityRegisters from tcb_info if the profile does not support recursive
             if supports_recursive {
@@ -1993,7 +2018,6 @@ pub(crate) mod tests {
     use x509_parser::nom::Parser;
     use x509_parser::oid_registry::asn1_rs::oid;
     use x509_parser::prelude::*;
-    use zerocopy::IntoBytes;
 
     #[derive(asn1::Asn1Read)]
     pub struct Fwid<'a> {
@@ -2361,7 +2385,10 @@ pub(crate) mod tests {
         let expected_current = fwid_itr.next().unwrap().digest;
         assert_eq!(expected_current, node.tci_current.0);
 
-        assert_eq!(parsed_tcb_info.tci_type.unwrap(), node.tci_type.as_bytes());
+        assert_eq!(
+            parsed_tcb_info.tci_type.unwrap(),
+            node.tci_type.to_be_bytes()
+        );
         assert_eq!(
             parsed_tcb_info.vendor_info.unwrap(),
             node.locality.to_be_bytes()
@@ -2901,7 +2928,7 @@ pub(crate) mod tests {
                 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, //
                 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, //
                 0x88, 0x04, 0x05, 0x06, 0x07, 0x08, // [8] vendorInfo (locality)
-                0x89, 0x04, 0x04, 0x03, 0x02, 0x01, // [9] tci_type
+                0x89, 0x04, 0x01, 0x02, 0x03, 0x04, // [9] tci_type
                 0xab, 0x36, // [11] integrityRegisters
                 0x30, 0x34, // IntegrityRegister SEQUENCE
                 0x81, 0x01, 0x00, // [1] registerNum
@@ -2936,7 +2963,7 @@ pub(crate) mod tests {
                 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, //
                 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, //
                 0x88, 0x04, 0x05, 0x06, 0x07, 0x08, // [8] vendorInfo (locality)
-                0x89, 0x04, 0x04, 0x03, 0x02, 0x01, // [9] tci_type
+                0x89, 0x04, 0x01, 0x02, 0x03, 0x04, // [9] tci_type
                 0xab, 0x46, // [11] integrityRegisters
                 0x30, 0x44, // IntegrityRegister SEQUENCE
                 0x81, 0x01, 0x00, // [1] registerNum
@@ -2973,7 +3000,7 @@ pub(crate) mod tests {
                 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, //
                 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, 0xaa, //
                 0x88, 0x04, 0x05, 0x06, 0x07, 0x08, // [8] vendorInfo (locality)
-                0x89, 0x04, 0x04, 0x03, 0x02, 0x01, // [9] tci_type
+                0x89, 0x04, 0x01, 0x02, 0x03, 0x04, // [9] tci_type
                 0xab, 0x46, // [11] integrityRegisters
                 0x30, 0x44, // IntegrityRegister SEQUENCE
                 0x81, 0x01, 0x00, // [1] registerNum
@@ -3226,9 +3253,8 @@ pub(crate) mod tests {
     }
 
     fn make_validity(_max_size: bool) -> CertValidity {
-        // GeneralizedTime must be "YYYYMMDDHHmmssZ" (15 bytes); use the same
-        // strings for both typical and max cases since validity length is not
-        // what exercises the multi-byte length paths.
+        // Use the same strings for both typical and max cases since validity
+        // length is not what exercises the multi-byte length paths.
         let mut not_before = ArrayVec::new();
         not_before
             .try_extend_from_slice(b"20230227000000Z")
@@ -4283,6 +4309,11 @@ pub(crate) mod tests {
     #[cfg(not(feature = "disable_x509"))]
     mod golden {
         use super::*;
+        use caliptra_dpe_dice_asn1::{
+            GoldenDefinitions, GoldenProfile, TcbInfo as DiceTcbInfo, Ueid as DiceUeid,
+        };
+        use std::str::FromStr;
+        use x509_parser::oid_registry::asn1_rs::Oid;
 
         #[cfg(feature = "p256")]
         const GOLDEN_CERT_DER: &[u8] = include_bytes!("x509_testdata/golden_cert_p256.der");
@@ -4298,17 +4329,115 @@ pub(crate) mod tests {
         #[cfg(all(feature = "ml-dsa", not(feature = "p384"), not(feature = "p256")))]
         const GOLDEN_CSR_DER: &[u8] = include_bytes!("x509_testdata/golden_csr_mldsa87.der");
 
+        fn golden_definitions() -> GoldenDefinitions {
+            #[cfg(feature = "p256")]
+            let profile = GoldenProfile::P256;
+            #[cfg(feature = "p384")]
+            let profile = GoldenProfile::P384;
+            #[cfg(all(feature = "ml-dsa", not(feature = "p384"), not(feature = "p256")))]
+            let profile = GoldenProfile::Mldsa87;
+            profile.into()
+        }
+
+        #[cfg(any(feature = "p256", feature = "p384"))]
+        const X509_UNCOMPRESSED_HEADER: u8 = 0x04;
+
+        fn golden_pubkey(cert: &X509Certificate) -> PubKey {
+            let raw = cert.public_key().subject_public_key.data.as_ref();
+            match DPE_PROFILE.alg() {
+                #[cfg(any(feature = "p256", feature = "p384"))]
+                SignatureAlgorithm::Ecdsa(_) => {
+                    assert_eq!(raw[0], X509_UNCOMPRESSED_HEADER);
+
+                    match DPE_PROFILE {
+                        #[cfg(feature = "p256")]
+                        DpeProfile::P256Sha256 => {
+                            let cs = EcdsaAlgorithm::Bit256.curve_size();
+                            PubKey::Ecdsa(EcdsaPubKey::Ecdsa256(EcdsaPub::from_slice(
+                                raw[1..1 + cs].try_into().unwrap(),
+                                raw[1 + cs..1 + cs + cs].try_into().unwrap(),
+                            )))
+                        }
+                        #[cfg(feature = "p384")]
+                        DpeProfile::P384Sha384 => {
+                            let cs = EcdsaAlgorithm::Bit384.curve_size();
+                            PubKey::Ecdsa(EcdsaPubKey::Ecdsa384(EcdsaPub::from_slice(
+                                raw[1..1 + cs].try_into().unwrap(),
+                                raw[1 + cs..1 + cs + cs].try_into().unwrap(),
+                            )))
+                        }
+                        #[allow(unreachable_patterns)]
+                        _ => unreachable!(),
+                    }
+                }
+                #[cfg(all(feature = "ml-dsa", not(feature = "p384"), not(feature = "p256")))]
+                SignatureAlgorithm::Mldsa(MldsaAlgorithm::Mldsa87) => {
+                    PubKey::Mldsa(MldsaPublicKey::from_slice(raw.try_into().unwrap()))
+                }
+                #[allow(unreachable_patterns)]
+                _ => unreachable!(),
+            }
+        }
+
+        fn golden_signature(cert: &X509Certificate) -> Signature {
+            let raw = cert.signature_value.data.as_ref();
+            #[cfg(any(feature = "p256", feature = "p384"))]
+            if matches!(DPE_PROFILE.alg(), SignatureAlgorithm::Ecdsa(_)) {
+                let parsed = openssl::ecdsa::EcdsaSig::from_der(raw).unwrap();
+                let pad = |value: Vec<u8>, size: usize| {
+                    let mut padded = vec![0u8; size];
+                    padded[size - value.len()..].copy_from_slice(&value);
+                    padded
+                };
+                return match DPE_PROFILE {
+                    #[cfg(feature = "p256")]
+                    DpeProfile::P256Sha256 => {
+                        let r = pad(parsed.r().to_vec(), 32);
+                        let s = pad(parsed.s().to_vec(), 32);
+                        Signature::Ecdsa(
+                            EcdsaSig::<32>::from_slice(
+                                r.as_slice().try_into().unwrap(),
+                                s.as_slice().try_into().unwrap(),
+                            )
+                            .into(),
+                        )
+                    }
+                    #[cfg(feature = "p384")]
+                    DpeProfile::P384Sha384 => {
+                        let r = pad(parsed.r().to_vec(), 48);
+                        let s = pad(parsed.s().to_vec(), 48);
+                        Signature::Ecdsa(
+                            EcdsaSig::<48>::from_slice(
+                                r.as_slice().try_into().unwrap(),
+                                s.as_slice().try_into().unwrap(),
+                            )
+                            .into(),
+                        )
+                    }
+                    #[allow(unreachable_patterns)]
+                    _ => unreachable!(),
+                };
+            }
+            #[cfg(all(feature = "ml-dsa", not(feature = "p384"), not(feature = "p256")))]
+            return Signature::Mldsa(MldsaSignature(raw.try_into().unwrap()));
+            #[allow(unreachable_code)]
+            {
+                unreachable!()
+            }
+        }
+
         /// Parse the golden certificate, verify its self-signature, and assert
         /// on its structure and DICE / TCI extensions.
         #[test]
         #[cfg_attr(miri, ignore)]
         fn test_golden_cert() {
+            let definitions = golden_definitions();
             // Parses as a valid X.509v3 certificate.
             let mut parser = X509CertificateParser::new().with_deep_parse_extensions(true);
             let (_, cert) = parser
                 .parse(GOLDEN_CERT_DER)
                 .unwrap_or_else(|e| panic!("golden cert failed to parse: {e:?}"));
-            assert_eq!(cert.version(), X509Version::V3);
+            assert_eq!(cert.version().0, definitions.certificate_version as u32);
 
             // Signature verifies against the certificate's own public key
             // (the golden cert is self-signed).
@@ -4321,40 +4450,157 @@ pub(crate) mod tests {
 
             // DICE UEID extension (tcg-dice-Ueid 2.23.133.5.4.4): critical, with
             // the fixed all-zero label.
+            let ueid_oid = Oid::from_str(definitions.ueid.oid.dotted).unwrap();
             let ueid = cert
-                .get_extension_unique(&oid!(2.23.133 .5 .4 .4))
+                .get_extension_unique(&ueid_oid)
                 .unwrap()
                 .expect("missing DICE UEID extension");
-            assert!(ueid.critical);
-            let parsed_ueid = asn1::parse_single::<Ueid>(ueid.value).unwrap();
-            assert_eq!(parsed_ueid.ueid, &[0u8; DPE_PROFILE.hash_size()][..]);
+            assert_eq!(ueid.critical, definitions.ueid.critical);
+            let parsed_ueid = asn1::parse_single::<DiceUeid>(ueid.value).unwrap();
+            assert_eq!(parsed_ueid.ueid.len(), definitions.hash_size);
+            assert!(parsed_ueid
+                .ueid
+                .iter()
+                .all(|byte| *byte == definitions.ueid_fill));
 
             // DICE MultiTcbInfo extension (tcg-dice-MultiTcbInfo 2.23.133.5.4.5):
             // exactly one TcbInfo whose single FWID is the all-zero measurement.
+            let tcb_oid = Oid::from_str(definitions.multi_tcb_info.oid.dotted).unwrap();
             let tcb = cert
-                .get_extension_unique(&oid!(2.23.133 .5 .4 .5))
+                .get_extension_unique(&tcb_oid)
                 .unwrap()
                 .expect("missing DICE MultiTcbInfo extension");
-            let tcb_infos = asn1::parse_single::<asn1::SequenceOf<TcbInfo>>(tcb.value).unwrap();
+            assert_eq!(tcb.critical, definitions.multi_tcb_info.critical);
+            let tcb_infos = asn1::parse_single::<asn1::SequenceOf<DiceTcbInfo>>(tcb.value).unwrap();
+            let expected_hash_oid =
+                asn1::ObjectIdentifier::from_string(definitions.hash_oid.dotted).unwrap();
             let mut count = 0usize;
             for info in tcb_infos {
                 count += 1;
                 let fwids = info.fwids.expect("TcbInfo must carry FWIDs");
+                let mut fwid_count = 0usize;
                 for fwid in fwids {
-                    assert_eq!(fwid.digest, &[0u8; DPE_PROFILE.hash_size()][..]);
+                    fwid_count += 1;
+                    assert_eq!(fwid.hash_alg, expected_hash_oid);
+                    assert_eq!(fwid.digest.len(), definitions.hash_size);
+                    assert!(fwid
+                        .digest
+                        .iter()
+                        .all(|byte| *byte == definitions.fwid_digest_fill));
                 }
+                assert_eq!(fwid_count, definitions.fwids_per_tcb_info);
             }
-            assert_eq!(count, 1, "expected exactly one TcbInfo");
+            assert_eq!(count, definitions.tcb_info_count);
+        }
+
+        /// Rebuild the golden certificate with DPE's custom DER writer. The
+        /// golden public key and signature are reused so this comparison tests
+        /// the certificate encoding rather than a second crypto implementation.
+        #[test]
+        #[cfg_attr(miri, ignore)]
+        fn test_encode_golden_cert() {
+            let definitions = golden_definitions();
+            let (_, golden) = X509CertificateParser::new()
+                .with_deep_parse_extensions(true)
+                .parse(GOLDEN_CERT_DER)
+                .unwrap();
+            let pub_key = golden_pubkey(&golden);
+            let golden_sig = golden_signature(&golden);
+
+            let subject = Name {
+                cn: DirectoryString::Utf8String(definitions.subject_common_name.as_bytes()),
+                serial: DirectoryString::PrintableString(definitions.csr_subject_serial.as_bytes()),
+            };
+            let mut issuer_der = [0u8; 128];
+            let mut issuer_buf = SliceResponseBuffer::new(&mut issuer_der);
+            let issuer_len = CertWriter::new(&mut issuer_buf, DPE_PROFILE, true)
+                .encode_rdn(&subject)
+                .unwrap();
+
+            let mut context = Context {
+                state: ContextState::Active,
+                ..Context::default()
+            };
+            context.tci.svn = definitions.svn;
+            context.tci.locality = definitions.locality;
+            context.tci.tci_type = definitions.tci_type;
+            let contexts = [context];
+
+            let mut key_identifier = [0u8; MAX_KEY_IDENTIFIER_SIZE];
+            let authority_key_identifier = golden
+                .get_extension_unique(&oid!(2.5.29 .35))
+                .unwrap()
+                .expect("golden certificate must contain an authority key identifier");
+            let ParsedExtension::AuthorityKeyIdentifier(authority_key_identifier) =
+                authority_key_identifier.parsed_extension()
+            else {
+                panic!("golden authority key identifier has the wrong extension type");
+            };
+            key_identifier
+                .copy_from_slice(authority_key_identifier.key_identifier.clone().unwrap().0);
+
+            let label = vec![definitions.ueid_fill; definitions.hash_size];
+            let measurements = MeasurementData {
+                label: &label,
+                tci_nodes: TciNodes::new(0, &contexts).unwrap(),
+                is_ca: definitions.is_ca,
+                supports_recursive: definitions.supports_recursive,
+                subject_key_identifier: key_identifier,
+                authority_key_identifier: key_identifier,
+                subject_alt_name: None,
+            };
+            let mut not_before = ArrayVec::new();
+            not_before
+                .try_extend_from_slice(definitions.not_before.as_bytes())
+                .unwrap();
+            let mut not_after = ArrayVec::new();
+            not_after
+                .try_extend_from_slice(definitions.not_after.as_bytes())
+                .unwrap();
+            let validity = CertValidity {
+                not_before,
+                not_after,
+            };
+
+            let mut encoded = vec![0u8; GOLDEN_CERT_DER.len() + 32];
+            let mut encoded_buf = SliceResponseBuffer::new(&mut encoded);
+            let callback_sig = golden_sig.clone();
+            let mut sign_cb = move |_buf: &dyn ResponseBuffer,
+                                    _range: core::ops::Range<usize>,
+                                    _is_csr: bool,
+                                    output: &mut Signature| {
+                *output = callback_sig.clone();
+                Ok(())
+            };
+            let mut sig = golden_sig;
+            let encoded_len = CertWriter::new(&mut encoded_buf, DPE_PROFILE, true)
+                .encode_certificate(
+                    &mut sign_cb,
+                    &[0],
+                    &issuer_der[..issuer_len],
+                    &subject,
+                    &pub_key,
+                    &measurements,
+                    &validity,
+                    &mut sig,
+                )
+                .unwrap();
+
+            assert_eq!(&encoded[..encoded_len], GOLDEN_CERT_DER);
         }
 
         /// Parse the golden CSR and verify its self-signature.
         #[test]
         #[cfg_attr(miri, ignore)]
         fn test_golden_csr() {
+            let definitions = golden_definitions();
             // Parses as a valid PKCS#10 certification request.
             let (_, csr) = X509CertificationRequest::from_der(GOLDEN_CSR_DER)
                 .unwrap_or_else(|e| panic!("golden CSR failed to parse: {e:?}"));
-            assert_eq!(csr.certification_request_info.version.0, 0);
+            assert_eq!(
+                csr.certification_request_info.version.0,
+                definitions.csr_version as u32
+            );
 
             // Self-signature verifies against the CSR's own public key.
             let openssl_csr = openssl::x509::X509Req::from_der(GOLDEN_CSR_DER).unwrap();

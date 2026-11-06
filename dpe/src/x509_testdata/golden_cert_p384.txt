@@ -3,11 +3,11 @@ Certificate:
         Version: 3 (0x2)
         Serial Number: 0 (0x0)
         Signature Algorithm: ecdsa-with-SHA384
-        Issuer: CN=DPE Leaf
+        Issuer: CN=DPE Leaf, serialNumber=0000
         Validity
             Not Before: Feb 27 00:00:00 2023 GMT
             Not After : Dec 31 23:59:59 9999 GMT
-        Subject: CN=DPE Leaf
+        Subject: CN=DPE Leaf, serialNumber=0000
         Subject Public Key Info:
             Public Key Algorithm: id-ecPublicKey
                 Public-Key: (384 bit)
@@ -22,38 +22,23 @@ Certificate:
                 ASN1 OID: secp384r1
                 NIST CURVE: P-384
         X509v3 extensions:
-            X509v3 Authority Key Identifier: 
-                BA:01:A0:AA:CC:C5:AC:6F:8E:48:E8:8B:23:26:41:3A:B8:7B:9D:25
-            X509v3 Subject Key Identifier: 
-                BA:01:A0:AA:CC:C5:AC:6F:8E:48:E8:8B:23:26:41:3A:B8:7B:9D:25
+            2.23.133.5.4.5: critical
+                0R0P....?0=..`.H.e.....0............................................................
+            2.23.133.5.4.4: critical
+                02.0................................................
             X509v3 Basic Constraints: critical
                 CA:FALSE
             X509v3 Key Usage: critical
                 Digital Signature
-            2.23.133.5.4.4: critical
-                02.0................................................
-            2.23.133.5.4.5: 
-                0C0A.?0=..`.H.e.....0................................................
+            X509v3 Extended Key Usage: critical
+                2.23.133.5.4.100.9
+            X509v3 Authority Key Identifier:
+                BA:01:A0:AA:CC:C5:AC:6F:8E:48:E8:8B:23:26:41:3A:B8:7B:9D:25
     Signature Algorithm: ecdsa-with-SHA384
     Signature Value:
-        30:65:02:31:00:ed:35:7c:ef:8b:f7:41:0f:eb:da:28:55:7a:
-        a5:f0:73:44:70:33:68:0e:b8:f4:67:2e:1d:ec:41:a8:50:c1:
-        bd:4f:b2:c8:15:fa:72:35:f1:31:79:09:c7:82:19:73:ec:02:
-        30:32:84:74:70:27:0b:dc:98:9d:c7:b1:3a:23:20:8c:f6:e7:
-        42:4b:2b:c7:0e:20:e5:91:db:96:78:ec:d2:1b:66:1a:c6:f4:
-        54:a8:e3:a0:35:b4:e5:af:09:91:2b:11:56
------BEGIN CERTIFICATE-----
-MIICSjCCAdCgAwIBAgIBADAKBggqhkjOPQQDAzATMREwDwYDVQQDDAhEUEUgTGVh
-ZjAgFw0yMzAyMjcwMDAwMDBaGA85OTk5MTIzMTIzNTk1OVowEzERMA8GA1UEAwwI
-RFBFIExlYWYwdjAQBgcqhkjOPQIBBgUrgQQAIgNiAAQ4bnZ+pctxbJzWIP9zQhKc
-iSpvzO/mEhQMgL/1npQ0aAGd2hblB5sMHZAB0jpiS23QiNDDgmOUGUeHQD6KfQfl
-4i9+nAuOgPofr/XSi0u1l7Jn8LhwI8ph/IRUvd79Lg6jgfUwgfIwHwYDVR0jBBgw
-FoAUugGgqszFrG+OSOiLIyZBOrh7nSUwHQYDVR0OBBYEFLoBoKrMxaxvjkjoiyMm
-QTq4e50lMAwGA1UdEwEB/wQCMAAwDgYDVR0PAQH/BAQDAgeAMEEGBmeBBQUEBAEB
-/wQ0MDIEMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-AAAAAAAAADBPBgZngQUFBAUERTBDMEGmPzA9BglghkgBZQMEAgIEMAAAAAAAAAAA
-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADAKBggqhkjO
-PQQDAwNoADBlAjEA7TV874v3QQ/r2ihVeqXwc0RwM2gOuPRnLh3sQahQwb1PssgV
-+nI18TF5CceCGXPsAjAyhHRwJwvcmJ3HsTojIIz250JLK8cOIOWR25Z47NIbZhrG
-9FSo46A1tOWvCZErEVY=
------END CERTIFICATE-----
+        30:65:02:31:00:8d:95:79:c5:18:85:3a:c2:4f:98:b3:29:c4:
+        14:98:cb:e3:3c:d9:6d:b6:2d:91:eb:d9:dd:b6:f8:df:17:9f:
+        c5:e0:04:b8:79:e8:58:a3:cc:7f:09:3e:68:ba:3e:d6:96:02:
+        30:6b:d6:fd:97:3d:55:28:45:13:d4:c3:26:22:3f:7e:df:9f:
+        00:c8:fc:43:14:5d:b1:3c:5a:39:d3:33:ea:91:13:55:14:bd:
+        88:f9:9f:33:31:74:18:28:a9:18:5d:5a:7d
