@@ -123,35 +123,20 @@ impl State {
         handle: &ContextHandle,
         locality: u32,
     ) -> Result<usize, DpeErrorCode> {
-        // find all active contexts whose localities match the locality parameter
-        let mut valid_localities = self
-            .contexts
-            .iter()
-            .enumerate()
-            .filter(|(_, context)| {
-                context.state == ContextState::Active && context.locality == locality
-            })
-            .peekable();
-        if valid_localities.peek().is_none() {
-            return Err(DpeErrorCode::InvalidLocality);
+        let mut seen_locality = false;
+        for (i, context) in self.contexts.iter().enumerate() {
+            if context.state == ContextState::Active && context.locality == locality {
+                seen_locality = true;
+                if context.handle.equals(handle) {
+                    return Ok(i);
+                }
+            }
         }
-
-        // filter down the contexts with valid localities based on their context handle matching the input context handle
-        // the locality and handle filters are separated so that we can return InvalidHandle or InvalidLocality upon getting no valid contexts accordingly
-        let mut valid_handles_and_localities = valid_localities
-            .filter(|(_, context)| context.handle.equals(handle))
-            .peekable();
-        if valid_handles_and_localities.peek().is_none() {
-            return Err(DpeErrorCode::InvalidHandle);
+        if seen_locality {
+            Err(DpeErrorCode::InvalidHandle)
+        } else {
+            Err(DpeErrorCode::InvalidLocality)
         }
-        let (i, _) = valid_handles_and_localities
-            .find(|(_, context)| {
-                context.state == ContextState::Active
-                    && context.handle.equals(handle)
-                    && context.locality == locality
-            })
-            .ok_or(DpeErrorCode::from(InternalErrorCode::ActiveContextNotFound))?;
-        Ok(i)
     }
 
     pub(crate) fn get_next_inactive_context_pos(&self) -> Option<usize> {
